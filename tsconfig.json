@@ -1,0 +1,48 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+
+    "strict": true,
+    "alwaysStrict": true,
+    "forceConsistentCasingInFileNames": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "sourceMap": true,
+    "declaration": true,
+    "declarationMap": true,
+    "noEmit": true,
+
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "allowImportingTsExtensions": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"],
+      "@utils/*": ["src/utils/*"],
+      "@routes/*": ["src/infrastructure/routes/*"],
+      "@middlewares/*": ["src/infrastructure/middlewares/*"],
+      "@db/*": ["src/infrastructure/db/*"],
+      "@infrastructure/*": ["src/infrastructure/*"],
+      "@application/*": ["src/application/*"],
+      "@ws/*": ["src/infrastructure/ws/*"],
+      "@controllers/*": ["src/infrastructure/api/controllers/*"],
+      "@interfaces/*": ["src/application/interfaces/*"],
+      "@models/*": ["src/domain/models/*"],
+      "@entities/*": ["src/domain/entities/*"],
+      "@errors/*": ["src/domain/errors/*"],
+      "@dtos/*": ["src/application/dtos/*"],
+      "@repositories/*": ["src/application/repositories/*"],
+      "@domain/*": ["src/domain/*"],
+      "@traits/*": ["src/application/interfaces/traits/*"]
+    }
+  },
+  "include": ["src/**/*"], // Файлы, которые должны быть включены в компиляцию
+  "exclude": ["node_modules", "dist"]
+}
