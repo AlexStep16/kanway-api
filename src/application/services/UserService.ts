@@ -3,23 +3,15 @@ import UserRepository from '@repositories/UserRepository.ts'
 import { AppError } from '@errors/AppError.ts'
 import bcrypt from 'bcrypt'
 import { ErrorsMessage } from '@/enums/ErrorsMessage.ts'
-import { RegisterCredentials } from '@dtos/RegisterCredentials.ts'
+import { RegisterCredentialsDTO } from '@/application/dtos/RegisterCredentialsDTO.ts'
 import { ICreateService } from '@interfaces/traits/ICreateService.ts'
 import { IGetByIdService } from '../interfaces/traits/IGetByIdService.ts'
+import { BASE_COLORS } from '@constants/BASE_COLORS.ts'
 
-const AVATAR_COLORS: string[] = [
-  '#191970',
-  '#228B22',
-  '#b50000',
-  '#36454F',
-  '#4B0082',
-  '#008080',
-  '#ea9700',
-]
 const SALT_ROUNDS = 10
 
 export class UserService
-  implements ICreateService<IUser, RegisterCredentials>, IGetByIdService<IUser>
+  implements ICreateService<IUser, RegisterCredentialsDTO>, IGetByIdService<IUser>
 {
   private userRepository: UserRepository
 
@@ -27,7 +19,7 @@ export class UserService
     this.userRepository = userRepository
   }
 
-  public async create(credentials: RegisterCredentials): Promise<IUser> {
+  public async create(credentials: RegisterCredentialsDTO): Promise<IUser> {
     const passwordHash = await bcrypt.hash(credentials.password, SALT_ROUNDS)
 
     const user: Omit<IUser, '_id'> = {
@@ -37,7 +29,7 @@ export class UserService
       is_confirmed: false,
       subscription: 'trial',
       generations_balance: 20,
-      avatar_color: AVATAR_COLORS[Math.floor(Math.random() * 7)],
+      avatar_color: BASE_COLORS[Math.floor(Math.random() * 7)],
       is_tips_completed: false,
     }
 
@@ -47,7 +39,7 @@ export class UserService
   }
 
   public async getById(id: string): Promise<IUser | null> {
-    return this.userRepository.getById(id)
+    return this.userRepository.findById(id)
   }
 
   public async validateCredentials(email: string, passwordPlain: string): Promise<IUser> {

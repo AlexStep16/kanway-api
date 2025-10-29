@@ -40,7 +40,9 @@
       "@dtos/*": ["src/application/dtos/*"],
       "@repositories/*": ["src/application/repositories/*"],
       "@domain/*": ["src/domain/*"],
-      "@traits/*": ["src/application/interfaces/traits/*"]
+      "@traits/*": ["src/application/interfaces/traits/*"],
+      "@criterias/*": ["src/application/interfaces/criterias/*"],
+      "@constants/*": ["src/constants/*"]
     }
   },
   "include": ["src/**/*"], // Файлы, которые должны быть включены в компиляцию

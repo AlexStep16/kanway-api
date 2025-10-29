@@ -1,4 +1,4 @@
-import { TokenTypes } from '@domain/enums/TokenTypes.ts'
+import { TokenTypesEnum } from '@/domain/enums/TokenTypesEnum.ts'
 import jwt from 'jsonwebtoken'
 import TokenRepository from '@repositories/TokenRepository.ts'
 import { TokenGenerationError } from '@errors/TokenGenerationError.ts'
@@ -23,7 +23,7 @@ export class TokenService {
       const tokenModel = await this.tokenRepository.create({
         token,
         user_id,
-        type: TokenTypes.EMAIL_CONFIRMATION,
+        type: TokenTypesEnum.EMAIL_CONFIRMATION,
       })
 
       return tokenModel

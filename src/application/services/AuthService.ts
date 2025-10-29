@@ -1,10 +1,10 @@
 import { IUser } from '@entities/IUser.ts'
-import { RegisterCredentials } from '@dtos/RegisterCredentials.ts'
+import { RegisterCredentialsDTO } from '@/application/dtos/RegisterCredentialsDTO.ts'
 import { UserService } from '@application/services/UserService.ts'
 import { EmailService } from '@infrastructure/services/EmailService.ts'
 import { serialize } from 'cookie'
 import { TokenService } from '@application/services/TokenService.ts'
-import { LoginCredentials } from '@dtos/LoginCredentials.ts'
+import { LoginCredentialsDTO } from '@/application/dtos/LoginCredentialsDTO.ts'
 
 export class AuthService {
   private userService: UserService
@@ -18,7 +18,7 @@ export class AuthService {
   }
 
   public async register(
-    credentials: RegisterCredentials
+    credentials: RegisterCredentialsDTO
   ): Promise<{ user: IUser; serialized: string }> {
     const newUser = await this.userService.create(credentials)
 
@@ -45,7 +45,9 @@ export class AuthService {
     }
   }
 
-  public async login(credentials: LoginCredentials): Promise<{ user: IUser; serialized: string }> {
+  public async login(
+    credentials: LoginCredentialsDTO
+  ): Promise<{ user: IUser; serialized: string }> {
     const user = await this.userService.validateCredentials(credentials.email, credentials.password)
 
     const token = this.tokenService.generateToken(user._id)

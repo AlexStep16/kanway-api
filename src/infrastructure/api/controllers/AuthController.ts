@@ -1,8 +1,8 @@
 import SuccessResponse from '@/application/services/SuccessResponse.ts'
-import { RegisterCredentials } from '@dtos/RegisterCredentials.ts'
+import { RegisterCredentialsDTO } from '@/application/dtos/RegisterCredentialsDTO.ts'
 import { AuthService } from '@application/services/AuthService.ts'
 import { NextFunction, Request, Response } from 'express'
-import { LoginCredentials } from '@dtos/LoginCredentials.ts'
+import { LoginCredentialsDTO } from '@/application/dtos/LoginCredentialsDTO.ts'
 
 export default class AuthController {
   protected service: AuthService
@@ -12,9 +12,9 @@ export default class AuthController {
   }
 
   public async register(req: Request, res: Response, next: NextFunction) {
-    const { email, password } = req.body as RegisterCredentials
+    const { email, password } = req.body as RegisterCredentialsDTO
 
-    const credentials: RegisterCredentials = { email, password }
+    const credentials: RegisterCredentialsDTO = { email, password }
 
     try {
       const { user, serialized } = await this.service.register(credentials)
@@ -28,9 +28,9 @@ export default class AuthController {
   }
 
   public async login(req: Request, res: Response, next: NextFunction) {
-    const { email, password } = req.body as LoginCredentials
+    const { email, password } = req.body as LoginCredentialsDTO
 
-    const credentials: LoginCredentials = { email, password }
+    const credentials: LoginCredentialsDTO = { email, password }
 
     try {
       const { user, serialized } = await this.service.login(credentials)

@@ -1,7 +1,7 @@
 import { AppError } from '@errors/AppError.ts'
 import { Request, Response, NextFunction } from 'express'
 
-export const globalErrorHandler = (err: any, req: Request, res: Response, next: NextFunction) => {
+export const globalErrorHandler = (err: any, _r: Request, res: Response, _n: NextFunction) => {
   if (process.env.NODE_ENV === 'development') {
     console.error(err)
   }

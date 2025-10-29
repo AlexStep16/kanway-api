@@ -2,7 +2,12 @@ import SuccessResponse from '@/application/services/SuccessResponse.ts'
 import { IBaseService } from '@interfaces/IBaseService.ts'
 import { Request, Response, NextFunction } from 'express'
 
-export abstract class BaseController<TEntity, TService extends IBaseService<TEntity>> {
+export abstract class BaseController<
+  TEntity,
+  TCreateDTO,
+  TCriteria,
+  TService extends IBaseService<TEntity, TCriteria, TCreateDTO>
+> {
   protected service: TService
 
   constructor(serviceInstance: TService) {
