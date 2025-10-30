@@ -1,6 +1,7 @@
 import { Schema, model, Model, HydratedDocument } from 'mongoose'
 import { IUser } from '@entities/IUser.ts'
 import bcrypt from 'bcrypt'
+import { BASE_COLORS } from '@constants/BASE_COLORS.ts'
 
 const SALT_ROUNDS = 10
 
@@ -66,7 +67,8 @@ export const UserSchema = new Schema<IUser, IUserStatics, IUserMethods>(
     },
     avatar_color: {
       type: String,
-      required: true,
+      enum: BASE_COLORS,
+      default: '#3b82f6',
     },
     phone: {
       type: String,

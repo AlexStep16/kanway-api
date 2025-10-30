@@ -1,42 +1,130 @@
 import { IReordable } from '@entities/IReordable.ts'
 import { IReorderRepository } from '@traits/IReorderRepository.ts'
 import { ClientSession, Types } from 'mongoose'
+import { ReorderResultDTO } from '@dtos/ReorderResultDTO.ts'
+import { CollectionsEnum } from '@domain/enums/CollectionsEnum.ts'
+import { OperationTypesEnum } from '@domain/enums/OperationTypesEnum.ts'
+import { OperationLogService } from '@application/services/OperationLogService.ts'
 
 export class ReorderService<TEntity extends IReordable> {
   protected repository: IReorderRepository<TEntity>
+  protected operationLogService: OperationLogService
 
-  constructor(repository: IReorderRepository<TEntity>) {
+  constructor(repository: IReorderRepository<TEntity>, operationLogService: OperationLogService) {
     this.repository = repository
+    this.operationLogService = operationLogService
   }
 
-  public async reorder(
-    parentId: string,
-    newOrders: IReordable[],
+  private async _baseReorderLogic(
+    entities: IReordable[],
+    collectionName: CollectionsEnum,
     userId: Types.ObjectId,
     session?: ClientSession
-  ): Promise<void> {
-    const entities: IReordable[] = await this.repository.getAllToOrder(parentId, userId)
-    const entitiesOld = entities.filter((e) => !newOrders.find((no) => no._id.equals(e._id)))
-    const newEntities: IReordable[] = []
+  ): Promise<ReorderResultDTO<TEntity>> {
+    const entitiesToUpdate: IReordable[] = []
 
-    for (let newOrder of newOrders) {
-      const newIndex = newOrder.order - 1
-      const newItem = newOrder
-
-      entitiesOld.splice(newIndex, 0, newItem)
-    }
-
-    for (let i = 0; i < entitiesOld.length; i++) {
-      const entity = entitiesOld[i]
+    for (let i = 0; i < entities.length; i++) {
+      const entity = { ...entities[i] }
 
       if (entity.order !== i + 1) {
         entity.order = i + 1
-        newEntities.push(entity)
+        entitiesToUpdate.push(entity)
       }
     }
 
-    if (newEntities.length > 0) {
-      this.repository.bulkUpdateOrders(newEntities, session)
+    if (entitiesToUpdate.length > 0) {
+      await this.repository.bulkUpdateOrders(entitiesToUpdate, session)
+
+      const updatedEntities = await this.repository.findByIds(
+        entitiesToUpdate.map((e) => e._id),
+        userId,
+        session
+      )
+
+      /* LOG */
+      const logs = await this.operationLogService.create(
+        {
+          operationType: OperationTypesEnum.UPDATE,
+          collectionName,
+          entitiesBefore: entities,
+          entitiesAfter: updatedEntities,
+          dependencies: [],
+        },
+        userId,
+        session
+      )
+
+      return {
+        updatedEntities,
+        log: logs[0],
+      }
     }
+
+    return {
+      updatedEntities: [],
+      log: null,
+    }
+  }
+
+  public async reorder(
+    parentIdKey: keyof TEntity,
+    newEntities: TEntity[],
+    collectionName: CollectionsEnum,
+    userId: Types.ObjectId,
+    session?: ClientSession
+  ): Promise<ReorderResultDTO<TEntity>[]> {
+    const allUpdatedEntities: ReorderResultDTO<TEntity>[] = []
+    const groupedEntities = newEntities.reduce((map, entity) => {
+      const parentId = entity[parentIdKey] as Types.ObjectId
+      map.set(parentId, [...(map.get(parentId) || []), entity])
+      return map
+    }, new Map<Types.ObjectId, TEntity[]>())
+
+    for (let [parentId, newItems] of groupedEntities.entries()) {
+      const entities: IReordable[] = await this.repository.getAllToOrder(parentId, userId)
+      const entitiesOld = entities.filter((e) => !newEntities.find((no) => no._id.equals(e._id)))
+
+      for (let newEntity of newItems) {
+        const newIndex = newEntity.order - 1
+
+        entitiesOld.splice(newIndex, 0, newEntity)
+      }
+
+      const updatedEntities = await this._baseReorderLogic(
+        entitiesOld,
+        collectionName,
+        userId,
+        session
+      )
+      allUpdatedEntities.push(updatedEntities)
+    }
+
+    return allUpdatedEntities
+  }
+
+  public async reorderByParentIds(
+    parentIds: Types.ObjectId[],
+    collectionName: CollectionsEnum,
+    userId: Types.ObjectId,
+    session?: ClientSession
+  ): Promise<ReorderResultDTO<TEntity>[]> {
+    const uniqueParentIds = Array.from(new Set(parentIds.map((id) => id.toHexString()))).map(
+      (id) => new Types.ObjectId(id)
+    )
+    const allUpdatedEntities: ReorderResultDTO<TEntity>[] = []
+
+    for (let parentId of uniqueParentIds) {
+      const entities: IReordable[] = await this.repository.getAllToOrder(parentId, userId, session)
+
+      const updatedEntities = await this._baseReorderLogic(
+        entities,
+        collectionName,
+        userId,
+        session
+      )
+      allUpdatedEntities.push(updatedEntities)
+    }
+
+    return allUpdatedEntities
   }
 }

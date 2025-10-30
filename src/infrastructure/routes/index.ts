@@ -2,9 +2,10 @@ import { Application } from 'express'
 import express from 'express'
 import cors from 'cors'
 
-import auth from '@routes/auth.ts'
+import authRoutes from '@routes/authRoutes.ts'
+import workspaceRoutes from '@routes/workspaceRoutes.ts'
+import boardRoutes from '@routes/boardRoutes.ts'
 
-//import UserController from './Controllers/User.ts'
 //import { initWorkspace } from '@middlewares/Workspace.ts'
 import cookieParser from 'cookie-parser'
 import { initializeDependencies } from '@infrastructure/di/initializeDependencies.ts'
@@ -25,5 +26,7 @@ export function attachRoutes(app: Application) {
   app.use(express.urlencoded({ limit: '50mb', extended: true, parameterLimit: 50000 }))
   app.use(cookieParser())
 
-  app.use('/auth', auth(dependencies.controllers.authController))
+  app.use('/auth', authRoutes(dependencies.controllers.authController))
+  app.use('/workspaces', workspaceRoutes(dependencies.controllers.workspaceController))
+  app.use('/workspaces/:workspaceId/boards', boardRoutes(dependencies.controllers.boardController))
 }

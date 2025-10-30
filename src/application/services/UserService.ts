@@ -19,7 +19,7 @@ export class UserService
     this.userRepository = userRepository
   }
 
-  public async create(credentials: RegisterCredentialsDTO): Promise<IUser> {
+  public async create(credentials: RegisterCredentialsDTO): Promise<IUser[]> {
     const passwordHash = await bcrypt.hash(credentials.password, SALT_ROUNDS)
 
     const user: Omit<IUser, '_id'> = {
@@ -35,7 +35,7 @@ export class UserService
 
     const result = await this.userRepository.create(user)
 
-    return result
+    return [result]
   }
 
   public async getById(id: string): Promise<IUser | null> {

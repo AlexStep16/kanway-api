@@ -1,11 +1,15 @@
 import { model, Schema } from 'mongoose'
-import { IWorkspace } from '@entities/IWorkspace.ts'
-import { BASE_COLORS } from '@/constants/BASE_COLORS.ts'
+import { IBoard } from '@entities/IBoard.ts'
 
-export const WorkspaceSchema = new Schema<IWorkspace>(
+export const BoardSchema = new Schema<IBoard>(
   {
     name: {
       type: String,
+      required: true,
+    },
+    workspace_id: {
+      type: Schema.Types.ObjectId,
+      ref: 'Workspace',
       required: true,
     },
     user_id: {
@@ -33,15 +37,10 @@ export const WorkspaceSchema = new Schema<IWorkspace>(
     deleted_time: {
       type: Date,
     },
-    color: {
-      type: String,
-      enum: BASE_COLORS,
-      default: '#3b82f6',
-    },
   },
   { timestamps: true }
 )
 
-const Workspace = model<IWorkspace>('Workspace', WorkspaceSchema)
+const Board = model<IBoard>('Board', BoardSchema)
 
-export default Workspace
+export default Board

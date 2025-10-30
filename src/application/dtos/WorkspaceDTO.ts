@@ -13,6 +13,11 @@ export const WorkspaceDTOSchema = z.object({
     required_error: ErrorsMessage.WORKSPACE_COLOR_REQUIRED,
     invalid_type_error: 'Неверное значение для цвета. Допустимы: ' + BASE_COLORS.join(', '),
   }),
+  order: z
+    .union([z.string(), z.number()], {
+      invalid_type_error: ErrorsMessage.WORKSPACE_ORDER_TYPE_INVALID,
+    })
+    .optional(),
 })
 
 export type WorkspaceDTO = z.infer<typeof WorkspaceDTOSchema>

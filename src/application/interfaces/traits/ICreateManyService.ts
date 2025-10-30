@@ -1,9 +1,8 @@
 import { ClientSession, Types } from 'mongoose'
 
-export interface IEditService<TCriteria, TEntity> {
-  edit(
-    data: Partial<TEntity>,
-    criteria: TCriteria,
+export interface ICreateManyService<TCreateDTO, TEntity> {
+  createMany(
+    data: TCreateDTO[],
     userId: Types.ObjectId,
     session?: ClientSession
   ): Promise<TEntity[]>

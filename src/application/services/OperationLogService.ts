@@ -16,13 +16,15 @@ export class OperationLogService implements ICreateService<IOperationLog, Operat
     data: OperationLogCreationDTO,
     userId: Types.ObjectId,
     session: ClientSession | null = null
-  ): Promise<IOperationLog> {
+  ): Promise<IOperationLog[]> {
     const operationLogPayload: Partial<IOperationLog> = {
       ...toMongoCaseKeys(data),
       undo_status: false,
       user_id: userId,
     }
 
-    return this.repository.create(operationLogPayload, session)
+    const newOperationLog = await this.repository.create(operationLogPayload, session)
+
+    return [newOperationLog]
   }
 }

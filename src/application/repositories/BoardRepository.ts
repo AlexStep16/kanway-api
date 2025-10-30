@@ -1,20 +1,20 @@
-import { IWorkspace } from '@entities/IWorkspace.ts'
-import WorkspaceModel from '@models/WorkspaceModel.ts'
-import { WorkspaceCriteria } from '@criterias/WorkspaceCriteria.ts'
+import { IBoard } from '@entities/IBoard.ts'
+import BoardModel from '@models/BoardModel.ts'
+import { BoardCriteria } from '@criterias/BoardCriteria.ts'
 import { ClientSession, FilterQuery, Types } from 'mongoose'
 import { BaseRepository } from '@repositories/BaseRepository.ts'
 import { IReorderRepository } from '@traits/IReorderRepository.ts'
 
-export default class WorkspaceRepository
-  extends BaseRepository<IWorkspace, typeof WorkspaceModel>
-  implements IReorderRepository<IWorkspace>
+export default class BoardRepository
+  extends BaseRepository<IBoard, typeof BoardModel>
+  implements IReorderRepository<IBoard>
 {
   constructor() {
-    super(WorkspaceModel)
+    super(BoardModel)
   }
 
-  public buildFilter(criteria: WorkspaceCriteria, userId: Types.ObjectId): FilterQuery<IWorkspace> {
-    const filter: FilterQuery<IWorkspace> = { user_id: userId, is_deleted: false }
+  public buildFilter(criteria: BoardCriteria, userId: Types.ObjectId): FilterQuery<IBoard> {
+    const filter: FilterQuery<IBoard> = { user_id: userId, is_deleted: false }
 
     if (criteria.id) {
       filter._id = criteria.id
@@ -30,16 +30,20 @@ export default class WorkspaceRepository
       filter.name = { $regex: criteria.name, $options: 'i' }
     }
 
+    if (criteria.workspaceId) {
+      filter.workspace_id = criteria.workspaceId
+    }
+
     return filter
   }
 
   public async getAllToOrder(
-    _: Types.ObjectId,
+    workspaceId: Types.ObjectId,
     userId: Types.ObjectId,
     session?: ClientSession
-  ): Promise<IWorkspace[]> {
+  ): Promise<IBoard[]> {
     return await this.model
-      .find({ user_id: userId, is_deleted: false })
+      .find({ workspace_id: workspaceId, user_id: userId, is_deleted: false })
       .session(session || null)
       .select('_id order')
       .sort({ order: 1 })
@@ -50,7 +54,7 @@ export default class WorkspaceRepository
     ids: Types.ObjectId[],
     userId: Types.ObjectId,
     session?: ClientSession
-  ): Promise<IWorkspace[]> {
+  ): Promise<IBoard[]> {
     return await this.model
       .find({ _id: { $in: ids }, user_id: userId, is_deleted: false })
       .session(session || null)

@@ -1,5 +1,5 @@
-import { Types } from 'mongoose'
+import { ClientSession, Types } from 'mongoose'
 
-export interface IDeleteService<TCriteria> {
-  delete(criteria: TCriteria, userId: Types.ObjectId): Promise<boolean>
+export interface IDeleteService<TEntity, TCriteria> {
+  delete(criteria: TCriteria, userId: Types.ObjectId, session?: ClientSession): Promise<TEntity[]>
 }

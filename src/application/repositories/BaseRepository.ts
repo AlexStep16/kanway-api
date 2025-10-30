@@ -102,6 +102,10 @@ export abstract class BaseRepository<TEntity, TModel extends Model<TEntity>> {
     await this.model.bulkWrite(bulkOperations, { session })
   }
 
+  public async deleteMany(filter: FilterQuery<TEntity>, session?: ClientSession): Promise<void> {
+    await this.model.deleteMany(filter).session(session || null)
+  }
+
   public async find(
     filter: FilterQuery<TEntity>,
     session: ClientSession | null = null

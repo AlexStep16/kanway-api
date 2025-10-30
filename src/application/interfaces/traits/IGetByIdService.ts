@@ -1,5 +1,5 @@
-import { Types } from 'mongoose'
+import { ClientSession, Types } from 'mongoose'
 
 export interface IGetByIdService<TEntity> {
-  getById(id: string, userId: Types.ObjectId): Promise<TEntity | null>
+  getById(id: string, userId: Types.ObjectId, session?: ClientSession): Promise<TEntity | null>
 }
