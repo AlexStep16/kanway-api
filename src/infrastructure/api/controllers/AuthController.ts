@@ -45,7 +45,7 @@ export default class AuthController {
 
   public async me(req: Request, res: Response, next: NextFunction) {
     try {
-      const user = await this.service.me(req.user._id)
+      const user = await this.service.me(req.user.id)
 
       return res.status(200).json(new SuccessResponse(user))
     } catch (error) {

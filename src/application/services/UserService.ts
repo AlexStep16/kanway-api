@@ -1,3 +1,4 @@
+import { IUserRaw } from '@entities/IUserRaw.ts'
 import { IUser } from '@entities/IUser.ts'
 import UserRepository from '@repositories/UserRepository.ts'
 import { AppError } from '@errors/AppError.ts'
@@ -7,6 +8,7 @@ import { RegisterCredentialsDTO } from '@/application/dtos/RegisterCredentialsDT
 import { ICreateService } from '@interfaces/traits/ICreateService.ts'
 import { IGetByIdService } from '../interfaces/traits/IGetByIdService.ts'
 import { BASE_COLORS } from '@constants/BASE_COLORS.ts'
+import { toServerCaseKeys } from '@/utils/objectTransformers.ts'
 
 const SALT_ROUNDS = 10
 
@@ -22,7 +24,7 @@ export class UserService
   public async create(credentials: RegisterCredentialsDTO): Promise<IUser[]> {
     const passwordHash = await bcrypt.hash(credentials.password, SALT_ROUNDS)
 
-    const user: Omit<IUser, '_id'> = {
+    const user: Omit<IUserRaw, '_id'> = {
       username: '',
       email: credentials.email.toLowerCase(),
       password_hash: passwordHash,
@@ -35,11 +37,13 @@ export class UserService
 
     const result = await this.userRepository.create(user)
 
-    return [result]
+    return [toServerCaseKeys(result)]
   }
 
   public async getById(id: string): Promise<IUser | null> {
-    return this.userRepository.findById(id)
+    const user = await this.userRepository.findById(id)
+
+    return toServerCaseKeys(user)
   }
 
   public async validateCredentials(email: string, passwordPlain: string): Promise<IUser> {
@@ -55,6 +59,6 @@ export class UserService
       throw new AppError(ErrorsMessage.INVALID_CREDENTIALS, 401)
     }
 
-    return user
+    return toServerCaseKeys(user)
   }
 }

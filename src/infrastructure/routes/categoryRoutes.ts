@@ -1,21 +1,21 @@
 import { Router } from 'express'
-import BoardController from '@controllers/BoardController.ts'
+import CategoryController from '@controllers/CategoryController.ts'
 import { jwtAuthMiddleware } from '@infrastructure/auth/passportJWTStrategy.ts'
 import { validationMiddleware } from '@middlewares/validationMiddleware.ts'
-import { BoardDTOSchema } from '@dtos/BoardDTO.ts'
-import { BoardEditDTOSchema } from '@dtos/BoardEditDTO.ts'
+import { CategoryDTOSchema } from '@dtos/CategoryDTO.ts'
+import { CategoryEditDTOSchema } from '@dtos/CategoryEditDTO.ts'
 
-interface IBoardRawController extends BoardController {}
+interface ICategoryRawController extends CategoryController {}
 
-export default (controller: IBoardRawController) => {
+export default (controller: ICategoryRawController) => {
   const router = Router({ mergeParams: true })
 
   router.use(jwtAuthMiddleware)
 
   router.get('/', controller.getAll)
   router.get('/:id', controller.getById)
-  router.post('/', validationMiddleware(BoardDTOSchema), controller.create)
-  router.patch('/:id', validationMiddleware(BoardEditDTOSchema), controller.update)
+  router.post('/', validationMiddleware(CategoryDTOSchema), controller.create)
+  router.patch('/:id', validationMiddleware(CategoryEditDTOSchema), controller.update)
   router.delete('/:id', controller.delete)
 
   router.patch('/:id/archive', controller.archive)

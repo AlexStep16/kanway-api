@@ -6,9 +6,9 @@ function camelToSnake(str: string): string {
   return str.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`)
 }
 
-export function toMongoCaseKeys(obj: any): any {
+export function toMongoCaseKeys<TEntity>(obj: any): TEntity {
   if (Array.isArray(obj)) {
-    return obj.map((v) => toMongoCaseKeys(v))
+    return obj.map((v) => toMongoCaseKeys(v)) as any
   }
 
   if (
@@ -32,9 +32,9 @@ export function toMongoCaseKeys(obj: any): any {
   return obj
 }
 
-export function toServerCaseKeys(obj: any): any {
+export function toServerCaseKeys<TEntity>(obj: any): TEntity {
   if (Array.isArray(obj)) {
-    return obj.map((v) => toServerCaseKeys(v))
+    return obj.map((v) => toServerCaseKeys(v)) as any
   }
 
   if (

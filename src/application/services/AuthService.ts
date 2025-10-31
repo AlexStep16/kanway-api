@@ -22,9 +22,9 @@ export class AuthService {
   ): Promise<{ user: IUser; serialized: string }> {
     const newUser = await this.userService.create(credentials)
 
-    await this.emailService.sendEmailToUser(newUser.email, newUser._id)
+    await this.emailService.sendEmailToUser(newUser[0].email, newUser[0].id)
 
-    const token = this.tokenService.generateToken(newUser._id)
+    const token = this.tokenService.generateToken(newUser[0].id)
 
     const serialized = serialize('token', token, {
       httpOnly: true,
@@ -40,7 +40,7 @@ export class AuthService {
     setting.save()*/
 
     return {
-      user: newUser,
+      user: newUser[0],
       serialized,
     }
   }
@@ -50,7 +50,7 @@ export class AuthService {
   ): Promise<{ user: IUser; serialized: string }> {
     const user = await this.userService.validateCredentials(credentials.email, credentials.password)
 
-    const token = this.tokenService.generateToken(user._id)
+    const token = this.tokenService.generateToken(user.id)
 
     const serialized = serialize('token', token, {
       httpOnly: true,

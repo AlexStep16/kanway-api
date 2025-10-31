@@ -2,7 +2,7 @@ import { TokenTypesEnum } from '@/domain/enums/TokenTypesEnum.ts'
 import jwt from 'jsonwebtoken'
 import TokenRepository from '@repositories/TokenRepository.ts'
 import { TokenGenerationError } from '@errors/TokenGenerationError.ts'
-import { IToken } from '@entities/IToken.ts'
+import { ITokenRaw } from '@entities/ITokenRaw.ts'
 import { Types } from 'mongoose'
 
 const KEY = process.env.JWT_KEY || 'FF123ABC-456D-789E-F012-3456789ABCDF'
@@ -14,7 +14,7 @@ export class TokenService {
     this.tokenRepository = tokenRepository
   }
 
-  public async generateAndSaveConfirmationToken(user_id: Types.ObjectId): Promise<IToken> {
+  public async generateAndSaveConfirmationToken(user_id: Types.ObjectId): Promise<ITokenRaw> {
     try {
       const token = this.generateToken(user_id)
 

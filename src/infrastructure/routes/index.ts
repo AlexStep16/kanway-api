@@ -5,6 +5,7 @@ import cors from 'cors'
 import authRoutes from '@routes/authRoutes.ts'
 import workspaceRoutes from '@routes/workspaceRoutes.ts'
 import boardRoutes from '@routes/boardRoutes.ts'
+import categoryRoutes from '@routes/categoryRoutes.ts'
 
 //import { initWorkspace } from '@middlewares/Workspace.ts'
 import cookieParser from 'cookie-parser'
@@ -29,4 +30,8 @@ export function attachRoutes(app: Application) {
   app.use('/auth', authRoutes(dependencies.controllers.authController))
   app.use('/workspaces', workspaceRoutes(dependencies.controllers.workspaceController))
   app.use('/workspaces/:workspaceId/boards', boardRoutes(dependencies.controllers.boardController))
+  app.use(
+    '/workspaces/:workspaceId/boards/:boardId/categories',
+    categoryRoutes(dependencies.controllers.categoryController)
+  )
 }

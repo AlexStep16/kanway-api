@@ -1,7 +1,7 @@
 import { model, Schema } from 'mongoose'
-import { IToken } from '../entities/IToken.ts'
+import { ITokenRaw } from '../entities/ITokenRaw.ts'
 
-export const TokenSchema = new Schema<IToken>(
+export const TokenSchema = new Schema<ITokenRaw>(
   {
     token: {
       type: String,
@@ -20,6 +20,6 @@ export const TokenSchema = new Schema<IToken>(
   { timestamps: true }
 )
 
-const Token = model<IToken>('Token', TokenSchema)
+const Token = model<ITokenRaw>('Token', TokenSchema)
 
 export default Token

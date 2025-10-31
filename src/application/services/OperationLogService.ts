@@ -3,7 +3,8 @@ import { ICreateService } from '@traits/ICreateService.ts'
 import { IOperationLog } from '@entities/IOperationLog.ts'
 import { OperationLogCreationDTO } from '@dtos/OperationLogCreationDTO.ts'
 import { ClientSession, Types } from 'mongoose'
-import { toMongoCaseKeys } from '@utils/objectTransformers.ts'
+import { toMongoCaseKeys, toServerCaseKeys } from '@utils/objectTransformers.ts'
+import { IOperationLogRaw } from '@entities/IOperationLogRaw.ts'
 
 export class OperationLogService implements ICreateService<IOperationLog, OperationLogCreationDTO> {
   protected repository: OperationLogRepository
@@ -17,7 +18,7 @@ export class OperationLogService implements ICreateService<IOperationLog, Operat
     userId: Types.ObjectId,
     session: ClientSession | null = null
   ): Promise<IOperationLog[]> {
-    const operationLogPayload: Partial<IOperationLog> = {
+    const operationLogPayload: Partial<IOperationLogRaw> = {
       ...toMongoCaseKeys(data),
       undo_status: false,
       user_id: userId,
@@ -25,6 +26,6 @@ export class OperationLogService implements ICreateService<IOperationLog, Operat
 
     const newOperationLog = await this.repository.create(operationLogPayload, session)
 
-    return [newOperationLog]
+    return [toServerCaseKeys(newOperationLog)]
   }
 }

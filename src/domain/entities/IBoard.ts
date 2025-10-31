@@ -1,13 +1,13 @@
 import { Types } from 'mongoose'
 
 export interface IBoard {
-  _id: Types.ObjectId
+  id: Types.ObjectId
   name: string
-  workspace_id: Types.ObjectId
-  user_id: Types.ObjectId
-  is_favorite: boolean
+  workspaceId: Types.ObjectId
+  userId: Types.ObjectId
+  isFavorite: boolean
   order: number
   embeddings: Array<Number>
-  is_deleted: boolean
-  deleted_time?: Date
+  isDeleted: boolean
+  deletedTime?: Date
 }

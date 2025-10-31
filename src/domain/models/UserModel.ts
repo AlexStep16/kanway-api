@@ -1,19 +1,21 @@
 import { Schema, model, Model, HydratedDocument } from 'mongoose'
-import { IUser } from '@entities/IUser.ts'
+import { IUserRaw } from '@entities/IUserRaw.ts'
 import bcrypt from 'bcrypt'
 import { BASE_COLORS } from '@constants/BASE_COLORS.ts'
 
 const SALT_ROUNDS = 10
 
-interface IUserMethods {
+interface IUserRawMethods {
   comparePassword(password: string): Promise<boolean>
 }
 
-interface IUserStatics extends Model<IUser> {
-  findByEmailWithPassword(email: string): Promise<HydratedDocument<IUser, IUserMethods> | null>
+interface IUserRawStatics extends Model<IUserRaw> {
+  findByEmailWithPassword(
+    email: string
+  ): Promise<HydratedDocument<IUserRaw, IUserRawMethods> | null>
 }
 
-export const UserSchema = new Schema<IUser, IUserStatics, IUserMethods>(
+export const UserSchema = new Schema<IUserRaw, IUserRawStatics, IUserRawMethods>(
   {
     email: {
       type: String,
@@ -104,4 +106,4 @@ UserSchema.methods.comparePassword = function (password: string) {
   return bcrypt.compare(password, this.password_hash)
 }
 
-export const UserModel = model<IUser, IUserStatics>('User', UserSchema)
+export const UserModel = model<IUserRaw, IUserRawStatics>('User', UserSchema)

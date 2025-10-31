@@ -4,5 +4,6 @@ export interface BoardCriteria {
 
   isDeleted?: boolean
   workspaceId?: string
+  workspaceIds?: string[]
   name?: string
 }

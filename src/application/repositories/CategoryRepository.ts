@@ -1,20 +1,23 @@
-import { IBoardRaw } from '@entities/IBoardRaw.ts'
-import BoardModel from '@models/BoardModel.ts'
-import { BoardCriteria } from '@criterias/BoardCriteria.ts'
+import { ICategoryRaw } from '@entities/ICategoryRaw.ts'
+import CategoryModel from '@models/CategoryModel.ts'
+import { CategoryCriteria } from '@criterias/CategoryCriteria.ts'
 import { ClientSession, FilterQuery, Types } from 'mongoose'
 import { BaseRepository } from '@repositories/BaseRepository.ts'
 import { IReorderRepository } from '@traits/IReorderRepository.ts'
 
-export default class BoardRepository
-  extends BaseRepository<IBoardRaw, typeof BoardModel>
-  implements IReorderRepository<IBoardRaw>
+export default class CategoryRepository
+  extends BaseRepository<ICategoryRaw, typeof CategoryModel>
+  implements IReorderRepository<ICategoryRaw>
 {
   constructor() {
-    super(BoardModel)
+    super(CategoryModel)
   }
 
-  public buildFilter(criteria: BoardCriteria, userId: Types.ObjectId): FilterQuery<IBoardRaw> {
-    const filter: FilterQuery<IBoardRaw> = { user_id: userId, is_deleted: false }
+  public buildFilter(
+    criteria: CategoryCriteria,
+    userId: Types.ObjectId
+  ): FilterQuery<ICategoryRaw> {
+    const filter: FilterQuery<ICategoryRaw> = { user_id: userId, is_deleted: false }
 
     if (criteria.id) {
       filter._id = criteria.id
@@ -30,12 +33,12 @@ export default class BoardRepository
       filter.name = { $regex: criteria.name, $options: 'i' }
     }
 
-    if (criteria.workspaceId) {
-      filter.workspace_id = criteria.workspaceId
+    if (criteria.boardId) {
+      filter.board_id = criteria.boardId
     }
 
-    if (criteria.workspaceIds) {
-      filter.workspace_id = { $in: criteria.workspaceIds }
+    if (criteria.boardIds) {
+      filter.board_id = { $in: criteria.boardIds }
     }
 
     return filter
@@ -45,7 +48,7 @@ export default class BoardRepository
     workspaceId: Types.ObjectId,
     userId: Types.ObjectId,
     session?: ClientSession
-  ): Promise<IBoardRaw[]> {
+  ): Promise<ICategoryRaw[]> {
     return await this.model
       .find({ workspace_id: workspaceId, user_id: userId, is_deleted: false })
       .session(session || null)
@@ -58,7 +61,7 @@ export default class BoardRepository
     ids: Types.ObjectId[],
     userId: Types.ObjectId,
     session?: ClientSession
-  ): Promise<IBoardRaw[]> {
+  ): Promise<ICategoryRaw[]> {
     return await this.model
       .find({ _id: { $in: ids }, user_id: userId, is_deleted: false })
       .session(session || null)

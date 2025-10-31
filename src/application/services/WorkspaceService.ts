@@ -1,4 +1,5 @@
 import { IWorkspace } from '@entities/IWorkspace.ts'
+import { IWorkspaceRaw } from '@entities/IWorkspaceRaw.ts'
 import WorkspaceRepository from '@repositories/WorkspaceRepository.ts'
 import { WorkspaceDTO } from '@/application/dtos/WorkspaceDTO.ts'
 import mongoose, { ClientSession, Types } from 'mongoose'
@@ -11,24 +12,31 @@ import { CollectionsEnum } from '@domain/enums/CollectionsEnum.ts'
 import { ReorderService } from '@application/services/ReorderService.ts'
 import { toServerCaseKeys, toMongoCaseKeys } from '@utils/objectTransformers.ts'
 import { WorkspaceEditDTO } from '@dtos/WorkspaceEditDTO.ts'
-import { ReorderResultDTO } from '../dtos/ReorderResultDTO.ts'
+import { ReorderResultDTO } from '@dtos/ReorderResultDTO.ts'
+import { NotFoundError } from '@errors/NotFound.ts'
+import { BoardService } from '@application/services/BoardService.ts'
 
-export class WorkspaceService implements IBaseService<IWorkspace, WorkspaceCriteria, WorkspaceDTO> {
+export class WorkspaceService
+  implements IBaseService<IWorkspace, WorkspaceCriteria, WorkspaceDTO, WorkspaceEditDTO>
+{
   protected repository: WorkspaceRepository
   protected embeddingService: EmbeddingService
   protected operationLogService: OperationLogService
-  protected reorderService: ReorderService<IWorkspace>
+  protected reorderService: ReorderService<IWorkspaceRaw>
+  protected boardService: BoardService
 
   constructor(
     workspaceRepository: WorkspaceRepository,
     embeddingService: EmbeddingService,
     operationLogService: OperationLogService,
-    reorderService: ReorderService<IWorkspace>
+    reorderService: ReorderService<IWorkspaceRaw>,
+    boardService: BoardService
   ) {
     this.repository = workspaceRepository
     this.embeddingService = embeddingService
     this.operationLogService = operationLogService
     this.reorderService = reorderService
+    this.boardService = boardService
   }
 
   public async create(
@@ -38,7 +46,7 @@ export class WorkspaceService implements IBaseService<IWorkspace, WorkspaceCrite
   ): Promise<IWorkspace[]> {
     let session: ClientSession | null = externalSession || null
     let isNewSession = false
-    let reorderedWorkspaces: ReorderResultDTO<IWorkspace>[] = []
+    let reorderedWorkspaces: ReorderResultDTO<IWorkspaceRaw>[] = []
 
     try {
       if (!session) {
@@ -67,7 +75,7 @@ export class WorkspaceService implements IBaseService<IWorkspace, WorkspaceCrite
       let dependencies: Types.ObjectId[] = []
 
       reorderedWorkspaces.forEach((r) => {
-        if (r.log) dependencies.push(r.log._id)
+        if (r.log) dependencies.push(r.log.id)
       })
 
       await this.operationLogService.create(
@@ -86,7 +94,11 @@ export class WorkspaceService implements IBaseService<IWorkspace, WorkspaceCrite
       }
 
       if (reorderedWorkspaces.length > 0) {
-        return [newWorkspace, ...reorderedWorkspaces.map((r) => r.updatedEntities).flat()]
+        const reorderedEntities = reorderedWorkspaces.map((r) => r.updatedEntities).flat()
+        return [
+          toServerCaseKeys(newWorkspace),
+          ...reorderedEntities.map((re) => toServerCaseKeys<IWorkspace>(re)),
+        ]
       }
 
       return [toServerCaseKeys(newWorkspace)]
@@ -110,7 +122,7 @@ export class WorkspaceService implements IBaseService<IWorkspace, WorkspaceCrite
   ): Promise<IWorkspace[]> {
     let session: ClientSession | null = externalSession || null
     let isNewSession = false
-    let reorderedWorkspaces: ReorderResultDTO<IWorkspace>[] = []
+    let reorderedWorkspaces: ReorderResultDTO<IWorkspaceRaw>[] = []
 
     try {
       if (!session) {
@@ -126,10 +138,15 @@ export class WorkspaceService implements IBaseService<IWorkspace, WorkspaceCrite
 
       /* REORDER */
       const isReorderNeeded = data.some((ws) => ws.order !== undefined)
+
       if (isReorderNeeded) {
+        const workspacesToReorder = newWorkspaces.filter((_, index) => {
+          return data[index].order !== undefined
+        })
+
         reorderedWorkspaces = await this.reorderService.reorder(
           'user_id',
-          newWorkspaces,
+          workspacesToReorder,
           CollectionsEnum.WORKSPACES,
           userId,
           session
@@ -140,7 +157,7 @@ export class WorkspaceService implements IBaseService<IWorkspace, WorkspaceCrite
       let dependencies: Types.ObjectId[] = []
 
       reorderedWorkspaces.forEach((r) => {
-        if (r.log) dependencies.push(r.log._id)
+        if (r.log) dependencies.push(r.log.id)
       })
 
       await this.operationLogService.create(
@@ -159,10 +176,14 @@ export class WorkspaceService implements IBaseService<IWorkspace, WorkspaceCrite
       }
 
       if (reorderedWorkspaces.length > 0) {
-        return [...newWorkspaces, ...reorderedWorkspaces.map((r) => r.updatedEntities).flat()]
+        const reorderedEntities = reorderedWorkspaces.map((r) => r.updatedEntities).flat()
+        return [
+          ...newWorkspaces.map((nb) => toServerCaseKeys<IWorkspace>(nb)),
+          ...reorderedEntities.map((re) => toServerCaseKeys<IWorkspace>(re)),
+        ]
       }
 
-      return newWorkspaces.map((ws) => toServerCaseKeys(ws))
+      return [...newWorkspaces.map((nb) => toServerCaseKeys<IWorkspace>(nb))]
     } catch (error) {
       if (session && isNewSession) {
         session.abortTransaction()
@@ -184,7 +205,7 @@ export class WorkspaceService implements IBaseService<IWorkspace, WorkspaceCrite
   ): Promise<IWorkspace[]> {
     let session: ClientSession | null = externalSession || null
     let isNewSession = false
-    let reorderedWorkspaces: ReorderResultDTO<IWorkspace>[] = []
+    let reorderedWorkspaces: ReorderResultDTO<IWorkspaceRaw>[] = []
 
     try {
       if (!session) {
@@ -195,7 +216,7 @@ export class WorkspaceService implements IBaseService<IWorkspace, WorkspaceCrite
 
       const filter = this.repository.buildFilter(criteria, userId)
 
-      const workspacesToUpdate: IWorkspace[] = await this.repository.find(filter, session)
+      const workspacesToUpdate: IWorkspaceRaw[] = await this.repository.find(filter, session)
 
       const workspacePayload = await this.prepareWorkspaceEditPayload(
         data,
@@ -224,7 +245,7 @@ export class WorkspaceService implements IBaseService<IWorkspace, WorkspaceCrite
       let dependencies: Types.ObjectId[] = []
 
       reorderedWorkspaces.forEach((r) => {
-        if (r.log) dependencies.push(r.log._id)
+        if (r.log) dependencies.push(r.log.id)
       })
 
       await this.operationLogService.create(
@@ -244,10 +265,14 @@ export class WorkspaceService implements IBaseService<IWorkspace, WorkspaceCrite
       }
 
       if (reorderedWorkspaces.length > 0) {
-        return [...newEntities, ...reorderedWorkspaces.map((r) => r.updatedEntities).flat()]
+        const reorderedEntities = reorderedWorkspaces.map((r) => r.updatedEntities).flat()
+        return [
+          ...newEntities.map((ne) => toServerCaseKeys<IWorkspace>(ne)),
+          ...reorderedEntities.map((re) => toServerCaseKeys<IWorkspace>(re)),
+        ]
       }
 
-      return newEntities
+      return [...newEntities.map((ne) => toServerCaseKeys<IWorkspace>(ne))]
     } catch (error) {
       if (session && isNewSession) {
         session.abortTransaction()
@@ -268,7 +293,7 @@ export class WorkspaceService implements IBaseService<IWorkspace, WorkspaceCrite
   ): Promise<IWorkspace[]> {
     let session: ClientSession | null = externalSession || null
     let isNewSession = false
-    let reorderedWorkspaces: ReorderResultDTO<IWorkspace>[] = []
+    let reorderedWorkspaces: ReorderResultDTO<IWorkspaceRaw>[] = []
 
     try {
       if (!session) {
@@ -293,7 +318,9 @@ export class WorkspaceService implements IBaseService<IWorkspace, WorkspaceCrite
         await session.commitTransaction()
       }
 
-      return [...reorderedWorkspaces.map((r) => r.updatedEntities).flat()]
+      const reorderedEntities = reorderedWorkspaces.map((r) => r.updatedEntities).flat()
+
+      return [...reorderedEntities.map((re) => toServerCaseKeys<IWorkspace>(re))]
     } catch (error) {
       if (session && isNewSession) {
         session.abortTransaction()
@@ -314,7 +341,7 @@ export class WorkspaceService implements IBaseService<IWorkspace, WorkspaceCrite
   ): Promise<IWorkspace[]> {
     let session: ClientSession | null = externalSession || null
     let isNewSession = false
-    let reorderedWorkspaces: ReorderResultDTO<IWorkspace>[] = []
+    let reorderedWorkspaces: ReorderResultDTO<IWorkspaceRaw>[] = []
 
     try {
       if (!session) {
@@ -339,16 +366,22 @@ export class WorkspaceService implements IBaseService<IWorkspace, WorkspaceCrite
         session
       )
 
+      const archiveBoardsResult = await this.boardService.archiveBoardsByWorkspaces(
+        updatedWorkspaces.map((ws) => ws._id),
+        userId,
+        session
+      )
+
       /* LOG */
-      let dependencies: Types.ObjectId[] = []
+      let dependencies: Types.ObjectId[] = archiveBoardsResult.logIds
 
       reorderedWorkspaces.forEach((r) => {
-        if (r.log) dependencies.push(r.log._id)
+        if (r.log) dependencies.push(r.log.id)
       })
 
       await this.operationLogService.create(
         {
-          operationType: OperationTypesEnum.CREATE,
+          operationType: OperationTypesEnum.UPDATE,
           collectionName: CollectionsEnum.WORKSPACES,
           entitiesBefore: updatedWorkspaces.map((ws) => ({ ...ws, is_deleted: false })),
           entitiesAfter: updatedWorkspaces,
@@ -362,7 +395,12 @@ export class WorkspaceService implements IBaseService<IWorkspace, WorkspaceCrite
         await session.commitTransaction()
       }
 
-      return [...updatedWorkspaces, ...reorderedWorkspaces.map((r) => r.updatedEntities).flat()]
+      const reorderedEntities = reorderedWorkspaces.map((r) => r.updatedEntities).flat()
+
+      return [
+        ...updatedWorkspaces.map((ub) => toServerCaseKeys<IWorkspace>(ub)),
+        ...reorderedEntities.map((re) => toServerCaseKeys<IWorkspace>(re)),
+      ]
     } catch (error) {
       if (session && isNewSession) {
         session.abortTransaction()
@@ -383,7 +421,7 @@ export class WorkspaceService implements IBaseService<IWorkspace, WorkspaceCrite
   ): Promise<IWorkspace[]> {
     let session: ClientSession | null = externalSession || null
     let isNewSession = false
-    let reorderedWorkspaces: ReorderResultDTO<IWorkspace>[] = []
+    let reorderedWorkspaces: ReorderResultDTO<IWorkspaceRaw>[] = []
 
     try {
       if (!session) {
@@ -412,11 +450,17 @@ export class WorkspaceService implements IBaseService<IWorkspace, WorkspaceCrite
         session
       )
 
+      const recoverBoardsResult = await this.boardService.recoverBoardsByWorkspaces(
+        updatedWorkspaces.map((ws) => ws._id),
+        userId,
+        session
+      )
+
       /* LOG */
-      let dependencies: Types.ObjectId[] = []
+      let dependencies: Types.ObjectId[] = recoverBoardsResult.logIds
 
       reorderedWorkspaces.forEach((r) => {
-        if (r.log) dependencies.push(r.log._id)
+        if (r.log) dependencies.push(r.log.id)
       })
 
       await this.operationLogService.create(
@@ -431,7 +475,12 @@ export class WorkspaceService implements IBaseService<IWorkspace, WorkspaceCrite
         session
       )
 
-      return [...updatedWorkspaces, ...reorderedWorkspaces.map((r) => r.updatedEntities).flat()]
+      const reorderedEntities = reorderedWorkspaces.map((r) => r.updatedEntities).flat()
+
+      return [
+        ...updatedWorkspaces.map((ub) => toServerCaseKeys<IWorkspace>(ub)),
+        ...reorderedEntities.map((re) => toServerCaseKeys<IWorkspace>(re)),
+      ]
     } catch (error) {
       if (session && isNewSession) {
         session.abortTransaction()
@@ -445,19 +494,76 @@ export class WorkspaceService implements IBaseService<IWorkspace, WorkspaceCrite
     }
   }
 
-  private async prepareWorkspaceCreationPayload(data: WorkspaceDTO, userId: Types.ObjectId) {
-    const allWorkspacesCount = await this.getCount({}, userId)
-    let newOrder = allWorkspacesCount + 1
+  public async clone(id: string, userId: Types.ObjectId): Promise<IWorkspace> {
+    let session: ClientSession | null = null
 
+    try {
+      session = await mongoose.startSession()
+      session.startTransaction()
+
+      const allWorkspaces = await this.repository.find({ user_id: userId }, session)
+      const sourceWorkspace = await this.repository.findByIdAndUser(id, userId)
+
+      if (!sourceWorkspace) throw new NotFoundError('Исходное пространство не найдено.')
+
+      const cleanWorkspace = {
+        ...sourceWorkspace,
+        _id: undefined,
+        order: allWorkspaces.length + 1,
+        name: `${sourceWorkspace?.name} - Копия`,
+      }
+
+      const newWorkspace = await this.repository.create(cleanWorkspace, session)
+
+      const cloneBoardsResult = await this.boardService.cloneBoardsByWorkspace(
+        sourceWorkspace._id,
+        newWorkspace._id,
+        userId,
+        session
+      )
+
+      /* LOG */
+      await this.operationLogService.create(
+        {
+          operationType: OperationTypesEnum.CREATE,
+          collectionName: CollectionsEnum.WORKSPACES,
+          entitiesAfter: [newWorkspace],
+          dependencies: cloneBoardsResult.logIds,
+        },
+        userId,
+        session
+      )
+
+      await session.commitTransaction()
+
+      return toServerCaseKeys<IWorkspace>(newWorkspace)
+    } catch (error) {
+      if (session) {
+        session.abortTransaction()
+      }
+
+      throw error
+    } finally {
+      if (session) {
+        session.endSession()
+      }
+    }
+  }
+
+  private async prepareWorkspaceCreationPayload(data: WorkspaceDTO, userId: Types.ObjectId) {
     const workspaceName = data.name.trim()
 
     const embeddings = await this.embeddingService.getEmbeddings(workspaceName)
 
-    const workspacePayload: Partial<IWorkspace> = {
+    const workspacePayload: Omit<IWorkspaceRaw, '_id'> = {
       ...toMongoCaseKeys(data),
-      order: newOrder,
       embeddings,
       user_id: userId,
+    }
+
+    if (data.order === undefined) {
+      const allWorkspacesCount = await this.getCount({}, userId)
+      workspacePayload.order = allWorkspacesCount + 1
     }
 
     return workspacePayload
@@ -472,22 +578,30 @@ export class WorkspaceService implements IBaseService<IWorkspace, WorkspaceCrite
       workspaceNames
     )
 
-    const workspacePayloads: Partial<IWorkspace>[] = data.map((workspace, index) => ({
-      ...toMongoCaseKeys(workspace),
-      order: newOrder++,
-      embeddings: embeddingsArray[index],
-      user_id: userId,
-    }))
+    const workspacePayloads: Omit<IWorkspaceRaw, '_id'>[] = data.map((workspace, index) => {
+      const payload = {
+        ...toMongoCaseKeys<IWorkspaceRaw>(workspace),
+        embeddings: embeddingsArray[index],
+        user_id: userId,
+      }
+
+      if (workspace.order === undefined) {
+        payload.order = newOrder
+        newOrder += 1
+      }
+
+      return payload
+    })
 
     return workspacePayloads
   }
 
   private async prepareWorkspaceEditPayload(
     data: WorkspaceEditDTO,
-    workspacesToUpdate: IWorkspace[],
+    workspacesToUpdate: IWorkspaceRaw[],
     userId: Types.ObjectId
   ) {
-    const workspacePayload: Partial<IWorkspace> = {
+    const workspacePayload: Partial<IWorkspaceRaw> = {
       ...toMongoCaseKeys(data),
       user_id: userId,
     }

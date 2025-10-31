@@ -13,8 +13,11 @@ import { OperationLogService } from '@application/services/OperationLogService.t
 import OperationLogRepository from '@repositories/OperationLogRepository.ts'
 import { ReorderService } from '@application/services/ReorderService.ts'
 import { BoardService } from '@application/services/BoardService.ts'
-import BoardRepository from '@/application/repositories/BoardRepository.ts'
+import BoardRepository from '@repositories/BoardRepository.ts'
 import BoardController from '@controllers/BoardController.ts'
+import { CategoryService } from '@application/services/CategoryService.ts'
+import CategoryRepository from '@repositories/CategoryRepository.ts'
+import CategoryController from '@controllers/CategoryController.ts'
 
 export function initializeDependencies() {
   const userRepository = new UserRepository()
@@ -22,6 +25,7 @@ export function initializeDependencies() {
   const workspaceRepository = new WorkspaceRepository()
   const operationLogRepository = new OperationLogRepository()
   const boardRepository = new BoardRepository()
+  const categoryRepository = new CategoryRepository()
 
   /* AUTH SERVICES START */
   const tokenService = new TokenService(tokenRepository)
@@ -30,17 +34,20 @@ export function initializeDependencies() {
   const authService = new AuthService(userService, emailService, tokenService)
   /* AUTH SERVICES END */
 
-  /* WORKSPACE SERVICES START */
+  /* BASE SERVICES START */
   const embeddingService = new EmbeddingService()
   const operationLogService = new OperationLogService(operationLogRepository)
-  const workspaceReorderService = new ReorderService(workspaceRepository, operationLogService)
-  const workspaceService = new WorkspaceService(
-    workspaceRepository,
+  /* BASE SERVICES END */
+
+  /* CATEGORY SERVICES START */
+  const categoryReorderService = new ReorderService(categoryRepository, operationLogService)
+  const categoryService = new CategoryService(
+    categoryRepository,
     embeddingService,
     operationLogService,
-    workspaceReorderService
+    categoryReorderService
   )
-  /* WORKSPACE SERVICES END */
+  /* CATEGORY SERVICES END */
 
   /* BOARD SERVICES START */
   const boardReorderService = new ReorderService(boardRepository, operationLogService)
@@ -48,13 +55,26 @@ export function initializeDependencies() {
     boardRepository,
     embeddingService,
     operationLogService,
-    boardReorderService
+    boardReorderService,
+    categoryService
   )
   /* BOARD SERVICES END */
+
+  /* WORKSPACE SERVICES START */
+  const workspaceReorderService = new ReorderService(workspaceRepository, operationLogService)
+  const workspaceService = new WorkspaceService(
+    workspaceRepository,
+    embeddingService,
+    operationLogService,
+    workspaceReorderService,
+    boardService
+  )
+  /* WORKSPACE SERVICES END */
 
   const authController = new AuthController(authService)
   const workspaceController = new WorkspaceController(workspaceService)
   const boardController = new BoardController(boardService)
+  const categoryController = new CategoryController(categoryService)
 
   return {
     services: {
@@ -63,8 +83,9 @@ export function initializeDependencies() {
       emailService,
       tokenService,
       workspaceService,
+      categoryService,
       boardService,
     },
-    controllers: { authController, workspaceController, boardController },
+    controllers: { authController, workspaceController, boardController, categoryController },
   }
 }

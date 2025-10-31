@@ -1,14 +1,14 @@
 import { Types } from 'mongoose'
 import { BASE_COLORS } from '@constants/BASE_COLORS.ts'
 
-export interface IWorkspace {
-  id: Types.ObjectId
+export interface IWorkspaceRaw {
+  _id: Types.ObjectId
   name: string
-  userId: Types.ObjectId
-  isFavorite: boolean
+  user_id: Types.ObjectId
+  is_favorite: boolean
   order: number
   color: (typeof BASE_COLORS)[number]
   embeddings: Array<Number>
-  isDeleted: boolean
-  deletedTime?: Date
+  is_deleted: boolean
+  deleted_time?: Date
 }

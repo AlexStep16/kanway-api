@@ -1,15 +1,15 @@
 import { model, Schema } from 'mongoose'
-import { IBoardRaw } from '@entities/IBoardRaw.ts'
+import { ICategoryRaw } from '@entities/ICategoryRaw.ts'
 
-export const BoardSchema = new Schema<IBoardRaw>(
+export const CategorySchema = new Schema<ICategoryRaw>(
   {
     name: {
       type: String,
       required: true,
     },
-    workspace_id: {
+    board_id: {
       type: Schema.Types.ObjectId,
-      ref: 'Workspace',
+      ref: 'Board',
       required: true,
     },
     user_id: {
@@ -18,10 +18,6 @@ export const BoardSchema = new Schema<IBoardRaw>(
       required: true,
     },
     is_deleted: {
-      type: Boolean,
-      default: false,
-    },
-    is_favorite: {
       type: Boolean,
       default: false,
     },
@@ -41,6 +37,6 @@ export const BoardSchema = new Schema<IBoardRaw>(
   { timestamps: true }
 )
 
-const Board = model<IBoardRaw>('Board', BoardSchema)
+const Category = model<ICategoryRaw>('Category', CategorySchema)
 
-export default Board
+export default Category

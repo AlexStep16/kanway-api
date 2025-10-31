@@ -1,8 +1,8 @@
 import { model, Schema } from 'mongoose'
-import { IWorkspace } from '@entities/IWorkspace.ts'
+import { IWorkspaceRaw } from '@entities/IWorkspaceRaw.ts'
 import { BASE_COLORS } from '@/constants/BASE_COLORS.ts'
 
-export const WorkspaceSchema = new Schema<IWorkspace>(
+export const WorkspaceSchema = new Schema<IWorkspaceRaw>(
   {
     name: {
       type: String,
@@ -42,6 +42,6 @@ export const WorkspaceSchema = new Schema<IWorkspace>(
   { timestamps: true }
 )
 
-const Workspace = model<IWorkspace>('Workspace', WorkspaceSchema)
+const Workspace = model<IWorkspaceRaw>('Workspace', WorkspaceSchema)
 
 export default Workspace

@@ -1,8 +1,8 @@
 import { Schema, model } from 'mongoose'
-import { IOperationLog } from '@entities/IOperationLog.ts'
+import { IOperationLogRaw } from '@entities/IOperationLogRaw.ts'
 import { OPERATION_TYPES } from '@constants/OPERATION_TYPES.ts'
 
-export const OperationLogSchema = new Schema<IOperationLog>(
+export const OperationLogSchema = new Schema<IOperationLogRaw>(
   {
     operation_type: {
       type: String,
@@ -39,6 +39,6 @@ export const OperationLogSchema = new Schema<IOperationLog>(
   { timestamps: true }
 )
 
-const OperationLogModel = model<IOperationLog>('OperationLog', OperationLogSchema)
+const OperationLogModel = model<IOperationLogRaw>('OperationLog', OperationLogSchema)
 
 export default OperationLogModel

@@ -1,0 +1,29 @@
+import { CategoryService } from '@application/services/CategoryService.ts'
+import { ICategory } from '@entities/ICategory.ts'
+import { CategoryDTO } from '@application/dtos/CategoryDTO.ts'
+import { BaseController } from '@controllers/BaseController.ts'
+import { CategoryCriteria } from '@interfaces/criterias/CategoryCriteria.ts'
+import { Request, Response, NextFunction } from 'express'
+import SuccessResponse from '@application/services/SuccessResponse.ts'
+
+export default class CategoryController extends BaseController<
+  ICategory,
+  CategoryDTO,
+  CategoryCriteria,
+  CategoryService
+> {
+  constructor(serviceInstance: CategoryService) {
+    super(serviceInstance)
+  }
+
+  public override getAll = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const criteria: CategoryCriteria = { boardId: req.params.boardId }
+      const entities = await this.service.getAll(criteria, req.user.id)
+
+      res.status(200).json(new SuccessResponse(entities))
+    } catch (error) {
+      next(error)
+    }
+  }
+}

@@ -1,13 +1,11 @@
 import { Types } from 'mongoose'
-import { BASE_COLORS } from '@constants/BASE_COLORS.ts'
 
-export interface IWorkspace {
+export interface ICategory {
   id: Types.ObjectId
   name: string
+  boardId: Types.ObjectId
   userId: Types.ObjectId
-  isFavorite: boolean
   order: number
-  color: (typeof BASE_COLORS)[number]
   embeddings: Array<Number>
   isDeleted: boolean
   deletedTime?: Date

@@ -1,5 +1,12 @@
 import { IReordable } from '@/domain/entities/IReordable.ts'
-import { ClientSession, FilterQuery, Model, Types, UpdateWriteOpResult } from 'mongoose'
+import {
+  ClientSession,
+  CreateOptions,
+  FilterQuery,
+  Model,
+  Types,
+  UpdateWriteOpResult,
+} from 'mongoose'
 
 export abstract class BaseRepository<TEntity, TModel extends Model<TEntity>> {
   protected model: TModel
@@ -8,32 +15,50 @@ export abstract class BaseRepository<TEntity, TModel extends Model<TEntity>> {
     this.model = model
   }
 
-  public async findByIdAndUser(id: string, userId: Types.ObjectId): Promise<TEntity | null> {
-    const doc = await this.model.findOne({ _id: id, user_id: userId }).lean()
+  public async findByIdAndUser(
+    id: string,
+    userId: Types.ObjectId,
+    session?: ClientSession
+  ): Promise<TEntity | null> {
+    const doc = await this.model.findOne({ _id: id, user_id: userId }, null, { session }).lean()
     return doc as TEntity
   }
 
-  public async findById(id: string): Promise<TEntity | null> {
-    const doc = await this.model.findById(id).lean()
+  public async findById(id: string, session?: ClientSession): Promise<TEntity | null> {
+    const doc = await this.model.findById(id, null, { session }).lean()
+
     return doc as TEntity
   }
 
   public async create(
-    data: Partial<TEntity>,
+    data: Omit<TEntity, '_id'>,
     session: ClientSession | null = null
   ): Promise<TEntity> {
     const [newDoc] = await this.model.create([data], { session })
+    const newDocObj = newDoc.toObject() as TEntity
+    delete (newDocObj as any).embeddings
 
-    return newDoc.toObject() as TEntity
+    return newDocObj
   }
 
   public async createMany(
-    data: Partial<TEntity>[],
+    data: Omit<TEntity, '_id'>[],
     session: ClientSession | null = null
   ): Promise<TEntity[]> {
-    const docs = await this.model.create(data, { session })
+    const options: CreateOptions = { session }
 
-    return docs.map((doc) => doc.toObject() as TEntity)
+    if (session) {
+      options.ordered = true
+    }
+
+    const docs = await this.model.create(data, options)
+
+    return docs.map((doc) => {
+      const docObj = doc.toObject() as TEntity
+      delete (docObj as any).embeddings
+
+      return docObj
+    })
   }
 
   private async _updateMany(

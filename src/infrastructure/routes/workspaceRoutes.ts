@@ -5,9 +5,9 @@ import { validationMiddleware } from '@middlewares/validationMiddleware.ts'
 import { WorkspaceDTOSchema } from '@dtos/WorkspaceDTO.ts'
 import { WorkspaceEditDTOSchema } from '@dtos/WorkspaceEditDTO.ts'
 
-interface IWorkspaceController extends WorkspaceController {}
+interface IWorkspaceRawController extends WorkspaceController {}
 
-export default (controller: IWorkspaceController) => {
+export default (controller: IWorkspaceRawController) => {
   const router = Router()
 
   router.use(jwtAuthMiddleware)
@@ -20,6 +20,7 @@ export default (controller: IWorkspaceController) => {
 
   router.patch('/:id/archive', controller.archive)
   router.patch('/:id/recover', controller.recover)
+  router.post('/:id/clone', controller.clone)
 
   return router
 }
