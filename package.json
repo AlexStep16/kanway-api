@@ -11,14 +11,16 @@
   "type": "module",
   "dependencies": {
     "@a2seven/yoo-checkout": "^1.1.4",
-    "@langchain/community": "^0.3.49",
-    "@langchain/core": "^0.3.66",
-    "@langchain/google-genai": "^0.2.16",
-    "@langchain/langgraph": "^0.4.2",
-    "@langchain/langgraph-checkpoint-mongodb": "^0.1.0",
-    "@langchain/mongodb": "^0.1.0",
-    "@langchain/openai": "^0.6.3",
-    "bcrypt": "^5.1.1",
+    "@langchain/community": "^1.0.0",
+    "@langchain/core": "^1.0.2",
+    "@langchain/google-genai": "^1.0.0",
+    "@langchain/langgraph": "^1.0.1",
+    "@langchain/langgraph-checkpoint-mongodb": "^1.0.0",
+    "@langchain/mongodb": "^1.0.0",
+    "@langchain/openai": "^1.0.0",
+    "@types/bcrypt": "^6.0.0",
+    "@types/passport": "^1.0.17",
+    "bcrypt": "^6.0.0",
     "better-sqlite3": "^9.6.0",
     "bullmq": "^5.56.9",
     "cookie": "^1.0.2",
@@ -26,6 +28,7 @@
     "cors": "^2.8.5",
     "culori": "^4.0.1",
     "dateformat": "^5.0.3",
+    "dayjs": "^1.11.19",
     "dotenv": "^16.4.5",
     "eslint-config-prettier": "^9.1.0",
     "express": "^4.19.2",
@@ -35,8 +38,6 @@
     "langsmith": "^0.3.50",
     "mande": "^2.0.9",
     "module-alias": "^2.2.3",
-    "moment": "^2.30.1",
-    "moment-timezone": "^0.5.45",
     "mongodb": "^6.7.0",
     "mongoose": "^8.4.1",
     "multer": "^1.4.5-lts.1",
@@ -49,11 +50,10 @@
     "typescript-eslint": "^8.4.0",
     "uuid": "^9.0.1",
     "ws": "^8.18.3",
-    "zod": "^3.25.76"
+    "zod": "^4.1.12"
   },
   "devDependencies": {
     "@eslint/js": "^9.4.0",
-    "@types/bcrypt": "^5.0.2",
     "@types/chroma-js": "^2.4.4",
     "@types/color-string": "^1.5.5",
     "@types/cookie": "^0.6.0",
@@ -77,6 +77,20 @@
     "sharp": "^0.33.5",
     "tsx": "^4.20.6",
     "typescript": "^5.9.3"
+  },
+  "pnpm": {
+    "overrides": {
+      "zod": "4.1.12",
+      "openai": "6.7.0"
+    },
+    "ignoredBuiltDependencies": [
+      "bcrypt",
+      "better-sqlite3",
+      "esbuild",
+      "hnswlib-node",
+      "msgpackr-extract",
+      "sharp"
+    ]
   },
   "_moduleAliases": {
     "@db": "dist/infrastructure/db",

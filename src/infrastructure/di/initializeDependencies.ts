@@ -18,6 +18,9 @@ import BoardController from '@controllers/BoardController.ts'
 import { CategoryService } from '@application/services/CategoryService.ts'
 import CategoryRepository from '@repositories/CategoryRepository.ts'
 import CategoryController from '@controllers/CategoryController.ts'
+import TaskRepository from '@application/repositories/TaskRepository.ts'
+import { TaskService } from '@application/services/TaskService.ts'
+import TaskController from '../api/controllers/TaskController.ts'
 
 export function initializeDependencies() {
   const userRepository = new UserRepository()
@@ -26,6 +29,7 @@ export function initializeDependencies() {
   const operationLogRepository = new OperationLogRepository()
   const boardRepository = new BoardRepository()
   const categoryRepository = new CategoryRepository()
+  const taskRepository = new TaskRepository()
 
   /* AUTH SERVICES START */
   const tokenService = new TokenService(tokenRepository)
@@ -39,13 +43,31 @@ export function initializeDependencies() {
   const operationLogService = new OperationLogService(operationLogRepository)
   /* BASE SERVICES END */
 
+  /* MOCK SERVICES START */
+  const mockCategoryService = {} as CategoryService
+  const mockBoardService = {} as BoardService
+  /* MOCK SERVICES END */
+
+  /* TASK SERVICES START */
+  const taskReorderService = new ReorderService(taskRepository, operationLogService)
+  const taskService = new TaskService(
+    taskRepository,
+    embeddingService,
+    operationLogService,
+    taskReorderService,
+    mockCategoryService
+  )
+  /* TASK SERVICES END */
+
   /* CATEGORY SERVICES START */
   const categoryReorderService = new ReorderService(categoryRepository, operationLogService)
   const categoryService = new CategoryService(
     categoryRepository,
     embeddingService,
     operationLogService,
-    categoryReorderService
+    categoryReorderService,
+    mockBoardService,
+    taskService
   )
   /* CATEGORY SERVICES END */
 
@@ -56,9 +78,13 @@ export function initializeDependencies() {
     embeddingService,
     operationLogService,
     boardReorderService,
-    categoryService
+    categoryService,
+    taskService
   )
   /* BOARD SERVICES END */
+
+  Object.assign(mockCategoryService, categoryService)
+  Object.assign(mockBoardService, boardService)
 
   /* WORKSPACE SERVICES START */
   const workspaceReorderService = new ReorderService(workspaceRepository, operationLogService)
@@ -75,6 +101,7 @@ export function initializeDependencies() {
   const workspaceController = new WorkspaceController(workspaceService)
   const boardController = new BoardController(boardService)
   const categoryController = new CategoryController(categoryService)
+  const taskController = new TaskController(taskService)
 
   return {
     services: {
@@ -85,7 +112,14 @@ export function initializeDependencies() {
       workspaceService,
       categoryService,
       boardService,
+      taskService,
     },
-    controllers: { authController, workspaceController, boardController, categoryController },
+    controllers: {
+      authController,
+      workspaceController,
+      boardController,
+      categoryController,
+      taskController,
+    },
   }
 }

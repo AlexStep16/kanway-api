@@ -5,6 +5,7 @@ import { EmailService } from '@infrastructure/services/EmailService.ts'
 import { serialize } from 'cookie'
 import { TokenService } from '@application/services/TokenService.ts'
 import { LoginCredentialsDTO } from '@/application/dtos/LoginCredentialsDTO.ts'
+import { Types } from 'mongoose'
 
 export class AuthService {
   private userService: UserService
@@ -66,8 +67,8 @@ export class AuthService {
     }
   }
 
-  public async me(id: string): Promise<IUser | null> {
-    const user = await this.userService.getById(id)
+  public async me(id: Types.ObjectId): Promise<IUser | null> {
+    const user = await this.userService.getById(id.toHexString())
 
     if (user) {
       return user

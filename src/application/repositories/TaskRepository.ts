@@ -1,23 +1,20 @@
-import { ICategoryRaw } from '@entities/ICategoryRaw.ts'
-import CategoryModel from '@models/CategoryModel.ts'
-import { CategoryCriteria } from '@criterias/CategoryCriteria.ts'
+import { ITaskRaw } from '@entities/ITaskRaw.ts'
+import TaskModel from '@models/TaskModel.ts'
+import { TaskCriteria } from '@criterias/TaskCriteria.ts'
 import { ClientSession, FilterQuery, Types } from 'mongoose'
 import { BaseRepository } from '@repositories/BaseRepository.ts'
 import { IReorderRepository } from '@traits/IReorderRepository.ts'
 
-export default class CategoryRepository
-  extends BaseRepository<ICategoryRaw, typeof CategoryModel>
-  implements IReorderRepository<ICategoryRaw>
+export default class TaskRepository
+  extends BaseRepository<ITaskRaw, typeof TaskModel>
+  implements IReorderRepository<ITaskRaw>
 {
   constructor() {
-    super(CategoryModel)
+    super(TaskModel)
   }
 
-  public buildFilter(
-    criteria: CategoryCriteria,
-    userId: Types.ObjectId
-  ): FilterQuery<ICategoryRaw> {
-    const filter: FilterQuery<ICategoryRaw> = { user_id: userId, is_deleted: false }
+  public buildFilter(criteria: TaskCriteria, userId: Types.ObjectId): FilterQuery<ITaskRaw> {
+    const filter: FilterQuery<ITaskRaw> = { user_id: userId, is_deleted: false }
 
     if (criteria.id) {
       filter._id = criteria.id
@@ -31,6 +28,14 @@ export default class CategoryRepository
 
     if (criteria.name) {
       filter.name = { $regex: criteria.name, $options: 'i' }
+    }
+
+    if (criteria.categoryId) {
+      filter.category_id = criteria.categoryId
+    }
+
+    if (criteria.categoryIds) {
+      filter.category_id = { $in: criteria.categoryIds }
     }
 
     if (criteria.boardId) {
@@ -53,12 +58,12 @@ export default class CategoryRepository
   }
 
   public async getAllToOrder(
-    boardId: Types.ObjectId,
+    categoryId: Types.ObjectId,
     userId: Types.ObjectId,
     session?: ClientSession
-  ): Promise<ICategoryRaw[]> {
+  ): Promise<ITaskRaw[]> {
     return await this.model
-      .find({ board_id: boardId, user_id: userId, is_deleted: false })
+      .find({ category_id: categoryId, user_id: userId, is_deleted: false })
       .session(session || null)
       .select('_id order')
       .sort({ order: 1 })
@@ -69,22 +74,22 @@ export default class CategoryRepository
     ids: Types.ObjectId[],
     userId: Types.ObjectId,
     session?: ClientSession
-  ): Promise<ICategoryRaw[]> {
+  ): Promise<ITaskRaw[]> {
     return await this.model
       .find({ _id: { $in: ids }, user_id: userId, is_deleted: false })
       .session(session || null)
       .lean()
   }
 
-  public async getCountGrouppedByBoards(
-    boardIds: Types.ObjectId[],
+  public async getCountGrouppedByCategories(
+    categoryIds: Types.ObjectId[],
     userId: Types.ObjectId,
     session?: ClientSession
-  ): Promise<{ board_id: Types.ObjectId; count: number }[]> {
+  ): Promise<{ category_id: Types.ObjectId; count: number }[]> {
     const result = await this.model.aggregate(
       [
-        { $match: { is_deleted: false, board_id: { $in: boardIds }, user_id: userId } },
-        { $group: { _id: '$board_id', count: { $sum: 1 } } },
+        { $match: { is_deleted: false, category_id: { $in: categoryIds }, user_id: userId } },
+        { $group: { _id: '$category_id', count: { $sum: 1 } } },
       ],
       { session }
     )

@@ -7,7 +7,7 @@ import { BoardEditDTOSchema } from '@dtos/BoardEditDTO.ts'
 
 interface IBoardRawController extends BoardController {}
 
-export default (controller: IBoardRawController) => {
+export default (controller: IBoardRawController): Router => {
   const router = Router({ mergeParams: true })
 
   router.use(jwtAuthMiddleware)

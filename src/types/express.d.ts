@@ -1,8 +1,0 @@
-import { Request } from 'express'
-import { IUserRaw } from '@entities/User'
-
-declare module 'express-serve-static-core' {
-  interface Request {
-    user: IUserRaw
-  }
-}

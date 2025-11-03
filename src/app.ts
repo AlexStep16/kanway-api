@@ -4,6 +4,13 @@ import express from 'express'
 import { attachRoutes } from '@routes/index.ts'
 import { startOpenAIProxy } from '@/infrastructure/ws/startOpenAIProxy.ts'
 import { globalErrorHandler } from '@middlewares/globalErrorHandler.ts'
+import dayjs from 'dayjs'
+import utc from 'dayjs/plugin/utc.js'
+import timezone from 'dayjs/plugin/timezone.js'
+
+dayjs.locale('ru')
+dayjs.extend(utc)
+dayjs.extend(timezone)
 
 dotenv.config()
 

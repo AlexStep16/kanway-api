@@ -5,17 +5,25 @@ import { BASE_COLORS } from '@constants/BASE_COLORS.ts'
 export const WorkspaceDTOSchema = z.object({
   name: z
     .string({
-      required_error: ErrorsMessage.WORKSPACE_NAME_REQUIRED,
-      invalid_type_error: ErrorsMessage.WORKSPACE_NAME_INVALID,
+      error: (iss) =>
+        iss.input === undefined
+          ? ErrorsMessage.WORKSPACE_NAME_REQUIRED
+          : ErrorsMessage.WORKSPACE_NAME_INVALID,
     })
-    .min(1, ErrorsMessage.WORKSPACE_NAME_REQUIRED),
+    .min(1, ErrorsMessage.WORKSPACE_NAME_LESS_THAN_1)
+    .max(100, ErrorsMessage.WORKSPACE_NAME_MORE_THAN_100),
   color: z.enum(BASE_COLORS, {
-    required_error: ErrorsMessage.WORKSPACE_COLOR_REQUIRED,
-    invalid_type_error: 'Неверное значение для цвета. Допустимы: ' + BASE_COLORS.join(', '),
+    error: (iss) =>
+      iss.input === undefined
+        ? ErrorsMessage.WORKSPACE_COLOR_REQUIRED
+        : 'Неверное значение для цвета. Допустимы: ' + BASE_COLORS.join(', '),
   }),
   order: z
     .union([z.string(), z.number()], {
-      invalid_type_error: ErrorsMessage.WORKSPACE_ORDER_TYPE_INVALID,
+      error: (iss) =>
+        iss.input === undefined
+          ? ErrorsMessage.WORKSPACE_ORDER_TYPE_INVALID
+          : ErrorsMessage.WORKSPACE_ORDER_TYPE_INVALID,
     })
     .optional(),
 })

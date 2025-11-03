@@ -7,6 +7,11 @@ export const CategorySchema = new Schema<ICategoryRaw>(
       type: String,
       required: true,
     },
+    workspace_id: {
+      type: Schema.Types.ObjectId,
+      ref: 'Workspace',
+      required: true,
+    },
     board_id: {
       type: Schema.Types.ObjectId,
       ref: 'Board',
@@ -18,6 +23,10 @@ export const CategorySchema = new Schema<ICategoryRaw>(
       required: true,
     },
     is_deleted: {
+      type: Boolean,
+      default: false,
+    },
+    is_deleted_external: {
       type: Boolean,
       default: false,
     },

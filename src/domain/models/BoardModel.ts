@@ -21,6 +21,10 @@ export const BoardSchema = new Schema<IBoardRaw>(
       type: Boolean,
       default: false,
     },
+    is_deleted_external: {
+      type: Boolean,
+      default: false,
+    },
     is_favorite: {
       type: Boolean,
       default: false,

@@ -1,11 +1,11 @@
-import express from 'express'
+import express, { Router } from 'express'
 import AuthController from '@controllers/AuthController.ts'
 import { jwtAuthMiddleware } from '@infrastructure/auth/passportJWTStrategy.ts'
 import { validationMiddleware } from '../middlewares/validationMiddleware.ts'
 import { RegisterCredentialsSchema } from '@/application/dtos/RegisterCredentialsDTO.ts'
 import { LoginCredentialsSchema } from '@/application/dtos/LoginCredentialsDTO.ts'
 
-export default (controller: AuthController) => {
+export default (controller: AuthController): Router => {
   const router = express.Router()
 
   router.post(

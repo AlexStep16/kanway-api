@@ -6,6 +6,7 @@ import authRoutes from '@routes/authRoutes.ts'
 import workspaceRoutes from '@routes/workspaceRoutes.ts'
 import boardRoutes from '@routes/boardRoutes.ts'
 import categoryRoutes from '@routes/categoryRoutes.ts'
+import taskRoutes from '@routes/taskRoutes.ts'
 
 //import { initWorkspace } from '@middlewares/Workspace.ts'
 import cookieParser from 'cookie-parser'
@@ -33,5 +34,9 @@ export function attachRoutes(app: Application) {
   app.use(
     '/workspaces/:workspaceId/boards/:boardId/categories',
     categoryRoutes(dependencies.controllers.categoryController)
+  )
+  app.use(
+    '/workspaces/:workspaceId/boards/:boardId/tasks',
+    taskRoutes(dependencies.controllers.taskController)
   )
 }

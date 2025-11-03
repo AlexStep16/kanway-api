@@ -9,5 +9,6 @@ export interface IBoard {
   order: number
   embeddings: Array<Number>
   isDeleted: boolean
+  isDeletedExternal: boolean
   deletedTime?: Date
 }

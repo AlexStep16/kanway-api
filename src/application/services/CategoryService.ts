@@ -12,9 +12,12 @@ import { CollectionsEnum } from '@domain/enums/CollectionsEnum.ts'
 import { ReorderService } from '@application/services/ReorderService.ts'
 import { toServerCaseKeys, toMongoCaseKeys } from '@utils/objectTransformers.ts'
 import { CategoryEditDTO } from '@dtos/CategoryEditDTO.ts'
-import { ReorderResultDTO } from '../dtos/ReorderResultDTO.ts'
-import { IOperationResult } from '../interfaces/IOperationResult.ts'
+import { ReorderResultDTO } from '@dtos/ReorderResultDTO.ts'
+import { IOperationResult } from '@interfaces/IOperationResult.ts'
 import { NotFoundError } from '@/domain/errors/NotFound.ts'
+import { TaskService } from '@application/services/TaskService.ts'
+import { IMoveResult } from '../interfaces/IMoveResult.ts'
+import { BoardService } from './BoardService.ts'
 
 export class CategoryService
   implements IBaseService<ICategory, CategoryCriteria, CategoryDTO, CategoryEditDTO>
@@ -23,17 +26,23 @@ export class CategoryService
   protected embeddingService: EmbeddingService
   protected operationLogService: OperationLogService
   protected reorderService: ReorderService<ICategoryRaw>
+  protected boardService: BoardService
+  protected taskService: TaskService
 
   constructor(
     categoryRepository: CategoryRepository,
     embeddingService: EmbeddingService,
     operationLogService: OperationLogService,
-    reorderService: ReorderService<ICategoryRaw>
+    reorderService: ReorderService<ICategoryRaw>,
+    boardService: BoardService,
+    taskService: TaskService
   ) {
     this.repository = categoryRepository
     this.embeddingService = embeddingService
     this.operationLogService = operationLogService
     this.reorderService = reorderService
+    this.boardService = boardService
+    this.taskService = taskService
   }
 
   public async create(
@@ -52,7 +61,7 @@ export class CategoryService
         isNewSession = true
       }
 
-      const categoryPayload = await this.prepareCategoryCreationPayload(data, userId)
+      const categoryPayload = await this.prepareCategoryCreationPayload(data, userId, session)
 
       /* CREATE */
       const newCategory = await this.repository.create(categoryPayload, session)
@@ -128,7 +137,7 @@ export class CategoryService
         isNewSession = true
       }
 
-      const categoriesPayload = await this.prepareCategoriesCreationPayload(data, userId)
+      const categoriesPayload = await this.prepareCategoriesCreationPayload(data, userId, session)
 
       /* CREATE */
       const newCategories = await this.repository.createMany(categoriesPayload, session)
@@ -198,6 +207,7 @@ export class CategoryService
     let session: ClientSession | null = externalSession || null
     let isNewSession = false
     let reorderedCategories: ReorderResultDTO<ICategoryRaw>[] = []
+    let dependencies: Types.ObjectId[] = []
 
     try {
       if (!session) {
@@ -219,6 +229,22 @@ export class CategoryService
       /* UPDATE */
       const newEntities = await this.repository.updateByFilter(filter, categoryPayload, session)
 
+      /* MOVE */
+      const categoriesToMove = categoriesToUpdate.filter(
+        (b) => data.boardId !== undefined && b.board_id.toString() !== data.boardId
+      )
+      if (categoriesToMove.length > 0) {
+        const moveResult = await this.moveCategoriesToBoard(
+          categoriesToMove.map((c) => c._id),
+          new Types.ObjectId(data.boardId),
+          userId,
+          newEntities,
+          session
+        )
+
+        dependencies.push(...moveResult.logIds)
+      }
+
       /* REORDER */
       const categoriesToReorder = categoriesToUpdate.filter(
         (ws) => data.order !== undefined && ws.order !== data.order
@@ -234,8 +260,6 @@ export class CategoryService
       }
 
       /* LOG */
-      let dependencies: Types.ObjectId[] = []
-
       reorderedCategories.forEach((r) => {
         if (r.log) dependencies.push(r.log.id)
       })
@@ -278,6 +302,91 @@ export class CategoryService
     }
   }
 
+  public async moveCategoriesToBoard(
+    categoryIds: Types.ObjectId[],
+    targetBoardId: Types.ObjectId,
+    userId: Types.ObjectId,
+    updatedCategoriesBefore: ICategoryRaw[],
+    session?: ClientSession
+  ): Promise<IMoveResult> {
+    const newBoard = await this.boardService.getById(targetBoardId.toString(), userId, session)
+
+    if (!newBoard) throw new NotFoundError('Доска для перемещения не найдена.')
+
+    const filter = this.repository.buildFilter(
+      { ids: categoryIds.map((id) => id.toString()) },
+      userId
+    )
+
+    const updatedCategories = await this.repository.updateByFilter(
+      filter,
+      { workspace_id: newBoard.workspaceId },
+      session
+    )
+
+    /* LOG */
+    const log = await this.operationLogService.create(
+      {
+        operationType: OperationTypesEnum.UPDATE,
+        collectionName: CollectionsEnum.CATEGORIES,
+        entitiesBefore: updatedCategoriesBefore,
+        entitiesAfter: updatedCategories,
+        dependencies: [],
+      },
+      userId,
+      session
+    )
+
+    const tasksMoveResult = await this.taskService.moveTasksToBoardByCategories(
+      categoryIds,
+      targetBoardId,
+      userId,
+      session
+    )
+
+    return {
+      logIds: [log[0].id, ...tasksMoveResult.logIds],
+    }
+  }
+
+  public async moveCategoriesToWorkspaceByBoards(
+    boardIds: Types.ObjectId[],
+    targetWorkspaceId: Types.ObjectId,
+    userId: Types.ObjectId,
+    session?: ClientSession
+  ): Promise<IOperationResult<ICategory>> {
+    const filter = this.repository.buildFilter(
+      { boardIds: boardIds.map((id) => id.toString()) },
+      userId
+    )
+
+    const categoriesToUpdate = await this.repository.find(filter, session)
+
+    const updatedCategories = await this.repository.updateByFilter(
+      filter,
+      { workspace_id: targetWorkspaceId },
+      session
+    )
+
+    /* LOG */
+    const log = await this.operationLogService.create(
+      {
+        operationType: OperationTypesEnum.UPDATE,
+        collectionName: CollectionsEnum.CATEGORIES,
+        entitiesBefore: categoriesToUpdate,
+        entitiesAfter: updatedCategories,
+        dependencies: [],
+      },
+      userId,
+      session
+    )
+
+    return {
+      entities: updatedCategories.map((c) => toServerCaseKeys<ICategory>(c)),
+      logIds: [log[0].id],
+    }
+  }
+
   public async delete(
     criteria: CategoryCriteria,
     userId: Types.ObjectId,
@@ -296,11 +405,19 @@ export class CategoryService
 
       const filter = this.repository.buildFilter(criteria, userId)
 
+      const categoriesToDelete = await this.repository.find(filter, session)
+
       await this.repository.deleteMany(filter, session)
+
+      await this.taskService.deleteTasksByCategories(
+        categoriesToDelete.map((c) => c._id),
+        userId,
+        session
+      )
 
       /* REORDER */
       reorderedCategories = await this.reorderService.reorderByParentIds(
-        [userId],
+        categoriesToDelete.map((c) => c.board_id),
         CollectionsEnum.CATEGORIES,
         userId,
         session
@@ -344,6 +461,8 @@ export class CategoryService
 
       const filter = this.repository.buildFilter(criteria, userId)
 
+      const categoriesToArchive = await this.repository.find(filter, session)
+
       const updatedCategories = await this.repository.updateByFilter(
         filter,
         { is_deleted: true },
@@ -352,7 +471,7 @@ export class CategoryService
 
       /* REORDER */
       reorderedCategories = await this.reorderService.reorderByParentIds(
-        [userId],
+        categoriesToArchive.map((c) => c.board_id),
         CollectionsEnum.CATEGORIES,
         userId,
         session
@@ -424,6 +543,8 @@ export class CategoryService
 
       const filter = this.repository.buildFilter(criteria, userId)
 
+      const categoriesToRecover = await this.repository.find(filter, session)
+
       const updatedCategories = await this.repository.updateByFilter(
         filter,
         { is_deleted: false },
@@ -436,7 +557,7 @@ export class CategoryService
 
       /* REORDER */
       reorderedCategories = await this.reorderService.reorderByParentIds(
-        [userId],
+        categoriesToRecover.map((c) => c.board_id),
         CollectionsEnum.CATEGORIES,
         userId,
         session
@@ -493,7 +614,7 @@ export class CategoryService
       session = await mongoose.startSession()
       session.startTransaction()
 
-      const sourceCategory = await this.repository.findByIdAndUser(id, userId)
+      const sourceCategory = await this.repository.findByIdAndUser(id, userId, session)
 
       if (!sourceCategory) throw new NotFoundError('Исходная категория не найдена.')
 
@@ -546,6 +667,19 @@ export class CategoryService
     }
   }
 
+  public async deleteCategoriesByBoards(
+    boardIds: Types.ObjectId[],
+    userId: Types.ObjectId,
+    session?: ClientSession
+  ): Promise<void> {
+    const filter = this.repository.buildFilter(
+      { boardIds: boardIds.map((id) => id.toString()) },
+      userId
+    )
+
+    await this.repository.deleteMany(filter, session)
+  }
+
   public async archiveCategoriesByBoards(
     boardIds: Types.ObjectId[],
     userId: Types.ObjectId,
@@ -557,7 +691,7 @@ export class CategoryService
     )
     const updatedCategories = await this.repository.updateByFilter(
       filter,
-      { is_deleted: true },
+      { is_deleted: true, is_deleted_external: true },
       session
     )
 
@@ -597,7 +731,7 @@ export class CategoryService
     )
     const updatedCategories = await this.repository.updateByFilter(
       filter,
-      { is_deleted: false },
+      { is_deleted: false, is_deleted_external: false },
       session
     )
 
@@ -730,7 +864,11 @@ export class CategoryService
     }
   }
 
-  private async prepareCategoryCreationPayload(data: CategoryDTO, userId: Types.ObjectId) {
+  private async prepareCategoryCreationPayload(
+    data: CategoryDTO,
+    userId: Types.ObjectId,
+    session?: ClientSession
+  ) {
     const categoryName = data.name.trim()
 
     const embeddings = await this.embeddingService.getEmbeddings(categoryName)
@@ -742,7 +880,7 @@ export class CategoryService
     }
 
     if (data.order === undefined) {
-      const allCategoriesCount = await this.getCount({ boardId: data.boardId }, userId)
+      const allCategoriesCount = await this.getCount({ boardId: data.boardId }, userId, session)
       categoryPayload.order = allCategoriesCount + 1
     }
 
@@ -755,19 +893,19 @@ export class CategoryService
     session?: ClientSession
   ) {
     const categoriesPayloads: Omit<ICategoryRaw, '_id'>[] = []
-    const categoriesGroupedByWorkspace: { [key: string]: CategoryDTO[] } = {}
+    const categoriesGroupedByBoard: { [key: string]: CategoryDTO[] } = {}
 
     data.forEach((category) => {
-      const wsId = category.boardId
-      if (!categoriesGroupedByWorkspace[wsId]) {
-        categoriesGroupedByWorkspace[wsId] = []
+      const boardId = category.boardId
+      if (!categoriesGroupedByBoard[boardId]) {
+        categoriesGroupedByBoard[boardId] = []
       }
 
-      categoriesGroupedByWorkspace[wsId].push(category)
+      categoriesGroupedByBoard[boardId].push(category)
     })
 
-    const grouppedCategoriesCount = await this.getCountGrouppedByWorkspaces(
-      Object.keys(categoriesGroupedByWorkspace),
+    const grouppedCategoriesCount = await this.getCountGrouppedByBoards(
+      Object.keys(categoriesGroupedByBoard),
       userId,
       session
     )
@@ -779,9 +917,9 @@ export class CategoryService
       embeddingsMap[name] = embeddingsArray[index]
     })
 
-    for (const [wsId, categories] of Object.entries(categoriesGroupedByWorkspace)) {
+    for (const [boardId, categories] of Object.entries(categoriesGroupedByBoard)) {
       const existingCountEntry = grouppedCategoriesCount.find(
-        (entry) => entry.workspace_id.toString() === wsId
+        (entry) => entry.board_id.toString() === boardId
       )
       let newOrder = existingCountEntry ? existingCountEntry.count : 0
 
@@ -853,13 +991,13 @@ export class CategoryService
     return this.repository.getCount(filter, session)
   }
 
-  public async getCountGrouppedByWorkspaces(
-    workspaceIds: string[],
+  public async getCountGrouppedByBoards(
+    boardIds: string[],
     userId: Types.ObjectId,
     session?: ClientSession
-  ): Promise<{ workspace_id: Types.ObjectId; count: number }[]> {
-    return this.repository.getCountGrouppedByWorkspaces(
-      workspaceIds.map((id) => new Types.ObjectId(id)),
+  ): Promise<{ board_id: Types.ObjectId; count: number }[]> {
+    return this.repository.getCountGrouppedByBoards(
+      boardIds.map((id) => new Types.ObjectId(id)),
       userId,
       session
     )

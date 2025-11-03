@@ -3,6 +3,8 @@ export interface CategoryCriteria {
   ids?: string[]
 
   isDeleted?: boolean
+  workspaceId?: string
+  workspaceIds?: string[]
   boardId?: string
   boardIds?: string[]
   name?: string

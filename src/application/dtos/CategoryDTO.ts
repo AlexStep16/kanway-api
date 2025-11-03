@@ -4,19 +4,18 @@ import { z } from 'zod'
 export const CategoryDTOSchema = z.object({
   name: z
     .string({
-      required_error: ErrorsMessage.CATEGORY_NAME_REQUIRED,
-      invalid_type_error: ErrorsMessage.CATEGORY_NAME_INVALID,
+      error: (iss) =>
+        iss.input === undefined
+          ? ErrorsMessage.CATEGORY_NAME_REQUIRED
+          : ErrorsMessage.CATEGORY_NAME_INVALID,
     })
-    .min(1, ErrorsMessage.CATEGORY_NAME_REQUIRED),
+    .min(1, ErrorsMessage.CATEGORY_NAME_LESS_THAN_1)
+    .max(100, ErrorsMessage.CATEGORY_NAME_MORE_THAN_100),
   boardId: z.string({
-    required_error: ErrorsMessage.BOARD_ID_REQUIRED,
-    invalid_type_error: ErrorsMessage.BOARD_ID_INVALID,
+    error: (iss) =>
+      iss.input === undefined ? ErrorsMessage.BOARD_ID_REQUIRED : ErrorsMessage.BOARD_ID_INVALID,
   }),
-  order: z
-    .union([z.string(), z.number()], {
-      invalid_type_error: ErrorsMessage.CATEGORY_ORDER_TYPE_INVALID,
-    })
-    .optional(),
+  order: z.union([z.string(), z.number()], ErrorsMessage.CATEGORY_ORDER_TYPE_INVALID).optional(),
 })
 
 export type CategoryDTO = z.infer<typeof CategoryDTOSchema>

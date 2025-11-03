@@ -9,5 +9,6 @@ export interface IBoardRaw {
   order: number
   embeddings: Array<Number>
   is_deleted: boolean
+  is_deleted_external: boolean
   deleted_time?: Date
 }

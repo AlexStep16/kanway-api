@@ -16,6 +16,8 @@ import { ReorderResultDTO } from '@dtos/ReorderResultDTO.ts'
 import { IOperationResult } from '@interfaces/IOperationResult.ts'
 import { CategoryService } from '@application/services/CategoryService.ts'
 import { NotFoundError } from '@/domain/errors/NotFound.ts'
+import { TaskService } from './TaskService.ts'
+import { IMoveResult } from '../interfaces/IMoveResult.ts'
 
 export class BoardService implements IBaseService<IBoard, BoardCriteria, BoardDTO, BoardEditDTO> {
   protected repository: BoardRepository
@@ -23,19 +25,22 @@ export class BoardService implements IBaseService<IBoard, BoardCriteria, BoardDT
   protected operationLogService: OperationLogService
   protected reorderService: ReorderService<IBoardRaw>
   protected categoryService: CategoryService
+  protected taskService: TaskService
 
   constructor(
     boardRepository: BoardRepository,
     embeddingService: EmbeddingService,
     operationLogService: OperationLogService,
     reorderService: ReorderService<IBoardRaw>,
-    categoryService: CategoryService
+    categoryService: CategoryService,
+    taskService: TaskService
   ) {
     this.repository = boardRepository
     this.embeddingService = embeddingService
     this.operationLogService = operationLogService
     this.reorderService = reorderService
     this.categoryService = categoryService
+    this.taskService = taskService
   }
 
   public async create(
@@ -54,7 +59,7 @@ export class BoardService implements IBaseService<IBoard, BoardCriteria, BoardDT
         isNewSession = true
       }
 
-      const boardPayload = await this.prepareBoardCreationPayload(data, userId)
+      const boardPayload = await this.prepareBoardCreationPayload(data, userId, session)
 
       /* CREATE */
       const newBoard = await this.repository.create(boardPayload, session)
@@ -130,7 +135,7 @@ export class BoardService implements IBaseService<IBoard, BoardCriteria, BoardDT
         isNewSession = true
       }
 
-      const boardsPayload = await this.prepareBoardsCreationPayload(data, userId)
+      const boardsPayload = await this.prepareBoardsCreationPayload(data, userId, session)
 
       /* CREATE */
       const newBoards = await this.repository.createMany(boardsPayload, session)
@@ -200,6 +205,7 @@ export class BoardService implements IBaseService<IBoard, BoardCriteria, BoardDT
     let session: ClientSession | null = externalSession || null
     let isNewSession = false
     let reorderedBoards: ReorderResultDTO<IBoardRaw>[] = []
+    let dependencies: Types.ObjectId[] = []
 
     try {
       if (!session) {
@@ -217,6 +223,21 @@ export class BoardService implements IBaseService<IBoard, BoardCriteria, BoardDT
       /* UPDATE */
       const newEntities = await this.repository.updateByFilter(filter, boardPayload, session)
 
+      /* MOVE */
+      const boardsToMove = boardsToUpdate.filter(
+        (b) => data.workspaceId !== undefined && b.workspace_id.toString() !== data.workspaceId
+      )
+      if (boardsToMove.length > 0) {
+        const moveResult = await this.moveBoardsToWorkspace(
+          boardsToMove.map((b) => b._id),
+          new Types.ObjectId(data.workspaceId),
+          userId,
+          session
+        )
+
+        dependencies.push(...moveResult.logIds)
+      }
+
       /* REORDER */
       const boardsToReorder = boardsToUpdate.filter(
         (ws) => data.order !== undefined && ws.order !== data.order
@@ -232,8 +253,6 @@ export class BoardService implements IBaseService<IBoard, BoardCriteria, BoardDT
       }
 
       /* LOG */
-      let dependencies: Types.ObjectId[] = []
-
       reorderedBoards.forEach((r) => {
         if (r.log) dependencies.push(r.log.id)
       })
@@ -276,6 +295,30 @@ export class BoardService implements IBaseService<IBoard, BoardCriteria, BoardDT
     }
   }
 
+  public async moveBoardsToWorkspace(
+    boardIds: Types.ObjectId[],
+    targetWorkspaceId: Types.ObjectId,
+    userId: Types.ObjectId,
+    session?: ClientSession
+  ): Promise<IMoveResult> {
+    const categoriesMoveResult = await this.categoryService.moveCategoriesToWorkspaceByBoards(
+      boardIds,
+      targetWorkspaceId,
+      userId,
+      session
+    )
+    const tasksMoveResult = await this.taskService.moveTasksToWorkspaceByBoards(
+      boardIds,
+      targetWorkspaceId,
+      userId,
+      session
+    )
+
+    return {
+      logIds: [...categoriesMoveResult.logIds, ...tasksMoveResult.logIds],
+    }
+  }
+
   public async delete(
     criteria: BoardCriteria,
     userId: Types.ObjectId,
@@ -294,11 +337,19 @@ export class BoardService implements IBaseService<IBoard, BoardCriteria, BoardDT
 
       const filter = this.repository.buildFilter(criteria, userId)
 
+      const boardsToDelete = await this.repository.find(filter, session)
+
       await this.repository.deleteMany(filter, session)
+
+      await this.categoryService.deleteCategoriesByBoards(
+        boardsToDelete.map((b) => b._id),
+        userId,
+        session
+      )
 
       /* REORDER */
       reorderedBoards = await this.reorderService.reorderByParentIds(
-        [userId],
+        boardsToDelete.map((b) => b.workspace_id),
         CollectionsEnum.BOARDS,
         userId,
         session
@@ -342,6 +393,8 @@ export class BoardService implements IBaseService<IBoard, BoardCriteria, BoardDT
 
       const filter = this.repository.buildFilter(criteria, userId)
 
+      const boardsToArchive = await this.repository.find(filter, session)
+
       const updatedBoards = await this.repository.updateByFilter(
         filter,
         { is_deleted: true },
@@ -350,7 +403,7 @@ export class BoardService implements IBaseService<IBoard, BoardCriteria, BoardDT
 
       /* REORDER */
       reorderedBoards = await this.reorderService.reorderByParentIds(
-        [userId],
+        boardsToArchive.map((b) => b.workspace_id),
         CollectionsEnum.BOARDS,
         userId,
         session
@@ -422,6 +475,8 @@ export class BoardService implements IBaseService<IBoard, BoardCriteria, BoardDT
 
       const filter = this.repository.buildFilter(criteria, userId)
 
+      const boardsToRecover = await this.repository.find(filter, session)
+
       const updatedBoards = await this.repository.updateByFilter(
         filter,
         { is_deleted: false },
@@ -434,7 +489,7 @@ export class BoardService implements IBaseService<IBoard, BoardCriteria, BoardDT
 
       /* REORDER */
       reorderedBoards = await this.reorderService.reorderByParentIds(
-        [userId],
+        boardsToRecover.map((b) => b.workspace_id),
         CollectionsEnum.BOARDS,
         userId,
         session
@@ -491,7 +546,7 @@ export class BoardService implements IBaseService<IBoard, BoardCriteria, BoardDT
       session = await mongoose.startSession()
       session.startTransaction()
 
-      const sourceBoard = await this.repository.findByIdAndUser(id, userId)
+      const sourceBoard = await this.repository.findByIdAndUser(id, userId, session)
 
       if (!sourceBoard) throw new NotFoundError('Исходная доска не найдена.')
 
@@ -544,6 +599,19 @@ export class BoardService implements IBaseService<IBoard, BoardCriteria, BoardDT
     }
   }
 
+  public async deleteBoardsByWorkspaces(
+    workspaceIds: Types.ObjectId[],
+    userId: Types.ObjectId,
+    session?: ClientSession
+  ): Promise<void> {
+    const filter = this.repository.buildFilter(
+      { workspaceIds: workspaceIds.map((id) => id.toString()) },
+      userId
+    )
+
+    await this.repository.deleteMany(filter, session)
+  }
+
   public async archiveBoardsByWorkspaces(
     workspaceIds: Types.ObjectId[],
     userId: Types.ObjectId,
@@ -555,7 +623,7 @@ export class BoardService implements IBaseService<IBoard, BoardCriteria, BoardDT
     )
     const updatedBoards = await this.repository.updateByFilter(
       filter,
-      { is_deleted: true },
+      { is_deleted: true, is_deleted_external: true },
       session
     )
 
@@ -595,7 +663,7 @@ export class BoardService implements IBaseService<IBoard, BoardCriteria, BoardDT
     )
     const updatedBoards = await this.repository.updateByFilter(
       filter,
-      { is_deleted: false },
+      { is_deleted: false, is_deleted_external: false },
       session
     )
 
@@ -677,7 +745,11 @@ export class BoardService implements IBaseService<IBoard, BoardCriteria, BoardDT
     }
   }
 
-  private async prepareBoardCreationPayload(data: BoardDTO, userId: Types.ObjectId) {
+  private async prepareBoardCreationPayload(
+    data: BoardDTO,
+    userId: Types.ObjectId,
+    session?: ClientSession
+  ) {
     const boardName = data.name.trim()
 
     const embeddings = await this.embeddingService.getEmbeddings(boardName)
@@ -689,7 +761,7 @@ export class BoardService implements IBaseService<IBoard, BoardCriteria, BoardDT
     }
 
     if (data.order === undefined) {
-      const allBoardsCount = await this.getCount({ workspaceId: data.workspaceId }, userId)
+      const allBoardsCount = await this.getCount({ workspaceId: data.workspaceId }, userId, session)
       boardPayload.order = allBoardsCount + 1
     }
 

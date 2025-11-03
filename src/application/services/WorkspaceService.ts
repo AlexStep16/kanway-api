@@ -55,7 +55,7 @@ export class WorkspaceService
         isNewSession = true
       }
 
-      const workspacePayload = await this.prepareWorkspaceCreationPayload(data, userId)
+      const workspacePayload = await this.prepareWorkspaceCreationPayload(data, userId, session)
 
       /* CREATE */
       const newWorkspace = await this.repository.create(workspacePayload, session)
@@ -131,7 +131,7 @@ export class WorkspaceService
         isNewSession = true
       }
 
-      const workspacesPayload = await this.prepareWorkspacesCreationPayload(data, userId)
+      const workspacesPayload = await this.prepareWorkspacesCreationPayload(data, userId, session)
 
       /* CREATE */
       const newWorkspaces = await this.repository.createMany(workspacesPayload, session)
@@ -304,7 +304,15 @@ export class WorkspaceService
 
       const filter = this.repository.buildFilter(criteria, userId)
 
+      const workspacesToDelete = await this.repository.find(filter, session)
+
       await this.repository.deleteMany(filter, session)
+
+      await this.boardService.deleteBoardsByWorkspaces(
+        workspacesToDelete.map((ws) => ws._id),
+        userId,
+        session
+      )
 
       /* REORDER */
       reorderedWorkspaces = await this.reorderService.reorderByParentIds(
@@ -501,10 +509,11 @@ export class WorkspaceService
       session = await mongoose.startSession()
       session.startTransaction()
 
-      const allWorkspaces = await this.repository.find({ user_id: userId }, session)
-      const sourceWorkspace = await this.repository.findByIdAndUser(id, userId)
+      const sourceWorkspace = await this.repository.findByIdAndUser(id, userId, session)
 
       if (!sourceWorkspace) throw new NotFoundError('Исходное пространство не найдено.')
+
+      const allWorkspaces = await this.repository.find({ user_id: userId }, session)
 
       const cleanWorkspace = {
         ...sourceWorkspace,
@@ -550,7 +559,11 @@ export class WorkspaceService
     }
   }
 
-  private async prepareWorkspaceCreationPayload(data: WorkspaceDTO, userId: Types.ObjectId) {
+  private async prepareWorkspaceCreationPayload(
+    data: WorkspaceDTO,
+    userId: Types.ObjectId,
+    session?: ClientSession
+  ) {
     const workspaceName = data.name.trim()
 
     const embeddings = await this.embeddingService.getEmbeddings(workspaceName)
@@ -562,15 +575,19 @@ export class WorkspaceService
     }
 
     if (data.order === undefined) {
-      const allWorkspacesCount = await this.getCount({}, userId)
+      const allWorkspacesCount = await this.getCount({}, userId, session)
       workspacePayload.order = allWorkspacesCount + 1
     }
 
     return workspacePayload
   }
 
-  private async prepareWorkspacesCreationPayload(data: WorkspaceDTO[], userId: Types.ObjectId) {
-    const allWorkspacesCount = await this.getCount({}, userId)
+  private async prepareWorkspacesCreationPayload(
+    data: WorkspaceDTO[],
+    userId: Types.ObjectId,
+    session?: ClientSession
+  ) {
+    const allWorkspacesCount = await this.getCount({}, userId, session)
     let newOrder = allWorkspacesCount + 1
 
     const workspaceNames = data.map((workspace) => workspace.name.trim())
@@ -629,15 +646,23 @@ export class WorkspaceService
     return toServerCaseKeys(workspace)
   }
 
-  public async getCount(criteria: WorkspaceCriteria, userId: Types.ObjectId): Promise<number> {
+  public async getCount(
+    criteria: WorkspaceCriteria,
+    userId: Types.ObjectId,
+    session?: ClientSession
+  ): Promise<number> {
     const filter = this.repository.buildFilter(criteria, userId)
 
-    return this.repository.getCount(filter)
+    return this.repository.getCount(filter, session)
   }
 
-  public async getAll(criteria: WorkspaceCriteria, userId: Types.ObjectId): Promise<IWorkspace[]> {
+  public async getAll(
+    criteria: WorkspaceCriteria,
+    userId: Types.ObjectId,
+    session?: ClientSession
+  ): Promise<IWorkspace[]> {
     const filter = this.repository.buildFilter(criteria, userId)
-    const workspaces = await this.repository.find(filter)
+    const workspaces = await this.repository.find(filter, session)
 
     return workspaces.map((ws) => toServerCaseKeys(ws))
   }

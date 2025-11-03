@@ -7,7 +7,7 @@ import { WorkspaceEditDTOSchema } from '@dtos/WorkspaceEditDTO.ts'
 
 interface IWorkspaceRawController extends WorkspaceController {}
 
-export default (controller: IWorkspaceRawController) => {
+export default (controller: IWorkspaceRawController): Router => {
   const router = Router()
 
   router.use(jwtAuthMiddleware)
