@@ -14,7 +14,7 @@ export interface ITask {
   userId: Types.ObjectId
   deletedTime?: Date
   description?: string
-  dueDate?: Date
+  dueDate?: string
   dueHours?: number
   dueMinutes?: number
   color?: string

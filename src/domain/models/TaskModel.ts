@@ -56,7 +56,7 @@ export const TaskSchema = new Schema<ITaskRaw>(
       type: String,
     },
     due_date: {
-      type: Date,
+      type: String,
     },
     due_hours: {
       type: Number,

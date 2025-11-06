@@ -1,4 +1,4 @@
-import { ITask } from '@entities/ITask.ts'
+import { ITaskServerResponse } from '@entities/ITaskServerResponse.ts'
 import { ITaskRaw } from '@entities/ITaskRaw.ts'
 import TaskRepository from '@repositories/TaskRepository.ts'
 import { TaskDTO } from '@application/dtos/TaskDTO.ts'
@@ -20,7 +20,9 @@ import dayjs from 'dayjs'
 import { IMoveResult } from '../interfaces/IMoveResult.ts'
 import { CategoryService } from './CategoryService.ts'
 
-export class TaskService implements IBaseService<ITask, TaskCriteria, TaskDTO, TaskEditDTO> {
+export class TaskService
+  implements IBaseService<ITaskServerResponse, TaskCriteria, TaskDTO, TaskEditDTO>
+{
   protected repository: TaskRepository
   protected embeddingService: EmbeddingService
   protected operationLogService: OperationLogService
@@ -45,10 +47,14 @@ export class TaskService implements IBaseService<ITask, TaskCriteria, TaskDTO, T
     data: TaskDTO,
     userId: Types.ObjectId,
     externalSession?: ClientSession
-  ): Promise<ITask[]> {
+  ): Promise<ITaskServerResponse[]> {
     let session: ClientSession | null = externalSession || null
     let isNewSession = false
     let reorderedTasks: ReorderResultDTO<ITaskRaw>[] = []
+
+    const tempClientId = data.id
+
+    delete data.id // Remove temp client ID before creation
 
     try {
       if (!session) {
@@ -95,15 +101,18 @@ export class TaskService implements IBaseService<ITask, TaskCriteria, TaskDTO, T
         await session.commitTransaction()
       }
 
+      const toServerCaseTask = toServerCaseKeys<ITaskServerResponse>(newTask)
+      toServerCaseTask.tempClientId = tempClientId // Attach temp client ID back to the response to connect with client-side entity
+
       if (reorderedTasks.length > 0) {
         const reorderedEntities = reorderedTasks.map((r) => r.updatedEntities).flat()
         return [
-          toServerCaseKeys(newTask),
-          ...reorderedEntities.map((re) => toServerCaseKeys<ITask>(re)),
+          toServerCaseTask,
+          ...reorderedEntities.map((re) => toServerCaseKeys<ITaskServerResponse>(re)),
         ]
       }
 
-      return [toServerCaseKeys(newTask)]
+      return [toServerCaseTask]
     } catch (error) {
       if (session && isNewSession) {
         session.abortTransaction()
@@ -121,7 +130,7 @@ export class TaskService implements IBaseService<ITask, TaskCriteria, TaskDTO, T
     data: TaskDTO[],
     userId: Types.ObjectId,
     externalSession?: ClientSession
-  ): Promise<ITask[]> {
+  ): Promise<ITaskServerResponse[]> {
     let session: ClientSession | null = externalSession || null
     let isNewSession = false
     let reorderedTasks: ReorderResultDTO<ITaskRaw>[] = []
@@ -172,15 +181,23 @@ export class TaskService implements IBaseService<ITask, TaskCriteria, TaskDTO, T
         await session.commitTransaction()
       }
 
+      const toServerCaseKeysTasks = newTasks.map((nt, index) => {
+        const transformed = toServerCaseKeys<ITaskServerResponse>(nt)
+
+        transformed.tempClientId = data[index].id // Attach temp client ID back to the response to connect with client-side entity
+
+        return transformed
+      })
+
       if (reorderedTasks.length > 0) {
         const reorderedEntities = reorderedTasks.map((r) => r.updatedEntities).flat()
         return [
-          ...newTasks.map((nb) => toServerCaseKeys<ITask>(nb)),
-          ...reorderedEntities.map((re) => toServerCaseKeys<ITask>(re)),
+          ...toServerCaseKeysTasks,
+          ...reorderedEntities.map((re) => toServerCaseKeys<ITaskServerResponse>(re)),
         ]
       }
 
-      return [...newTasks.map((nb) => toServerCaseKeys<ITask>(nb))]
+      return [...toServerCaseKeysTasks]
     } catch (error) {
       if (session && isNewSession) {
         session.abortTransaction()
@@ -199,7 +216,7 @@ export class TaskService implements IBaseService<ITask, TaskCriteria, TaskDTO, T
     criteria: TaskCriteria,
     userId: Types.ObjectId,
     externalSession?: ClientSession
-  ): Promise<ITask[]> {
+  ): Promise<ITaskServerResponse[]> {
     let session: ClientSession | null = externalSession || null
     let isNewSession = false
     let reorderedTasks: ReorderResultDTO<ITaskRaw>[] = []
@@ -215,6 +232,8 @@ export class TaskService implements IBaseService<ITask, TaskCriteria, TaskDTO, T
       const filter = this.repository.buildFilter(criteria, userId)
 
       const tasksToUpdate: ITaskRaw[] = await this.repository.find(filter, session)
+
+      if (tasksToUpdate.length === 0) throw new NotFoundError('Задачи для обновления не найдены.')
 
       const taskPayload = await this.prepareTaskEditPayload(data, tasksToUpdate, userId)
 
@@ -275,12 +294,12 @@ export class TaskService implements IBaseService<ITask, TaskCriteria, TaskDTO, T
       if (reorderedTasks.length > 0) {
         const reorderedEntities = reorderedTasks.map((r) => r.updatedEntities).flat()
         return [
-          ...newEntities.map((ne) => toServerCaseKeys<ITask>(ne)),
-          ...reorderedEntities.map((re) => toServerCaseKeys<ITask>(re)),
+          ...newEntities.map((ne) => toServerCaseKeys<ITaskServerResponse>(ne)),
+          ...reorderedEntities.map((re) => toServerCaseKeys<ITaskServerResponse>(re)),
         ]
       }
 
-      return [...newEntities.map((ne) => toServerCaseKeys<ITask>(ne))]
+      return [...newEntities.map((ne) => toServerCaseKeys<ITaskServerResponse>(ne))]
     } catch (error) {
       if (session && isNewSession) {
         session.abortTransaction()
@@ -340,7 +359,7 @@ export class TaskService implements IBaseService<ITask, TaskCriteria, TaskDTO, T
     targetBoardId: Types.ObjectId,
     userId: Types.ObjectId,
     session?: ClientSession
-  ): Promise<IOperationResult<ITask>> {
+  ): Promise<IOperationResult<ITaskServerResponse>> {
     const filter = this.repository.buildFilter(
       { categoryIds: categoryIds.map((id) => id.toString()) },
       userId
@@ -368,7 +387,7 @@ export class TaskService implements IBaseService<ITask, TaskCriteria, TaskDTO, T
     )
 
     return {
-      entities: updatedTasks.map((t) => toServerCaseKeys<ITask>(t)),
+      entities: updatedTasks.map((t) => toServerCaseKeys<ITaskServerResponse>(t)),
       logIds: [log[0].id],
     }
   }
@@ -378,7 +397,7 @@ export class TaskService implements IBaseService<ITask, TaskCriteria, TaskDTO, T
     targetWorkspaceId: Types.ObjectId,
     userId: Types.ObjectId,
     session?: ClientSession
-  ): Promise<IOperationResult<ITask>> {
+  ): Promise<IOperationResult<ITaskServerResponse>> {
     const filter = this.repository.buildFilter(
       { boardIds: boardIds.map((id) => id.toString()) },
       userId
@@ -406,7 +425,7 @@ export class TaskService implements IBaseService<ITask, TaskCriteria, TaskDTO, T
     )
 
     return {
-      entities: updatedTasks.map((t) => toServerCaseKeys<ITask>(t)),
+      entities: updatedTasks.map((t) => toServerCaseKeys<ITaskServerResponse>(t)),
       logIds: [log[0].id],
     }
   }
@@ -415,7 +434,7 @@ export class TaskService implements IBaseService<ITask, TaskCriteria, TaskDTO, T
     criteria: TaskCriteria,
     userId: Types.ObjectId,
     externalSession?: ClientSession
-  ): Promise<ITask[]> {
+  ): Promise<ITaskServerResponse[]> {
     let session: ClientSession | null = externalSession || null
     let isNewSession = false
     let reorderedTasks: ReorderResultDTO<ITaskRaw>[] = []
@@ -430,6 +449,8 @@ export class TaskService implements IBaseService<ITask, TaskCriteria, TaskDTO, T
       const filter = this.repository.buildFilter(criteria, userId)
 
       const tasksToDelete = await this.repository.find(filter, session)
+
+      if (tasksToDelete.length === 0) throw new NotFoundError('Задачи для удаления не найдены.')
 
       await this.repository.deleteMany(filter, session)
 
@@ -447,7 +468,7 @@ export class TaskService implements IBaseService<ITask, TaskCriteria, TaskDTO, T
 
       const reorderedEntities = reorderedTasks.map((r) => r.updatedEntities).flat()
 
-      return [...reorderedEntities.map((re) => toServerCaseKeys<ITask>(re))]
+      return [...reorderedEntities.map((re) => toServerCaseKeys<ITaskServerResponse>(re))]
     } catch (error) {
       if (session && isNewSession) {
         session.abortTransaction()
@@ -465,7 +486,7 @@ export class TaskService implements IBaseService<ITask, TaskCriteria, TaskDTO, T
     criteria: TaskCriteria,
     userId: Types.ObjectId,
     externalSession?: ClientSession
-  ): Promise<ITask[]> {
+  ): Promise<ITaskServerResponse[]> {
     let session: ClientSession | null = externalSession || null
     let isNewSession = false
     let reorderedTasks: ReorderResultDTO<ITaskRaw>[] = []
@@ -480,6 +501,8 @@ export class TaskService implements IBaseService<ITask, TaskCriteria, TaskDTO, T
       const filter = this.repository.buildFilter(criteria, userId)
 
       const tasksToArchive = await this.repository.find(filter, session)
+
+      if (tasksToArchive.length === 0) throw new NotFoundError('Задачи для архивации не найдены.')
 
       const updatedTasks = await this.repository.updateByFilter(
         filter,
@@ -515,8 +538,8 @@ export class TaskService implements IBaseService<ITask, TaskCriteria, TaskDTO, T
       const reorderedEntities = reorderedTasks.map((r) => r.updatedEntities).flat()
 
       return [
-        ...updatedTasks.map((ub) => toServerCaseKeys<ITask>(ub)),
-        ...reorderedEntities.map((re) => toServerCaseKeys<ITask>(re)),
+        ...updatedTasks.map((ub) => toServerCaseKeys<ITaskServerResponse>(ub)),
+        ...reorderedEntities.map((re) => toServerCaseKeys<ITaskServerResponse>(re)),
       ]
     } catch (error) {
       if (session && isNewSession) {
@@ -535,7 +558,7 @@ export class TaskService implements IBaseService<ITask, TaskCriteria, TaskDTO, T
     criteria: TaskCriteria,
     userId: Types.ObjectId,
     externalSession?: ClientSession
-  ): Promise<ITask[]> {
+  ): Promise<ITaskServerResponse[]> {
     let session: ClientSession | null = externalSession || null
     let isNewSession = false
     let reorderedTasks: ReorderResultDTO<ITaskRaw>[] = []
@@ -550,6 +573,9 @@ export class TaskService implements IBaseService<ITask, TaskCriteria, TaskDTO, T
       const filter = this.repository.buildFilter(criteria, userId)
 
       const tasksToRecover = await this.repository.find(filter, session)
+
+      if (tasksToRecover.length === 0)
+        throw new NotFoundError('Задачи для восстановления не найдены.')
 
       const updatedTasks = await this.repository.updateByFilter(
         filter,
@@ -585,8 +611,8 @@ export class TaskService implements IBaseService<ITask, TaskCriteria, TaskDTO, T
       const reorderedEntities = reorderedTasks.map((r) => r.updatedEntities).flat()
 
       return [
-        ...updatedTasks.map((ub) => toServerCaseKeys<ITask>(ub)),
-        ...reorderedEntities.map((re) => toServerCaseKeys<ITask>(re)),
+        ...updatedTasks.map((ub) => toServerCaseKeys<ITaskServerResponse>(ub)),
+        ...reorderedEntities.map((re) => toServerCaseKeys<ITaskServerResponse>(re)),
       ]
     } catch (error) {
       if (session && isNewSession) {
@@ -601,34 +627,64 @@ export class TaskService implements IBaseService<ITask, TaskCriteria, TaskDTO, T
     }
   }
 
-  public async clone(id: string, userId: Types.ObjectId): Promise<ITask> {
+  public async clone(
+    criteria: TaskCriteria,
+    userId: Types.ObjectId
+  ): Promise<ITaskServerResponse[]> {
     let session: ClientSession | null = null
 
     try {
       session = await mongoose.startSession()
       session.startTransaction()
 
-      const sourceTask = await this.repository.findByIdAndUser(id, userId, session)
+      const filter = this.repository.buildFilter(criteria, userId)
 
-      if (!sourceTask) throw new NotFoundError('Исходная задача не найдена.')
+      const tasksToClone = await this.repository.find(
+        filter,
+        session,
+        '+embeddings -createdAt -updatedAt'
+      )
 
-      const allTasks = await this.repository.find({ category_id: sourceTask.category_id }, session)
+      if (tasksToClone.length === 0) throw new NotFoundError('Задачи для клонирования не найдены.')
 
-      const cleanTask = {
-        ...sourceTask,
-        _id: undefined,
-        order: allTasks.length + 1,
-        name: `${sourceTask?.name} - Копия`,
+      const tasksGrouppedByCategory: Map<string, ITaskRaw[]> = new Map()
+      tasksToClone.forEach((task) => {
+        const categoryId = task.category_id.toString()
+        if (!tasksGrouppedByCategory.has(categoryId)) {
+          tasksGrouppedByCategory.set(categoryId, [])
+        }
+
+        tasksGrouppedByCategory.get(categoryId)!.push(task)
+      })
+
+      const transformedTasks: Omit<ITaskRaw, '_id'>[] = []
+
+      for (const [categoryId, tasks] of tasksGrouppedByCategory) {
+        let newOrder =
+          tasksToClone.filter((t) => t.category_id.toString() === categoryId).length + 1
+
+        for (const task of tasks) {
+          const cleanTask = {
+            ...task,
+            _id: undefined,
+            order: newOrder,
+            name: `${task?.name}`,
+          }
+
+          newOrder += 1
+
+          transformedTasks.push(cleanTask)
+        }
       }
 
-      const newTask = await this.repository.create(cleanTask, session)
+      const newTasks = await this.repository.createMany(transformedTasks, session)
 
       /* LOG */
       await this.operationLogService.create(
         {
           operationType: OperationTypesEnum.CREATE,
           collectionName: CollectionsEnum.TASKS,
-          entitiesAfter: [newTask],
+          entitiesAfter: newTasks,
           dependencies: [],
         },
         userId,
@@ -637,7 +693,7 @@ export class TaskService implements IBaseService<ITask, TaskCriteria, TaskDTO, T
 
       await session.commitTransaction()
 
-      return toServerCaseKeys<ITask>(newTask)
+      return [...newTasks.map((nt) => toServerCaseKeys<ITaskServerResponse>(nt))]
     } catch (error) {
       if (session) {
         session.abortTransaction()
@@ -651,127 +707,11 @@ export class TaskService implements IBaseService<ITask, TaskCriteria, TaskDTO, T
     }
   }
 
-  public async deleteTasksByCategories(
-    categoryIds: Types.ObjectId[],
-    userId: Types.ObjectId,
-    session?: ClientSession
-  ): Promise<void> {
-    const filter = this.repository.buildFilter(
-      { categoryIds: categoryIds.map((id) => id.toString()) },
-      userId
-    )
-
-    await this.repository.deleteMany(filter, session)
-  }
-
-  public async archiveTasksByCategories(
-    categoryIds: Types.ObjectId[],
-    userId: Types.ObjectId,
-    session?: ClientSession
-  ): Promise<IOperationResult<ITask>> {
-    const filter = this.repository.buildFilter(
-      { categoryIds: categoryIds.map((id) => id.toString()) },
-      userId
-    )
-    const updatedTasks = await this.repository.updateByFilter(
-      filter,
-      { is_deleted: true, is_deleted_external: true },
-      session
-    )
-
-    const log = await this.operationLogService.create(
-      {
-        operationType: OperationTypesEnum.UPDATE,
-        collectionName: CollectionsEnum.TASKS,
-        entitiesBefore: updatedTasks.map((c) => ({ ...c, is_deleted: false })),
-        entitiesAfter: updatedTasks,
-        dependencies: [],
-      },
-      userId,
-      session
-    )
-
-    return {
-      entities: updatedTasks.map((c) => toServerCaseKeys<ITask>(c)),
-      logIds: log.map((l) => l.id),
-    }
-  }
-
-  public async recoverTasksByCategories(
-    categoryIds: Types.ObjectId[],
-    userId: Types.ObjectId,
-    session?: ClientSession
-  ): Promise<IOperationResult<ITask>> {
-    const filter = this.repository.buildFilter(
-      { categoryIds: categoryIds.map((id) => id.toString()) },
-      userId
-    )
-    const updatedTasks = await this.repository.updateByFilter(
-      filter,
-      { is_deleted: false, is_deleted_external: false },
-      session
-    )
-
-    const log = await this.operationLogService.create(
-      {
-        operationType: OperationTypesEnum.UPDATE,
-        collectionName: CollectionsEnum.TASKS,
-        entitiesBefore: updatedTasks.map((c) => ({ ...c, is_deleted: true })),
-        entitiesAfter: updatedTasks,
-        dependencies: [],
-      },
-      userId,
-      session
-    )
-
-    return {
-      entities: updatedTasks.map((c) => toServerCaseKeys<ITask>(c)),
-      logIds: log.map((l) => l.id),
-    }
-  }
-
-  public async cloneTasksByCategory(
-    sourceCategoryId: Types.ObjectId,
-    targetCategoryId: Types.ObjectId,
-    userId: Types.ObjectId,
-    session: ClientSession
-  ): Promise<IOperationResult<ITask>> {
-    const filter = this.repository.buildFilter({ categoryId: sourceCategoryId.toString() }, userId)
-    const sourceTasks = await this.repository.find(filter, session)
-
-    const cleanTasks = sourceTasks.map((task) => ({
-      ...task,
-      category_id: targetCategoryId,
-      _id: undefined,
-    }))
-
-    const clonedTasks = await this.repository.createMany(cleanTasks, session)
-
-    /* LOG */
-    const logs = await this.operationLogService.create(
-      {
-        operationType: OperationTypesEnum.CREATE,
-        collectionName: CollectionsEnum.TASKS,
-        entitiesAfter: clonedTasks,
-        dependencies: [],
-      },
-      userId,
-      session
-    )
-
-    const clonedTasksTransformed = clonedTasks.map((cb) => toServerCaseKeys<ITask>(cb))
-
-    return {
-      entities: clonedTasksTransformed,
-      logIds: logs.map((log) => log.id),
-    }
-  }
-
   public async cloneTasksByCategories(
     categoryIdsMap: Map<string, string>,
     userId: Types.ObjectId,
     session: ClientSession
-  ): Promise<IOperationResult<ITask>> {
+  ): Promise<IOperationResult<ITaskServerResponse>> {
     const categoryIds = Array.from(categoryIdsMap.values())
     const filter = this.repository.buildFilter({ categoryIds }, userId)
     const sourceTasks = await this.repository.find(filter, session)
@@ -796,11 +736,92 @@ export class TaskService implements IBaseService<ITask, TaskCriteria, TaskDTO, T
       session
     )
 
-    const clonedTasksTransformed = clonedTasks.map((cb) => toServerCaseKeys<ITask>(cb))
+    const clonedTasksTransformed = clonedTasks.map((cb) =>
+      toServerCaseKeys<ITaskServerResponse>(cb)
+    )
 
     return {
       entities: clonedTasksTransformed,
       logIds: logs.map((log) => log.id),
+    }
+  }
+
+  public async deleteTasksByCategories(
+    categoryIds: Types.ObjectId[],
+    userId: Types.ObjectId,
+    session?: ClientSession
+  ): Promise<void> {
+    const filter = this.repository.buildFilter(
+      { categoryIds: categoryIds.map((id) => id.toString()) },
+      userId
+    )
+
+    await this.repository.deleteMany(filter, session)
+  }
+
+  public async archiveTasksByCategories(
+    categoryIds: Types.ObjectId[],
+    userId: Types.ObjectId,
+    session?: ClientSession
+  ): Promise<IOperationResult<ITaskServerResponse>> {
+    const filter = this.repository.buildFilter(
+      { categoryIds: categoryIds.map((id) => id.toString()) },
+      userId
+    )
+    const updatedTasks = await this.repository.updateByFilter(
+      filter,
+      { is_deleted: true, is_deleted_external: true },
+      session
+    )
+
+    const log = await this.operationLogService.create(
+      {
+        operationType: OperationTypesEnum.UPDATE,
+        collectionName: CollectionsEnum.TASKS,
+        entitiesBefore: updatedTasks.map((c) => ({ ...c, is_deleted: false })),
+        entitiesAfter: updatedTasks,
+        dependencies: [],
+      },
+      userId,
+      session
+    )
+
+    return {
+      entities: updatedTasks.map((c) => toServerCaseKeys<ITaskServerResponse>(c)),
+      logIds: log.map((l) => l.id),
+    }
+  }
+
+  public async recoverTasksByCategories(
+    categoryIds: Types.ObjectId[],
+    userId: Types.ObjectId,
+    session?: ClientSession
+  ): Promise<IOperationResult<ITaskServerResponse>> {
+    const filter = this.repository.buildFilter(
+      { categoryIds: categoryIds.map((id) => id.toString()) },
+      userId
+    )
+    const updatedTasks = await this.repository.updateByFilter(
+      filter,
+      { is_deleted: false, is_deleted_external: false },
+      session
+    )
+
+    const log = await this.operationLogService.create(
+      {
+        operationType: OperationTypesEnum.UPDATE,
+        collectionName: CollectionsEnum.TASKS,
+        entitiesBefore: updatedTasks.map((c) => ({ ...c, is_deleted: true })),
+        entitiesAfter: updatedTasks,
+        dependencies: [],
+      },
+      userId,
+      session
+    )
+
+    return {
+      entities: updatedTasks.map((c) => toServerCaseKeys<ITaskServerResponse>(c)),
+      logIds: log.map((l) => l.id),
     }
   }
 
@@ -813,8 +834,9 @@ export class TaskService implements IBaseService<ITask, TaskCriteria, TaskDTO, T
 
     const embeddings = await this.embeddingService.getEmbeddings(taskName)
 
-    const taskPayload: Omit<ITaskRaw, '_id'> = {
+    const taskPayload: ITaskRaw = {
       ...toMongoCaseKeys(data),
+      _id: new Types.ObjectId(),
       embeddings,
       user_id: userId,
     }
@@ -894,10 +916,11 @@ export class TaskService implements IBaseService<ITask, TaskCriteria, TaskDTO, T
       taskPayload.color_name = TASK_COLORS_MAP[data.color]
     }
 
-    if (data.dueDate) {
-      const utcDueDate = dayjs.tz(data.dueDate, data.timezone)
+    if (data.dueDate && data.dueHours != null && data.dueMinutes != null && data.timezone) {
+      const collectedDateTime = `${data.dueDate}T${data.dueHours}:${data.dueMinutes}`
+      const utcDueDate = dayjs.tz(collectedDateTime, data.timezone).utc()
 
-      taskPayload.due_date = utcDueDate.toDate()
+      taskPayload.due_date = utcDueDate.format('YYYY-MM-DD')
       taskPayload.due_hours = utcDueDate.hour()
       taskPayload.due_minutes = utcDueDate.minute()
     }
@@ -936,7 +959,7 @@ export class TaskService implements IBaseService<ITask, TaskCriteria, TaskDTO, T
     id: string,
     userId: Types.ObjectId,
     session?: ClientSession
-  ): Promise<ITask | null> {
+  ): Promise<ITaskServerResponse | null> {
     const task = await this.repository.findByIdAndUser(id, userId, session)
 
     return toServerCaseKeys(task)
@@ -968,7 +991,7 @@ export class TaskService implements IBaseService<ITask, TaskCriteria, TaskDTO, T
     criteria: TaskCriteria,
     userId: Types.ObjectId,
     session?: ClientSession
-  ): Promise<ITask[]> {
+  ): Promise<ITaskServerResponse[]> {
     const filter = this.repository.buildFilter(criteria, userId)
     const tasks = await this.repository.find(filter, session)
 

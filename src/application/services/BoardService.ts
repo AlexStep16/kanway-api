@@ -218,6 +218,9 @@ export class BoardService implements IBaseService<IBoard, BoardCriteria, BoardDT
 
       const boardsToUpdate: IBoardRaw[] = await this.repository.find(filter, session)
 
+      if (boardsToUpdate.length === 0)
+        throw new NotFoundError('Доски для редактирования не найдены.')
+
       const boardPayload = await this.prepareBoardEditPayload(data, boardsToUpdate, userId)
 
       /* UPDATE */
@@ -339,6 +342,8 @@ export class BoardService implements IBaseService<IBoard, BoardCriteria, BoardDT
 
       const boardsToDelete = await this.repository.find(filter, session)
 
+      if (boardsToDelete.length === 0) throw new NotFoundError('Доски для удаления не найдены.')
+
       await this.repository.deleteMany(filter, session)
 
       await this.categoryService.deleteCategoriesByBoards(
@@ -394,6 +399,8 @@ export class BoardService implements IBaseService<IBoard, BoardCriteria, BoardDT
       const filter = this.repository.buildFilter(criteria, userId)
 
       const boardsToArchive = await this.repository.find(filter, session)
+
+      if (boardsToArchive.length === 0) throw new NotFoundError('Доски для архивации не найдены.')
 
       const updatedBoards = await this.repository.updateByFilter(
         filter,
@@ -477,6 +484,9 @@ export class BoardService implements IBaseService<IBoard, BoardCriteria, BoardDT
 
       const boardsToRecover = await this.repository.find(filter, session)
 
+      if (boardsToRecover.length === 0)
+        throw new NotFoundError('Доски для восстановления не найдены.')
+
       const updatedBoards = await this.repository.updateByFilter(
         filter,
         { is_deleted: false },
@@ -539,34 +549,60 @@ export class BoardService implements IBaseService<IBoard, BoardCriteria, BoardDT
     }
   }
 
-  public async clone(id: string, userId: Types.ObjectId): Promise<IBoard> {
+  public async clone(criteria: BoardCriteria, userId: Types.ObjectId): Promise<IBoard[]> {
     let session: ClientSession | null = null
 
     try {
       session = await mongoose.startSession()
       session.startTransaction()
 
-      const sourceBoard = await this.repository.findByIdAndUser(id, userId, session)
+      const filter = this.repository.buildFilter(criteria, userId)
 
-      if (!sourceBoard) throw new NotFoundError('Исходная доска не найдена.')
-
-      const allBoards = await this.repository.find(
-        { workspace_id: sourceBoard.workspace_id },
-        session
+      const boardsToClone = await this.repository.find(
+        filter,
+        session,
+        '+embeddings -createdAt -updatedAt'
       )
 
-      const cleanBoard = {
-        ...sourceBoard,
-        _id: undefined,
-        order: allBoards.length + 1,
-        name: `${sourceBoard?.name} - Копия`,
+      if (boardsToClone.length === 0) throw new NotFoundError('Доски для клонирования не найдены.')
+
+      const boardsGroupedByWorkspace: Map<string, IBoardRaw[]> = new Map()
+      boardsToClone.forEach((board) => {
+        const workspaceId = board.workspace_id.toString()
+        if (!boardsGroupedByWorkspace.has(workspaceId)) {
+          boardsGroupedByWorkspace.set(workspaceId, [board])
+        }
+        boardsGroupedByWorkspace.get(workspaceId)!.push(board)
+      })
+
+      const transformedBoards: Omit<IBoardRaw, '_id'>[] = []
+
+      for (const [workspaceId, boards] of boardsGroupedByWorkspace) {
+        let newOrder =
+          boardsToClone.filter((t) => t.workspace_id.toString() === workspaceId).length + 1
+
+        for (const board of boards) {
+          const cleanBoard = {
+            ...board,
+            _id: undefined,
+            order: newOrder,
+          }
+
+          newOrder += 1
+
+          transformedBoards.push(cleanBoard)
+        }
       }
 
-      const newBoard = await this.repository.create(cleanBoard, session)
+      const newBoards = await this.repository.createMany(transformedBoards, session)
 
-      const cloneCategoriesResult = await this.categoryService.cloneCategoriesByBoard(
-        sourceBoard._id,
-        newBoard._id,
+      const boardIdsMap: Map<string, string> = new Map()
+      boardsToClone.forEach((sourceId, index) => {
+        boardIdsMap.set(sourceId.toString(), newBoards[index]._id.toString())
+      })
+
+      const cloneCategoriesResult = await this.categoryService.cloneCategoriesByBoards(
+        boardIdsMap,
         userId,
         session
       )
@@ -576,7 +612,7 @@ export class BoardService implements IBaseService<IBoard, BoardCriteria, BoardDT
         {
           operationType: OperationTypesEnum.CREATE,
           collectionName: CollectionsEnum.BOARDS,
-          entitiesAfter: [newBoard],
+          entitiesAfter: newBoards,
           dependencies: cloneCategoriesResult.logIds,
         },
         userId,
@@ -585,7 +621,7 @@ export class BoardService implements IBaseService<IBoard, BoardCriteria, BoardDT
 
       await session.commitTransaction()
 
-      return toServerCaseKeys<IBoard>(newBoard)
+      return newBoards.map((cb) => toServerCaseKeys<IBoard>(cb))
     } catch (error) {
       if (session) {
         session.abortTransaction()
@@ -692,29 +728,28 @@ export class BoardService implements IBaseService<IBoard, BoardCriteria, BoardDT
     }
   }
 
-  public async cloneBoardsByWorkspace(
-    sourceWorkspaceId: Types.ObjectId,
-    targetWorkspaceId: Types.ObjectId,
+  public async cloneBoardsByWorkspaces(
+    workspaceIdsMap: Map<string, string>,
     userId: Types.ObjectId,
     session: ClientSession
   ): Promise<IOperationResult<IBoard>> {
-    const filter = this.repository.buildFilter(
-      { workspaceId: sourceWorkspaceId.toString() },
-      userId
-    )
+    const workspaceIds = Array.from(workspaceIdsMap.values())
+
+    const filter = this.repository.buildFilter({ workspaceIds }, userId)
+
     const sourceBoards = await this.repository.find(filter, session)
-    const sourceBoardsIds = sourceBoards.map((board) => board._id)
+    const sourceBoardIds = sourceBoards.map((board) => board._id)
 
     const cleanBoards = sourceBoards.map((board) => ({
       ...board,
-      workspace_id: targetWorkspaceId,
+      workspace_id: new Types.ObjectId(workspaceIdsMap.get(board.workspace_id.toString())),
       _id: undefined,
     }))
 
     const clonedBoards = await this.repository.createMany(cleanBoards, session)
 
     const boardIdsMap: Map<string, string> = new Map()
-    sourceBoardsIds.forEach((sourceId, index) => {
+    sourceBoardIds.forEach((sourceId, index) => {
       boardIdsMap.set(sourceId.toString(), clonedBoards[index]._id.toString())
     })
 

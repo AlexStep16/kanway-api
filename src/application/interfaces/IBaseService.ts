@@ -23,4 +23,4 @@ export interface IBaseService<
     IDeleteService<TEntity, TCriteria>,
     IRecoverService<TCriteria, TEntity>,
     IArchiveService<TCriteria, TEntity>,
-    ICloneService<TEntity> {}
+    ICloneService<TEntity, TCriteria> {}

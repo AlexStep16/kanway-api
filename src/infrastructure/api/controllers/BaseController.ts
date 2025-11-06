@@ -90,7 +90,8 @@ export abstract class BaseController<
 
   public clone = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const result = await this.service.clone(req.params.id, req.user!.id)
+      const criteria = { id: req.params.id } as TCriteria
+      const result = await this.service.clone(criteria, req.user!.id)
 
       res.status(200).json(new SuccessResponse(result))
     } catch (error) {

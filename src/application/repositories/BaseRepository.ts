@@ -4,6 +4,7 @@ import {
   CreateOptions,
   FilterQuery,
   Model,
+  ProjectionType,
   Types,
   UpdateWriteOpResult,
 } from 'mongoose'
@@ -20,7 +21,7 @@ export abstract class BaseRepository<TEntity, TModel extends Model<TEntity>> {
     userId: Types.ObjectId,
     session?: ClientSession
   ): Promise<TEntity | null> {
-    const doc = await this.model.findOne({ _id: id, user_id: userId }, null, { session }).lean()
+    const doc = await this.model.findOne({ _id: id, user_id: userId }, { session }).lean()
     return doc as TEntity
   }
 
@@ -64,9 +65,10 @@ export abstract class BaseRepository<TEntity, TModel extends Model<TEntity>> {
   private async _updateMany(
     filter: FilterQuery<TEntity>,
     data: Partial<TEntity>,
-    session?: ClientSession
+    session?: ClientSession,
+    unset?: Record<string, true>
   ): Promise<UpdateWriteOpResult> {
-    return this.model.updateMany(filter, { $set: data }, { session })
+    return this.model.updateMany(filter, { $set: data, $unset: unset }, { session })
   }
 
   public async updateByFilter(
@@ -84,10 +86,20 @@ export abstract class BaseRepository<TEntity, TModel extends Model<TEntity>> {
 
     if (idsToUpdate.length === 0) return []
 
+    const unset: Record<string, true> = {}
+
+    Object.entries(data).forEach(([key, value]) => {
+      if (value === null || value === undefined) {
+        unset[key] = true
+        delete data[key as keyof typeof data]
+      }
+    })
+
     const updateResult = await this._updateMany(
       { _id: { $in: idsToUpdate } } as FilterQuery<TEntity>,
       data,
-      session
+      session,
+      unset
     )
 
     if (updateResult.modifiedCount === 0) return []
@@ -133,9 +145,10 @@ export abstract class BaseRepository<TEntity, TModel extends Model<TEntity>> {
 
   public async find(
     filter: FilterQuery<TEntity>,
-    session: ClientSession | null = null
+    session: ClientSession | null = null,
+    projection: ProjectionType<TEntity> | null = null
   ): Promise<TEntity[]> {
-    return this.model.find(filter).session(session).lean() as Promise<TEntity[]>
+    return this.model.find(filter, projection).session(session).lean() as Promise<TEntity[]>
   }
 
   public async getCount(

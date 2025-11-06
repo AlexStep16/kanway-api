@@ -86,6 +86,29 @@ export function initializeDependencies() {
   Object.assign(mockCategoryService, categoryService)
   Object.assign(mockBoardService, boardService)
 
+  const categoryMethodsToCopy = Object.getOwnPropertyNames(CategoryService.prototype).filter(
+    (name) => name !== 'constructor'
+  )
+
+  for (const methodName of categoryMethodsToCopy) {
+    const method = (categoryService.constructor.prototype as any)[methodName]
+
+    if (typeof method === 'function') {
+      ;(mockCategoryService as any)[methodName] = method.bind(categoryService)
+    }
+  }
+  const boardMethodsToCopy = Object.getOwnPropertyNames(BoardService.prototype).filter(
+    (name) => name !== 'constructor'
+  )
+
+  for (const methodName of boardMethodsToCopy) {
+    const method = (boardService.constructor.prototype as any)[methodName]
+
+    if (typeof method === 'function') {
+      ;(mockBoardService as any)[methodName] = method.bind(boardService)
+    }
+  }
+
   /* WORKSPACE SERVICES START */
   const workspaceReorderService = new ReorderService(workspaceRepository, operationLogService)
   const workspaceService = new WorkspaceService(

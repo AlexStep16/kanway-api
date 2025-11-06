@@ -20,6 +20,7 @@ export default (controller: ITaskRawController): Router => {
 
   router.patch('/:id/archive', controller.archive)
   router.patch('/:id/recover', controller.recover)
+  router.post('/:id/clone', controller.clone)
 
   return router
 }

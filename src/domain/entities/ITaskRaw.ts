@@ -15,7 +15,7 @@ export interface ITaskRaw {
   embeddings: Array<Number>
   deleted_time?: Date
   description?: string
-  due_date?: Date
+  due_date?: string
   due_hours?: number
   due_minutes?: number
   color?: string

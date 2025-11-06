@@ -218,6 +218,9 @@ export class WorkspaceService
 
       const workspacesToUpdate: IWorkspaceRaw[] = await this.repository.find(filter, session)
 
+      if (workspacesToUpdate.length === 0)
+        throw new NotFoundError('Пространства для редактирования не найдены.')
+
       const workspacePayload = await this.prepareWorkspaceEditPayload(
         data,
         workspacesToUpdate,
@@ -306,6 +309,9 @@ export class WorkspaceService
 
       const workspacesToDelete = await this.repository.find(filter, session)
 
+      if (workspacesToDelete.length === 0)
+        throw new NotFoundError('Пространства для удаления не найдены.')
+
       await this.repository.deleteMany(filter, session)
 
       await this.boardService.deleteBoardsByWorkspaces(
@@ -365,6 +371,9 @@ export class WorkspaceService
         { is_deleted: true },
         session
       )
+
+      if (updatedWorkspaces.length === 0)
+        throw new NotFoundError('Пространства для архивации не найдены.')
 
       /* REORDER */
       reorderedWorkspaces = await this.reorderService.reorderByParentIds(
@@ -446,6 +455,9 @@ export class WorkspaceService
         session
       )
 
+      if (updatedWorkspaces.length === 0)
+        throw new NotFoundError('Пространства для восстановления не найдены.')
+
       if (isNewSession) {
         await session.commitTransaction()
       }
@@ -502,31 +514,49 @@ export class WorkspaceService
     }
   }
 
-  public async clone(id: string, userId: Types.ObjectId): Promise<IWorkspace> {
+  public async clone(criteria: WorkspaceCriteria, userId: Types.ObjectId): Promise<IWorkspace[]> {
     let session: ClientSession | null = null
 
     try {
       session = await mongoose.startSession()
       session.startTransaction()
 
-      const sourceWorkspace = await this.repository.findByIdAndUser(id, userId, session)
+      const filter = this.repository.buildFilter(criteria, userId)
 
-      if (!sourceWorkspace) throw new NotFoundError('Исходное пространство не найдено.')
+      const workspacesToClone = await this.repository.find(
+        filter,
+        session,
+        '+embeddings -createdAt -updatedAt'
+      )
 
-      const allWorkspaces = await this.repository.find({ user_id: userId }, session)
+      const allWorkspacesCount = await this.getCount({}, userId, session)
 
-      const cleanWorkspace = {
-        ...sourceWorkspace,
-        _id: undefined,
-        order: allWorkspaces.length + 1,
-        name: `${sourceWorkspace?.name} - Копия`,
+      if (workspacesToClone.length === 0)
+        throw new NotFoundError('Пространства для клонирования не найдены.')
+
+      const transformedWorkspaces: Omit<IWorkspaceRaw, '_id'>[] = []
+
+      for (const workspace of workspacesToClone) {
+        let newOrder = allWorkspacesCount + 1
+
+        const cleanWorkspace = {
+          ...workspace,
+          _id: undefined,
+          order: newOrder,
+        }
+
+        transformedWorkspaces.push(cleanWorkspace)
       }
 
-      const newWorkspace = await this.repository.create(cleanWorkspace, session)
+      const newWorkspaces = await this.repository.createMany(transformedWorkspaces, session)
 
-      const cloneBoardsResult = await this.boardService.cloneBoardsByWorkspace(
-        sourceWorkspace._id,
-        newWorkspace._id,
+      const workspaceIdsMap: Map<string, string> = new Map()
+      workspacesToClone.forEach((sourceId, index) => {
+        workspaceIdsMap.set(sourceId.toString(), newWorkspaces[index]._id.toString())
+      })
+
+      const cloneBoardsResult = await this.boardService.cloneBoardsByWorkspaces(
+        workspaceIdsMap,
         userId,
         session
       )
@@ -536,7 +566,7 @@ export class WorkspaceService
         {
           operationType: OperationTypesEnum.CREATE,
           collectionName: CollectionsEnum.WORKSPACES,
-          entitiesAfter: [newWorkspace],
+          entitiesAfter: newWorkspaces,
           dependencies: cloneBoardsResult.logIds,
         },
         userId,
@@ -545,7 +575,7 @@ export class WorkspaceService
 
       await session.commitTransaction()
 
-      return toServerCaseKeys<IWorkspace>(newWorkspace)
+      return newWorkspaces.map((wb) => toServerCaseKeys<IWorkspace>(wb))
     } catch (error) {
       if (session) {
         session.abortTransaction()

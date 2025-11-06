@@ -1,4 +1,4 @@
-import { ICategory } from '@entities/ICategory.ts'
+import { ICategoryServerResponse } from '@entities/ICategoryServerResponse.ts'
 import { ICategoryRaw } from '@entities/ICategoryRaw.ts'
 import CategoryRepository from '@repositories/CategoryRepository.ts'
 import { CategoryDTO } from '@application/dtos/CategoryDTO.ts'
@@ -20,7 +20,7 @@ import { IMoveResult } from '../interfaces/IMoveResult.ts'
 import { BoardService } from './BoardService.ts'
 
 export class CategoryService
-  implements IBaseService<ICategory, CategoryCriteria, CategoryDTO, CategoryEditDTO>
+  implements IBaseService<ICategoryServerResponse, CategoryCriteria, CategoryDTO, CategoryEditDTO>
 {
   protected repository: CategoryRepository
   protected embeddingService: EmbeddingService
@@ -49,10 +49,14 @@ export class CategoryService
     data: CategoryDTO,
     userId: Types.ObjectId,
     externalSession?: ClientSession
-  ): Promise<ICategory[]> {
+  ): Promise<ICategoryServerResponse[]> {
     let session: ClientSession | null = externalSession || null
     let isNewSession = false
     let reorderedCategories: ReorderResultDTO<ICategoryRaw>[] = []
+
+    const tempClientId = data.id
+
+    delete data.id // Remove temp client ID before creation
 
     try {
       if (!session) {
@@ -99,15 +103,18 @@ export class CategoryService
         await session.commitTransaction()
       }
 
+      const toServerCaseCategory = toServerCaseKeys<ICategoryServerResponse>(newCategory)
+      toServerCaseCategory.tempClientId = tempClientId // Attach temp client ID back to the response to connect with client-side entity
+
       if (reorderedCategories.length > 0) {
         const reorderedEntities = reorderedCategories.map((r) => r.updatedEntities).flat()
         return [
-          toServerCaseKeys(newCategory),
-          ...reorderedEntities.map((re) => toServerCaseKeys<ICategory>(re)),
+          toServerCaseCategory,
+          ...reorderedEntities.map((re) => toServerCaseKeys<ICategoryServerResponse>(re)),
         ]
       }
 
-      return [toServerCaseKeys(newCategory)]
+      return [toServerCaseCategory]
     } catch (error) {
       if (session && isNewSession) {
         session.abortTransaction()
@@ -125,7 +132,7 @@ export class CategoryService
     data: CategoryDTO[],
     userId: Types.ObjectId,
     externalSession?: ClientSession
-  ): Promise<ICategory[]> {
+  ): Promise<ICategoryServerResponse[]> {
     let session: ClientSession | null = externalSession || null
     let isNewSession = false
     let reorderedCategories: ReorderResultDTO<ICategoryRaw>[] = []
@@ -176,15 +183,23 @@ export class CategoryService
         await session.commitTransaction()
       }
 
+      const toServerCaseKeysCategories = newCategories.map((nc, index) => {
+        const transformed = toServerCaseKeys<ICategoryServerResponse>(nc)
+
+        transformed.tempClientId = data[index].id // Attach temp client ID back to the response to connect with client-side entity
+
+        return transformed
+      })
+
       if (reorderedCategories.length > 0) {
         const reorderedEntities = reorderedCategories.map((r) => r.updatedEntities).flat()
         return [
-          ...newCategories.map((nb) => toServerCaseKeys<ICategory>(nb)),
-          ...reorderedEntities.map((re) => toServerCaseKeys<ICategory>(re)),
+          ...toServerCaseKeysCategories,
+          ...reorderedEntities.map((re) => toServerCaseKeys<ICategoryServerResponse>(re)),
         ]
       }
 
-      return [...newCategories.map((nb) => toServerCaseKeys<ICategory>(nb))]
+      return [...toServerCaseKeysCategories]
     } catch (error) {
       if (session && isNewSession) {
         session.abortTransaction()
@@ -203,7 +218,7 @@ export class CategoryService
     criteria: CategoryCriteria,
     userId: Types.ObjectId,
     externalSession?: ClientSession
-  ): Promise<ICategory[]> {
+  ): Promise<ICategoryServerResponse[]> {
     let session: ClientSession | null = externalSession || null
     let isNewSession = false
     let reorderedCategories: ReorderResultDTO<ICategoryRaw>[] = []
@@ -219,6 +234,9 @@ export class CategoryService
       const filter = this.repository.buildFilter(criteria, userId)
 
       const categoriesToUpdate: ICategoryRaw[] = await this.repository.find(filter, session)
+
+      if (categoriesToUpdate.length === 0)
+        throw new NotFoundError('Категории для редактирования не найдены.')
 
       const categoryPayload = await this.prepareCategoryEditPayload(
         data,
@@ -283,12 +301,12 @@ export class CategoryService
       if (reorderedCategories.length > 0) {
         const reorderedEntities = reorderedCategories.map((r) => r.updatedEntities).flat()
         return [
-          ...newEntities.map((ne) => toServerCaseKeys<ICategory>(ne)),
-          ...reorderedEntities.map((re) => toServerCaseKeys<ICategory>(re)),
+          ...newEntities.map((ne) => toServerCaseKeys<ICategoryServerResponse>(ne)),
+          ...reorderedEntities.map((re) => toServerCaseKeys<ICategoryServerResponse>(re)),
         ]
       }
 
-      return [...newEntities.map((ne) => toServerCaseKeys<ICategory>(ne))]
+      return [...newEntities.map((ne) => toServerCaseKeys<ICategoryServerResponse>(ne))]
     } catch (error) {
       if (session && isNewSession) {
         session.abortTransaction()
@@ -354,7 +372,7 @@ export class CategoryService
     targetWorkspaceId: Types.ObjectId,
     userId: Types.ObjectId,
     session?: ClientSession
-  ): Promise<IOperationResult<ICategory>> {
+  ): Promise<IOperationResult<ICategoryServerResponse>> {
     const filter = this.repository.buildFilter(
       { boardIds: boardIds.map((id) => id.toString()) },
       userId
@@ -382,7 +400,7 @@ export class CategoryService
     )
 
     return {
-      entities: updatedCategories.map((c) => toServerCaseKeys<ICategory>(c)),
+      entities: updatedCategories.map((c) => toServerCaseKeys<ICategoryServerResponse>(c)),
       logIds: [log[0].id],
     }
   }
@@ -391,7 +409,7 @@ export class CategoryService
     criteria: CategoryCriteria,
     userId: Types.ObjectId,
     externalSession?: ClientSession
-  ): Promise<ICategory[]> {
+  ): Promise<ICategoryServerResponse[]> {
     let session: ClientSession | null = externalSession || null
     let isNewSession = false
     let reorderedCategories: ReorderResultDTO<ICategoryRaw>[] = []
@@ -406,6 +424,9 @@ export class CategoryService
       const filter = this.repository.buildFilter(criteria, userId)
 
       const categoriesToDelete = await this.repository.find(filter, session)
+
+      if (categoriesToDelete.length === 0)
+        throw new NotFoundError('Категории для удаления не найдены.')
 
       await this.repository.deleteMany(filter, session)
 
@@ -429,7 +450,7 @@ export class CategoryService
 
       const reorderedEntities = reorderedCategories.map((r) => r.updatedEntities).flat()
 
-      return [...reorderedEntities.map((re) => toServerCaseKeys<ICategory>(re))]
+      return [...reorderedEntities.map((re) => toServerCaseKeys<ICategoryServerResponse>(re))]
     } catch (error) {
       if (session && isNewSession) {
         session.abortTransaction()
@@ -447,7 +468,7 @@ export class CategoryService
     criteria: CategoryCriteria,
     userId: Types.ObjectId,
     externalSession?: ClientSession
-  ): Promise<ICategory[]> {
+  ): Promise<ICategoryServerResponse[]> {
     let session: ClientSession | null = externalSession || null
     let isNewSession = false
     let reorderedCategories: ReorderResultDTO<ICategoryRaw>[] = []
@@ -509,8 +530,8 @@ export class CategoryService
       const reorderedEntities = reorderedCategories.map((r) => r.updatedEntities).flat()
 
       return [
-        ...updatedCategories.map((ub) => toServerCaseKeys<ICategory>(ub)),
-        ...reorderedEntities.map((re) => toServerCaseKeys<ICategory>(re)),
+        ...updatedCategories.map((ub) => toServerCaseKeys<ICategoryServerResponse>(ub)),
+        ...reorderedEntities.map((re) => toServerCaseKeys<ICategoryServerResponse>(re)),
       ]
     } catch (error) {
       if (session && isNewSession) {
@@ -529,7 +550,7 @@ export class CategoryService
     criteria: CategoryCriteria,
     userId: Types.ObjectId,
     externalSession?: ClientSession
-  ): Promise<ICategory[]> {
+  ): Promise<ICategoryServerResponse[]> {
     let session: ClientSession | null = externalSession || null
     let isNewSession = false
     let reorderedCategories: ReorderResultDTO<ICategoryRaw>[] = []
@@ -544,6 +565,9 @@ export class CategoryService
       const filter = this.repository.buildFilter(criteria, userId)
 
       const categoriesToRecover = await this.repository.find(filter, session)
+
+      if (categoriesToRecover.length === 0)
+        throw new NotFoundError('Категории для восстановления не найдены.')
 
       const updatedCategories = await this.repository.updateByFilter(
         filter,
@@ -591,8 +615,8 @@ export class CategoryService
       const reorderedEntities = reorderedCategories.map((r) => r.updatedEntities).flat()
 
       return [
-        ...updatedCategories.map((ub) => toServerCaseKeys<ICategory>(ub)),
-        ...reorderedEntities.map((re) => toServerCaseKeys<ICategory>(re)),
+        ...updatedCategories.map((ub) => toServerCaseKeys<ICategoryServerResponse>(ub)),
+        ...reorderedEntities.map((re) => toServerCaseKeys<ICategoryServerResponse>(re)),
       ]
     } catch (error) {
       if (session && isNewSession) {
@@ -607,34 +631,64 @@ export class CategoryService
     }
   }
 
-  public async clone(id: string, userId: Types.ObjectId): Promise<ICategory> {
+  public async clone(
+    criteria: CategoryCriteria,
+    userId: Types.ObjectId
+  ): Promise<ICategoryServerResponse[]> {
     let session: ClientSession | null = null
 
     try {
       session = await mongoose.startSession()
       session.startTransaction()
 
-      const sourceCategory = await this.repository.findByIdAndUser(id, userId, session)
+      const filter = this.repository.buildFilter(criteria, userId)
 
-      if (!sourceCategory) throw new NotFoundError('Исходная категория не найдена.')
-
-      const allCategories = await this.repository.find(
-        { board_id: sourceCategory.board_id },
-        session
+      const categoriesToClone = await this.repository.find(
+        filter,
+        session,
+        '+embeddings -createdAt -updatedAt'
       )
 
-      const cleanCategory = {
-        ...sourceCategory,
-        _id: undefined,
-        order: allCategories.length + 1,
-        name: `${sourceCategory?.name} - Копия`,
+      if (categoriesToClone.length === 0)
+        throw new NotFoundError('Категории для клонирования не найдены.')
+
+      const categoriesGroupedByBoard: Map<string, ICategoryRaw[]> = new Map()
+      categoriesToClone.forEach((category) => {
+        const boardId = category.board_id.toString()
+        if (!categoriesGroupedByBoard.has(boardId)) {
+          categoriesGroupedByBoard.set(boardId, [])
+        }
+
+        categoriesGroupedByBoard.get(boardId)!.push(category)
+      })
+
+      const transformedCategories: Omit<ICategoryRaw, '_id'>[] = []
+
+      for (const [boardId, categories] of categoriesGroupedByBoard) {
+        let newOrder = categoriesToClone.filter((t) => t.board_id.toString() === boardId).length + 1
+
+        for (const category of categories) {
+          const cleanCategory = {
+            ...category,
+            _id: undefined,
+            order: newOrder,
+          }
+
+          newOrder += 1
+
+          transformedCategories.push(cleanCategory)
+        }
       }
 
-      const newCategory = await this.repository.create(cleanCategory, session)
+      const newCategories = await this.repository.createMany(transformedCategories, session)
 
-      const cloneTasksResult = await this.taskService.cloneTasksByCategory(
-        sourceCategory._id,
-        newCategory._id,
+      const categoryIdsMap: Map<string, string> = new Map()
+      categoriesToClone.forEach((sourceId, index) => {
+        categoryIdsMap.set(sourceId.toString(), newCategories[index]._id.toString())
+      })
+
+      const cloneTasksResult = await this.taskService.cloneTasksByCategories(
+        categoryIdsMap,
         userId,
         session
       )
@@ -644,7 +698,7 @@ export class CategoryService
         {
           operationType: OperationTypesEnum.CREATE,
           collectionName: CollectionsEnum.CATEGORIES,
-          entitiesAfter: [newCategory],
+          entitiesAfter: newCategories,
           dependencies: cloneTasksResult.logIds,
         },
         userId,
@@ -653,7 +707,7 @@ export class CategoryService
 
       await session.commitTransaction()
 
-      return toServerCaseKeys<ICategory>(newCategory)
+      return newCategories.map((cb) => toServerCaseKeys<ICategoryServerResponse>(cb))
     } catch (error) {
       if (session) {
         session.abortTransaction()
@@ -684,7 +738,7 @@ export class CategoryService
     boardIds: Types.ObjectId[],
     userId: Types.ObjectId,
     session?: ClientSession
-  ): Promise<IOperationResult<ICategory>> {
+  ): Promise<IOperationResult<ICategoryServerResponse>> {
     const filter = this.repository.buildFilter(
       { boardIds: boardIds.map((id) => id.toString()) },
       userId
@@ -715,7 +769,7 @@ export class CategoryService
     const combinedLogIds = log.map((l) => l.id).concat(archiveTasksResult.logIds)
 
     return {
-      entities: updatedCategories.map((c) => toServerCaseKeys<ICategory>(c)),
+      entities: updatedCategories.map((c) => toServerCaseKeys<ICategoryServerResponse>(c)),
       logIds: combinedLogIds,
     }
   }
@@ -724,7 +778,7 @@ export class CategoryService
     boardIds: Types.ObjectId[],
     userId: Types.ObjectId,
     session?: ClientSession
-  ): Promise<IOperationResult<ICategory>> {
+  ): Promise<IOperationResult<ICategoryServerResponse>> {
     const filter = this.repository.buildFilter(
       { boardIds: boardIds.map((id) => id.toString()) },
       userId
@@ -755,24 +809,24 @@ export class CategoryService
     const combinedLogIds = log.map((l) => l.id).concat(recoverTasksResult.logIds)
 
     return {
-      entities: updatedCategories.map((c) => toServerCaseKeys<ICategory>(c)),
+      entities: updatedCategories.map((c) => toServerCaseKeys<ICategoryServerResponse>(c)),
       logIds: combinedLogIds,
     }
   }
 
-  public async cloneCategoriesByBoard(
-    sourceCategoryId: Types.ObjectId,
-    targetBoardId: Types.ObjectId,
+  public async cloneCategoriesByBoards(
+    boardIdsMap: Map<string, string>,
     userId: Types.ObjectId,
     session: ClientSession
-  ): Promise<IOperationResult<ICategory>> {
-    const filter = this.repository.buildFilter({ boardId: sourceCategoryId.toString() }, userId)
+  ): Promise<IOperationResult<ICategoryServerResponse>> {
+    const boardIds = Array.from(boardIdsMap.values())
+    const filter = this.repository.buildFilter({ boardIds }, userId)
     const sourceCategories = await this.repository.find(filter, session)
     const sourceCategoriesIds = sourceCategories.map((category) => category._id)
 
     const cleanCategories = sourceCategories.map((category) => ({
       ...category,
-      board_id: targetBoardId,
+      board_id: new Types.ObjectId(boardIdsMap.get(category.board_id.toString())),
       _id: undefined,
     }))
 
@@ -803,64 +857,12 @@ export class CategoryService
     const combinedLogIds = logs.map((log) => log.id).concat(tasksCloneResult.logIds)
 
     const clonedCategoriesTransformed = clonedCategories.map((cb) =>
-      toServerCaseKeys<ICategory>(cb)
+      toServerCaseKeys<ICategoryServerResponse>(cb)
     )
 
     return {
       entities: clonedCategoriesTransformed,
       logIds: combinedLogIds,
-    }
-  }
-
-  public async cloneCategoriesByBoards(
-    boardIdsMap: Map<string, string>,
-    userId: Types.ObjectId,
-    session: ClientSession
-  ): Promise<IOperationResult<ICategory>> {
-    const boardIds = Array.from(boardIdsMap.values())
-    const filter = this.repository.buildFilter({ boardIds }, userId)
-    const sourceCategories = await this.repository.find(filter, session)
-    const sourceCategoriesIds = sourceCategories.map((category) => category._id)
-
-    const cleanCategories = sourceCategories.map((category) => ({
-      ...category,
-      board_id: new Types.ObjectId(boardIdsMap.get(category.board_id.toString())),
-      _id: undefined,
-    }))
-
-    const clonedCategories = await this.repository.createMany(cleanCategories, session)
-
-    const categoryIdsMap: { [key: string]: Types.ObjectId } = {}
-    sourceCategoriesIds.forEach((sourceId, index) => {
-      categoryIdsMap[sourceId.toString()] = clonedCategories[index]._id
-    })
-
-    /* LOG */
-    const logs = await this.operationLogService.create(
-      {
-        operationType: OperationTypesEnum.CREATE,
-        collectionName: CollectionsEnum.CATEGORIES,
-        entitiesAfter: clonedCategories,
-        dependencies: [],
-      },
-      userId,
-      session
-    )
-
-    /*const categoriesCloneResult = await this.categoryService.cloneCategoriesByCategories(
-      categoryIdMap,
-      userId,
-      session
-    )
-    const combinedLogIds = logs.map((log) => log.id).concat(categoriesCloneResult.logIds)*/
-
-    const clonedCategoriesTransformed = clonedCategories.map((cb) =>
-      toServerCaseKeys<ICategory>(cb)
-    )
-
-    return {
-      entities: clonedCategoriesTransformed,
-      logIds: /*combinedLogIds*/ logs.map((log) => log.id),
     }
   }
 
@@ -975,7 +977,7 @@ export class CategoryService
     id: string,
     userId: Types.ObjectId,
     session?: ClientSession
-  ): Promise<ICategory | null> {
+  ): Promise<ICategoryServerResponse | null> {
     const category = await this.repository.findByIdAndUser(id, userId, session)
 
     return toServerCaseKeys(category)
@@ -1007,7 +1009,7 @@ export class CategoryService
     criteria: CategoryCriteria,
     userId: Types.ObjectId,
     session?: ClientSession
-  ): Promise<ICategory[]> {
+  ): Promise<ICategoryServerResponse[]> {
     const filter = this.repository.buildFilter(criteria, userId)
     const categories = await this.repository.find(filter, session)
 

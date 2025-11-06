@@ -29,6 +29,7 @@ export enum ErrorsMessage {
   CATEGORY_ID_REQUIRED = 'Требуется идентификатор категории.',
   CATEGORY_ID_INVALID = 'Неверный идентификатор категории.',
 
+  TASK_ID_INVALID = 'Неверный идентификатор задачи.',
   TASK_NAME_REQUIRED = 'Требуется название задачи.',
   TASK_NAME_INVALID = 'Неверное название задачи.',
   TASK_NAME_LESS_THAN_1 = 'Название задачи не должно быть пустым.',
@@ -37,6 +38,7 @@ export enum ErrorsMessage {
   TASK_DESCRIPTION_LESS_THAN_1 = 'Описание задачи не должно быть пустым.',
   TASK_DESCRIPTION_MORE_THAN_300 = 'Описание задачи не должно превышать 300 символов.',
   TASK_DUE_DATE_INVALID = 'Неверная дата выполнения задачи.',
+  TASK_DUE_TIME_INVALID = 'Неверное время выполнения задачи.',
   TASK_COLOR_REQUIRED = 'Требуется цвет задачи.',
   TASK_TAGS_INVALID_TYPE = 'Неверный тип тегов задачи.',
   TASK_ORDER_TYPE_INVALID = 'Неверный порядок задачи.',
