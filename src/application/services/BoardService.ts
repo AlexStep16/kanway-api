@@ -16,10 +16,14 @@ import { ReorderResultDTO } from '@dtos/ReorderResultDTO.ts'
 import { IOperationResult } from '@interfaces/IOperationResult.ts'
 import { CategoryService } from '@application/services/CategoryService.ts'
 import { NotFoundError } from '@/domain/errors/NotFound.ts'
-import { TaskService } from './TaskService.ts'
-import { IMoveResult } from '../interfaces/IMoveResult.ts'
+import { TaskService } from '@application/services/TaskService.ts'
+import { IMoveResult } from '@interfaces/IMoveResult.ts'
+import { ClonedBoardsResult } from '@dtos/ClonedBoardsResult.ts'
+import { SingleUpdateDTO } from '../dtos/SingleUpdateDTO.ts'
 
-export class BoardService implements IBaseService<IBoard, BoardCriteria, BoardDTO, BoardEditDTO> {
+export class BoardService
+  implements IBaseService<IBoard, BoardCriteria, BoardDTO, BoardEditDTO, ClonedBoardsResult>
+{
   protected repository: BoardRepository
   protected embeddingService: EmbeddingService
   protected operationLogService: OperationLogService
@@ -248,7 +252,7 @@ export class BoardService implements IBaseService<IBoard, BoardCriteria, BoardDT
       if (boardsToReorder.length > 0) {
         reorderedBoards = await this.reorderService.reorder(
           'workspace_id',
-          boardsToReorder,
+          newEntities,
           CollectionsEnum.BOARDS,
           userId,
           session
@@ -295,6 +299,161 @@ export class BoardService implements IBaseService<IBoard, BoardCriteria, BoardDT
       if (session && isNewSession) {
         session.endSession()
       }
+    }
+  }
+
+  public async editMany(
+    data: BoardEditDTO[],
+    userId: Types.ObjectId,
+    externalSession?: ClientSession
+  ) {
+    let session: ClientSession | null = externalSession || null
+    let isNewSession = false
+    let boardIdsToReorder: string[] = []
+    let reorderedBoards: ReorderResultDTO<IBoardRaw>[] = []
+    let boardsPayloadToMove: SingleUpdateDTO<Partial<IBoardRaw>>[] = []
+    let dependencies: Types.ObjectId[] = []
+
+    try {
+      if (!session) {
+        session = await mongoose.startSession()
+        session.startTransaction()
+        isNewSession = true
+      }
+
+      const boardsToUpdate: SingleUpdateDTO<Partial<IBoardRaw>>[] = []
+
+      const boardIds = data.map((d) => d.id)
+
+      const filter = this.repository.buildFilter({ ids: boardIds }, userId)
+
+      const existingBoards: IBoardRaw[] = await this.repository.find(filter, session)
+
+      if (existingBoards.length === 0) throw new NotFoundError('Доски для обновления не найдены.')
+
+      for (const dto of data) {
+        const board = existingBoards.find((c) => c._id.toString() === dto.id)
+
+        if (!board) continue
+
+        const boardPayload = await this.prepareBoardEditPayload(dto, [board], userId)
+
+        boardsToUpdate.push(boardPayload)
+
+        if (
+          dto.workspaceId &&
+          board.workspace_id.toString() !== dto.workspaceId &&
+          dto.isMoveNeeded
+        ) {
+          boardsPayloadToMove.push(boardPayload)
+        }
+
+        if (dto.order != null && board.order !== dto.order && dto.isReorderNeeded) {
+          boardIdsToReorder.push(boardPayload._id.toString())
+        }
+      }
+
+      /* BULK UPDATE */
+      const updatedBoards = await this.repository.bulkUpdate(boardsToUpdate, userId, session)
+
+      /* MOVE */
+      if (boardsPayloadToMove.length > 0) {
+        const moveResult = await this.moveBoardsToWorkspaceBulk(
+          boardsPayloadToMove as (SingleUpdateDTO<Partial<IBoardRaw>> & {
+            workspace_id: Types.ObjectId
+          })[],
+          userId,
+          session
+        )
+
+        dependencies.push(...moveResult.logIds)
+      }
+
+      /* REORDER */
+      if (boardIdsToReorder.length > 0) {
+        const updatedBoardsToReorder = updatedBoards.filter((uc) =>
+          boardIdsToReorder.includes(uc._id.toString())
+        )
+
+        if (updatedBoardsToReorder.length > 0) {
+          reorderedBoards = await this.reorderService.reorder(
+            'workspace_id',
+            updatedBoardsToReorder,
+            CollectionsEnum.BOARDS,
+            userId,
+            session
+          )
+
+          reorderedBoards.forEach((r) => {
+            if (r.log) dependencies.push(r.log.id)
+          })
+        }
+      }
+
+      /* LOG */
+      await this.operationLogService.create(
+        {
+          operationType: OperationTypesEnum.UPDATE,
+          collectionName: CollectionsEnum.BOARDS,
+          entitiesBefore: existingBoards,
+          entitiesAfter: updatedBoards,
+          dependencies,
+        },
+        userId,
+        session
+      )
+
+      if (isNewSession) {
+        await session.commitTransaction()
+      }
+
+      if (reorderedBoards.length > 0) {
+        const reorderedEntities = reorderedBoards.map((r) => r.updatedEntities).flat()
+        return [
+          ...updatedBoards.map((uc) => toServerCaseKeys<IBoard>(uc)),
+          ...reorderedEntities.map((re) => toServerCaseKeys<IBoard>(re)),
+        ]
+      }
+
+      return [...updatedBoards.map((uc) => toServerCaseKeys<IBoard>(uc))]
+    } catch (error) {
+      if (session && isNewSession) {
+        session.abortTransaction()
+      }
+
+      throw error
+    } finally {
+      if (session && isNewSession) {
+        session.endSession()
+      }
+    }
+  }
+
+  public async moveBoardsToWorkspaceBulk(
+    data: (SingleUpdateDTO<Partial<IBoardRaw>> & { workspace_id: Types.ObjectId })[],
+    userId: Types.ObjectId,
+    session?: ClientSession
+  ): Promise<IMoveResult> {
+    const boardsMap: Map<string, Types.ObjectId> = new Map()
+
+    for (const board of data) {
+      boardsMap.set(board._id.toString(), board.workspace_id)
+    }
+
+    const categoriesMoveResult = await this.categoryService.moveCategoriesToWorkspaceByBoardsBulk(
+      boardsMap,
+      userId,
+      session
+    )
+
+    const tasksMoveResult = await this.taskService.moveTasksToWorkspaceByBoardsBulk(
+      boardsMap,
+      userId,
+      session
+    )
+
+    return {
+      logIds: [...categoriesMoveResult.logIds, ...tasksMoveResult.logIds],
     }
   }
 
@@ -549,7 +708,7 @@ export class BoardService implements IBaseService<IBoard, BoardCriteria, BoardDT
     }
   }
 
-  public async clone(criteria: BoardCriteria, userId: Types.ObjectId): Promise<IBoard[]> {
+  public async clone(criteria: BoardCriteria, userId: Types.ObjectId): Promise<ClonedBoardsResult> {
     let session: ClientSession | null = null
 
     try {
@@ -597,8 +756,8 @@ export class BoardService implements IBaseService<IBoard, BoardCriteria, BoardDT
       const newBoards = await this.repository.createMany(transformedBoards, session)
 
       const boardIdsMap: Map<string, string> = new Map()
-      boardsToClone.forEach((sourceId, index) => {
-        boardIdsMap.set(sourceId.toString(), newBoards[index]._id.toString())
+      boardsToClone.forEach((board, index) => {
+        boardIdsMap.set(board._id.toString(), newBoards[index]._id.toString())
       })
 
       const cloneCategoriesResult = await this.categoryService.cloneCategoriesByBoards(
@@ -621,7 +780,11 @@ export class BoardService implements IBaseService<IBoard, BoardCriteria, BoardDT
 
       await session.commitTransaction()
 
-      return newBoards.map((cb) => toServerCaseKeys<IBoard>(cb))
+      return {
+        boards: newBoards.map((cb) => toServerCaseKeys<IBoard>(cb)),
+        categories: cloneCategoriesResult.entities.categories,
+        tasks: cloneCategoriesResult.entities.tasks,
+      }
     } catch (error) {
       if (session) {
         session.abortTransaction()
@@ -652,7 +815,7 @@ export class BoardService implements IBaseService<IBoard, BoardCriteria, BoardDT
     workspaceIds: Types.ObjectId[],
     userId: Types.ObjectId,
     session?: ClientSession
-  ): Promise<IOperationResult<IBoard>> {
+  ): Promise<IOperationResult<IBoard[]>> {
     const filter = this.repository.buildFilter(
       { workspaceIds: workspaceIds.map((id) => id.toString()) },
       userId
@@ -692,7 +855,7 @@ export class BoardService implements IBaseService<IBoard, BoardCriteria, BoardDT
     workspaceIds: Types.ObjectId[],
     userId: Types.ObjectId,
     session?: ClientSession
-  ): Promise<IOperationResult<IBoard>> {
+  ): Promise<IOperationResult<IBoard[]>> {
     const filter = this.repository.buildFilter(
       { workspaceIds: workspaceIds.map((id) => id.toString()) },
       userId
@@ -732,13 +895,12 @@ export class BoardService implements IBaseService<IBoard, BoardCriteria, BoardDT
     workspaceIdsMap: Map<string, string>,
     userId: Types.ObjectId,
     session: ClientSession
-  ): Promise<IOperationResult<IBoard>> {
-    const workspaceIds = Array.from(workspaceIdsMap.values())
+  ): Promise<IOperationResult<ClonedBoardsResult>> {
+    const workspaceIds = Array.from(workspaceIdsMap.keys())
 
     const filter = this.repository.buildFilter({ workspaceIds }, userId)
 
     const sourceBoards = await this.repository.find(filter, session)
-    const sourceBoardIds = sourceBoards.map((board) => board._id)
 
     const cleanBoards = sourceBoards.map((board) => ({
       ...board,
@@ -749,8 +911,8 @@ export class BoardService implements IBaseService<IBoard, BoardCriteria, BoardDT
     const clonedBoards = await this.repository.createMany(cleanBoards, session)
 
     const boardIdsMap: Map<string, string> = new Map()
-    sourceBoardIds.forEach((sourceId, index) => {
-      boardIdsMap.set(sourceId.toString(), clonedBoards[index]._id.toString())
+    sourceBoards.forEach((board, index) => {
+      boardIdsMap.set(board._id.toString(), clonedBoards[index]._id.toString())
     })
 
     /* LOG */
@@ -775,7 +937,11 @@ export class BoardService implements IBaseService<IBoard, BoardCriteria, BoardDT
     const clonedBoardsTransformed = clonedBoards.map((cb) => toServerCaseKeys<IBoard>(cb))
 
     return {
-      entities: clonedBoardsTransformed,
+      entities: {
+        boards: clonedBoardsTransformed,
+        categories: categoriesCloneResult.entities.categories,
+        tasks: categoriesCloneResult.entities.tasks,
+      },
       logIds: combinedLogIds,
     }
   }
@@ -865,7 +1031,7 @@ export class BoardService implements IBaseService<IBoard, BoardCriteria, BoardDT
     boardsToUpdate: IBoardRaw[],
     userId: Types.ObjectId
   ) {
-    const boardPayload: Partial<IBoardRaw> = {
+    const boardPayload: SingleUpdateDTO<Partial<IBoardRaw>> = {
       ...toMongoCaseKeys(data),
       user_id: userId,
     }
@@ -882,6 +1048,12 @@ export class BoardService implements IBaseService<IBoard, BoardCriteria, BoardDT
 
         boardPayload.embeddings = embeddings
       }
+    }
+
+    if (typeof data.order === 'number') {
+      boardPayload.order = data.order
+    } else if (typeof data.order === 'string') {
+      boardPayload.order = parseInt(data.order, 10)
     }
 
     return boardPayload

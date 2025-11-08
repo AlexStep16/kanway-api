@@ -4,6 +4,7 @@ import { jwtAuthMiddleware } from '@infrastructure/auth/passportJWTStrategy.ts'
 import { validationMiddleware } from '@middlewares/validationMiddleware.ts'
 import { TaskDTOSchema } from '@dtos/TaskDTO.ts'
 import { TaskEditDTOSchema } from '@dtos/TaskEditDTO.ts'
+import { TaskEditManyDTOSchema } from '@dtos/TaskEditManyDTO.ts'
 
 interface ITaskRawController extends TaskController {}
 
@@ -15,6 +16,7 @@ export default (controller: ITaskRawController): Router => {
   router.get('/', controller.getAll)
   router.get('/:id', controller.getById)
   router.post('/', validationMiddleware(TaskDTOSchema), controller.create)
+  router.patch('/bulk', validationMiddleware(TaskEditManyDTOSchema), controller.updateMany)
   router.patch('/:id', validationMiddleware(TaskEditDTOSchema), controller.update)
   router.delete('/:id', controller.delete)
 

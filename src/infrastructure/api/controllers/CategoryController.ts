@@ -5,12 +5,16 @@ import { BaseController } from '@controllers/BaseController.ts'
 import { CategoryCriteria } from '@interfaces/criterias/CategoryCriteria.ts'
 import { Request, Response, NextFunction } from 'express'
 import SuccessResponse from '@application/services/SuccessResponse.ts'
+import { CategoryEditDTO } from '@dtos/CategoryEditDTO.ts'
+import { ClonedCategoriesResult } from '@dtos/ClonedCategoriesResult.ts'
 
 export default class CategoryController extends BaseController<
   ICategory,
   CategoryDTO,
   CategoryCriteria,
-  CategoryService
+  CategoryService,
+  CategoryEditDTO,
+  ClonedCategoriesResult
 > {
   constructor(serviceInstance: CategoryService) {
     super(serviceInstance)

@@ -8,6 +8,7 @@ import {
   Types,
   UpdateWriteOpResult,
 } from 'mongoose'
+import { SingleUpdateDTO } from '../dtos/SingleUpdateDTO.ts'
 
 export abstract class BaseRepository<TEntity, TModel extends Model<TEntity>> {
   protected model: TModel
@@ -21,7 +22,7 @@ export abstract class BaseRepository<TEntity, TModel extends Model<TEntity>> {
     userId: Types.ObjectId,
     session?: ClientSession
   ): Promise<TEntity | null> {
-    const doc = await this.model.findOne({ _id: id, user_id: userId }, { session }).lean()
+    const doc = await this.model.findOne({ _id: id, user_id: userId }, null, { session }).lean()
     return doc as TEntity
   }
 
@@ -125,12 +126,43 @@ export abstract class BaseRepository<TEntity, TModel extends Model<TEntity>> {
     return results[0] || null
   }
 
-  public async bulkUpdateOrders(updates: IReordable[], session?: ClientSession): Promise<void> {
+  public async bulkUpdate(
+    updates: SingleUpdateDTO<Partial<TEntity>>[],
+    userId: Types.ObjectId,
+    session?: ClientSession
+  ): Promise<TEntity[]> {
+    if (updates.length === 0) return []
+
+    const bulkOperations = updates.map((item) => ({
+      updateOne: {
+        filter: { _id: item._id, user_id: userId },
+        update: { $set: item },
+        options: { runValidators: true },
+      },
+    }))
+
+    const bulkUpdateResult = await this.model.bulkWrite(bulkOperations, { session })
+
+    if (bulkUpdateResult.modifiedCount === 0) return []
+
+    const updatedEntities = (await this.model
+      .find({ _id: { $in: updates.map((u) => u._id) }, user_id: userId })
+      .session(session || null)
+      .lean()) as TEntity[]
+
+    return updatedEntities
+  }
+
+  public async bulkUpdateOrders(
+    updates: IReordable[],
+    userId: Types.ObjectId,
+    session?: ClientSession
+  ): Promise<void> {
     if (updates.length === 0) return
 
     const bulkOperations = updates.map((item) => ({
       updateOne: {
-        filter: { _id: item._id },
+        filter: { _id: item._id, user_id: userId },
         update: { $set: { order: item.order } },
         options: { runValidators: false },
       },

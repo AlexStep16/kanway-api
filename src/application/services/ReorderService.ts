@@ -33,7 +33,7 @@ export class ReorderService<TEntity extends IReordable> {
     }
 
     if (entitiesToUpdate.length > 0) {
-      await this.repository.bulkUpdateOrders(entitiesToUpdate, session)
+      await this.repository.bulkUpdateOrders(entitiesToUpdate, userId, session)
 
       const updatedEntities = await this.repository.findByIds(
         entitiesToUpdate.map((e) => e._id),
@@ -81,8 +81,9 @@ export class ReorderService<TEntity extends IReordable> {
     }, new Map<Types.ObjectId, TEntity[]>())
 
     for (let [parentId, newItems] of groupedEntities.entries()) {
+      const newEntitiesIds = newItems.map((e) => e._id.toString())
       const entities: IReordable[] = await this.repository.getAllToOrder(parentId, userId)
-      const entitiesOld = entities.filter((e) => !newEntities.find((no) => no._id.equals(e._id)))
+      const entitiesOld = entities.filter((e) => !newEntitiesIds.includes(e._id.toString()))
 
       for (let newEntity of newItems) {
         const newIndex = newEntity.order - 1

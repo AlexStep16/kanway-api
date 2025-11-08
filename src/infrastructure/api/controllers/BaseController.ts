@@ -6,7 +6,9 @@ export abstract class BaseController<
   TEntity,
   TCreateDTO,
   TCriteria,
-  TService extends IBaseService<TEntity, TCriteria, TCreateDTO>
+  TService extends IBaseService<TEntity, TCriteria, TCreateDTO, TEditDTO, TClonedResult>,
+  TEditDTO,
+  TClonedResult
 > {
   protected service: TService
 
@@ -48,6 +50,16 @@ export abstract class BaseController<
     try {
       const criteria = { id: req.params.id } as TCriteria
       const result = await this.service.edit(req.body, criteria, req.user!.id)
+
+      res.status(200).json(new SuccessResponse(result))
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  public updateMany = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const result = await this.service.editMany(req.body, req.user!.id)
 
       res.status(200).json(new SuccessResponse(result))
     } catch (error) {

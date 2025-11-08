@@ -43,6 +43,7 @@ export enum ErrorsMessage {
   TASK_TAGS_INVALID_TYPE = 'Неверный тип тегов задачи.',
   TASK_ORDER_TYPE_INVALID = 'Неверный порядок задачи.',
   TASK_IS_COMPLETED_INVALID = 'Неверное значение для статуса задачи.',
+  TASKS_BULK_UPDATE_INVALID = 'Неверные данные для массового обновления задач.',
 
   INVALID_ID_FORMAT = 'Неверный формат идентификатора.',
   WORKSPACE_ID_INVALID = 'Неверный идентификатор рабочего пространства.',

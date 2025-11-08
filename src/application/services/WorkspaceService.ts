@@ -1,7 +1,7 @@
 import { IWorkspace } from '@entities/IWorkspace.ts'
 import { IWorkspaceRaw } from '@entities/IWorkspaceRaw.ts'
 import WorkspaceRepository from '@repositories/WorkspaceRepository.ts'
-import { WorkspaceDTO } from '@/application/dtos/WorkspaceDTO.ts'
+import { WorkspaceDTO } from '@dtos/WorkspaceDTO.ts'
 import mongoose, { ClientSession, Types } from 'mongoose'
 import { EmbeddingService } from '@infrastructure/services/EmbeddingService.ts'
 import { WorkspaceCriteria } from '@criterias/WorkspaceCriteria.ts'
@@ -15,9 +15,18 @@ import { WorkspaceEditDTO } from '@dtos/WorkspaceEditDTO.ts'
 import { ReorderResultDTO } from '@dtos/ReorderResultDTO.ts'
 import { NotFoundError } from '@errors/NotFound.ts'
 import { BoardService } from '@application/services/BoardService.ts'
+import { ClonedWorkspacesResult } from '@dtos/ClonedWorkspacesResult.ts'
+import { SingleUpdateDTO } from '../dtos/SingleUpdateDTO.ts'
 
 export class WorkspaceService
-  implements IBaseService<IWorkspace, WorkspaceCriteria, WorkspaceDTO, WorkspaceEditDTO>
+  implements
+    IBaseService<
+      IWorkspace,
+      WorkspaceCriteria,
+      WorkspaceDTO,
+      WorkspaceEditDTO,
+      ClonedWorkspacesResult
+    >
 {
   protected repository: WorkspaceRepository
   protected embeddingService: EmbeddingService
@@ -237,7 +246,7 @@ export class WorkspaceService
       if (workspacesToReorder.length > 0) {
         reorderedWorkspaces = await this.reorderService.reorder(
           'user_id',
-          workspacesToReorder,
+          newEntities,
           CollectionsEnum.WORKSPACES,
           userId,
           session
@@ -276,6 +285,116 @@ export class WorkspaceService
       }
 
       return [...newEntities.map((ne) => toServerCaseKeys<IWorkspace>(ne))]
+    } catch (error) {
+      if (session && isNewSession) {
+        session.abortTransaction()
+      }
+
+      throw error
+    } finally {
+      if (session && isNewSession) {
+        session.endSession()
+      }
+    }
+  }
+
+  public async editMany(
+    data: WorkspaceEditDTO[],
+    userId: Types.ObjectId,
+    externalSession?: ClientSession
+  ) {
+    let session: ClientSession | null = externalSession || null
+    let isNewSession = false
+    let workspaceIdsToReorder: string[] = []
+    let reorderedWorkspaces: ReorderResultDTO<IWorkspaceRaw>[] = []
+    let dependencies: Types.ObjectId[] = []
+
+    try {
+      if (!session) {
+        session = await mongoose.startSession()
+        session.startTransaction()
+        isNewSession = true
+      }
+
+      const workspacesToUpdate: SingleUpdateDTO<Partial<IWorkspaceRaw>>[] = []
+
+      const workspaceIds = data.map((d) => d.id)
+
+      const filter = this.repository.buildFilter({ ids: workspaceIds }, userId)
+
+      const existingWorkspaces: IWorkspaceRaw[] = await this.repository.find(filter, session)
+
+      if (existingWorkspaces.length === 0)
+        throw new NotFoundError('Рабочие пространства для обновления не найдены.')
+
+      for (const dto of data) {
+        const workspace = existingWorkspaces.find((c) => c._id.toString() === dto.id)
+
+        if (!workspace) continue
+
+        const workspacePayload = await this.prepareWorkspaceEditPayload(dto, [workspace], userId)
+
+        workspacesToUpdate.push(workspacePayload)
+
+        if (dto.order != null && workspace.order !== dto.order && dto.isReorderNeeded) {
+          workspaceIdsToReorder.push(workspacePayload._id.toString())
+        }
+      }
+
+      /* BULK UPDATE */
+      const updatedWorkspaces = await this.repository.bulkUpdate(
+        workspacesToUpdate,
+        userId,
+        session
+      )
+
+      /* REORDER */
+      if (workspaceIdsToReorder.length > 0) {
+        const updatedWorkspacesToReorder = updatedWorkspaces.filter((uc) =>
+          workspaceIdsToReorder.includes(uc._id.toString())
+        )
+
+        if (updatedWorkspacesToReorder.length > 0) {
+          reorderedWorkspaces = await this.reorderService.reorder(
+            'user_id',
+            updatedWorkspacesToReorder,
+            CollectionsEnum.WORKSPACES,
+            userId,
+            session
+          )
+
+          reorderedWorkspaces.forEach((r) => {
+            if (r.log) dependencies.push(r.log.id)
+          })
+        }
+      }
+
+      /* LOG */
+      await this.operationLogService.create(
+        {
+          operationType: OperationTypesEnum.UPDATE,
+          collectionName: CollectionsEnum.WORKSPACES,
+          entitiesBefore: existingWorkspaces,
+          entitiesAfter: updatedWorkspaces,
+          dependencies,
+        },
+        userId,
+        session
+      )
+
+      if (isNewSession) {
+        await session.commitTransaction()
+      }
+
+      if (reorderedWorkspaces.length > 0) {
+        const reorderedEntities = reorderedWorkspaces.map((r) => r.updatedEntities).flat()
+        return [
+          ...updatedWorkspaces.map((uc) => toServerCaseKeys<IWorkspace>(uc)),
+          ...reorderedEntities.map((re) => toServerCaseKeys<IWorkspace>(re)),
+        ]
+      }
+
+      return [...updatedWorkspaces.map((uc) => toServerCaseKeys<IWorkspace>(uc))]
     } catch (error) {
       if (session && isNewSession) {
         session.abortTransaction()
@@ -514,7 +633,10 @@ export class WorkspaceService
     }
   }
 
-  public async clone(criteria: WorkspaceCriteria, userId: Types.ObjectId): Promise<IWorkspace[]> {
+  public async clone(
+    criteria: WorkspaceCriteria,
+    userId: Types.ObjectId
+  ): Promise<ClonedWorkspacesResult> {
     let session: ClientSession | null = null
 
     try {
@@ -551,8 +673,8 @@ export class WorkspaceService
       const newWorkspaces = await this.repository.createMany(transformedWorkspaces, session)
 
       const workspaceIdsMap: Map<string, string> = new Map()
-      workspacesToClone.forEach((sourceId, index) => {
-        workspaceIdsMap.set(sourceId.toString(), newWorkspaces[index]._id.toString())
+      workspacesToClone.forEach((workspace, index) => {
+        workspaceIdsMap.set(workspace._id.toString(), newWorkspaces[index]._id.toString())
       })
 
       const cloneBoardsResult = await this.boardService.cloneBoardsByWorkspaces(
@@ -575,7 +697,12 @@ export class WorkspaceService
 
       await session.commitTransaction()
 
-      return newWorkspaces.map((wb) => toServerCaseKeys<IWorkspace>(wb))
+      return {
+        workspaces: newWorkspaces.map((wb) => toServerCaseKeys<IWorkspace>(wb)),
+        boards: cloneBoardsResult.entities.boards,
+        categories: cloneBoardsResult.entities.categories,
+        tasks: cloneBoardsResult.entities.tasks,
+      }
     } catch (error) {
       if (session) {
         session.abortTransaction()
@@ -648,7 +775,7 @@ export class WorkspaceService
     workspacesToUpdate: IWorkspaceRaw[],
     userId: Types.ObjectId
   ) {
-    const workspacePayload: Partial<IWorkspaceRaw> = {
+    const workspacePayload: SingleUpdateDTO<Partial<IWorkspaceRaw>> = {
       ...toMongoCaseKeys(data),
       user_id: userId,
     }
@@ -665,6 +792,12 @@ export class WorkspaceService
 
         workspacePayload.embeddings = embeddings
       }
+    }
+
+    if (typeof data.order === 'number') {
+      workspacePayload.order = data.order
+    } else if (typeof data.order === 'string') {
+      workspacePayload.order = parseInt(data.order, 10)
     }
 
     return workspacePayload

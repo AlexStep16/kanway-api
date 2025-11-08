@@ -7,7 +7,12 @@ export interface IReorderRepository<TEntity> {
     userId: Types.ObjectId,
     session?: ClientSession
   ): Promise<TEntity[]>
-  bulkUpdateOrders(updates: IReordable[], session?: ClientSession): Promise<void>
+  bulkUpdate(updates: TEntity[], userId: Types.ObjectId, session?: ClientSession): Promise<void>
+  bulkUpdateOrders(
+    updates: IReordable[],
+    userId: Types.ObjectId,
+    session?: ClientSession
+  ): Promise<void>
   findByIds(
     ids: Types.ObjectId[],
     userId: Types.ObjectId,

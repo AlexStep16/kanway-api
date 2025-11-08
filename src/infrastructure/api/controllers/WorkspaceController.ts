@@ -3,12 +3,16 @@ import { IWorkspace } from '@entities/IWorkspace.ts'
 import { WorkspaceDTO } from '@application/dtos/WorkspaceDTO.ts'
 import { BaseController } from '@controllers/BaseController.ts'
 import { WorkspaceCriteria } from '@interfaces/criterias/WorkspaceCriteria.ts'
+import { WorkspaceEditDTO } from '@dtos/WorkspaceEditDTO.ts'
+import { ClonedWorkspacesResult } from '@dtos/ClonedWorkspacesResult.ts'
 
 export default class WorkspaceController extends BaseController<
   IWorkspace,
   WorkspaceDTO,
   WorkspaceCriteria,
-  WorkspaceService
+  WorkspaceService,
+  WorkspaceEditDTO,
+  ClonedWorkspacesResult
 > {
   constructor(serviceInstance: WorkspaceService) {
     super(serviceInstance)

@@ -5,12 +5,16 @@ import { BaseController } from '@controllers/BaseController.ts'
 import { TaskCriteria } from '@interfaces/criterias/TaskCriteria.ts'
 import { Request, Response, NextFunction } from 'express'
 import SuccessResponse from '@application/services/SuccessResponse.ts'
+import { TaskEditDTO } from '@dtos/TaskEditDTO.ts'
+import { ITaskServerResponse } from '@entities/ITaskServerResponse.ts'
 
 export default class TaskController extends BaseController<
   ITask,
   TaskDTO,
   TaskCriteria,
-  TaskService
+  TaskService,
+  TaskEditDTO,
+  ITaskServerResponse[]
 > {
   constructor(serviceInstance: TaskService) {
     super(serviceInstance)

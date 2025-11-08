@@ -5,12 +5,16 @@ import { BaseController } from '@controllers/BaseController.ts'
 import { BoardCriteria } from '@interfaces/criterias/BoardCriteria.ts'
 import { Request, Response, NextFunction } from 'express'
 import SuccessResponse from '@application/services/SuccessResponse.ts'
+import { BoardEditDTO } from '@dtos/BoardEditDTO.ts'
+import { ClonedBoardsResult } from '@dtos/ClonedBoardsResult.ts'
 
 export default class BoardController extends BaseController<
   IBoard,
   BoardDTO,
   BoardCriteria,
-  BoardService
+  BoardService,
+  BoardEditDTO,
+  ClonedBoardsResult
 > {
   constructor(serviceInstance: BoardService) {
     super(serviceInstance)
