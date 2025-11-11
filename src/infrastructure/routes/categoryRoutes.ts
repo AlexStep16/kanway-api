@@ -4,6 +4,7 @@ import { jwtAuthMiddleware } from '@infrastructure/auth/passportJWTStrategy.ts'
 import { validationMiddleware } from '@middlewares/validationMiddleware.ts'
 import { CategoryDTOSchema } from '@dtos/CategoryDTO.ts'
 import { CategoryEditDTOSchema } from '@dtos/CategoryEditDTO.ts'
+import { CategoryEditManyDTOSchema } from '@dtos/CategoryEditManyDTO.ts'
 
 interface ICategoryRawController extends CategoryController {}
 
@@ -15,6 +16,7 @@ export default (controller: ICategoryRawController): Router => {
   router.get('/', controller.getAll)
   router.get('/:id', controller.getById)
   router.post('/', validationMiddleware(CategoryDTOSchema), controller.create)
+  router.patch('/bulk', validationMiddleware(CategoryEditManyDTOSchema), controller.updateMany)
   router.patch('/:id', validationMiddleware(CategoryEditDTOSchema), controller.update)
   router.delete('/:id', controller.delete)
 

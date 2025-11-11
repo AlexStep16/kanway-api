@@ -28,6 +28,7 @@ export enum ErrorsMessage {
   CATEGORY_ORDER_TYPE_INVALID = 'Неверный порядок категории.',
   CATEGORY_ID_REQUIRED = 'Требуется идентификатор категории.',
   CATEGORY_ID_INVALID = 'Неверный идентификатор категории.',
+  CATEGORIES_BULK_UPDATE_INVALID = 'Неверные данные для массового обновления категорий.',
 
   TASK_ID_INVALID = 'Неверный идентификатор задачи.',
   TASK_NAME_REQUIRED = 'Требуется название задачи.',

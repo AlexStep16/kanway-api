@@ -83,6 +83,7 @@ export class ReorderService<TEntity extends IReordable> {
     for (let [parentId, newItems] of groupedEntities.entries()) {
       const newEntitiesIds = newItems.map((e) => e._id.toString())
       const entities: IReordable[] = await this.repository.getAllToOrder(parentId, userId)
+
       const entitiesOld = entities.filter((e) => !newEntitiesIds.includes(e._id.toString()))
 
       for (let newEntity of newItems) {

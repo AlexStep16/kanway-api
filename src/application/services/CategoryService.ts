@@ -22,6 +22,8 @@ import { ClonedCategoriesResult } from '@dtos/ClonedCategoriesResult.ts'
 import { SingleUpdateDTO } from '../dtos/SingleUpdateDTO.ts'
 import { ICategory } from '@/domain/entities/ICategory.ts'
 
+const MAX_RETRIES = 3
+
 export class CategoryService
   implements
     IBaseService<
@@ -55,87 +57,167 @@ export class CategoryService
     this.taskService = taskService
   }
 
-  public async create(
+  private async _retryExecutor<T>(executor: (session: ClientSession) => Promise<T>): Promise<T> {
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      const session = await mongoose.startSession()
+      session.startTransaction()
+      try {
+        const result = await executor(session)
+
+        await session.commitTransaction()
+
+        return result
+      } catch (error: any) {
+        await session.abortTransaction()
+
+        if (error.code === 112 && attempt < MAX_RETRIES) {
+          console.warn(`Конфликт записи в базу данных ${attempt}. Повторная попытка...`)
+
+          await new Promise((resolve) => setTimeout(resolve, 50 * attempt))
+          continue
+        }
+        throw error
+      } finally {
+        session.endSession()
+      }
+    }
+    throw new Error(
+      'Произошла ошибка при выполнении операции после максимального количества попыток.'
+    )
+  }
+
+  private async _executeCreateTransaction(
     data: CategoryDTO,
     userId: Types.ObjectId,
-    externalSession?: ClientSession
+    session: ClientSession
   ): Promise<ICategoryServerResponse[]> {
-    let session: ClientSession | null = externalSession || null
-    let isNewSession = false
     let reorderedCategories: ReorderResultDTO<ICategoryRaw>[] = []
 
     const tempClientId = data.id
 
     delete data.id // Remove temp client ID before creation
 
-    try {
-      if (!session) {
-        session = await mongoose.startSession()
-        session.startTransaction()
-        isNewSession = true
-      }
+    const categoryPayload = await this.prepareCategoryCreationPayload(data, userId, session)
 
-      const categoryPayload = await this.prepareCategoryCreationPayload(data, userId, session)
+    /* CREATE */
+    const newCategory = await this.repository.create(categoryPayload, session)
 
-      /* CREATE */
-      const newCategory = await this.repository.create(categoryPayload, session)
-
-      /* REORDER */
-      if (data.order !== undefined) {
-        reorderedCategories = await this.reorderService.reorder(
-          'board_id',
-          [newCategory],
-          CollectionsEnum.CATEGORIES,
-          userId,
-          session
-        )
-      }
-
-      /* LOG */
-      let dependencies: Types.ObjectId[] = []
-
-      reorderedCategories.forEach((r) => {
-        if (r.log) dependencies.push(r.log.id)
-      })
-
-      await this.operationLogService.create(
-        {
-          operationType: OperationTypesEnum.CREATE,
-          collectionName: CollectionsEnum.CATEGORIES,
-          entitiesAfter: [newCategory],
-          dependencies,
-        },
+    /* REORDER */
+    if (data.order !== undefined) {
+      reorderedCategories = await this.reorderService.reorder(
+        'board_id',
+        [newCategory],
+        CollectionsEnum.CATEGORIES,
         userId,
         session
       )
-
-      if (isNewSession) {
-        await session.commitTransaction()
-      }
-
-      const toServerCaseCategory = toServerCaseKeys<ICategoryServerResponse>(newCategory)
-      toServerCaseCategory.tempClientId = tempClientId // Attach temp client ID back to the response to connect with client-side entity
-
-      if (reorderedCategories.length > 0) {
-        const reorderedEntities = reorderedCategories.map((r) => r.updatedEntities).flat()
-        return [
-          toServerCaseCategory,
-          ...reorderedEntities.map((re) => toServerCaseKeys<ICategoryServerResponse>(re)),
-        ]
-      }
-
-      return [toServerCaseCategory]
-    } catch (error) {
-      if (session && isNewSession) {
-        session.abortTransaction()
-      }
-
-      throw error
-    } finally {
-      if (session && isNewSession) {
-        session.endSession()
-      }
     }
+
+    /* LOG */
+    let dependencies: Types.ObjectId[] = []
+
+    reorderedCategories.forEach((r) => {
+      if (r.log) dependencies.push(r.log.id)
+    })
+
+    await this.operationLogService.create(
+      {
+        operationType: OperationTypesEnum.CREATE,
+        collectionName: CollectionsEnum.CATEGORIES,
+        entitiesAfter: [newCategory],
+        dependencies,
+      },
+      userId,
+      session
+    )
+
+    const toServerCaseCategory = toServerCaseKeys<ICategoryServerResponse>(newCategory)
+    toServerCaseCategory.tempClientId = tempClientId // Attach temp client ID back to the response to connect with client-side entity
+
+    if (reorderedCategories.length > 0) {
+      const reorderedEntities = reorderedCategories.map((r) => r.updatedEntities).flat()
+      return [
+        toServerCaseCategory,
+        ...reorderedEntities.map((re) => toServerCaseKeys<ICategoryServerResponse>(re)),
+      ]
+    }
+
+    return [toServerCaseCategory]
+  }
+
+  public async create(
+    data: CategoryDTO,
+    userId: Types.ObjectId,
+    externalSession?: ClientSession
+  ): Promise<ICategoryServerResponse[]> {
+    if (externalSession) {
+      return this._executeCreateTransaction(data, userId, externalSession)
+    } else {
+      return await this._retryExecutor((session: ClientSession) =>
+        this._executeCreateTransaction(data, userId, session)
+      )
+    }
+  }
+
+  private async _executeCreateManyTransaction(
+    data: CategoryDTO[],
+    userId: Types.ObjectId,
+    session: ClientSession
+  ): Promise<ICategoryServerResponse[]> {
+    let reorderedCategories: ReorderResultDTO<ICategoryRaw>[] = []
+
+    const categoriesPayload = await this.prepareCategoriesCreationPayload(data, userId, session)
+
+    /* CREATE */
+    const newCategories = await this.repository.createMany(categoriesPayload, session)
+
+    /* REORDER */
+    const isReorderNeeded = data.some((ws) => ws.order !== undefined)
+    if (isReorderNeeded) {
+      reorderedCategories = await this.reorderService.reorder(
+        'board_id',
+        newCategories,
+        CollectionsEnum.CATEGORIES,
+        userId,
+        session
+      )
+    }
+
+    /* LOG */
+    let dependencies: Types.ObjectId[] = []
+
+    reorderedCategories.forEach((r) => {
+      if (r.log) dependencies.push(r.log.id)
+    })
+
+    await this.operationLogService.create(
+      {
+        operationType: OperationTypesEnum.CREATE,
+        collectionName: CollectionsEnum.CATEGORIES,
+        entitiesAfter: newCategories,
+        dependencies,
+      },
+      userId,
+      session
+    )
+
+    const toServerCaseKeysCategories = newCategories.map((nc, index) => {
+      const transformed = toServerCaseKeys<ICategoryServerResponse>(nc)
+
+      transformed.tempClientId = data[index].id // Attach temp client ID back to the response to connect with client-side entity
+
+      return transformed
+    })
+
+    if (reorderedCategories.length > 0) {
+      const reorderedEntities = reorderedCategories.map((r) => r.updatedEntities).flat()
+      return [
+        ...toServerCaseKeysCategories,
+        ...reorderedEntities.map((re) => toServerCaseKeys<ICategoryServerResponse>(re)),
+      ]
+    }
+
+    return [...toServerCaseKeysCategories]
   }
 
   public async createMany(
@@ -143,84 +225,92 @@ export class CategoryService
     userId: Types.ObjectId,
     externalSession?: ClientSession
   ): Promise<ICategoryServerResponse[]> {
-    let session: ClientSession | null = externalSession || null
-    let isNewSession = false
+    if (externalSession) {
+      return this._executeCreateManyTransaction(data, userId, externalSession)
+    } else {
+      return await this._retryExecutor((session: ClientSession) =>
+        this._executeCreateManyTransaction(data, userId, session)
+      )
+    }
+  }
+
+  private async _executeEditTransaction(
+    data: CategoryEditDTO,
+    criteria: CategoryCriteria,
+    userId: Types.ObjectId,
+    session: ClientSession
+  ): Promise<ICategoryServerResponse[]> {
     let reorderedCategories: ReorderResultDTO<ICategoryRaw>[] = []
+    let dependencies: Types.ObjectId[] = []
 
-    try {
-      if (!session) {
-        session = await mongoose.startSession()
-        session.startTransaction()
-        isNewSession = true
-      }
+    const filter = this.repository.buildFilter(criteria, userId)
 
-      const categoriesPayload = await this.prepareCategoriesCreationPayload(data, userId, session)
+    const categoriesToUpdate: ICategoryRaw[] = await this.repository.find(filter, session)
 
-      /* CREATE */
-      const newCategories = await this.repository.createMany(categoriesPayload, session)
+    if (categoriesToUpdate.length === 0)
+      throw new NotFoundError('Категории для редактирования не найдены.')
 
-      /* REORDER */
-      const isReorderNeeded = data.some((ws) => ws.order !== undefined)
-      if (isReorderNeeded) {
-        reorderedCategories = await this.reorderService.reorder(
-          'board_id',
-          newCategories,
-          CollectionsEnum.CATEGORIES,
-          userId,
-          session
-        )
-      }
+    const categoryPayload = await this.prepareCategoryEditPayload(data, categoriesToUpdate, userId)
 
-      /* LOG */
-      let dependencies: Types.ObjectId[] = []
+    /* UPDATE */
+    const newEntities = await this.repository.updateByFilter(filter, categoryPayload, session)
 
-      reorderedCategories.forEach((r) => {
-        if (r.log) dependencies.push(r.log.id)
-      })
-
-      await this.operationLogService.create(
-        {
-          operationType: OperationTypesEnum.CREATE,
-          collectionName: CollectionsEnum.CATEGORIES,
-          entitiesAfter: newCategories,
-          dependencies,
-        },
+    /* MOVE */
+    const categoriesToMove = categoriesToUpdate.filter(
+      (b) => data.boardId !== undefined && b.board_id.toString() !== data.boardId
+    )
+    if (categoriesToMove.length > 0) {
+      const moveResult = await this.moveCategoriesToBoard(
+        categoriesToMove.map((c) => c._id),
+        new Types.ObjectId(data.boardId),
         userId,
+        newEntities,
         session
       )
 
-      if (isNewSession) {
-        await session.commitTransaction()
-      }
-
-      const toServerCaseKeysCategories = newCategories.map((nc, index) => {
-        const transformed = toServerCaseKeys<ICategoryServerResponse>(nc)
-
-        transformed.tempClientId = data[index].id // Attach temp client ID back to the response to connect with client-side entity
-
-        return transformed
-      })
-
-      if (reorderedCategories.length > 0) {
-        const reorderedEntities = reorderedCategories.map((r) => r.updatedEntities).flat()
-        return [
-          ...toServerCaseKeysCategories,
-          ...reorderedEntities.map((re) => toServerCaseKeys<ICategoryServerResponse>(re)),
-        ]
-      }
-
-      return [...toServerCaseKeysCategories]
-    } catch (error) {
-      if (session && isNewSession) {
-        session.abortTransaction()
-      }
-
-      throw error
-    } finally {
-      if (session && isNewSession) {
-        session.endSession()
-      }
+      dependencies.push(...moveResult.logIds)
     }
+
+    /* REORDER */
+    const categoriesToReorder = categoriesToUpdate.filter(
+      (ws) => data.order !== undefined && ws.order !== data.order
+    )
+    if (categoriesToReorder.length > 0) {
+      reorderedCategories = await this.reorderService.reorder(
+        'board_id',
+        newEntities,
+        CollectionsEnum.CATEGORIES,
+        userId,
+        session
+      )
+    }
+
+    /* LOG */
+    reorderedCategories.forEach((r) => {
+      if (r.log) dependencies.push(r.log.id)
+    })
+
+    await this.operationLogService.create(
+      {
+        operationType: OperationTypesEnum.CREATE,
+        collectionName: CollectionsEnum.CATEGORIES,
+        entitiesBefore: categoriesToUpdate,
+        entitiesAfter: newEntities,
+        dependencies,
+      },
+      userId,
+      session
+    )
+
+    if (reorderedCategories.length > 0) {
+      const reorderedEntities = reorderedCategories.map((r) => r.updatedEntities).flat()
+      return [
+        ...newEntities.map((ne) => toServerCaseKeys<ICategoryServerResponse>(ne)),
+        ...reorderedEntities.map((re) => toServerCaseKeys<ICategoryServerResponse>(re)),
+      ]
+    }
+
+    return [...newEntities.map((ne) => toServerCaseKeys<ICategoryServerResponse>(ne))]
   }
 
   public async edit(
@@ -229,233 +319,127 @@ export class CategoryService
     userId: Types.ObjectId,
     externalSession?: ClientSession
   ): Promise<ICategoryServerResponse[]> {
-    let session: ClientSession | null = externalSession || null
-    let isNewSession = false
+    if (externalSession) {
+      return this._executeEditTransaction(data, criteria, userId, externalSession)
+    } else {
+      return await this._retryExecutor((session: ClientSession) =>
+        this._executeEditTransaction(data, criteria, userId, session)
+      )
+    }
+  }
+
+  private async _executeEditManyTransaction(
+    data: CategoryEditDTO[],
+    userId: Types.ObjectId,
+    session: ClientSession
+  ) {
+    let categoryIdsToReorder: string[] = []
     let reorderedCategories: ReorderResultDTO<ICategoryRaw>[] = []
+    let categoriesPayloadToMove: SingleUpdateDTO<Partial<ICategoryRaw>>[] = []
     let dependencies: Types.ObjectId[] = []
 
-    try {
-      if (!session) {
-        session = await mongoose.startSession()
-        session.startTransaction()
-        isNewSession = true
+    const categoriesToUpdate: SingleUpdateDTO<Partial<ICategoryRaw>>[] = []
+
+    const categoryIds = data.map((d) => d.id)
+
+    const filter = this.repository.buildFilter({ ids: categoryIds }, userId)
+
+    const existingCategories: ICategoryRaw[] = await this.repository.find(filter, session)
+
+    if (existingCategories.length === 0)
+      throw new NotFoundError('Категории для обновления не найдены.')
+
+    for (const dto of data) {
+      const category = existingCategories.find((c) => c._id.toString() === dto.id)
+
+      if (!category) continue
+
+      const categoryPayload = await this.prepareCategoryEditPayload(dto, [category], userId)
+
+      categoriesToUpdate.push(categoryPayload)
+
+      if (dto.boardId && category.board_id.toString() !== dto.boardId && dto.isMoveNeeded) {
+        categoriesPayloadToMove.push(categoryPayload)
       }
 
-      const filter = this.repository.buildFilter(criteria, userId)
-
-      const categoriesToUpdate: ICategoryRaw[] = await this.repository.find(filter, session)
-
-      if (categoriesToUpdate.length === 0)
-        throw new NotFoundError('Категории для редактирования не найдены.')
-
-      const categoryPayload = await this.prepareCategoryEditPayload(
-        data,
-        categoriesToUpdate,
-        userId
-      )
-
-      /* UPDATE */
-      const newEntities = await this.repository.updateByFilter(filter, categoryPayload, session)
-
-      /* MOVE */
-      const categoriesToMove = categoriesToUpdate.filter(
-        (b) => data.boardId !== undefined && b.board_id.toString() !== data.boardId
-      )
-      if (categoriesToMove.length > 0) {
-        const moveResult = await this.moveCategoriesToBoard(
-          categoriesToMove.map((c) => c._id),
-          new Types.ObjectId(data.boardId),
-          userId,
-          newEntities,
-          session
-        )
-
-        dependencies.push(...moveResult.logIds)
+      if (dto.order != null && category.order !== dto.order && dto.isReorderNeeded) {
+        categoryIdsToReorder.push(categoryPayload._id.toString())
       }
+    }
 
-      /* REORDER */
-      const categoriesToReorder = categoriesToUpdate.filter(
-        (ws) => data.order !== undefined && ws.order !== data.order
+    /* BULK UPDATE */
+    const updatedCategories = await this.repository.bulkUpdate(categoriesToUpdate, userId, session)
+
+    /* MOVE */
+    if (categoriesPayloadToMove.length > 0) {
+      const moveResult = await this.moveCategoriesToBoardBulk(
+        categoriesPayloadToMove as (SingleUpdateDTO<Partial<ICategoryRaw>> & {
+          board_id: Types.ObjectId
+        })[],
+        userId,
+        existingCategories,
+        session
       )
-      if (categoriesToReorder.length > 0) {
+
+      dependencies.push(...moveResult.logIds)
+    }
+
+    /* REORDER */
+    if (categoryIdsToReorder.length > 0) {
+      const updatedCategoriesToReorder = updatedCategories.filter((uc) =>
+        categoryIdsToReorder.includes(uc._id.toString())
+      )
+
+      if (updatedCategoriesToReorder.length > 0) {
         reorderedCategories = await this.reorderService.reorder(
           'board_id',
-          newEntities,
+          updatedCategoriesToReorder,
           CollectionsEnum.CATEGORIES,
           userId,
           session
         )
-      }
 
-      /* LOG */
-      reorderedCategories.forEach((r) => {
-        if (r.log) dependencies.push(r.log.id)
-      })
-
-      await this.operationLogService.create(
-        {
-          operationType: OperationTypesEnum.CREATE,
-          collectionName: CollectionsEnum.CATEGORIES,
-          entitiesBefore: categoriesToUpdate,
-          entitiesAfter: newEntities,
-          dependencies,
-        },
-        userId,
-        session
-      )
-
-      if (isNewSession) {
-        await session.commitTransaction()
-      }
-
-      if (reorderedCategories.length > 0) {
-        const reorderedEntities = reorderedCategories.map((r) => r.updatedEntities).flat()
-        return [
-          ...newEntities.map((ne) => toServerCaseKeys<ICategoryServerResponse>(ne)),
-          ...reorderedEntities.map((re) => toServerCaseKeys<ICategoryServerResponse>(re)),
-        ]
-      }
-
-      return [...newEntities.map((ne) => toServerCaseKeys<ICategoryServerResponse>(ne))]
-    } catch (error) {
-      if (session && isNewSession) {
-        session.abortTransaction()
-      }
-
-      throw error
-    } finally {
-      if (session && isNewSession) {
-        session.endSession()
+        reorderedCategories.forEach((r) => {
+          if (r.log) dependencies.push(r.log.id)
+        })
       }
     }
+
+    /* LOG */
+    await this.operationLogService.create(
+      {
+        operationType: OperationTypesEnum.UPDATE,
+        collectionName: CollectionsEnum.CATEGORIES,
+        entitiesBefore: existingCategories,
+        entitiesAfter: updatedCategories,
+        dependencies,
+      },
+      userId,
+      session
+    )
+
+    if (reorderedCategories.length > 0) {
+      const reorderedEntities = reorderedCategories.map((r) => r.updatedEntities).flat()
+      return [
+        ...updatedCategories.map((uc) => toServerCaseKeys<ICategoryServerResponse>(uc)),
+        ...reorderedEntities.map((re) => toServerCaseKeys<ICategoryServerResponse>(re)),
+      ]
+    }
+
+    return [...updatedCategories.map((uc) => toServerCaseKeys<ICategoryServerResponse>(uc))]
   }
 
   public async editMany(
     data: CategoryEditDTO[],
     userId: Types.ObjectId,
     externalSession?: ClientSession
-  ) {
-    let session: ClientSession | null = externalSession || null
-    let isNewSession = false
-    let categoryIdsToReorder: string[] = []
-    let reorderedCategories: ReorderResultDTO<ICategoryRaw>[] = []
-    let categoriesPayloadToMove: SingleUpdateDTO<Partial<ICategoryRaw>>[] = []
-    let dependencies: Types.ObjectId[] = []
-
-    try {
-      if (!session) {
-        session = await mongoose.startSession()
-        session.startTransaction()
-        isNewSession = true
-      }
-
-      const categoriesToUpdate: SingleUpdateDTO<Partial<ICategoryRaw>>[] = []
-
-      const categoryIds = data.map((d) => d.id)
-
-      const filter = this.repository.buildFilter({ ids: categoryIds }, userId)
-
-      const existingCategories: ICategoryRaw[] = await this.repository.find(filter, session)
-
-      if (existingCategories.length === 0)
-        throw new NotFoundError('Категории для обновления не найдены.')
-
-      for (const dto of data) {
-        const category = existingCategories.find((c) => c._id.toString() === dto.id)
-
-        if (!category) continue
-
-        const categoryPayload = await this.prepareCategoryEditPayload(dto, [category], userId)
-
-        categoriesToUpdate.push(categoryPayload)
-
-        if (dto.boardId && category.board_id.toString() !== dto.boardId && dto.isMoveNeeded) {
-          categoriesPayloadToMove.push(categoryPayload)
-        }
-
-        if (dto.order != null && category.order !== dto.order && dto.isReorderNeeded) {
-          categoryIdsToReorder.push(categoryPayload._id.toString())
-        }
-      }
-
-      /* BULK UPDATE */
-      const updatedCategories = await this.repository.bulkUpdate(
-        categoriesToUpdate,
-        userId,
-        session
+  ): Promise<ICategoryServerResponse[]> {
+    if (externalSession) {
+      return this._executeEditManyTransaction(data, userId, externalSession)
+    } else {
+      return await this._retryExecutor((session: ClientSession) =>
+        this._executeEditManyTransaction(data, userId, session)
       )
-
-      /* MOVE */
-      if (categoriesPayloadToMove.length > 0) {
-        const moveResult = await this.moveCategoriesToBoardBulk(
-          categoriesPayloadToMove as (SingleUpdateDTO<Partial<ICategoryRaw>> & {
-            board_id: Types.ObjectId
-          })[],
-          userId,
-          existingCategories,
-          session
-        )
-
-        dependencies.push(...moveResult.logIds)
-      }
-
-      /* REORDER */
-      if (categoryIdsToReorder.length > 0) {
-        const updatedCategoriesToReorder = updatedCategories.filter((uc) =>
-          categoryIdsToReorder.includes(uc._id.toString())
-        )
-
-        if (updatedCategoriesToReorder.length > 0) {
-          reorderedCategories = await this.reorderService.reorder(
-            'board_id',
-            updatedCategoriesToReorder,
-            CollectionsEnum.CATEGORIES,
-            userId,
-            session
-          )
-
-          reorderedCategories.forEach((r) => {
-            if (r.log) dependencies.push(r.log.id)
-          })
-        }
-      }
-
-      /* LOG */
-      await this.operationLogService.create(
-        {
-          operationType: OperationTypesEnum.UPDATE,
-          collectionName: CollectionsEnum.CATEGORIES,
-          entitiesBefore: existingCategories,
-          entitiesAfter: updatedCategories,
-          dependencies,
-        },
-        userId,
-        session
-      )
-
-      if (isNewSession) {
-        await session.commitTransaction()
-      }
-
-      if (reorderedCategories.length > 0) {
-        const reorderedEntities = reorderedCategories.map((r) => r.updatedEntities).flat()
-        return [
-          ...updatedCategories.map((uc) => toServerCaseKeys<ICategoryServerResponse>(uc)),
-          ...reorderedEntities.map((re) => toServerCaseKeys<ICategoryServerResponse>(re)),
-        ]
-      }
-
-      return [...updatedCategories.map((uc) => toServerCaseKeys<ICategoryServerResponse>(uc))]
-    } catch (error) {
-      if (session && isNewSession) {
-        session.abortTransaction()
-      }
-
-      throw error
-    } finally {
-      if (session && isNewSession) {
-        session.endSession()
-      }
     }
   }
 
@@ -653,63 +637,110 @@ export class CategoryService
     }
   }
 
+  private async _executeDeleteTransaction(
+    criteria: CategoryCriteria,
+    userId: Types.ObjectId,
+    session: ClientSession
+  ): Promise<ICategoryServerResponse[]> {
+    let reorderedCategories: ReorderResultDTO<ICategoryRaw>[] = []
+    const filter = this.repository.buildFilter(criteria, userId)
+
+    const categoriesToDelete = await this.repository.find(filter, session)
+
+    if (categoriesToDelete.length === 0)
+      throw new NotFoundError('Категории для удаления не найдены.')
+
+    await this.repository.deleteMany(filter, session)
+
+    await this.taskService.deleteTasksByCategories(
+      categoriesToDelete.map((c) => c._id),
+      userId,
+      session
+    )
+
+    /* REORDER */
+    reorderedCategories = await this.reorderService.reorderByParentIds(
+      categoriesToDelete.map((c) => c.board_id),
+      CollectionsEnum.CATEGORIES,
+      userId,
+      session
+    )
+
+    const reorderedEntities = reorderedCategories.map((r) => r.updatedEntities).flat()
+
+    return [...reorderedEntities.map((re) => toServerCaseKeys<ICategoryServerResponse>(re))]
+  }
+
   public async delete(
     criteria: CategoryCriteria,
     userId: Types.ObjectId,
     externalSession?: ClientSession
   ): Promise<ICategoryServerResponse[]> {
-    let session: ClientSession | null = externalSession || null
-    let isNewSession = false
+    if (externalSession) {
+      return this._executeDeleteTransaction(criteria, userId, externalSession)
+    } else {
+      return await this._retryExecutor((session: ClientSession) =>
+        this._executeDeleteTransaction(criteria, userId, session)
+      )
+    }
+  }
+
+  private async _executeArchiveTransaction(
+    criteria: CategoryCriteria,
+    userId: Types.ObjectId,
+    session: ClientSession
+  ): Promise<ICategoryServerResponse[]> {
     let reorderedCategories: ReorderResultDTO<ICategoryRaw>[] = []
 
-    try {
-      if (!session) {
-        session = await mongoose.startSession()
-        session.startTransaction()
-        isNewSession = true
-      }
+    const filter = this.repository.buildFilter(criteria, userId)
 
-      const filter = this.repository.buildFilter(criteria, userId)
+    const categoriesToArchive = await this.repository.find(filter, session)
 
-      const categoriesToDelete = await this.repository.find(filter, session)
+    const updatedCategories = await this.repository.updateByFilter(
+      filter,
+      { is_deleted: true },
+      session
+    )
 
-      if (categoriesToDelete.length === 0)
-        throw new NotFoundError('Категории для удаления не найдены.')
+    /* REORDER */
+    reorderedCategories = await this.reorderService.reorderByParentIds(
+      categoriesToArchive.map((c) => c.board_id),
+      CollectionsEnum.CATEGORIES,
+      userId,
+      session
+    )
 
-      await this.repository.deleteMany(filter, session)
+    const archiveTasksResult = await this.taskService.archiveTasksByCategories(
+      updatedCategories.map((c) => c._id),
+      userId,
+      session
+    )
 
-      await this.taskService.deleteTasksByCategories(
-        categoriesToDelete.map((c) => c._id),
-        userId,
-        session
-      )
+    /* LOG */
+    let dependencies: Types.ObjectId[] = archiveTasksResult.logIds
 
-      /* REORDER */
-      reorderedCategories = await this.reorderService.reorderByParentIds(
-        categoriesToDelete.map((c) => c.board_id),
-        CollectionsEnum.CATEGORIES,
-        userId,
-        session
-      )
+    reorderedCategories.forEach((r) => {
+      if (r.log) dependencies.push(r.log.id)
+    })
 
-      if (isNewSession) {
-        await session.commitTransaction()
-      }
+    await this.operationLogService.create(
+      {
+        operationType: OperationTypesEnum.UPDATE,
+        collectionName: CollectionsEnum.CATEGORIES,
+        entitiesBefore: updatedCategories.map((ws) => ({ ...ws, is_deleted: false })),
+        entitiesAfter: updatedCategories,
+        dependencies,
+      },
+      userId,
+      session
+    )
 
-      const reorderedEntities = reorderedCategories.map((r) => r.updatedEntities).flat()
+    const reorderedEntities = reorderedCategories.map((r) => r.updatedEntities).flat()
 
-      return [...reorderedEntities.map((re) => toServerCaseKeys<ICategoryServerResponse>(re))]
-    } catch (error) {
-      if (session && isNewSession) {
-        session.abortTransaction()
-      }
-
-      throw error
-    } finally {
-      if (session && isNewSession) {
-        session.endSession()
-      }
-    }
+    return [
+      ...updatedCategories.map((ub) => toServerCaseKeys<ICategoryServerResponse>(ub)),
+      ...reorderedEntities.map((re) => toServerCaseKeys<ICategoryServerResponse>(re)),
+    ]
   }
 
   public async archive(
@@ -717,81 +748,74 @@ export class CategoryService
     userId: Types.ObjectId,
     externalSession?: ClientSession
   ): Promise<ICategoryServerResponse[]> {
-    let session: ClientSession | null = externalSession || null
-    let isNewSession = false
+    if (externalSession) {
+      return this._executeArchiveTransaction(criteria, userId, externalSession)
+    } else {
+      return await this._retryExecutor((session: ClientSession) =>
+        this._executeArchiveTransaction(criteria, userId, session)
+      )
+    }
+  }
+
+  private async _executeRecoverTransaction(
+    criteria: CategoryCriteria,
+    userId: Types.ObjectId,
+    session: ClientSession
+  ): Promise<ICategoryServerResponse[]> {
     let reorderedCategories: ReorderResultDTO<ICategoryRaw>[] = []
 
-    try {
-      if (!session) {
-        session = await mongoose.startSession()
-        session.startTransaction()
-        isNewSession = true
-      }
+    const filter = this.repository.buildFilter(criteria, userId)
 
-      const filter = this.repository.buildFilter(criteria, userId)
+    const categoriesToRecover = await this.repository.find(filter, session)
 
-      const categoriesToArchive = await this.repository.find(filter, session)
+    if (categoriesToRecover.length === 0)
+      throw new NotFoundError('Категории для восстановления не найдены.')
 
-      const updatedCategories = await this.repository.updateByFilter(
-        filter,
-        { is_deleted: true },
-        session
-      )
+    const updatedCategories = await this.repository.updateByFilter(
+      filter,
+      { is_deleted: false },
+      session
+    )
 
-      /* REORDER */
-      reorderedCategories = await this.reorderService.reorderByParentIds(
-        categoriesToArchive.map((c) => c.board_id),
-        CollectionsEnum.CATEGORIES,
-        userId,
-        session
-      )
+    /* REORDER */
+    reorderedCategories = await this.reorderService.reorderByParentIds(
+      categoriesToRecover.map((c) => c.board_id),
+      CollectionsEnum.CATEGORIES,
+      userId,
+      session
+    )
 
-      const archiveTasksResult = await this.taskService.archiveTasksByCategories(
-        updatedCategories.map((c) => c._id),
-        userId,
-        session
-      )
+    const recoverTasksResult = await this.taskService.recoverTasksByCategories(
+      updatedCategories.map((c) => c._id),
+      userId,
+      session
+    )
 
-      /* LOG */
-      let dependencies: Types.ObjectId[] = archiveTasksResult.logIds
+    /* LOG */
+    let dependencies: Types.ObjectId[] = recoverTasksResult.logIds
 
-      reorderedCategories.forEach((r) => {
-        if (r.log) dependencies.push(r.log.id)
-      })
+    reorderedCategories.forEach((r) => {
+      if (r.log) dependencies.push(r.log.id)
+    })
 
-      await this.operationLogService.create(
-        {
-          operationType: OperationTypesEnum.UPDATE,
-          collectionName: CollectionsEnum.CATEGORIES,
-          entitiesBefore: updatedCategories.map((ws) => ({ ...ws, is_deleted: false })),
-          entitiesAfter: updatedCategories,
-          dependencies,
-        },
-        userId,
-        session
-      )
+    await this.operationLogService.create(
+      {
+        operationType: OperationTypesEnum.CREATE,
+        collectionName: CollectionsEnum.CATEGORIES,
+        entitiesBefore: updatedCategories.map((ws) => ({ ...ws, is_deleted: false })),
+        entitiesAfter: updatedCategories,
+        dependencies,
+      },
+      userId,
+      session
+    )
 
-      if (isNewSession) {
-        await session.commitTransaction()
-      }
+    const reorderedEntities = reorderedCategories.map((r) => r.updatedEntities).flat()
 
-      const reorderedEntities = reorderedCategories.map((r) => r.updatedEntities).flat()
-
-      return [
-        ...updatedCategories.map((ub) => toServerCaseKeys<ICategoryServerResponse>(ub)),
-        ...reorderedEntities.map((re) => toServerCaseKeys<ICategoryServerResponse>(re)),
-      ]
-    } catch (error) {
-      if (session && isNewSession) {
-        session.abortTransaction()
-      }
-
-      throw error
-    } finally {
-      if (session && isNewSession) {
-        session.endSession()
-      }
-    }
+    return [
+      ...updatedCategories.map((ub) => toServerCaseKeys<ICategoryServerResponse>(ub)),
+      ...reorderedEntities.map((re) => toServerCaseKeys<ICategoryServerResponse>(re)),
+    ]
   }
 
   public async recover(
@@ -799,176 +823,101 @@ export class CategoryService
     userId: Types.ObjectId,
     externalSession?: ClientSession
   ): Promise<ICategoryServerResponse[]> {
-    let session: ClientSession | null = externalSession || null
-    let isNewSession = false
-    let reorderedCategories: ReorderResultDTO<ICategoryRaw>[] = []
+    if (externalSession) {
+      return this._executeRecoverTransaction(criteria, userId, externalSession)
+    } else {
+      return await this._retryExecutor((session: ClientSession) =>
+        this._executeRecoverTransaction(criteria, userId, session)
+      )
+    }
+  }
 
-    try {
-      if (!session) {
-        session = await mongoose.startSession()
-        session.startTransaction()
-        isNewSession = true
+  private async _executeCloneTransaction(
+    criteria: CategoryCriteria,
+    userId: Types.ObjectId,
+    session: ClientSession
+  ): Promise<ClonedCategoriesResult> {
+    const filter = this.repository.buildFilter(criteria, userId)
+
+    const categoriesToClone = await this.repository.find(
+      filter,
+      session,
+      '+embeddings -createdAt -updatedAt'
+    )
+
+    if (categoriesToClone.length === 0)
+      throw new NotFoundError('Категории для клонирования не найдены.')
+
+    const categoriesGroupedByBoard: Map<string, ICategoryRaw[]> = new Map()
+    categoriesToClone.forEach((category) => {
+      const boardId = category.board_id.toString()
+      if (!categoriesGroupedByBoard.has(boardId)) {
+        categoriesGroupedByBoard.set(boardId, [])
       }
 
-      const filter = this.repository.buildFilter(criteria, userId)
+      categoriesGroupedByBoard.get(boardId)!.push(category)
+    })
 
-      const categoriesToRecover = await this.repository.find(filter, session)
+    const transformedCategories: Omit<ICategoryRaw, '_id'>[] = []
 
-      if (categoriesToRecover.length === 0)
-        throw new NotFoundError('Категории для восстановления не найдены.')
+    for (const [boardId, categories] of categoriesGroupedByBoard) {
+      let newOrder = categoriesToClone.filter((t) => t.board_id.toString() === boardId).length + 1
 
-      const updatedCategories = await this.repository.updateByFilter(
-        filter,
-        { is_deleted: false },
-        session
-      )
+      for (const category of categories) {
+        const cleanCategory = {
+          ...category,
+          _id: undefined,
+          order: newOrder,
+        }
 
-      if (isNewSession) {
-        await session.commitTransaction()
+        newOrder += 1
+
+        transformedCategories.push(cleanCategory)
       }
+    }
 
-      /* REORDER */
-      reorderedCategories = await this.reorderService.reorderByParentIds(
-        categoriesToRecover.map((c) => c.board_id),
-        CollectionsEnum.CATEGORIES,
-        userId,
-        session
-      )
+    const newCategories = await this.repository.createMany(transformedCategories, session)
 
-      const recoverTasksResult = await this.taskService.recoverTasksByCategories(
-        updatedCategories.map((c) => c._id),
-        userId,
-        session
-      )
+    const categoryIdsMap: Map<string, string> = new Map()
+    categoriesToClone.forEach((category, index) => {
+      categoryIdsMap.set(category._id.toString(), newCategories[index]._id.toString())
+    })
 
-      /* LOG */
-      let dependencies: Types.ObjectId[] = recoverTasksResult.logIds
+    const cloneTasksResult = await this.taskService.cloneTasksByCategories(
+      categoryIdsMap,
+      userId,
+      session
+    )
 
-      reorderedCategories.forEach((r) => {
-        if (r.log) dependencies.push(r.log.id)
-      })
+    /* LOG */
+    await this.operationLogService.create(
+      {
+        operationType: OperationTypesEnum.CREATE,
+        collectionName: CollectionsEnum.CATEGORIES,
+        entitiesAfter: newCategories,
+        dependencies: cloneTasksResult.logIds,
+      },
+      userId,
+      session
+    )
 
-      await this.operationLogService.create(
-        {
-          operationType: OperationTypesEnum.CREATE,
-          collectionName: CollectionsEnum.CATEGORIES,
-          entitiesBefore: updatedCategories.map((ws) => ({ ...ws, is_deleted: false })),
-          entitiesAfter: updatedCategories,
-          dependencies,
-        },
-        userId,
-        session
-      )
-
-      const reorderedEntities = reorderedCategories.map((r) => r.updatedEntities).flat()
-
-      return [
-        ...updatedCategories.map((ub) => toServerCaseKeys<ICategoryServerResponse>(ub)),
-        ...reorderedEntities.map((re) => toServerCaseKeys<ICategoryServerResponse>(re)),
-      ]
-    } catch (error) {
-      if (session && isNewSession) {
-        session.abortTransaction()
-      }
-
-      throw error
-    } finally {
-      if (session && isNewSession) {
-        session.endSession()
-      }
+    return {
+      categories: newCategories.map((cb) => toServerCaseKeys<ICategoryServerResponse>(cb)),
+      tasks: cloneTasksResult.entities,
     }
   }
 
   public async clone(
     criteria: CategoryCriteria,
-    userId: Types.ObjectId
+    userId: Types.ObjectId,
+    externalSession?: ClientSession
   ): Promise<ClonedCategoriesResult> {
-    let session: ClientSession | null = null
-
-    try {
-      session = await mongoose.startSession()
-      session.startTransaction()
-
-      const filter = this.repository.buildFilter(criteria, userId)
-
-      const categoriesToClone = await this.repository.find(
-        filter,
-        session,
-        '+embeddings -createdAt -updatedAt'
+    if (externalSession) {
+      return this._executeCloneTransaction(criteria, userId, externalSession)
+    } else {
+      return await this._retryExecutor((session: ClientSession) =>
+        this._executeCloneTransaction(criteria, userId, session)
       )
-
-      if (categoriesToClone.length === 0)
-        throw new NotFoundError('Категории для клонирования не найдены.')
-
-      const categoriesGroupedByBoard: Map<string, ICategoryRaw[]> = new Map()
-      categoriesToClone.forEach((category) => {
-        const boardId = category.board_id.toString()
-        if (!categoriesGroupedByBoard.has(boardId)) {
-          categoriesGroupedByBoard.set(boardId, [])
-        }
-
-        categoriesGroupedByBoard.get(boardId)!.push(category)
-      })
-
-      const transformedCategories: Omit<ICategoryRaw, '_id'>[] = []
-
-      for (const [boardId, categories] of categoriesGroupedByBoard) {
-        let newOrder = categoriesToClone.filter((t) => t.board_id.toString() === boardId).length + 1
-
-        for (const category of categories) {
-          const cleanCategory = {
-            ...category,
-            _id: undefined,
-            order: newOrder,
-          }
-
-          newOrder += 1
-
-          transformedCategories.push(cleanCategory)
-        }
-      }
-
-      const newCategories = await this.repository.createMany(transformedCategories, session)
-
-      const categoryIdsMap: Map<string, string> = new Map()
-      categoriesToClone.forEach((category, index) => {
-        categoryIdsMap.set(category._id.toString(), newCategories[index]._id.toString())
-      })
-
-      const cloneTasksResult = await this.taskService.cloneTasksByCategories(
-        categoryIdsMap,
-        userId,
-        session
-      )
-
-      /* LOG */
-      await this.operationLogService.create(
-        {
-          operationType: OperationTypesEnum.CREATE,
-          collectionName: CollectionsEnum.CATEGORIES,
-          entitiesAfter: newCategories,
-          dependencies: cloneTasksResult.logIds,
-        },
-        userId,
-        session
-      )
-
-      await session.commitTransaction()
-
-      return {
-        categories: newCategories.map((cb) => toServerCaseKeys<ICategoryServerResponse>(cb)),
-        tasks: cloneTasksResult.entities,
-      }
-    } catch (error) {
-      if (session) {
-        session.abortTransaction()
-      }
-
-      throw error
-    } finally {
-      if (session) {
-        session.endSession()
-      }
     }
   }
 

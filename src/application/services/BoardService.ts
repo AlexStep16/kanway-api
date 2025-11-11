@@ -21,6 +21,8 @@ import { IMoveResult } from '@interfaces/IMoveResult.ts'
 import { ClonedBoardsResult } from '@dtos/ClonedBoardsResult.ts'
 import { SingleUpdateDTO } from '../dtos/SingleUpdateDTO.ts'
 
+const MAX_RETRIES = 3
+
 export class BoardService
   implements IBaseService<IBoard, BoardCriteria, BoardDTO, BoardEditDTO, ClonedBoardsResult>
 {
@@ -47,80 +49,152 @@ export class BoardService
     this.taskService = taskService
   }
 
+  private async _retryExecutor<T>(executor: (session: ClientSession) => Promise<T>): Promise<T> {
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      const session = await mongoose.startSession()
+      session.startTransaction()
+      try {
+        const result = await executor(session)
+
+        await session.commitTransaction()
+
+        return result
+      } catch (error: any) {
+        await session.abortTransaction()
+
+        if (error.code === 112 && attempt < MAX_RETRIES) {
+          console.warn(`Конфликт записи в базу данных ${attempt}. Повторная попытка...`)
+
+          await new Promise((resolve) => setTimeout(resolve, 50 * attempt))
+          continue
+        }
+        throw error
+      } finally {
+        session.endSession()
+      }
+    }
+    throw new Error(
+      'Произошла ошибка при выполнении операции после максимального количества попыток.'
+    )
+  }
+
+  private async _executeCreateTransaction(
+    data: BoardDTO,
+    userId: Types.ObjectId,
+    session: ClientSession
+  ): Promise<IBoard[]> {
+    let reorderedBoards: ReorderResultDTO<IBoardRaw>[] = []
+
+    const boardPayload = await this.prepareBoardCreationPayload(data, userId, session)
+
+    /* CREATE */
+    const newBoard = await this.repository.create(boardPayload, session)
+
+    /* REORDER */
+    if (data.order !== undefined) {
+      reorderedBoards = await this.reorderService.reorder(
+        'workspace_id',
+        [newBoard],
+        CollectionsEnum.BOARDS,
+        userId,
+        session
+      )
+    }
+
+    /* LOG */
+    let dependencies: Types.ObjectId[] = []
+
+    reorderedBoards.forEach((r) => {
+      if (r.log) dependencies.push(r.log.id)
+    })
+
+    await this.operationLogService.create(
+      {
+        operationType: OperationTypesEnum.CREATE,
+        collectionName: CollectionsEnum.BOARDS,
+        entitiesAfter: [newBoard],
+        dependencies,
+      },
+      userId,
+      session
+    )
+
+    if (reorderedBoards.length > 0) {
+      const reorderedEntities = reorderedBoards.map((r) => r.updatedEntities).flat()
+      return [
+        toServerCaseKeys(newBoard),
+        ...reorderedEntities.map((re) => toServerCaseKeys<IBoard>(re)),
+      ]
+    }
+
+    return [toServerCaseKeys(newBoard)]
+  }
+
   public async create(
     data: BoardDTO,
     userId: Types.ObjectId,
     externalSession?: ClientSession
   ): Promise<IBoard[]> {
-    let session: ClientSession | null = externalSession || null
-    let isNewSession = false
+    if (externalSession) {
+      return this._executeCreateTransaction(data, userId, externalSession)
+    } else {
+      return await this._retryExecutor((session: ClientSession) =>
+        this._executeCreateTransaction(data, userId, session)
+      )
+    }
+  }
+
+  private async _executeCreateManyTransaction(
+    data: BoardDTO[],
+    userId: Types.ObjectId,
+    session: ClientSession
+  ): Promise<IBoard[]> {
     let reorderedBoards: ReorderResultDTO<IBoardRaw>[] = []
 
-    try {
-      if (!session) {
-        session = await mongoose.startSession()
-        session.startTransaction()
-        isNewSession = true
-      }
+    const boardsPayload = await this.prepareBoardsCreationPayload(data, userId, session)
 
-      const boardPayload = await this.prepareBoardCreationPayload(data, userId, session)
+    /* CREATE */
+    const newBoards = await this.repository.createMany(boardsPayload, session)
 
-      /* CREATE */
-      const newBoard = await this.repository.create(boardPayload, session)
-
-      /* REORDER */
-      if (data.order !== undefined) {
-        reorderedBoards = await this.reorderService.reorder(
-          'workspace_id',
-          [newBoard],
-          CollectionsEnum.BOARDS,
-          userId,
-          session
-        )
-      }
-
-      /* LOG */
-      let dependencies: Types.ObjectId[] = []
-
-      reorderedBoards.forEach((r) => {
-        if (r.log) dependencies.push(r.log.id)
-      })
-
-      await this.operationLogService.create(
-        {
-          operationType: OperationTypesEnum.CREATE,
-          collectionName: CollectionsEnum.BOARDS,
-          entitiesAfter: [newBoard],
-          dependencies,
-        },
+    /* REORDER */
+    const isReorderNeeded = data.some((ws) => ws.order !== undefined)
+    if (isReorderNeeded) {
+      reorderedBoards = await this.reorderService.reorder(
+        'workspace_id',
+        newBoards,
+        CollectionsEnum.BOARDS,
         userId,
         session
       )
-
-      if (isNewSession) {
-        await session.commitTransaction()
-      }
-
-      if (reorderedBoards.length > 0) {
-        const reorderedEntities = reorderedBoards.map((r) => r.updatedEntities).flat()
-        return [
-          toServerCaseKeys(newBoard),
-          ...reorderedEntities.map((re) => toServerCaseKeys<IBoard>(re)),
-        ]
-      }
-
-      return [toServerCaseKeys(newBoard)]
-    } catch (error) {
-      if (session && isNewSession) {
-        session.abortTransaction()
-      }
-
-      throw error
-    } finally {
-      if (session && isNewSession) {
-        session.endSession()
-      }
     }
+
+    /* LOG */
+    let dependencies: Types.ObjectId[] = []
+
+    reorderedBoards.forEach((r) => {
+      if (r.log) dependencies.push(r.log.id)
+    })
+
+    await this.operationLogService.create(
+      {
+        operationType: OperationTypesEnum.CREATE,
+        collectionName: CollectionsEnum.BOARDS,
+        entitiesAfter: newBoards,
+        dependencies,
+      },
+      userId,
+      session
+    )
+
+    if (reorderedBoards.length > 0) {
+      const reorderedEntities = reorderedBoards.map((r) => r.updatedEntities).flat()
+      return [
+        ...newBoards.map((nb) => toServerCaseKeys<IBoard>(nb)),
+        ...reorderedEntities.map((re) => toServerCaseKeys<IBoard>(re)),
+      ]
+    }
+
+    return [...newBoards.map((nb) => toServerCaseKeys<IBoard>(nb))]
   }
 
   public async createMany(
@@ -128,76 +202,90 @@ export class BoardService
     userId: Types.ObjectId,
     externalSession?: ClientSession
   ): Promise<IBoard[]> {
-    let session: ClientSession | null = externalSession || null
-    let isNewSession = false
+    if (externalSession) {
+      return this._executeCreateManyTransaction(data, userId, externalSession)
+    } else {
+      return await this._retryExecutor((session: ClientSession) =>
+        this._executeCreateManyTransaction(data, userId, session)
+      )
+    }
+  }
+
+  private async _executeEditTransaction(
+    data: BoardEditDTO,
+    criteria: BoardCriteria,
+    userId: Types.ObjectId,
+    session: ClientSession
+  ): Promise<IBoard[]> {
     let reorderedBoards: ReorderResultDTO<IBoardRaw>[] = []
+    let dependencies: Types.ObjectId[] = []
 
-    try {
-      if (!session) {
-        session = await mongoose.startSession()
-        session.startTransaction()
-        isNewSession = true
-      }
+    const filter = this.repository.buildFilter(criteria, userId)
 
-      const boardsPayload = await this.prepareBoardsCreationPayload(data, userId, session)
+    const boardsToUpdate: IBoardRaw[] = await this.repository.find(filter, session)
 
-      /* CREATE */
-      const newBoards = await this.repository.createMany(boardsPayload, session)
+    if (boardsToUpdate.length === 0) throw new NotFoundError('Доски для редактирования не найдены.')
 
-      /* REORDER */
-      const isReorderNeeded = data.some((ws) => ws.order !== undefined)
-      if (isReorderNeeded) {
-        reorderedBoards = await this.reorderService.reorder(
-          'workspace_id',
-          newBoards,
-          CollectionsEnum.BOARDS,
-          userId,
-          session
-        )
-      }
+    const boardPayload = await this.prepareBoardEditPayload(data, boardsToUpdate, userId)
 
-      /* LOG */
-      let dependencies: Types.ObjectId[] = []
+    /* UPDATE */
+    const newEntities = await this.repository.updateByFilter(filter, boardPayload, session)
 
-      reorderedBoards.forEach((r) => {
-        if (r.log) dependencies.push(r.log.id)
-      })
-
-      await this.operationLogService.create(
-        {
-          operationType: OperationTypesEnum.CREATE,
-          collectionName: CollectionsEnum.BOARDS,
-          entitiesAfter: newBoards,
-          dependencies,
-        },
+    /* MOVE */
+    const boardsToMove = boardsToUpdate.filter(
+      (b) => data.workspaceId !== undefined && b.workspace_id.toString() !== data.workspaceId
+    )
+    if (boardsToMove.length > 0) {
+      const moveResult = await this.moveBoardsToWorkspace(
+        boardsToMove.map((b) => b._id),
+        new Types.ObjectId(data.workspaceId),
         userId,
         session
       )
 
-      if (isNewSession) {
-        await session.commitTransaction()
-      }
-
-      if (reorderedBoards.length > 0) {
-        const reorderedEntities = reorderedBoards.map((r) => r.updatedEntities).flat()
-        return [
-          ...newBoards.map((nb) => toServerCaseKeys<IBoard>(nb)),
-          ...reorderedEntities.map((re) => toServerCaseKeys<IBoard>(re)),
-        ]
-      }
-
-      return [...newBoards.map((nb) => toServerCaseKeys<IBoard>(nb))]
-    } catch (error) {
-      if (session && isNewSession) {
-        session.abortTransaction()
-      }
-
-      throw error
-    } finally {
-      if (session && isNewSession) {
-        session.endSession()
-      }
+      dependencies.push(...moveResult.logIds)
     }
+
+    /* REORDER */
+    const boardsToReorder = boardsToUpdate.filter(
+      (ws) => data.order !== undefined && ws.order !== data.order
+    )
+    if (boardsToReorder.length > 0) {
+      reorderedBoards = await this.reorderService.reorder(
+        'workspace_id',
+        newEntities,
+        CollectionsEnum.BOARDS,
+        userId,
+        session
+      )
+    }
+
+    /* LOG */
+    reorderedBoards.forEach((r) => {
+      if (r.log) dependencies.push(r.log.id)
+    })
+
+    await this.operationLogService.create(
+      {
+        operationType: OperationTypesEnum.CREATE,
+        collectionName: CollectionsEnum.BOARDS,
+        entitiesBefore: boardsToUpdate,
+        entitiesAfter: newEntities,
+        dependencies,
+      },
+      userId,
+      session
+    )
+
+    if (reorderedBoards.length > 0) {
+      const reorderedEntities = reorderedBoards.map((r) => r.updatedEntities).flat()
+      return [
+        ...newEntities.map((ne) => toServerCaseKeys<IBoard>(ne)),
+        ...reorderedEntities.map((re) => toServerCaseKeys<IBoard>(re)),
+      ]
+    }
+
+    return [...newEntities.map((ne) => toServerCaseKeys<IBoard>(ne))]
   }
 
   public async edit(
@@ -206,100 +294,116 @@ export class BoardService
     userId: Types.ObjectId,
     externalSession?: ClientSession
   ): Promise<IBoard[]> {
-    let session: ClientSession | null = externalSession || null
-    let isNewSession = false
+    if (externalSession) {
+      return this._executeEditTransaction(data, criteria, userId, externalSession)
+    } else {
+      return await this._retryExecutor((session: ClientSession) =>
+        this._executeEditTransaction(data, criteria, userId, session)
+      )
+    }
+  }
+
+  private async _executeEditManyTransaction(
+    data: BoardEditDTO[],
+    userId: Types.ObjectId,
+    session: ClientSession
+  ) {
+    let boardIdsToReorder: string[] = []
     let reorderedBoards: ReorderResultDTO<IBoardRaw>[] = []
+    let boardsPayloadToMove: SingleUpdateDTO<Partial<IBoardRaw>>[] = []
     let dependencies: Types.ObjectId[] = []
 
-    try {
-      if (!session) {
-        session = await mongoose.startSession()
-        session.startTransaction()
-        isNewSession = true
+    const boardsToUpdate: SingleUpdateDTO<Partial<IBoardRaw>>[] = []
+
+    const boardIds = data.map((d) => d.id)
+
+    const filter = this.repository.buildFilter({ ids: boardIds }, userId)
+
+    const existingBoards: IBoardRaw[] = await this.repository.find(filter, session)
+
+    if (existingBoards.length === 0) throw new NotFoundError('Доски для обновления не найдены.')
+
+    for (const dto of data) {
+      const board = existingBoards.find((c) => c._id.toString() === dto.id)
+
+      if (!board) continue
+
+      const boardPayload = await this.prepareBoardEditPayload(dto, [board], userId)
+
+      boardsToUpdate.push(boardPayload)
+
+      if (
+        dto.workspaceId &&
+        board.workspace_id.toString() !== dto.workspaceId &&
+        dto.isMoveNeeded
+      ) {
+        boardsPayloadToMove.push(boardPayload)
       }
 
-      const filter = this.repository.buildFilter(criteria, userId)
-
-      const boardsToUpdate: IBoardRaw[] = await this.repository.find(filter, session)
-
-      if (boardsToUpdate.length === 0)
-        throw new NotFoundError('Доски для редактирования не найдены.')
-
-      const boardPayload = await this.prepareBoardEditPayload(data, boardsToUpdate, userId)
-
-      /* UPDATE */
-      const newEntities = await this.repository.updateByFilter(filter, boardPayload, session)
-
-      /* MOVE */
-      const boardsToMove = boardsToUpdate.filter(
-        (b) => data.workspaceId !== undefined && b.workspace_id.toString() !== data.workspaceId
-      )
-      if (boardsToMove.length > 0) {
-        const moveResult = await this.moveBoardsToWorkspace(
-          boardsToMove.map((b) => b._id),
-          new Types.ObjectId(data.workspaceId),
-          userId,
-          session
-        )
-
-        dependencies.push(...moveResult.logIds)
+      if (dto.order != null && board.order !== dto.order && dto.isReorderNeeded) {
+        boardIdsToReorder.push(boardPayload._id.toString())
       }
+    }
 
-      /* REORDER */
-      const boardsToReorder = boardsToUpdate.filter(
-        (ws) => data.order !== undefined && ws.order !== data.order
-      )
-      if (boardsToReorder.length > 0) {
-        reorderedBoards = await this.reorderService.reorder(
-          'workspace_id',
-          newEntities,
-          CollectionsEnum.BOARDS,
-          userId,
-          session
-        )
-      }
+    /* BULK UPDATE */
+    const updatedBoards = await this.repository.bulkUpdate(boardsToUpdate, userId, session)
 
-      /* LOG */
-      reorderedBoards.forEach((r) => {
-        if (r.log) dependencies.push(r.log.id)
-      })
-
-      await this.operationLogService.create(
-        {
-          operationType: OperationTypesEnum.CREATE,
-          collectionName: CollectionsEnum.BOARDS,
-          entitiesBefore: boardsToUpdate,
-          entitiesAfter: newEntities,
-          dependencies,
-        },
+    /* MOVE */
+    if (boardsPayloadToMove.length > 0) {
+      const moveResult = await this.moveBoardsToWorkspaceBulk(
+        boardsPayloadToMove as (SingleUpdateDTO<Partial<IBoardRaw>> & {
+          workspace_id: Types.ObjectId
+        })[],
         userId,
         session
       )
 
-      if (isNewSession) {
-        await session.commitTransaction()
-      }
+      dependencies.push(...moveResult.logIds)
+    }
 
-      if (reorderedBoards.length > 0) {
-        const reorderedEntities = reorderedBoards.map((r) => r.updatedEntities).flat()
-        return [
-          ...newEntities.map((ne) => toServerCaseKeys<IBoard>(ne)),
-          ...reorderedEntities.map((re) => toServerCaseKeys<IBoard>(re)),
-        ]
-      }
+    /* REORDER */
+    if (boardIdsToReorder.length > 0) {
+      const updatedBoardsToReorder = updatedBoards.filter((uc) =>
+        boardIdsToReorder.includes(uc._id.toString())
+      )
 
-      return [...newEntities.map((ne) => toServerCaseKeys<IBoard>(ne))]
-    } catch (error) {
-      if (session && isNewSession) {
-        session.abortTransaction()
-      }
+      if (updatedBoardsToReorder.length > 0) {
+        reorderedBoards = await this.reorderService.reorder(
+          'workspace_id',
+          updatedBoardsToReorder,
+          CollectionsEnum.BOARDS,
+          userId,
+          session
+        )
 
-      throw error
-    } finally {
-      if (session && isNewSession) {
-        session.endSession()
+        reorderedBoards.forEach((r) => {
+          if (r.log) dependencies.push(r.log.id)
+        })
       }
     }
+
+    /* LOG */
+    await this.operationLogService.create(
+      {
+        operationType: OperationTypesEnum.UPDATE,
+        collectionName: CollectionsEnum.BOARDS,
+        entitiesBefore: existingBoards,
+        entitiesAfter: updatedBoards,
+        dependencies,
+      },
+      userId,
+      session
+    )
+
+    if (reorderedBoards.length > 0) {
+      const reorderedEntities = reorderedBoards.map((r) => r.updatedEntities).flat()
+      return [
+        ...updatedBoards.map((uc) => toServerCaseKeys<IBoard>(uc)),
+        ...reorderedEntities.map((re) => toServerCaseKeys<IBoard>(re)),
+      ]
+    }
+
+    return [...updatedBoards.map((uc) => toServerCaseKeys<IBoard>(uc))]
   }
 
   public async editMany(
@@ -307,125 +411,12 @@ export class BoardService
     userId: Types.ObjectId,
     externalSession?: ClientSession
   ) {
-    let session: ClientSession | null = externalSession || null
-    let isNewSession = false
-    let boardIdsToReorder: string[] = []
-    let reorderedBoards: ReorderResultDTO<IBoardRaw>[] = []
-    let boardsPayloadToMove: SingleUpdateDTO<Partial<IBoardRaw>>[] = []
-    let dependencies: Types.ObjectId[] = []
-
-    try {
-      if (!session) {
-        session = await mongoose.startSession()
-        session.startTransaction()
-        isNewSession = true
-      }
-
-      const boardsToUpdate: SingleUpdateDTO<Partial<IBoardRaw>>[] = []
-
-      const boardIds = data.map((d) => d.id)
-
-      const filter = this.repository.buildFilter({ ids: boardIds }, userId)
-
-      const existingBoards: IBoardRaw[] = await this.repository.find(filter, session)
-
-      if (existingBoards.length === 0) throw new NotFoundError('Доски для обновления не найдены.')
-
-      for (const dto of data) {
-        const board = existingBoards.find((c) => c._id.toString() === dto.id)
-
-        if (!board) continue
-
-        const boardPayload = await this.prepareBoardEditPayload(dto, [board], userId)
-
-        boardsToUpdate.push(boardPayload)
-
-        if (
-          dto.workspaceId &&
-          board.workspace_id.toString() !== dto.workspaceId &&
-          dto.isMoveNeeded
-        ) {
-          boardsPayloadToMove.push(boardPayload)
-        }
-
-        if (dto.order != null && board.order !== dto.order && dto.isReorderNeeded) {
-          boardIdsToReorder.push(boardPayload._id.toString())
-        }
-      }
-
-      /* BULK UPDATE */
-      const updatedBoards = await this.repository.bulkUpdate(boardsToUpdate, userId, session)
-
-      /* MOVE */
-      if (boardsPayloadToMove.length > 0) {
-        const moveResult = await this.moveBoardsToWorkspaceBulk(
-          boardsPayloadToMove as (SingleUpdateDTO<Partial<IBoardRaw>> & {
-            workspace_id: Types.ObjectId
-          })[],
-          userId,
-          session
-        )
-
-        dependencies.push(...moveResult.logIds)
-      }
-
-      /* REORDER */
-      if (boardIdsToReorder.length > 0) {
-        const updatedBoardsToReorder = updatedBoards.filter((uc) =>
-          boardIdsToReorder.includes(uc._id.toString())
-        )
-
-        if (updatedBoardsToReorder.length > 0) {
-          reorderedBoards = await this.reorderService.reorder(
-            'workspace_id',
-            updatedBoardsToReorder,
-            CollectionsEnum.BOARDS,
-            userId,
-            session
-          )
-
-          reorderedBoards.forEach((r) => {
-            if (r.log) dependencies.push(r.log.id)
-          })
-        }
-      }
-
-      /* LOG */
-      await this.operationLogService.create(
-        {
-          operationType: OperationTypesEnum.UPDATE,
-          collectionName: CollectionsEnum.BOARDS,
-          entitiesBefore: existingBoards,
-          entitiesAfter: updatedBoards,
-          dependencies,
-        },
-        userId,
-        session
+    if (externalSession) {
+      return this._executeEditManyTransaction(data, userId, externalSession)
+    } else {
+      return await this._retryExecutor((session: ClientSession) =>
+        this._executeEditManyTransaction(data, userId, session)
       )
-
-      if (isNewSession) {
-        await session.commitTransaction()
-      }
-
-      if (reorderedBoards.length > 0) {
-        const reorderedEntities = reorderedBoards.map((r) => r.updatedEntities).flat()
-        return [
-          ...updatedBoards.map((uc) => toServerCaseKeys<IBoard>(uc)),
-          ...reorderedEntities.map((re) => toServerCaseKeys<IBoard>(re)),
-        ]
-      }
-
-      return [...updatedBoards.map((uc) => toServerCaseKeys<IBoard>(uc))]
-    } catch (error) {
-      if (session && isNewSession) {
-        session.abortTransaction()
-      }
-
-      throw error
-    } finally {
-      if (session && isNewSession) {
-        session.endSession()
-      }
     }
   }
 
@@ -481,62 +472,112 @@ export class BoardService
     }
   }
 
+  private async _executeDeleteTransaction(
+    criteria: BoardCriteria,
+    userId: Types.ObjectId,
+    session: ClientSession
+  ): Promise<IBoard[]> {
+    let reorderedBoards: ReorderResultDTO<IBoardRaw>[] = []
+
+    const filter = this.repository.buildFilter(criteria, userId)
+
+    const boardsToDelete = await this.repository.find(filter, session)
+
+    if (boardsToDelete.length === 0) throw new NotFoundError('Доски для удаления не найдены.')
+
+    await this.repository.deleteMany(filter, session)
+
+    await this.categoryService.deleteCategoriesByBoards(
+      boardsToDelete.map((b) => b._id),
+      userId,
+      session
+    )
+
+    /* REORDER */
+    reorderedBoards = await this.reorderService.reorderByParentIds(
+      boardsToDelete.map((b) => b.workspace_id),
+      CollectionsEnum.BOARDS,
+      userId,
+      session
+    )
+
+    const reorderedEntities = reorderedBoards.map((r) => r.updatedEntities).flat()
+
+    return [...reorderedEntities.map((re) => toServerCaseKeys<IBoard>(re))]
+  }
+
   public async delete(
     criteria: BoardCriteria,
     userId: Types.ObjectId,
     externalSession?: ClientSession
   ): Promise<IBoard[]> {
-    let session: ClientSession | null = externalSession || null
-    let isNewSession = false
+    if (externalSession) {
+      return this._executeDeleteTransaction(criteria, userId, externalSession)
+    } else {
+      return await this._retryExecutor((session: ClientSession) =>
+        this._executeDeleteTransaction(criteria, userId, session)
+      )
+    }
+  }
+
+  private async _executeArchiveTransaction(
+    criteria: BoardCriteria,
+    userId: Types.ObjectId,
+    session: ClientSession
+  ): Promise<IBoard[]> {
     let reorderedBoards: ReorderResultDTO<IBoardRaw>[] = []
 
-    try {
-      if (!session) {
-        session = await mongoose.startSession()
-        session.startTransaction()
-        isNewSession = true
-      }
+    const filter = this.repository.buildFilter(criteria, userId)
 
-      const filter = this.repository.buildFilter(criteria, userId)
+    const boardsToArchive = await this.repository.find(filter, session)
 
-      const boardsToDelete = await this.repository.find(filter, session)
+    if (boardsToArchive.length === 0) throw new NotFoundError('Доски для архивации не найдены.')
 
-      if (boardsToDelete.length === 0) throw new NotFoundError('Доски для удаления не найдены.')
+    const updatedBoards = await this.repository.updateByFilter(
+      filter,
+      { is_deleted: true },
+      session
+    )
 
-      await this.repository.deleteMany(filter, session)
+    /* REORDER */
+    reorderedBoards = await this.reorderService.reorderByParentIds(
+      boardsToArchive.map((b) => b.workspace_id),
+      CollectionsEnum.BOARDS,
+      userId,
+      session
+    )
 
-      await this.categoryService.deleteCategoriesByBoards(
-        boardsToDelete.map((b) => b._id),
-        userId,
-        session
-      )
+    const archiveCategoriesResult = await this.categoryService.archiveCategoriesByBoards(
+      updatedBoards.map((b) => b._id),
+      userId,
+      session
+    )
 
-      /* REORDER */
-      reorderedBoards = await this.reorderService.reorderByParentIds(
-        boardsToDelete.map((b) => b.workspace_id),
-        CollectionsEnum.BOARDS,
-        userId,
-        session
-      )
+    /* LOG */
+    let dependencies: Types.ObjectId[] = archiveCategoriesResult.logIds
 
-      if (isNewSession) {
-        await session.commitTransaction()
-      }
+    reorderedBoards.forEach((r) => {
+      if (r.log) dependencies.push(r.log.id)
+    })
 
-      const reorderedEntities = reorderedBoards.map((r) => r.updatedEntities).flat()
+    await this.operationLogService.create(
+      {
+        operationType: OperationTypesEnum.UPDATE,
+        collectionName: CollectionsEnum.BOARDS,
+        entitiesBefore: updatedBoards.map((ws) => ({ ...ws, is_deleted: false })),
+        entitiesAfter: updatedBoards,
+        dependencies,
+      },
+      userId,
+      session
+    )
 
-      return [...reorderedEntities.map((re) => toServerCaseKeys<IBoard>(re))]
-    } catch (error) {
-      if (session && isNewSession) {
-        session.abortTransaction()
-      }
+    const reorderedEntities = reorderedBoards.map((r) => r.updatedEntities).flat()
 
-      throw error
-    } finally {
-      if (session && isNewSession) {
-        session.endSession()
-      }
-    }
+    return [
+      ...updatedBoards.map((ub) => toServerCaseKeys<IBoard>(ub)),
+      ...reorderedEntities.map((re) => toServerCaseKeys<IBoard>(re)),
+    ]
   }
 
   public async archive(
@@ -544,83 +585,74 @@ export class BoardService
     userId: Types.ObjectId,
     externalSession?: ClientSession
   ): Promise<IBoard[]> {
-    let session: ClientSession | null = externalSession || null
-    let isNewSession = false
+    if (externalSession) {
+      return this._executeArchiveTransaction(criteria, userId, externalSession)
+    } else {
+      return await this._retryExecutor((session: ClientSession) =>
+        this._executeArchiveTransaction(criteria, userId, session)
+      )
+    }
+  }
+
+  private async _executeRecoverTransaction(
+    criteria: BoardCriteria,
+    userId: Types.ObjectId,
+    session: ClientSession
+  ): Promise<IBoard[]> {
     let reorderedBoards: ReorderResultDTO<IBoardRaw>[] = []
 
-    try {
-      if (!session) {
-        session = await mongoose.startSession()
-        session.startTransaction()
-        isNewSession = true
-      }
+    const filter = this.repository.buildFilter(criteria, userId)
 
-      const filter = this.repository.buildFilter(criteria, userId)
+    const boardsToRecover = await this.repository.find(filter, session)
 
-      const boardsToArchive = await this.repository.find(filter, session)
+    if (boardsToRecover.length === 0)
+      throw new NotFoundError('Доски для восстановления не найдены.')
 
-      if (boardsToArchive.length === 0) throw new NotFoundError('Доски для архивации не найдены.')
+    const updatedBoards = await this.repository.updateByFilter(
+      filter,
+      { is_deleted: false },
+      session
+    )
 
-      const updatedBoards = await this.repository.updateByFilter(
-        filter,
-        { is_deleted: true },
-        session
-      )
+    /* REORDER */
+    reorderedBoards = await this.reorderService.reorderByParentIds(
+      boardsToRecover.map((b) => b.workspace_id),
+      CollectionsEnum.BOARDS,
+      userId,
+      session
+    )
 
-      /* REORDER */
-      reorderedBoards = await this.reorderService.reorderByParentIds(
-        boardsToArchive.map((b) => b.workspace_id),
-        CollectionsEnum.BOARDS,
-        userId,
-        session
-      )
+    const recoverCategoriesResult = await this.categoryService.recoverCategoriesByBoards(
+      updatedBoards.map((b) => b._id),
+      userId,
+      session
+    )
 
-      const archiveCategoriesResult = await this.categoryService.archiveCategoriesByBoards(
-        updatedBoards.map((b) => b._id),
-        userId,
-        session
-      )
+    /* LOG */
+    let dependencies: Types.ObjectId[] = recoverCategoriesResult.logIds
 
-      /* LOG */
-      let dependencies: Types.ObjectId[] = archiveCategoriesResult.logIds
+    reorderedBoards.forEach((r) => {
+      if (r.log) dependencies.push(r.log.id)
+    })
 
-      reorderedBoards.forEach((r) => {
-        if (r.log) dependencies.push(r.log.id)
-      })
+    await this.operationLogService.create(
+      {
+        operationType: OperationTypesEnum.UPDATE,
+        collectionName: CollectionsEnum.BOARDS,
+        entitiesBefore: updatedBoards.map((ws) => ({ ...ws, is_deleted: false })),
+        entitiesAfter: updatedBoards,
+        dependencies,
+      },
+      userId,
+      session
+    )
 
-      await this.operationLogService.create(
-        {
-          operationType: OperationTypesEnum.UPDATE,
-          collectionName: CollectionsEnum.BOARDS,
-          entitiesBefore: updatedBoards.map((ws) => ({ ...ws, is_deleted: false })),
-          entitiesAfter: updatedBoards,
-          dependencies,
-        },
-        userId,
-        session
-      )
+    const reorderedEntities = reorderedBoards.map((r) => r.updatedEntities).flat()
 
-      if (isNewSession) {
-        await session.commitTransaction()
-      }
-
-      const reorderedEntities = reorderedBoards.map((r) => r.updatedEntities).flat()
-
-      return [
-        ...updatedBoards.map((ub) => toServerCaseKeys<IBoard>(ub)),
-        ...reorderedEntities.map((re) => toServerCaseKeys<IBoard>(re)),
-      ]
-    } catch (error) {
-      if (session && isNewSession) {
-        session.abortTransaction()
-      }
-
-      throw error
-    } finally {
-      if (session && isNewSession) {
-        session.endSession()
-      }
-    }
+    return [
+      ...updatedBoards.map((ub) => toServerCaseKeys<IBoard>(ub)),
+      ...reorderedEntities.map((re) => toServerCaseKeys<IBoard>(re)),
+    ]
   }
 
   public async recover(
@@ -628,173 +660,103 @@ export class BoardService
     userId: Types.ObjectId,
     externalSession?: ClientSession
   ): Promise<IBoard[]> {
-    let session: ClientSession | null = externalSession || null
-    let isNewSession = false
-    let reorderedBoards: ReorderResultDTO<IBoardRaw>[] = []
-
-    try {
-      if (!session) {
-        session = await mongoose.startSession()
-        session.startTransaction()
-        isNewSession = true
-      }
-
-      const filter = this.repository.buildFilter(criteria, userId)
-
-      const boardsToRecover = await this.repository.find(filter, session)
-
-      if (boardsToRecover.length === 0)
-        throw new NotFoundError('Доски для восстановления не найдены.')
-
-      const updatedBoards = await this.repository.updateByFilter(
-        filter,
-        { is_deleted: false },
-        session
+    if (externalSession) {
+      return this._executeRecoverTransaction(criteria, userId, externalSession)
+    } else {
+      return await this._retryExecutor((session: ClientSession) =>
+        this._executeRecoverTransaction(criteria, userId, session)
       )
-
-      if (isNewSession) {
-        await session.commitTransaction()
-      }
-
-      /* REORDER */
-      reorderedBoards = await this.reorderService.reorderByParentIds(
-        boardsToRecover.map((b) => b.workspace_id),
-        CollectionsEnum.BOARDS,
-        userId,
-        session
-      )
-
-      const recoverCategoriesResult = await this.categoryService.recoverCategoriesByBoards(
-        updatedBoards.map((b) => b._id),
-        userId,
-        session
-      )
-
-      /* LOG */
-      let dependencies: Types.ObjectId[] = recoverCategoriesResult.logIds
-
-      reorderedBoards.forEach((r) => {
-        if (r.log) dependencies.push(r.log.id)
-      })
-
-      await this.operationLogService.create(
-        {
-          operationType: OperationTypesEnum.UPDATE,
-          collectionName: CollectionsEnum.BOARDS,
-          entitiesBefore: updatedBoards.map((ws) => ({ ...ws, is_deleted: false })),
-          entitiesAfter: updatedBoards,
-          dependencies,
-        },
-        userId,
-        session
-      )
-
-      const reorderedEntities = reorderedBoards.map((r) => r.updatedEntities).flat()
-
-      return [
-        ...updatedBoards.map((ub) => toServerCaseKeys<IBoard>(ub)),
-        ...reorderedEntities.map((re) => toServerCaseKeys<IBoard>(re)),
-      ]
-    } catch (error) {
-      if (session && isNewSession) {
-        session.abortTransaction()
-      }
-
-      throw error
-    } finally {
-      if (session && isNewSession) {
-        session.endSession()
-      }
     }
   }
 
-  public async clone(criteria: BoardCriteria, userId: Types.ObjectId): Promise<ClonedBoardsResult> {
-    let session: ClientSession | null = null
+  private async _executeCloneTransaction(
+    criteria: BoardCriteria,
+    userId: Types.ObjectId,
+    session: ClientSession
+  ): Promise<ClonedBoardsResult> {
+    const filter = this.repository.buildFilter(criteria, userId)
 
-    try {
-      session = await mongoose.startSession()
-      session.startTransaction()
+    const boardsToClone = await this.repository.find(
+      filter,
+      session,
+      '+embeddings -createdAt -updatedAt'
+    )
 
-      const filter = this.repository.buildFilter(criteria, userId)
+    if (boardsToClone.length === 0) throw new NotFoundError('Доски для клонирования не найдены.')
 
-      const boardsToClone = await this.repository.find(
-        filter,
-        session,
-        '+embeddings -createdAt -updatedAt'
-      )
+    const boardsGroupedByWorkspace: Map<string, IBoardRaw[]> = new Map()
+    boardsToClone.forEach((board) => {
+      const workspaceId = board.workspace_id.toString()
+      if (!boardsGroupedByWorkspace.has(workspaceId)) {
+        boardsGroupedByWorkspace.set(workspaceId, [board])
+      }
+      boardsGroupedByWorkspace.get(workspaceId)!.push(board)
+    })
 
-      if (boardsToClone.length === 0) throw new NotFoundError('Доски для клонирования не найдены.')
+    const transformedBoards: Omit<IBoardRaw, '_id'>[] = []
 
-      const boardsGroupedByWorkspace: Map<string, IBoardRaw[]> = new Map()
-      boardsToClone.forEach((board) => {
-        const workspaceId = board.workspace_id.toString()
-        if (!boardsGroupedByWorkspace.has(workspaceId)) {
-          boardsGroupedByWorkspace.set(workspaceId, [board])
+    for (const [workspaceId, boards] of boardsGroupedByWorkspace) {
+      let newOrder =
+        boardsToClone.filter((t) => t.workspace_id.toString() === workspaceId).length + 1
+
+      for (const board of boards) {
+        const cleanBoard = {
+          ...board,
+          _id: undefined,
+          order: newOrder,
         }
-        boardsGroupedByWorkspace.get(workspaceId)!.push(board)
-      })
 
-      const transformedBoards: Omit<IBoardRaw, '_id'>[] = []
+        newOrder += 1
 
-      for (const [workspaceId, boards] of boardsGroupedByWorkspace) {
-        let newOrder =
-          boardsToClone.filter((t) => t.workspace_id.toString() === workspaceId).length + 1
-
-        for (const board of boards) {
-          const cleanBoard = {
-            ...board,
-            _id: undefined,
-            order: newOrder,
-          }
-
-          newOrder += 1
-
-          transformedBoards.push(cleanBoard)
-        }
+        transformedBoards.push(cleanBoard)
       }
+    }
 
-      const newBoards = await this.repository.createMany(transformedBoards, session)
+    const newBoards = await this.repository.createMany(transformedBoards, session)
 
-      const boardIdsMap: Map<string, string> = new Map()
-      boardsToClone.forEach((board, index) => {
-        boardIdsMap.set(board._id.toString(), newBoards[index]._id.toString())
-      })
+    const boardIdsMap: Map<string, string> = new Map()
+    boardsToClone.forEach((board, index) => {
+      boardIdsMap.set(board._id.toString(), newBoards[index]._id.toString())
+    })
 
-      const cloneCategoriesResult = await this.categoryService.cloneCategoriesByBoards(
-        boardIdsMap,
-        userId,
-        session
+    const cloneCategoriesResult = await this.categoryService.cloneCategoriesByBoards(
+      boardIdsMap,
+      userId,
+      session
+    )
+
+    /* LOG */
+    await this.operationLogService.create(
+      {
+        operationType: OperationTypesEnum.CREATE,
+        collectionName: CollectionsEnum.BOARDS,
+        entitiesAfter: newBoards,
+        dependencies: cloneCategoriesResult.logIds,
+      },
+      userId,
+      session
+    )
+
+    await session.commitTransaction()
+
+    return {
+      boards: newBoards.map((cb) => toServerCaseKeys<IBoard>(cb)),
+      categories: cloneCategoriesResult.entities.categories,
+      tasks: cloneCategoriesResult.entities.tasks,
+    }
+  }
+
+  public async clone(
+    criteria: BoardCriteria,
+    userId: Types.ObjectId,
+    externalSession?: ClientSession
+  ): Promise<ClonedBoardsResult> {
+    if (externalSession) {
+      return this._executeCloneTransaction(criteria, userId, externalSession)
+    } else {
+      return await this._retryExecutor((session: ClientSession) =>
+        this._executeCloneTransaction(criteria, userId, session)
       )
-
-      /* LOG */
-      await this.operationLogService.create(
-        {
-          operationType: OperationTypesEnum.CREATE,
-          collectionName: CollectionsEnum.BOARDS,
-          entitiesAfter: newBoards,
-          dependencies: cloneCategoriesResult.logIds,
-        },
-        userId,
-        session
-      )
-
-      await session.commitTransaction()
-
-      return {
-        boards: newBoards.map((cb) => toServerCaseKeys<IBoard>(cb)),
-        categories: cloneCategoriesResult.entities.categories,
-        tasks: cloneCategoriesResult.entities.tasks,
-      }
-    } catch (error) {
-      if (session) {
-        session.abortTransaction()
-      }
-
-      throw error
-    } finally {
-      if (session) {
-        session.endSession()
-      }
     }
   }
 
