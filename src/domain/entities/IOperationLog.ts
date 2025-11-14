@@ -11,4 +11,6 @@ export interface IOperationLog {
   userId: Types.ObjectId
   dependencies: Types.ObjectId[]
   threadId?: string
+  createdAt: Date
+  updatedAt: Date
 }

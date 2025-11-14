@@ -17,7 +17,7 @@ export default class WorkspaceRepository
     criteria: WorkspaceCriteria,
     userId: Types.ObjectId
   ): FilterQuery<IWorkspaceRaw> {
-    const filter: FilterQuery<IWorkspaceRaw> = { user_id: userId, is_deleted: false }
+    const filter: FilterQuery<IWorkspaceRaw> = { user_id: userId }
 
     if (criteria.id) {
       filter._id = criteria.id
@@ -55,7 +55,7 @@ export default class WorkspaceRepository
     session?: ClientSession
   ): Promise<IWorkspaceRaw[]> {
     return await this.model
-      .find({ _id: { $in: ids }, user_id: userId, is_deleted: false })
+      .find({ _id: { $in: ids }, user_id: userId })
       .session(session || null)
       .lean()
   }

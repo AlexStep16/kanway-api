@@ -14,7 +14,7 @@ export default class TaskRepository
   }
 
   public buildFilter(criteria: TaskCriteria, userId: Types.ObjectId): FilterQuery<ITaskRaw> {
-    const filter: FilterQuery<ITaskRaw> = { user_id: userId, is_deleted: false }
+    const filter: FilterQuery<ITaskRaw> = { user_id: userId }
 
     if (criteria.id) {
       filter._id = criteria.id
@@ -76,7 +76,7 @@ export default class TaskRepository
     session?: ClientSession
   ): Promise<ITaskRaw[]> {
     return await this.model
-      .find({ _id: { $in: ids }, user_id: userId, is_deleted: false })
+      .find({ _id: { $in: ids }, user_id: userId })
       .session(session || null)
       .lean()
   }

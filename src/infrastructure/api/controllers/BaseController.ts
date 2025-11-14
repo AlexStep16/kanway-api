@@ -38,7 +38,10 @@ export abstract class BaseController<
 
   public getAll = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const entities = await this.service.getAll({} as TCriteria, req.user!.id)
+      const entities = await this.service.getAll(
+        { ...req.query, isDeleted: false } as TCriteria,
+        req.user!.id
+      )
 
       res.status(200).json(new SuccessResponse(entities))
     } catch (error) {
@@ -80,7 +83,7 @@ export abstract class BaseController<
 
   public archive = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const criteria = { id: req.params.id } as TCriteria
+      const criteria = { id: req.params.id, isDeleted: false } as TCriteria
       const result = await this.service.archive(criteria, req.user!.id)
 
       res.status(200).json(new SuccessResponse(result))
@@ -91,7 +94,7 @@ export abstract class BaseController<
 
   public recover = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const criteria = { id: req.params.id } as TCriteria
+      const criteria = { id: req.params.id, isDeleted: true } as TCriteria
       const result = await this.service.recover(criteria, req.user!.id)
 
       res.status(200).json(new SuccessResponse(result))

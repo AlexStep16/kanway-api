@@ -19,4 +19,6 @@ export interface IUserRaw {
   ya_avatar_id?: string
   ya_id?: string
   payment_method_id?: string | null
+  created_at: Date
+  updated_at: Date
 }

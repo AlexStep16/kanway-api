@@ -5,4 +5,6 @@ export interface ITokenRaw {
   token: String
   type: Number
   user_id: Types.ObjectId
+  created_at: Date
+  updated_at: Date
 }

@@ -7,6 +7,7 @@ import workspaceRoutes from '@routes/workspaceRoutes.ts'
 import boardRoutes from '@routes/boardRoutes.ts'
 import categoryRoutes from '@routes/categoryRoutes.ts'
 import taskRoutes from '@routes/taskRoutes.ts'
+import archiveRoutes from '@routes/archiveRoutes.ts'
 
 //import { initWorkspace } from '@middlewares/Workspace.ts'
 import cookieParser from 'cookie-parser'
@@ -39,4 +40,6 @@ export function attachRoutes(app: Application) {
     '/workspaces/:workspaceId/boards/:boardId/tasks',
     taskRoutes(dependencies.controllers.taskController)
   )
+
+  app.use('/archive', archiveRoutes(dependencies.controllers.archiveController))
 }

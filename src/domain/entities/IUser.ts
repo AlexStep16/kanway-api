@@ -19,4 +19,6 @@ export interface IUser {
   yaAvatarId?: string
   yaId?: string
   paymentMethodId?: string | null
+  createdAt: Date
+  updatedAt: Date
 }

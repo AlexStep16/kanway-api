@@ -20,6 +20,7 @@ export enum ErrorsMessage {
   BOARD_NAME_LESS_THAN_1 = 'Название доски не должно быть пустым.',
   BOARD_NAME_MORE_THAN_100 = 'Название доски не должно превышать 100 символов.',
   BOARD_ORDER_TYPE_INVALID = 'Неверный порядок доски.',
+  BOARD_IS_FAVORITE_TYPE_INVALID = 'Неверное значение у доски для добавления в избранное.',
 
   CATEGORY_NAME_REQUIRED = 'Требуется название категории.',
   CATEGORY_NAME_INVALID = 'Неверное название категории.',

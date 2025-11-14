@@ -4,8 +4,11 @@ export interface ITaskRaw {
   _id: Types.ObjectId
   name: string
   workspace_id: Types.ObjectId
+  workspace_name: string
   board_id: Types.ObjectId
+  board_name: string
   category_id: Types.ObjectId
+  category_name: string
   is_deleted: boolean
   is_deleted_external: boolean
   order: number
@@ -20,4 +23,6 @@ export interface ITaskRaw {
   due_minutes?: number
   color?: string
   color_name?: string
+  created_at: Date
+  updated_at: Date
 }

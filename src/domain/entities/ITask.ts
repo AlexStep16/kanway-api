@@ -4,8 +4,11 @@ export interface ITask {
   id: Types.ObjectId
   name: string
   workspaceId: Types.ObjectId
+  workspaceName: string
   boardId: Types.ObjectId
+  boardName: string
   categoryId: Types.ObjectId
+  categoryName: string
   isDeleted: boolean
   isDeletedExternal: boolean
   order: number
@@ -19,4 +22,6 @@ export interface ITask {
   dueMinutes?: number
   color?: string
   colorName?: string
+  createdAt: Date
+  updatedAt: Date
 }

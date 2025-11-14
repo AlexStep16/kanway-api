@@ -86,6 +86,7 @@ export class WorkspaceService
   ) {
     let reorderedWorkspaces: ReorderResultDTO<IWorkspaceRaw>[] = []
 
+    const finalEntitiesMap = new Map<string, IWorkspaceRaw>()
     const workspacePayload = await this.prepareWorkspaceCreationPayload(data, userId, session)
 
     /* CREATE */
@@ -120,15 +121,19 @@ export class WorkspaceService
       session
     )
 
+    finalEntitiesMap.set(newWorkspace._id.toString(), newWorkspace)
+
     if (reorderedWorkspaces.length > 0) {
       const reorderedEntities = reorderedWorkspaces.map((r) => r.updatedEntities).flat()
-      return [
-        toServerCaseKeys<IWorkspace>(newWorkspace),
-        ...reorderedEntities.map((re) => toServerCaseKeys<IWorkspace>(re)),
-      ]
+
+      reorderedEntities.forEach((reorderedWorkspace) => {
+        finalEntitiesMap.set(reorderedWorkspace._id.toString(), reorderedWorkspace)
+      })
     }
 
-    return [toServerCaseKeys<IWorkspace>(newWorkspace)]
+    return Array.from(finalEntitiesMap.values()).map((workspace) =>
+      toServerCaseKeys<IWorkspace>(workspace)
+    )
   }
 
   public async create(
@@ -152,6 +157,7 @@ export class WorkspaceService
   ) {
     let reorderedWorkspaces: ReorderResultDTO<IWorkspaceRaw>[] = []
 
+    const finalEntitiesMap = new Map<string, IWorkspaceRaw>()
     const workspacesPayload = await this.prepareWorkspacesCreationPayload(data, userId, session)
 
     /* CREATE */
@@ -192,15 +198,21 @@ export class WorkspaceService
       session
     )
 
+    newWorkspaces.forEach((newWorkspace) => {
+      finalEntitiesMap.set(newWorkspace._id.toString(), newWorkspace)
+    })
+
     if (reorderedWorkspaces.length > 0) {
       const reorderedEntities = reorderedWorkspaces.map((r) => r.updatedEntities).flat()
-      return [
-        ...newWorkspaces.map((nb) => toServerCaseKeys<IWorkspace>(nb)),
-        ...reorderedEntities.map((re) => toServerCaseKeys<IWorkspace>(re)),
-      ]
+
+      reorderedEntities.forEach((reorderedWorkspace) => {
+        finalEntitiesMap.set(reorderedWorkspace._id.toString(), reorderedWorkspace)
+      })
     }
 
-    return [...newWorkspaces.map((nb) => toServerCaseKeys<IWorkspace>(nb))]
+    return Array.from(finalEntitiesMap.values()).map((workspace) =>
+      toServerCaseKeys<IWorkspace>(workspace)
+    )
   }
 
   public async createMany(
@@ -227,6 +239,7 @@ export class WorkspaceService
 
     const filter = this.repository.buildFilter(criteria, userId)
 
+    const finalEntitiesMap = new Map<string, IWorkspaceRaw>()
     const workspacesToUpdate: IWorkspaceRaw[] = await this.repository.find(filter, session)
 
     if (workspacesToUpdate.length === 0)
@@ -274,15 +287,21 @@ export class WorkspaceService
       session
     )
 
+    newEntities.forEach((newWorkspace) => {
+      finalEntitiesMap.set(newWorkspace._id.toString(), newWorkspace)
+    })
+
     if (reorderedWorkspaces.length > 0) {
       const reorderedEntities = reorderedWorkspaces.map((r) => r.updatedEntities).flat()
-      return [
-        ...newEntities.map((ne) => toServerCaseKeys<IWorkspace>(ne)),
-        ...reorderedEntities.map((re) => toServerCaseKeys<IWorkspace>(re)),
-      ]
+
+      reorderedEntities.forEach((reorderedWorkspace) => {
+        finalEntitiesMap.set(reorderedWorkspace._id.toString(), reorderedWorkspace)
+      })
     }
 
-    return [...newEntities.map((ne) => toServerCaseKeys<IWorkspace>(ne))]
+    return Array.from(finalEntitiesMap.values()).map((workspace) =>
+      toServerCaseKeys<IWorkspace>(workspace)
+    )
   }
 
   public async edit(
@@ -309,6 +328,7 @@ export class WorkspaceService
     let reorderedWorkspaces: ReorderResultDTO<IWorkspaceRaw>[] = []
     let dependencies: Types.ObjectId[] = []
 
+    const finalEntitiesMap = new Map<string, IWorkspaceRaw>()
     const workspacesToUpdate: SingleUpdateDTO<Partial<IWorkspaceRaw>>[] = []
 
     const workspaceIds = data.map((d) => d.id)
@@ -329,7 +349,7 @@ export class WorkspaceService
 
       workspacesToUpdate.push(workspacePayload)
 
-      if (dto.order != null && workspace.order !== dto.order && dto.isReorderNeeded) {
+      if (dto.order != null && workspace.order !== dto.order) {
         workspaceIdsToReorder.push(workspacePayload._id.toString())
       }
     }
@@ -371,15 +391,21 @@ export class WorkspaceService
       session
     )
 
+    updatedWorkspaces.forEach((updatedWorkspace) => {
+      finalEntitiesMap.set(updatedWorkspace._id.toString(), updatedWorkspace)
+    })
+
     if (reorderedWorkspaces.length > 0) {
       const reorderedEntities = reorderedWorkspaces.map((r) => r.updatedEntities).flat()
-      return [
-        ...updatedWorkspaces.map((uc) => toServerCaseKeys<IWorkspace>(uc)),
-        ...reorderedEntities.map((re) => toServerCaseKeys<IWorkspace>(re)),
-      ]
+
+      reorderedEntities.forEach((reorderedWorkspace) => {
+        finalEntitiesMap.set(reorderedWorkspace._id.toString(), reorderedWorkspace)
+      })
     }
 
-    return [...updatedWorkspaces.map((uc) => toServerCaseKeys<IWorkspace>(uc))]
+    return Array.from(finalEntitiesMap.values()).map((workspace) =>
+      toServerCaseKeys<IWorkspace>(workspace)
+    )
   }
 
   public async editMany(
@@ -452,11 +478,12 @@ export class WorkspaceService
   ): Promise<IWorkspace[]> {
     let reorderedWorkspaces: ReorderResultDTO<IWorkspaceRaw>[] = []
 
+    const finalEntitiesMap = new Map<string, IWorkspaceRaw>()
     const filter = this.repository.buildFilter(criteria, userId)
 
     const updatedWorkspaces = await this.repository.updateByFilter(
       filter,
-      { is_deleted: true },
+      { is_deleted: true, deleted_time: new Date() },
       session
     )
 
@@ -496,12 +523,19 @@ export class WorkspaceService
       session
     )
 
+    updatedWorkspaces.forEach((updatedWorkspace) => {
+      finalEntitiesMap.set(updatedWorkspace._id.toString(), updatedWorkspace)
+    })
+
     const reorderedEntities = reorderedWorkspaces.map((r) => r.updatedEntities).flat()
 
-    return [
-      ...updatedWorkspaces.map((ub) => toServerCaseKeys<IWorkspace>(ub)),
-      ...reorderedEntities.map((re) => toServerCaseKeys<IWorkspace>(re)),
-    ]
+    reorderedEntities.forEach((reorderedWorkspace) => {
+      finalEntitiesMap.set(reorderedWorkspace._id.toString(), reorderedWorkspace)
+    })
+
+    return Array.from(finalEntitiesMap.values()).map((workspace) =>
+      toServerCaseKeys<IWorkspace>(workspace)
+    )
   }
 
   public async archive(
@@ -525,11 +559,12 @@ export class WorkspaceService
   ): Promise<IWorkspace[]> {
     let reorderedWorkspaces: ReorderResultDTO<IWorkspaceRaw>[] = []
 
+    const finalEntitiesMap = new Map<string, IWorkspaceRaw>()
     const filter = this.repository.buildFilter(criteria, userId)
 
     const updatedWorkspaces = await this.repository.updateByFilter(
       filter,
-      { is_deleted: false },
+      { is_deleted: false, deleted_time: undefined },
       session
     )
 
@@ -569,12 +604,19 @@ export class WorkspaceService
       session
     )
 
+    updatedWorkspaces.forEach((updatedWorkspace) => {
+      finalEntitiesMap.set(updatedWorkspace._id.toString(), updatedWorkspace)
+    })
+
     const reorderedEntities = reorderedWorkspaces.map((r) => r.updatedEntities).flat()
 
-    return [
-      ...updatedWorkspaces.map((ub) => toServerCaseKeys<IWorkspace>(ub)),
-      ...reorderedEntities.map((re) => toServerCaseKeys<IWorkspace>(re)),
-    ]
+    reorderedEntities.forEach((reorderedWorkspace) => {
+      finalEntitiesMap.set(reorderedWorkspace._id.toString(), reorderedWorkspace)
+    })
+
+    return Array.from(finalEntitiesMap.values()).map((workspace) =>
+      toServerCaseKeys<IWorkspace>(workspace)
+    )
   }
 
   public async recover(

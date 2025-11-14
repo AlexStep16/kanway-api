@@ -20,7 +20,12 @@ import CategoryRepository from '@repositories/CategoryRepository.ts'
 import CategoryController from '@controllers/CategoryController.ts'
 import TaskRepository from '@application/repositories/TaskRepository.ts'
 import { TaskService } from '@application/services/TaskService.ts'
-import TaskController from '../api/controllers/TaskController.ts'
+import TaskController from '@controllers/TaskController.ts'
+import { ITaskRaw } from '@entities/ITaskRaw.ts'
+import { ICategoryRaw } from '@entities/ICategoryRaw.ts'
+import { IBoardRaw } from '@entities/IBoardRaw.ts'
+import { IWorkspaceRaw } from '@entities/IWorkspaceRaw.ts'
+import ArchiveController from '@controllers/ArchiveController.ts'
 
 export function initializeDependencies() {
   const userRepository = new UserRepository()
@@ -49,7 +54,7 @@ export function initializeDependencies() {
   /* MOCK SERVICES END */
 
   /* TASK SERVICES START */
-  const taskReorderService = new ReorderService(taskRepository, operationLogService)
+  const taskReorderService = new ReorderService<ITaskRaw>(taskRepository, operationLogService)
   const taskService = new TaskService(
     taskRepository,
     embeddingService,
@@ -60,7 +65,10 @@ export function initializeDependencies() {
   /* TASK SERVICES END */
 
   /* CATEGORY SERVICES START */
-  const categoryReorderService = new ReorderService(categoryRepository, operationLogService)
+  const categoryReorderService = new ReorderService<ICategoryRaw>(
+    categoryRepository,
+    operationLogService
+  )
   const categoryService = new CategoryService(
     categoryRepository,
     embeddingService,
@@ -72,7 +80,7 @@ export function initializeDependencies() {
   /* CATEGORY SERVICES END */
 
   /* BOARD SERVICES START */
-  const boardReorderService = new ReorderService(boardRepository, operationLogService)
+  const boardReorderService = new ReorderService<IBoardRaw>(boardRepository, operationLogService)
   const boardService = new BoardService(
     boardRepository,
     embeddingService,
@@ -110,7 +118,10 @@ export function initializeDependencies() {
   }
 
   /* WORKSPACE SERVICES START */
-  const workspaceReorderService = new ReorderService(workspaceRepository, operationLogService)
+  const workspaceReorderService = new ReorderService<IWorkspaceRaw>(
+    workspaceRepository,
+    operationLogService
+  )
   const workspaceService = new WorkspaceService(
     workspaceRepository,
     embeddingService,
@@ -125,6 +136,12 @@ export function initializeDependencies() {
   const boardController = new BoardController(boardService)
   const categoryController = new CategoryController(categoryService)
   const taskController = new TaskController(taskService)
+  const archiveController = new ArchiveController(
+    taskService,
+    categoryService,
+    boardService,
+    workspaceService
+  )
 
   return {
     services: {
@@ -143,6 +160,7 @@ export function initializeDependencies() {
       boardController,
       categoryController,
       taskController,
+      archiveController,
     },
   }
 }

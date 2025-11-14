@@ -93,6 +93,7 @@ export class CategoryService
   ): Promise<ICategoryServerResponse[]> {
     let reorderedCategories: ReorderResultDTO<ICategoryRaw>[] = []
 
+    const finalEntitiesMap = new Map<string, ICategoryServerResponse>()
     const tempClientId = data.id
 
     delete data.id // Remove temp client ID before creation
@@ -134,15 +135,20 @@ export class CategoryService
     const toServerCaseCategory = toServerCaseKeys<ICategoryServerResponse>(newCategory)
     toServerCaseCategory.tempClientId = tempClientId // Attach temp client ID back to the response to connect with client-side entity
 
+    finalEntitiesMap.set(toServerCaseCategory.id.toString(), toServerCaseCategory)
+
     if (reorderedCategories.length > 0) {
       const reorderedEntities = reorderedCategories.map((r) => r.updatedEntities).flat()
-      return [
-        toServerCaseCategory,
-        ...reorderedEntities.map((re) => toServerCaseKeys<ICategoryServerResponse>(re)),
-      ]
+
+      reorderedEntities.forEach((reorderedCategory) => {
+        finalEntitiesMap.set(
+          reorderedCategory._id.toString(),
+          toServerCaseKeys<ICategoryServerResponse>(reorderedCategory)
+        )
+      })
     }
 
-    return [toServerCaseCategory]
+    return Array.from(finalEntitiesMap.values())
   }
 
   public async create(
@@ -166,6 +172,7 @@ export class CategoryService
   ): Promise<ICategoryServerResponse[]> {
     let reorderedCategories: ReorderResultDTO<ICategoryRaw>[] = []
 
+    const finalEntitiesMap = new Map<string, ICategoryServerResponse>()
     const categoriesPayload = await this.prepareCategoriesCreationPayload(data, userId, session)
 
     /* CREATE */
@@ -209,15 +216,22 @@ export class CategoryService
       return transformed
     })
 
+    toServerCaseKeysCategories.forEach((category) => {
+      finalEntitiesMap.set(category.id.toString(), category)
+    })
+
     if (reorderedCategories.length > 0) {
       const reorderedEntities = reorderedCategories.map((r) => r.updatedEntities).flat()
-      return [
-        ...toServerCaseKeysCategories,
-        ...reorderedEntities.map((re) => toServerCaseKeys<ICategoryServerResponse>(re)),
-      ]
+
+      reorderedEntities.forEach((reorderedCategory) => {
+        finalEntitiesMap.set(
+          reorderedCategory._id.toString(),
+          toServerCaseKeys<ICategoryServerResponse>(reorderedCategory)
+        )
+      })
     }
 
-    return [...toServerCaseKeysCategories]
+    return Array.from(finalEntitiesMap.values())
   }
 
   public async createMany(
@@ -243,6 +257,7 @@ export class CategoryService
     let reorderedCategories: ReorderResultDTO<ICategoryRaw>[] = []
     let dependencies: Types.ObjectId[] = []
 
+    const finalEntitiesMap = new Map<string, ICategoryRaw>()
     const filter = this.repository.buildFilter(criteria, userId)
 
     const categoriesToUpdate: ICategoryRaw[] = await this.repository.find(filter, session)
@@ -254,6 +269,9 @@ export class CategoryService
 
     /* UPDATE */
     const newEntities = await this.repository.updateByFilter(filter, categoryPayload, session)
+    const newEntity = newEntities[0]
+
+    if (!newEntity) return []
 
     /* MOVE */
     const categoriesToMove = categoriesToUpdate.filter(
@@ -262,7 +280,12 @@ export class CategoryService
     if (categoriesToMove.length > 0) {
       const moveResult = await this.moveCategoriesToBoard(
         categoriesToMove.map((c) => c._id),
-        new Types.ObjectId(data.boardId),
+        {
+          workspaceId: newEntity.workspace_id,
+          workspaceName: newEntity.workspace_name,
+          boardId: newEntity.board_id,
+          boardName: newEntity.board_name,
+        },
         userId,
         newEntities,
         session
@@ -302,15 +325,21 @@ export class CategoryService
       session
     )
 
+    newEntities.forEach((ne) => {
+      finalEntitiesMap.set(ne._id.toString(), ne)
+    })
+
     if (reorderedCategories.length > 0) {
       const reorderedEntities = reorderedCategories.map((r) => r.updatedEntities).flat()
-      return [
-        ...newEntities.map((ne) => toServerCaseKeys<ICategoryServerResponse>(ne)),
-        ...reorderedEntities.map((re) => toServerCaseKeys<ICategoryServerResponse>(re)),
-      ]
+
+      reorderedEntities.forEach((reorderedCategory) => {
+        finalEntitiesMap.set(reorderedCategory._id.toString(), reorderedCategory)
+      })
     }
 
-    return [...newEntities.map((ne) => toServerCaseKeys<ICategoryServerResponse>(ne))]
+    return Array.from(finalEntitiesMap.values()).map((category) =>
+      toServerCaseKeys<ICategoryServerResponse>(category)
+    )
   }
 
   public async edit(
@@ -338,6 +367,7 @@ export class CategoryService
     let categoriesPayloadToMove: SingleUpdateDTO<Partial<ICategoryRaw>>[] = []
     let dependencies: Types.ObjectId[] = []
 
+    const finalEntitiesMap = new Map<string, ICategoryRaw>()
     const categoriesToUpdate: SingleUpdateDTO<Partial<ICategoryRaw>>[] = []
 
     const categoryIds = data.map((d) => d.id)
@@ -358,11 +388,11 @@ export class CategoryService
 
       categoriesToUpdate.push(categoryPayload)
 
-      if (dto.boardId && category.board_id.toString() !== dto.boardId && dto.isMoveNeeded) {
+      if (dto.boardId && category.board_id.toString() !== dto.boardId) {
         categoriesPayloadToMove.push(categoryPayload)
       }
 
-      if (dto.order != null && category.order !== dto.order && dto.isReorderNeeded) {
+      if (dto.order != null && category.order !== dto.order) {
         categoryIdsToReorder.push(categoryPayload._id.toString())
       }
     }
@@ -375,6 +405,7 @@ export class CategoryService
       const moveResult = await this.moveCategoriesToBoardBulk(
         categoriesPayloadToMove as (SingleUpdateDTO<Partial<ICategoryRaw>> & {
           board_id: Types.ObjectId
+          board_name: string
         })[],
         userId,
         existingCategories,
@@ -418,15 +449,21 @@ export class CategoryService
       session
     )
 
+    updatedCategories.forEach((uc) => {
+      finalEntitiesMap.set(uc._id.toString(), uc)
+    })
+
     if (reorderedCategories.length > 0) {
       const reorderedEntities = reorderedCategories.map((r) => r.updatedEntities).flat()
-      return [
-        ...updatedCategories.map((uc) => toServerCaseKeys<ICategoryServerResponse>(uc)),
-        ...reorderedEntities.map((re) => toServerCaseKeys<ICategoryServerResponse>(re)),
-      ]
+
+      reorderedEntities.forEach((reorderedCategory) => {
+        finalEntitiesMap.set(reorderedCategory._id.toString(), reorderedCategory)
+      })
     }
 
-    return [...updatedCategories.map((uc) => toServerCaseKeys<ICategoryServerResponse>(uc))]
+    return Array.from(finalEntitiesMap.values()).map((category) =>
+      toServerCaseKeys<ICategoryServerResponse>(category)
+    )
   }
 
   public async editMany(
@@ -444,7 +481,10 @@ export class CategoryService
   }
 
   public async moveCategoriesToBoardBulk(
-    data: (SingleUpdateDTO<Partial<ICategoryRaw>> & { board_id: Types.ObjectId })[],
+    data: (SingleUpdateDTO<Partial<ICategoryRaw>> & {
+      board_id: Types.ObjectId
+      board_name: string
+    })[],
     userId: Types.ObjectId,
     updatedCategoriesBefore: ICategoryRaw[],
     session?: ClientSession
@@ -473,13 +513,22 @@ export class CategoryService
 
     const updatedCategories = await this.repository.bulkUpdate(rawUpdates, userId, session)
 
-    const categoriesMap: Map<string, { boardId: Types.ObjectId; workspaceId: Types.ObjectId }> =
-      new Map()
+    const categoriesMap: Map<
+      string,
+      {
+        boardId: Types.ObjectId
+        boardName: string
+        workspaceId: Types.ObjectId
+        workspaceName: string
+      }
+    > = new Map()
 
     for (const category of updatedCategories) {
       categoriesMap.set(category._id.toString(), {
         boardId: category.board_id,
+        boardName: category.board_name,
         workspaceId: category.workspace_id,
+        workspaceName: category.workspace_name,
       })
     }
 
@@ -509,14 +558,17 @@ export class CategoryService
 
   public async moveCategoriesToBoard(
     categoryIds: Types.ObjectId[],
-    targetBoardId: Types.ObjectId,
+    targets: {
+      workspaceId: Types.ObjectId
+      workspaceName: string
+      boardId: Types.ObjectId
+      boardName: string
+    },
     userId: Types.ObjectId,
     updatedCategoriesBefore: ICategoryRaw[],
     session?: ClientSession
   ): Promise<IMoveResult> {
-    const newBoard = await this.boardService.getById(targetBoardId.toString(), userId, session)
-
-    if (!newBoard) throw new NotFoundError('Доска для перемещения не найдена.')
+    if (!targets) throw new NotFoundError('Доска для перемещения не найдена.')
 
     const filter = this.repository.buildFilter(
       { ids: categoryIds.map((id) => id.toString()) },
@@ -525,7 +577,12 @@ export class CategoryService
 
     const updatedCategories = await this.repository.updateByFilter(
       filter,
-      { workspace_id: newBoard.workspaceId },
+      {
+        workspace_id: targets.workspaceId,
+        workspace_name: targets.workspaceName,
+        board_id: targets.boardId,
+        board_name: targets.boardName,
+      },
       session
     )
 
@@ -544,8 +601,12 @@ export class CategoryService
 
     const tasksMoveResult = await this.taskService.moveTasksToBoardByCategories(
       categoryIds,
-      targetBoardId,
-      newBoard.workspaceId,
+      {
+        boardId: targets.boardId,
+        boardName: targets.boardName,
+        workspaceId: targets.workspaceId,
+        workspaceName: targets.workspaceName,
+      },
       userId,
       session
     )
@@ -556,7 +617,13 @@ export class CategoryService
   }
 
   public async moveCategoriesToWorkspaceByBoardsBulk(
-    boardsMap: Map<string, Types.ObjectId>,
+    boardsMap: Map<
+      string,
+      {
+        id: Types.ObjectId
+        name: string
+      }
+    >,
     userId: Types.ObjectId,
     session?: ClientSession
   ): Promise<IOperationResult<ICategory[]>> {
@@ -570,11 +637,13 @@ export class CategoryService
     const updates: SingleUpdateDTO<Partial<ICategoryRaw>>[] = []
 
     for (const category of categoriesToUpdate) {
-      const newBoardId = boardsMap.get(category.board_id.toString())
-      if (newBoardId) {
+      const newWorkspace = boardsMap.get(category.board_id.toString())
+
+      if (newWorkspace) {
         updates.push({
           _id: category._id,
-          workspace_id: category.workspace_id,
+          workspace_id: newWorkspace.id,
+          workspace_name: newWorkspace.name,
         })
       }
     }
@@ -601,7 +670,10 @@ export class CategoryService
 
   public async moveCategoriesToWorkspaceByBoards(
     boardIds: Types.ObjectId[],
-    targetWorkspaceId: Types.ObjectId,
+    targetWorkspace: {
+      id: Types.ObjectId
+      name: string
+    },
     userId: Types.ObjectId,
     session?: ClientSession
   ): Promise<IOperationResult<ICategoryServerResponse[]>> {
@@ -614,7 +686,7 @@ export class CategoryService
 
     const updatedCategories = await this.repository.updateByFilter(
       filter,
-      { workspace_id: targetWorkspaceId },
+      { workspace_id: targetWorkspace.id, workspace_name: targetWorkspace.name },
       session
     )
 
@@ -694,11 +766,12 @@ export class CategoryService
 
     const filter = this.repository.buildFilter(criteria, userId)
 
+    const finalEntitiesMap = new Map<string, ICategoryRaw>()
     const categoriesToArchive = await this.repository.find(filter, session)
 
     const updatedCategories = await this.repository.updateByFilter(
       filter,
-      { is_deleted: true },
+      { is_deleted: true, deleted_time: new Date() },
       session
     )
 
@@ -735,12 +808,19 @@ export class CategoryService
       session
     )
 
+    updatedCategories.forEach((uc) => {
+      finalEntitiesMap.set(uc._id.toString(), uc)
+    })
+
     const reorderedEntities = reorderedCategories.map((r) => r.updatedEntities).flat()
 
-    return [
-      ...updatedCategories.map((ub) => toServerCaseKeys<ICategoryServerResponse>(ub)),
-      ...reorderedEntities.map((re) => toServerCaseKeys<ICategoryServerResponse>(re)),
-    ]
+    reorderedEntities.forEach((reorderedCategory) => {
+      finalEntitiesMap.set(reorderedCategory._id.toString(), reorderedCategory)
+    })
+
+    return Array.from(finalEntitiesMap.values()).map((category) =>
+      toServerCaseKeys<ICategoryServerResponse>(category)
+    )
   }
 
   public async archive(
@@ -764,6 +844,7 @@ export class CategoryService
   ): Promise<ICategoryServerResponse[]> {
     let reorderedCategories: ReorderResultDTO<ICategoryRaw>[] = []
 
+    const finalEntitiesMap = new Map<string, ICategoryRaw>()
     const filter = this.repository.buildFilter(criteria, userId)
 
     const categoriesToRecover = await this.repository.find(filter, session)
@@ -773,7 +854,7 @@ export class CategoryService
 
     const updatedCategories = await this.repository.updateByFilter(
       filter,
-      { is_deleted: false },
+      { is_deleted: false, deleted_time: undefined },
       session
     )
 
@@ -810,12 +891,19 @@ export class CategoryService
       session
     )
 
+    updatedCategories.forEach((uc) => {
+      finalEntitiesMap.set(uc._id.toString(), uc)
+    })
+
     const reorderedEntities = reorderedCategories.map((r) => r.updatedEntities).flat()
 
-    return [
-      ...updatedCategories.map((ub) => toServerCaseKeys<ICategoryServerResponse>(ub)),
-      ...reorderedEntities.map((re) => toServerCaseKeys<ICategoryServerResponse>(re)),
-    ]
+    reorderedEntities.forEach((reorderedCategory) => {
+      finalEntitiesMap.set(reorderedCategory._id.toString(), reorderedCategory)
+    })
+
+    return Array.from(finalEntitiesMap.values()).map((category) =>
+      toServerCaseKeys<ICategoryServerResponse>(category)
+    )
   }
 
   public async recover(

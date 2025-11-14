@@ -32,12 +32,24 @@ export const TaskDTOSchema = z.object({
           : ErrorsMessage.CATEGORY_ID_INVALID,
     })
     .regex(objectIdRegex, ErrorsMessage.CATEGORY_ID_INVALID),
+  categoryName: z.string({
+    error: (iss) =>
+      iss.input === undefined
+        ? ErrorsMessage.CATEGORY_NAME_REQUIRED
+        : ErrorsMessage.CATEGORY_NAME_INVALID,
+  }),
   boardId: z
     .string({
       error: (iss) =>
         iss.input === undefined ? ErrorsMessage.BOARD_ID_REQUIRED : ErrorsMessage.BOARD_ID_INVALID,
     })
     .regex(objectIdRegex, ErrorsMessage.BOARD_ID_INVALID),
+  boardName: z.string({
+    error: (iss) =>
+      iss.input === undefined
+        ? ErrorsMessage.BOARD_NAME_REQUIRED
+        : ErrorsMessage.BOARD_NAME_INVALID,
+  }),
   workspaceId: z
     .string({
       error: (iss) =>
@@ -46,6 +58,12 @@ export const TaskDTOSchema = z.object({
           : ErrorsMessage.WORKSPACE_ID_INVALID,
     })
     .regex(objectIdRegex, ErrorsMessage.WORKSPACE_ID_INVALID),
+  workspaceName: z.string({
+    error: (iss) =>
+      iss.input === undefined
+        ? ErrorsMessage.WORKSPACE_NAME_REQUIRED
+        : ErrorsMessage.WORKSPACE_NAME_INVALID,
+  }),
   color: z
     .enum(TASK_COLORS, {
       error: (iss) =>

@@ -17,7 +17,7 @@ export default class CategoryRepository
     criteria: CategoryCriteria,
     userId: Types.ObjectId
   ): FilterQuery<ICategoryRaw> {
-    const filter: FilterQuery<ICategoryRaw> = { user_id: userId, is_deleted: false }
+    const filter: FilterQuery<ICategoryRaw> = { user_id: userId }
 
     if (criteria.id) {
       filter._id = criteria.id
@@ -71,7 +71,7 @@ export default class CategoryRepository
     session?: ClientSession
   ): Promise<ICategoryRaw[]> {
     return await this.model
-      .find({ _id: { $in: ids }, user_id: userId, is_deleted: false })
+      .find({ _id: { $in: ids }, user_id: userId })
       .session(session || null)
       .lean()
   }

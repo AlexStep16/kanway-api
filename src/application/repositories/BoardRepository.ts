@@ -14,7 +14,7 @@ export default class BoardRepository
   }
 
   public buildFilter(criteria: BoardCriteria, userId: Types.ObjectId): FilterQuery<IBoardRaw> {
-    const filter: FilterQuery<IBoardRaw> = { user_id: userId, is_deleted: false }
+    const filter: FilterQuery<IBoardRaw> = { user_id: userId }
 
     if (criteria.id) {
       filter._id = criteria.id
@@ -60,7 +60,7 @@ export default class BoardRepository
     session?: ClientSession
   ): Promise<IBoardRaw[]> {
     return await this.model
-      .find({ _id: { $in: ids }, user_id: userId, is_deleted: false })
+      .find({ _id: { $in: ids }, user_id: userId })
       .session(session || null)
       .lean()
   }

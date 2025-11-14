@@ -26,6 +26,7 @@ export const WorkspaceDTOSchema = z.object({
           : ErrorsMessage.WORKSPACE_ORDER_TYPE_INVALID,
     })
     .optional(),
+  isFavorite: z.boolean(ErrorsMessage.BOARD_IS_FAVORITE_TYPE_INVALID).optional(),
 })
 
 export type WorkspaceDTO = z.infer<typeof WorkspaceDTOSchema>

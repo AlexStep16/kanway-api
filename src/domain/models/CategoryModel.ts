@@ -12,9 +12,17 @@ export const CategorySchema = new Schema<ICategoryRaw>(
       ref: 'Workspace',
       required: true,
     },
+    workspace_name: {
+      type: String,
+      required: true,
+    },
     board_id: {
       type: Schema.Types.ObjectId,
       ref: 'Board',
+      required: true,
+    },
+    board_name: {
+      type: String,
       required: true,
     },
     user_id: {

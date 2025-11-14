@@ -11,4 +11,6 @@ export interface IOperationLogRaw {
   user_id: Types.ObjectId
   dependencies: Types.ObjectId[]
   thread_id?: string
+  created_at: Date
+  updated_at: Date
 }

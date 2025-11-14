@@ -21,7 +21,14 @@ export const BoardDTOSchema = z.object({
           : ErrorsMessage.WORKSPACE_ID_INVALID,
     })
     .regex(objectIdRegex, ErrorsMessage.WORKSPACE_ID_INVALID),
+  workspaceName: z.string({
+    error: (iss) =>
+      iss.input === undefined
+        ? ErrorsMessage.WORKSPACE_NAME_REQUIRED
+        : ErrorsMessage.WORKSPACE_NAME_INVALID,
+  }),
   order: z.union([z.string(), z.number()], ErrorsMessage.BOARD_ORDER_TYPE_INVALID).optional(),
+  isFavorite: z.boolean(ErrorsMessage.BOARD_IS_FAVORITE_TYPE_INVALID).optional(),
 })
 
 export type BoardDTO = z.infer<typeof BoardDTOSchema>

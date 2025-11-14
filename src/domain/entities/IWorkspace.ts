@@ -11,4 +11,6 @@ export interface IWorkspace {
   embeddings: Array<Number>
   isDeleted: boolean
   deletedTime?: Date
+  createdAt: Date
+  updatedAt: Date
 }

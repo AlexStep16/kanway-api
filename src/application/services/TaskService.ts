@@ -84,6 +84,7 @@ export class TaskService
   ): Promise<ITaskServerResponse[]> {
     let reorderedTasks: ReorderResultDTO<ITaskRaw>[] = []
 
+    const finalEntitiesMap = new Map<string, ITaskServerResponse>()
     const tempClientId = data.id
 
     delete data.id // Remove temp client ID before creation
@@ -125,15 +126,20 @@ export class TaskService
     const toServerCaseTask = toServerCaseKeys<ITaskServerResponse>(newTask)
     toServerCaseTask.tempClientId = tempClientId // Attach temp client ID back to the response to connect with client-side entity
 
+    finalEntitiesMap.set(newTask._id.toString(), toServerCaseTask)
+
     if (reorderedTasks.length > 0) {
       const reorderedEntities = reorderedTasks.map((r) => r.updatedEntities).flat()
-      return [
-        toServerCaseTask,
-        ...reorderedEntities.map((re) => toServerCaseKeys<ITaskServerResponse>(re)),
-      ]
+
+      reorderedEntities.forEach((reorderedTask) => {
+        finalEntitiesMap.set(
+          reorderedTask._id.toString(),
+          toServerCaseKeys<ITaskServerResponse>(reorderedTasks)
+        )
+      })
     }
 
-    return [toServerCaseTask]
+    return Array.from(finalEntitiesMap.values())
   }
 
   public async create(
@@ -156,6 +162,8 @@ export class TaskService
     session: ClientSession
   ): Promise<ITaskServerResponse[]> {
     let reorderedTasks: ReorderResultDTO<ITaskRaw>[] = []
+
+    const finalEntitiesMap = new Map<string, ITaskServerResponse>()
 
     const tasksPayload = await this.prepareTasksCreationPayload(data, userId, session)
 
@@ -200,15 +208,22 @@ export class TaskService
       return transformed
     })
 
+    toServerCaseKeysTasks.forEach((task) => {
+      finalEntitiesMap.set(task.id.toString(), task)
+    })
+
     if (reorderedTasks.length > 0) {
       const reorderedEntities = reorderedTasks.map((r) => r.updatedEntities).flat()
-      return [
-        ...toServerCaseKeysTasks,
-        ...reorderedEntities.map((re) => toServerCaseKeys<ITaskServerResponse>(re)),
-      ]
+
+      reorderedEntities.forEach((reorderedTask) => {
+        finalEntitiesMap.set(
+          reorderedTask._id.toString(),
+          toServerCaseKeys<ITaskServerResponse>(reorderedTask)
+        )
+      })
     }
 
-    return [...toServerCaseKeysTasks]
+    return Array.from(finalEntitiesMap.values())
   }
 
   public async createMany(
@@ -236,6 +251,7 @@ export class TaskService
 
     const filter = this.repository.buildFilter(criteria, userId)
 
+    const finalEntitiesMap = new Map<string, ITaskRaw>()
     const tasksToUpdate: ITaskRaw[] = await this.repository.find(filter, session)
 
     if (tasksToUpdate.length === 0) throw new NotFoundError('Задачи для обновления не найдены.')
@@ -244,19 +260,24 @@ export class TaskService
 
     /* UPDATE */
     const newEntities = await this.repository.updateByFilter(filter, taskPayload, session)
+    const newEntity = newEntities[0]
+
+    if (!newEntity) return []
 
     /* MOVE */
     const tasksToMove = tasksToUpdate.filter(
-      (t) =>
-        data.categoryId !== undefined &&
-        t.category_id.toString() !== data.categoryId &&
-        data.isMoveNeeded
+      (t) => data.categoryId !== undefined && t.category_id.toString() !== data.categoryId
     )
 
     if (tasksToMove.length > 0) {
       const moveResult = await this.moveTasksToCategory(
         tasksToMove.map((t) => t._id),
-        new Types.ObjectId(data.categoryId),
+        {
+          boardId: newEntity.board_id,
+          boardName: newEntity.board_name,
+          workspaceId: newEntity.workspace_id,
+          workspaceName: newEntity.workspace_name,
+        },
         userId,
         newEntities,
         session
@@ -267,10 +288,7 @@ export class TaskService
 
     /* REORDER */
     const tasksToReorder = tasksToUpdate.filter(
-      (t) =>
-        data.order !== undefined &&
-        (t.order !== data.order || tasksToMove.includes(t)) &&
-        data.isReorderNeeded
+      (t) => data.order !== undefined && (t.order !== data.order || tasksToMove.includes(t))
     )
 
     if (tasksToReorder.length > 0) {
@@ -300,15 +318,21 @@ export class TaskService
       session
     )
 
+    newEntities.forEach((task) => {
+      finalEntitiesMap.set(task._id.toString(), task)
+    })
+
     if (reorderedTasks.length > 0) {
       const reorderedEntities = reorderedTasks.map((r) => r.updatedEntities).flat()
-      return [
-        ...newEntities.map((ne) => toServerCaseKeys<ITaskServerResponse>(ne)),
-        ...reorderedEntities.map((re) => toServerCaseKeys<ITaskServerResponse>(re)),
-      ]
+
+      reorderedEntities.forEach((reorderedTask) => {
+        finalEntitiesMap.set(reorderedTask._id.toString(), reorderedTask)
+      })
     }
 
-    return [...newEntities.map((ne) => toServerCaseKeys<ITaskServerResponse>(ne))]
+    return Array.from(finalEntitiesMap.values()).map((ut) =>
+      toServerCaseKeys<ITaskServerResponse>(ut)
+    )
   }
 
   public async edit(
@@ -336,6 +360,7 @@ export class TaskService
     let tasksPayloadToMove: SingleUpdateDTO<Partial<ITaskRaw>>[] = []
     let dependencies: Types.ObjectId[] = []
 
+    const finalEntitiesMap = new Map<string, ITaskRaw>()
     const tasksToUpdate: SingleUpdateDTO<Partial<ITaskRaw>>[] = []
 
     const taskIds = data.map((d) => d.id)
@@ -355,12 +380,12 @@ export class TaskService
 
       tasksToUpdate.push(taskPayload)
 
-      if (dto.categoryId && task.category_id.toString() !== dto.categoryId && dto.isMoveNeeded) {
+      if (dto.categoryId && task.category_id.toString() !== dto.categoryId) {
         tasksPayloadToMove.push(taskPayload)
       }
 
-      if (dto.order != null && task.order !== dto.order && dto.isReorderNeeded) {
-        taskIdsToReorder.push(taskPayload._id.toString())
+      if (dto.order != null && task.order !== dto.order) {
+        taskIdsToReorder.push(dto.id)
       }
     }
 
@@ -415,15 +440,21 @@ export class TaskService
       session
     )
 
+    updatedTasks.forEach((task) => {
+      finalEntitiesMap.set(task._id.toString(), task)
+    })
+
     if (reorderedTasks.length > 0) {
       const reorderedEntities = reorderedTasks.map((r) => r.updatedEntities).flat()
-      return [
-        ...updatedTasks.map((ut) => toServerCaseKeys<ITaskServerResponse>(ut)),
-        ...reorderedEntities.map((re) => toServerCaseKeys<ITaskServerResponse>(re)),
-      ]
+
+      reorderedEntities.forEach((reorderedTask) => {
+        finalEntitiesMap.set(reorderedTask._id.toString(), reorderedTask)
+      })
     }
 
-    return [...updatedTasks.map((ut) => toServerCaseKeys<ITaskServerResponse>(ut))]
+    return Array.from(finalEntitiesMap.values()).map((ut) =>
+      toServerCaseKeys<ITaskServerResponse>(ut)
+    )
   }
 
   public async editMany(
@@ -464,7 +495,9 @@ export class TaskService
       rawUpdates.push({
         _id: dto._id,
         board_id: category.boardId,
+        board_name: category.boardName,
         workspace_id: category.workspaceId,
+        workspace_name: category.workspaceName,
       })
     }
 
@@ -490,24 +523,28 @@ export class TaskService
 
   public async moveTasksToCategory(
     taskIds: Types.ObjectId[],
-    targetCategoryId: Types.ObjectId,
+    targets: {
+      boardId: Types.ObjectId
+      boardName: string
+      workspaceId: Types.ObjectId
+      workspaceName: string
+    },
     userId: Types.ObjectId,
     updatedTasksBefore: ITaskRaw[],
     session?: ClientSession
   ): Promise<IMoveResult> {
-    const newCategory = await this.categoryService.getById(
-      targetCategoryId.toString(),
-      userId,
-      session
-    )
-
-    if (!newCategory) throw new NotFoundError('Категория для перемещения не найдена.')
+    if (!targets) throw new NotFoundError('Категория для перемещения не найдена.')
 
     const filter = this.repository.buildFilter({ ids: taskIds.map((id) => id.toString()) }, userId)
 
     const updatedTasks = await this.repository.updateByFilter(
       filter,
-      { board_id: newCategory.boardId, workspace_id: newCategory.workspaceId },
+      {
+        board_id: targets.boardId,
+        board_name: targets.boardName,
+        workspace_id: targets.workspaceId,
+        workspace_name: targets.workspaceName,
+      },
       session
     )
 
@@ -530,7 +567,15 @@ export class TaskService
   }
 
   public async moveTasksToBoardByCategoriesBulk(
-    categoriesMap: Map<string, { boardId: Types.ObjectId; workspaceId: Types.ObjectId }>,
+    categoriesMap: Map<
+      string,
+      {
+        boardId: Types.ObjectId
+        boardName: string
+        workspaceId: Types.ObjectId
+        workspaceName: string
+      }
+    >,
     userId: Types.ObjectId,
     session?: ClientSession
   ): Promise<IOperationResult<ITaskServerResponse[]>> {
@@ -544,12 +589,14 @@ export class TaskService
     const updates: SingleUpdateDTO<Partial<ITaskRaw>>[] = []
 
     for (const task of tasksToUpdate) {
-      const newEntities = categoriesMap.get(task.category_id.toString())
-      if (newEntities) {
+      const newEntity = categoriesMap.get(task.category_id.toString())
+      if (newEntity) {
         updates.push({
           _id: task._id,
-          board_id: newEntities.boardId,
-          workspace_id: newEntities.workspaceId,
+          board_id: newEntity.boardId,
+          board_name: newEntity.boardName,
+          workspace_id: newEntity.workspaceId,
+          workspace_name: newEntity.workspaceName,
         })
       }
     }
@@ -575,8 +622,12 @@ export class TaskService
 
   public async moveTasksToBoardByCategories(
     categoryIds: Types.ObjectId[],
-    targetBoardId: Types.ObjectId,
-    targetWorkspaceId: Types.ObjectId,
+    targets: {
+      boardId: Types.ObjectId
+      boardName: string
+      workspaceId: Types.ObjectId
+      workspaceName: string
+    },
     userId: Types.ObjectId,
     session?: ClientSession
   ): Promise<IOperationResult<ITaskServerResponse[]>> {
@@ -589,7 +640,12 @@ export class TaskService
 
     const updatedTasks = await this.repository.updateByFilter(
       filter,
-      { board_id: targetBoardId, workspace_id: targetWorkspaceId },
+      {
+        board_id: targets.boardId,
+        board_name: targets.boardName,
+        workspace_id: targets.workspaceId,
+        workspace_name: targets.workspaceName,
+      },
       session
     )
 
@@ -613,7 +669,13 @@ export class TaskService
   }
 
   public async moveTasksToWorkspaceByBoardsBulk(
-    boardsMap: Map<string, Types.ObjectId>,
+    boardsMap: Map<
+      string,
+      {
+        id: Types.ObjectId
+        name: string
+      }
+    >,
     userId: Types.ObjectId,
     session?: ClientSession
   ): Promise<IOperationResult<ITaskServerResponse[]>> {
@@ -627,11 +689,12 @@ export class TaskService
     const updates: SingleUpdateDTO<Partial<ITaskRaw>>[] = []
 
     for (const task of tasksToUpdate) {
-      const newWorkspaceId = boardsMap.get(task.board_id.toString())
-      if (newWorkspaceId) {
+      const newWorkspace = boardsMap.get(task.board_id.toString())
+      if (newWorkspace) {
         updates.push({
           _id: task._id,
-          workspace_id: newWorkspaceId,
+          workspace_id: new Types.ObjectId(newWorkspace.id),
+          workspace_name: newWorkspace.name,
         })
       }
     }
@@ -657,7 +720,10 @@ export class TaskService
 
   public async moveTasksToWorkspaceByBoards(
     boardIds: Types.ObjectId[],
-    targetWorkspaceId: Types.ObjectId,
+    targetWorkspace: {
+      id: Types.ObjectId
+      name: string
+    },
     userId: Types.ObjectId,
     session?: ClientSession
   ): Promise<IOperationResult<ITaskServerResponse[]>> {
@@ -670,7 +736,7 @@ export class TaskService
 
     const updatedTasks = await this.repository.updateByFilter(
       filter,
-      { workspace_id: targetWorkspaceId },
+      { workspace_id: targetWorkspace.id, workspace_name: targetWorkspace.name },
       session
     )
 
@@ -744,13 +810,18 @@ export class TaskService
   ): Promise<ITaskServerResponse[]> {
     let reorderedTasks: ReorderResultDTO<ITaskRaw>[] = []
 
+    const finalEntitiesMap = new Map<string, ITaskRaw>()
     const filter = this.repository.buildFilter(criteria, userId)
 
     const tasksToArchive = await this.repository.find(filter, session)
 
     if (tasksToArchive.length === 0) throw new NotFoundError('Задачи для архивации не найдены.')
 
-    const updatedTasks = await this.repository.updateByFilter(filter, { is_deleted: true }, session)
+    const updatedTasks = await this.repository.updateByFilter(
+      filter,
+      { is_deleted: true, deleted_time: new Date() },
+      session
+    )
 
     /* REORDER */
     reorderedTasks = await this.reorderService.reorderByParentIds(
@@ -773,12 +844,19 @@ export class TaskService
       session
     )
 
+    updatedTasks.forEach((task) => {
+      finalEntitiesMap.set(task._id.toString(), task)
+    })
+
     const reorderedEntities = reorderedTasks.map((r) => r.updatedEntities).flat()
 
-    return [
-      ...updatedTasks.map((ub) => toServerCaseKeys<ITaskServerResponse>(ub)),
-      ...reorderedEntities.map((re) => toServerCaseKeys<ITaskServerResponse>(re)),
-    ]
+    reorderedEntities.forEach((task) => {
+      finalEntitiesMap.set(task._id.toString(), task)
+    })
+
+    return Array.from(finalEntitiesMap.values()).map((ut) =>
+      toServerCaseKeys<ITaskServerResponse>(ut)
+    )
   }
 
   public async archive(
@@ -802,6 +880,7 @@ export class TaskService
   ): Promise<ITaskServerResponse[]> {
     let reorderedTasks: ReorderResultDTO<ITaskRaw>[] = []
 
+    const finalEntitiesMap = new Map<string, ITaskRaw>()
     const filter = this.repository.buildFilter(criteria, userId)
 
     const tasksToRecover = await this.repository.find(filter, session)
@@ -811,7 +890,7 @@ export class TaskService
 
     const updatedTasks = await this.repository.updateByFilter(
       filter,
-      { is_deleted: false },
+      { is_deleted: false, deleted_time: undefined },
       session
     )
 
@@ -836,12 +915,19 @@ export class TaskService
       session
     )
 
+    updatedTasks.forEach((task) => {
+      finalEntitiesMap.set(task._id.toString(), task)
+    })
+
     const reorderedEntities = reorderedTasks.map((r) => r.updatedEntities).flat()
 
-    return [
-      ...updatedTasks.map((ub) => toServerCaseKeys<ITaskServerResponse>(ub)),
-      ...reorderedEntities.map((re) => toServerCaseKeys<ITaskServerResponse>(re)),
-    ]
+    reorderedEntities.forEach((task) => {
+      finalEntitiesMap.set(task._id.toString(), task)
+    })
+
+    return Array.from(finalEntitiesMap.values()).map((ut) =>
+      toServerCaseKeys<ITaskServerResponse>(ut)
+    )
   }
 
   public async recover(

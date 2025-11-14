@@ -85,6 +85,7 @@ export class BoardService
   ): Promise<IBoard[]> {
     let reorderedBoards: ReorderResultDTO<IBoardRaw>[] = []
 
+    const finalEntitiesMap = new Map<string, IBoardRaw>()
     const boardPayload = await this.prepareBoardCreationPayload(data, userId, session)
 
     /* CREATE */
@@ -119,15 +120,17 @@ export class BoardService
       session
     )
 
+    finalEntitiesMap.set(newBoard._id.toString(), newBoard)
+
     if (reorderedBoards.length > 0) {
       const reorderedEntities = reorderedBoards.map((r) => r.updatedEntities).flat()
-      return [
-        toServerCaseKeys(newBoard),
-        ...reorderedEntities.map((re) => toServerCaseKeys<IBoard>(re)),
-      ]
+
+      reorderedEntities.forEach((reorderedBoard) => {
+        finalEntitiesMap.set(reorderedBoard._id.toString(), reorderedBoard)
+      })
     }
 
-    return [toServerCaseKeys(newBoard)]
+    return Array.from(finalEntitiesMap.values()).map((board) => toServerCaseKeys<IBoard>(board))
   }
 
   public async create(
@@ -151,6 +154,7 @@ export class BoardService
   ): Promise<IBoard[]> {
     let reorderedBoards: ReorderResultDTO<IBoardRaw>[] = []
 
+    const finalEntitiesMap = new Map<string, IBoardRaw>()
     const boardsPayload = await this.prepareBoardsCreationPayload(data, userId, session)
 
     /* CREATE */
@@ -186,15 +190,19 @@ export class BoardService
       session
     )
 
+    newBoards.forEach((board) => {
+      finalEntitiesMap.set(board._id.toString(), board)
+    })
+
     if (reorderedBoards.length > 0) {
       const reorderedEntities = reorderedBoards.map((r) => r.updatedEntities).flat()
-      return [
-        ...newBoards.map((nb) => toServerCaseKeys<IBoard>(nb)),
-        ...reorderedEntities.map((re) => toServerCaseKeys<IBoard>(re)),
-      ]
+
+      reorderedEntities.forEach((reorderedBoard) => {
+        finalEntitiesMap.set(reorderedBoard._id.toString(), reorderedBoard)
+      })
     }
 
-    return [...newBoards.map((nb) => toServerCaseKeys<IBoard>(nb))]
+    return Array.from(finalEntitiesMap.values()).map((board) => toServerCaseKeys<IBoard>(board))
   }
 
   public async createMany(
@@ -220,6 +228,7 @@ export class BoardService
     let reorderedBoards: ReorderResultDTO<IBoardRaw>[] = []
     let dependencies: Types.ObjectId[] = []
 
+    const finalEntitiesMap = new Map<string, IBoardRaw>()
     const filter = this.repository.buildFilter(criteria, userId)
 
     const boardsToUpdate: IBoardRaw[] = await this.repository.find(filter, session)
@@ -230,6 +239,9 @@ export class BoardService
 
     /* UPDATE */
     const newEntities = await this.repository.updateByFilter(filter, boardPayload, session)
+    const newEntity = newEntities[0]
+
+    if (!newEntity) return []
 
     /* MOVE */
     const boardsToMove = boardsToUpdate.filter(
@@ -238,7 +250,10 @@ export class BoardService
     if (boardsToMove.length > 0) {
       const moveResult = await this.moveBoardsToWorkspace(
         boardsToMove.map((b) => b._id),
-        new Types.ObjectId(data.workspaceId),
+        {
+          id: newEntity.workspace_id,
+          name: newEntity.workspace_name,
+        },
         userId,
         session
       )
@@ -277,15 +292,19 @@ export class BoardService
       session
     )
 
+    newEntities.forEach((board) => {
+      finalEntitiesMap.set(board._id.toString(), board)
+    })
+
     if (reorderedBoards.length > 0) {
       const reorderedEntities = reorderedBoards.map((r) => r.updatedEntities).flat()
-      return [
-        ...newEntities.map((ne) => toServerCaseKeys<IBoard>(ne)),
-        ...reorderedEntities.map((re) => toServerCaseKeys<IBoard>(re)),
-      ]
+
+      reorderedEntities.forEach((reorderedBoard) => {
+        finalEntitiesMap.set(reorderedBoard._id.toString(), reorderedBoard)
+      })
     }
 
-    return [...newEntities.map((ne) => toServerCaseKeys<IBoard>(ne))]
+    return Array.from(finalEntitiesMap.values()).map((board) => toServerCaseKeys<IBoard>(board))
   }
 
   public async edit(
@@ -313,6 +332,7 @@ export class BoardService
     let boardsPayloadToMove: SingleUpdateDTO<Partial<IBoardRaw>>[] = []
     let dependencies: Types.ObjectId[] = []
 
+    const finalEntitiesMap = new Map<string, IBoardRaw>()
     const boardsToUpdate: SingleUpdateDTO<Partial<IBoardRaw>>[] = []
 
     const boardIds = data.map((d) => d.id)
@@ -332,15 +352,11 @@ export class BoardService
 
       boardsToUpdate.push(boardPayload)
 
-      if (
-        dto.workspaceId &&
-        board.workspace_id.toString() !== dto.workspaceId &&
-        dto.isMoveNeeded
-      ) {
+      if (dto.workspaceId && board.workspace_id.toString() !== dto.workspaceId) {
         boardsPayloadToMove.push(boardPayload)
       }
 
-      if (dto.order != null && board.order !== dto.order && dto.isReorderNeeded) {
+      if (dto.order != null && board.order !== dto.order) {
         boardIdsToReorder.push(boardPayload._id.toString())
       }
     }
@@ -353,6 +369,7 @@ export class BoardService
       const moveResult = await this.moveBoardsToWorkspaceBulk(
         boardsPayloadToMove as (SingleUpdateDTO<Partial<IBoardRaw>> & {
           workspace_id: Types.ObjectId
+          workspace_name: string
         })[],
         userId,
         session
@@ -395,15 +412,19 @@ export class BoardService
       session
     )
 
+    updatedBoards.forEach((board) => {
+      finalEntitiesMap.set(board._id.toString(), board)
+    })
+
     if (reorderedBoards.length > 0) {
       const reorderedEntities = reorderedBoards.map((r) => r.updatedEntities).flat()
-      return [
-        ...updatedBoards.map((uc) => toServerCaseKeys<IBoard>(uc)),
-        ...reorderedEntities.map((re) => toServerCaseKeys<IBoard>(re)),
-      ]
+
+      reorderedEntities.forEach((reorderedBoard) => {
+        finalEntitiesMap.set(reorderedBoard._id.toString(), reorderedBoard)
+      })
     }
 
-    return [...updatedBoards.map((uc) => toServerCaseKeys<IBoard>(uc))]
+    return Array.from(finalEntitiesMap.values()).map((board) => toServerCaseKeys<IBoard>(board))
   }
 
   public async editMany(
@@ -421,14 +442,26 @@ export class BoardService
   }
 
   public async moveBoardsToWorkspaceBulk(
-    data: (SingleUpdateDTO<Partial<IBoardRaw>> & { workspace_id: Types.ObjectId })[],
+    data: (SingleUpdateDTO<Partial<IBoardRaw>> & {
+      workspace_id: Types.ObjectId
+      workspace_name: string
+    })[],
     userId: Types.ObjectId,
     session?: ClientSession
   ): Promise<IMoveResult> {
-    const boardsMap: Map<string, Types.ObjectId> = new Map()
+    const boardsMap: Map<
+      string,
+      {
+        id: Types.ObjectId
+        name: string
+      }
+    > = new Map()
 
     for (const board of data) {
-      boardsMap.set(board._id.toString(), board.workspace_id)
+      boardsMap.set(board._id.toString(), {
+        id: board.workspace_id,
+        name: board.workspace_name,
+      })
     }
 
     const categoriesMoveResult = await this.categoryService.moveCategoriesToWorkspaceByBoardsBulk(
@@ -450,19 +483,28 @@ export class BoardService
 
   public async moveBoardsToWorkspace(
     boardIds: Types.ObjectId[],
-    targetWorkspaceId: Types.ObjectId,
+    targetWorkspace: {
+      id: Types.ObjectId
+      name: string
+    },
     userId: Types.ObjectId,
     session?: ClientSession
   ): Promise<IMoveResult> {
     const categoriesMoveResult = await this.categoryService.moveCategoriesToWorkspaceByBoards(
       boardIds,
-      targetWorkspaceId,
+      {
+        id: targetWorkspace.id,
+        name: targetWorkspace.name,
+      },
       userId,
       session
     )
     const tasksMoveResult = await this.taskService.moveTasksToWorkspaceByBoards(
       boardIds,
-      targetWorkspaceId,
+      {
+        id: targetWorkspace.id,
+        name: targetWorkspace.name,
+      },
       userId,
       session
     )
@@ -527,6 +569,7 @@ export class BoardService
   ): Promise<IBoard[]> {
     let reorderedBoards: ReorderResultDTO<IBoardRaw>[] = []
 
+    const finalEntitiesMap = new Map<string, IBoardRaw>()
     const filter = this.repository.buildFilter(criteria, userId)
 
     const boardsToArchive = await this.repository.find(filter, session)
@@ -535,7 +578,7 @@ export class BoardService
 
     const updatedBoards = await this.repository.updateByFilter(
       filter,
-      { is_deleted: true },
+      { is_deleted: true, deleted_time: new Date() },
       session
     )
 
@@ -572,12 +615,17 @@ export class BoardService
       session
     )
 
+    updatedBoards.forEach((board) => {
+      finalEntitiesMap.set(board._id.toString(), board)
+    })
+
     const reorderedEntities = reorderedBoards.map((r) => r.updatedEntities).flat()
 
-    return [
-      ...updatedBoards.map((ub) => toServerCaseKeys<IBoard>(ub)),
-      ...reorderedEntities.map((re) => toServerCaseKeys<IBoard>(re)),
-    ]
+    reorderedEntities.forEach((reorderedBoard) => {
+      finalEntitiesMap.set(reorderedBoard._id.toString(), reorderedBoard)
+    })
+
+    return Array.from(finalEntitiesMap.values()).map((board) => toServerCaseKeys<IBoard>(board))
   }
 
   public async archive(
@@ -601,6 +649,7 @@ export class BoardService
   ): Promise<IBoard[]> {
     let reorderedBoards: ReorderResultDTO<IBoardRaw>[] = []
 
+    const finalEntitiesMap = new Map<string, IBoardRaw>()
     const filter = this.repository.buildFilter(criteria, userId)
 
     const boardsToRecover = await this.repository.find(filter, session)
@@ -610,7 +659,7 @@ export class BoardService
 
     const updatedBoards = await this.repository.updateByFilter(
       filter,
-      { is_deleted: false },
+      { is_deleted: false, deleted_time: undefined },
       session
     )
 
@@ -647,12 +696,17 @@ export class BoardService
       session
     )
 
+    updatedBoards.forEach((board) => {
+      finalEntitiesMap.set(board._id.toString(), board)
+    })
+
     const reorderedEntities = reorderedBoards.map((r) => r.updatedEntities).flat()
 
-    return [
-      ...updatedBoards.map((ub) => toServerCaseKeys<IBoard>(ub)),
-      ...reorderedEntities.map((re) => toServerCaseKeys<IBoard>(re)),
-    ]
+    reorderedEntities.forEach((reorderedBoard) => {
+      finalEntitiesMap.set(reorderedBoard._id.toString(), reorderedBoard)
+    })
+
+    return Array.from(finalEntitiesMap.values()).map((board) => toServerCaseKeys<IBoard>(board))
   }
 
   public async recover(

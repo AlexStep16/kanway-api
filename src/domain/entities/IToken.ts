@@ -5,4 +5,6 @@ export interface IToken {
   token: String
   type: Number
   userId: Types.ObjectId
+  createdAt: Date
+  updatedAt: Date
 }

@@ -22,7 +22,11 @@ export default class BoardController extends BaseController<
 
   public override getAll = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const criteria: BoardCriteria = { workspaceId: req.params.workspaceId }
+      const criteria: BoardCriteria = {
+        workspaceId: req.params.workspaceId,
+        ...req.query,
+        isDeleted: false,
+      }
       const entities = await this.service.getAll(criteria, req.user!.id)
 
       res.status(200).json(new SuccessResponse(entities))
