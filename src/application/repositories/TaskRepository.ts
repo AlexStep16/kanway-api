@@ -26,6 +26,10 @@ export default class TaskRepository
       filter.is_deleted = criteria.isDeleted
     }
 
+    if (criteria.isDeletedExternal !== undefined) {
+      filter.is_deleted_external = criteria.isDeletedExternal
+    }
+
     if (criteria.name) {
       filter.name = { $regex: criteria.name, $options: 'i' }
     }

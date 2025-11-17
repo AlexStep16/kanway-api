@@ -3,6 +3,7 @@ export interface TaskCriteria {
   ids?: string[]
 
   isDeleted?: boolean
+  isDeletedExternal?: boolean
   boardId?: string
   boardIds?: string[]
   workspaceId?: string

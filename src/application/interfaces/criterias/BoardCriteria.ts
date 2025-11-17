@@ -3,6 +3,7 @@ export interface BoardCriteria {
   ids?: string[]
 
   isDeleted?: boolean
+  isDeletedExternal?: boolean
   workspaceId?: string
   workspaceIds?: string[]
   name?: string
