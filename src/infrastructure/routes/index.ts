@@ -8,16 +8,21 @@ import boardRoutes from '@routes/boardRoutes.ts'
 import categoryRoutes from '@routes/categoryRoutes.ts'
 import taskRoutes from '@routes/taskRoutes.ts'
 import archiveRoutes from '@routes/archiveRoutes.ts'
+import settingRoutes from '@routes/settingRoutes.ts'
 
 //import { initWorkspace } from '@middlewares/Workspace.ts'
 import cookieParser from 'cookie-parser'
 import { initializeDependencies } from '@infrastructure/di/initializeDependencies.ts'
+import userRoutes from './userRoutes.ts'
+import path from 'path'
 
 export function attachRoutes(app: Application) {
   const frontUrl = process.env.FRONT_URL || 'https://kanbar.ru'
   const frontUrlWithoutProtocol = frontUrl.split('https://')[1]
 
   const dependencies = initializeDependencies()
+
+  app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')))
 
   app.use(
     cors({
@@ -42,4 +47,8 @@ export function attachRoutes(app: Application) {
   )
 
   app.use('/archive', archiveRoutes(dependencies.controllers.archiveController))
+
+  app.use('/settings', settingRoutes(dependencies.controllers.settingController))
+
+  app.use('/me', userRoutes(dependencies.controllers.userController))
 }

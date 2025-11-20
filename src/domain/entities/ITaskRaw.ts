@@ -23,6 +23,6 @@ export interface ITaskRaw {
   due_minutes?: number
   color?: string
   color_name?: string
-  created_at: Date
-  updated_at: Date
+  createdAt: Date
+  updatedAt: Date
 }

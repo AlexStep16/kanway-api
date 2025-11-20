@@ -1,10 +1,11 @@
-import { ClientSession, Types } from 'mongoose'
+import { IUser } from '@entities/IUser.ts'
+import { ClientSession } from 'mongoose'
 
 export interface IEditService<TCriteria, TEntity, TEditDTO> {
   edit(
     data: TEditDTO,
     criteria: TCriteria,
-    userId: Types.ObjectId,
+    user: IUser,
     session?: ClientSession
   ): Promise<TEntity[]>
 }

@@ -17,6 +17,7 @@ import { NotFoundError } from '@errors/NotFound.ts'
 import { BoardService } from '@application/services/BoardService.ts'
 import { ClonedWorkspacesResult } from '@dtos/ClonedWorkspacesResult.ts'
 import { SingleUpdateDTO } from '../dtos/SingleUpdateDTO.ts'
+import { IUser } from '@/domain/entities/IUser.ts'
 
 const MAX_RETRIES = 3
 
@@ -138,9 +139,11 @@ export class WorkspaceService
 
   public async create(
     data: WorkspaceDTO,
-    userId: Types.ObjectId,
+    user: IUser,
     externalSession?: ClientSession
   ): Promise<IWorkspace[]> {
+    const userId = user.id
+
     if (externalSession) {
       return this._executeCreateTransaction(data, userId, externalSession)
     } else {
@@ -217,9 +220,11 @@ export class WorkspaceService
 
   public async createMany(
     data: WorkspaceDTO[],
-    userId: Types.ObjectId,
+    user: IUser,
     externalSession?: ClientSession
   ): Promise<IWorkspace[]> {
+    const userId = user.id
+
     if (externalSession) {
       return this._executeCreateManyTransaction(data, userId, externalSession)
     } else {
@@ -307,9 +312,11 @@ export class WorkspaceService
   public async edit(
     data: WorkspaceEditDTO,
     criteria: WorkspaceCriteria,
-    userId: Types.ObjectId,
+    user: IUser,
     externalSession?: ClientSession
   ): Promise<IWorkspace[]> {
+    const userId = user.id
+
     if (externalSession) {
       return this._executeEditTransaction(data, criteria, userId, externalSession)
     } else {
@@ -410,9 +417,11 @@ export class WorkspaceService
 
   public async editMany(
     data: WorkspaceEditDTO[],
-    userId: Types.ObjectId,
+    user: IUser,
     externalSession?: ClientSession
   ): Promise<IWorkspace[]> {
+    const userId = user.id
+
     if (externalSession) {
       return this._executeEditManyTransaction(data, userId, externalSession)
     } else {
@@ -459,9 +468,11 @@ export class WorkspaceService
 
   public async delete(
     criteria: WorkspaceCriteria,
-    userId: Types.ObjectId,
+    user: IUser,
     externalSession?: ClientSession
   ): Promise<IWorkspace[]> {
+    const userId = user.id
+
     if (externalSession) {
       return this._executeDeleteTransaction(criteria, userId, externalSession)
     } else {
@@ -540,9 +551,11 @@ export class WorkspaceService
 
   public async archive(
     criteria: WorkspaceCriteria,
-    userId: Types.ObjectId,
+    user: IUser,
     externalSession?: ClientSession
   ): Promise<IWorkspace[]> {
+    const userId = user.id
+
     if (externalSession) {
       return this._executeArchiveTransaction(criteria, userId, externalSession)
     } else {
@@ -621,9 +634,11 @@ export class WorkspaceService
 
   public async recover(
     criteria: WorkspaceCriteria,
-    userId: Types.ObjectId,
+    user: IUser,
     externalSession?: ClientSession
   ): Promise<IWorkspace[]> {
+    const userId = user.id
+
     if (externalSession) {
       return this._executeRecoverTransaction(criteria, userId, externalSession)
     } else {
@@ -700,9 +715,11 @@ export class WorkspaceService
 
   public async clone(
     criteria: WorkspaceCriteria,
-    userId: Types.ObjectId,
+    user: IUser,
     externalSession?: ClientSession
   ): Promise<ClonedWorkspacesResult> {
+    const userId = user.id
+
     if (externalSession) {
       return this._executeCloneTransaction(criteria, userId, externalSession)
     } else {

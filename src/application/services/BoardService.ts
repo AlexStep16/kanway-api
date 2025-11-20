@@ -20,6 +20,7 @@ import { TaskService } from '@application/services/TaskService.ts'
 import { IMoveResult } from '@interfaces/IMoveResult.ts'
 import { ClonedBoardsResult } from '@dtos/ClonedBoardsResult.ts'
 import { SingleUpdateDTO } from '../dtos/SingleUpdateDTO.ts'
+import { IUser } from '@/domain/entities/IUser.ts'
 
 const MAX_RETRIES = 3
 
@@ -135,9 +136,11 @@ export class BoardService
 
   public async create(
     data: BoardDTO,
-    userId: Types.ObjectId,
+    user: IUser,
     externalSession?: ClientSession
   ): Promise<IBoard[]> {
+    const userId = user.id
+
     if (externalSession) {
       return this._executeCreateTransaction(data, userId, externalSession)
     } else {
@@ -207,9 +210,11 @@ export class BoardService
 
   public async createMany(
     data: BoardDTO[],
-    userId: Types.ObjectId,
+    user: IUser,
     externalSession?: ClientSession
   ): Promise<IBoard[]> {
+    const userId = user.id
+
     if (externalSession) {
       return this._executeCreateManyTransaction(data, userId, externalSession)
     } else {
@@ -310,9 +315,11 @@ export class BoardService
   public async edit(
     data: BoardEditDTO,
     criteria: BoardCriteria,
-    userId: Types.ObjectId,
+    user: IUser,
     externalSession?: ClientSession
   ): Promise<IBoard[]> {
+    const userId = user.id
+
     if (externalSession) {
       return this._executeEditTransaction(data, criteria, userId, externalSession)
     } else {
@@ -427,11 +434,9 @@ export class BoardService
     return Array.from(finalEntitiesMap.values()).map((board) => toServerCaseKeys<IBoard>(board))
   }
 
-  public async editMany(
-    data: BoardEditDTO[],
-    userId: Types.ObjectId,
-    externalSession?: ClientSession
-  ) {
+  public async editMany(data: BoardEditDTO[], user: IUser, externalSession?: ClientSession) {
+    const userId = user.id
+
     if (externalSession) {
       return this._executeEditManyTransaction(data, userId, externalSession)
     } else {
@@ -550,9 +555,11 @@ export class BoardService
 
   public async delete(
     criteria: BoardCriteria,
-    userId: Types.ObjectId,
+    user: IUser,
     externalSession?: ClientSession
   ): Promise<IBoard[]> {
+    const userId = user.id
+
     if (externalSession) {
       return this._executeDeleteTransaction(criteria, userId, externalSession)
     } else {
@@ -630,9 +637,11 @@ export class BoardService
 
   public async archive(
     criteria: BoardCriteria,
-    userId: Types.ObjectId,
+    user: IUser,
     externalSession?: ClientSession
   ): Promise<IBoard[]> {
+    const userId = user.id
+
     if (externalSession) {
       return this._executeArchiveTransaction(criteria, userId, externalSession)
     } else {
@@ -711,9 +720,11 @@ export class BoardService
 
   public async recover(
     criteria: BoardCriteria,
-    userId: Types.ObjectId,
+    user: IUser,
     externalSession?: ClientSession
   ): Promise<IBoard[]> {
+    const userId = user.id
+
     if (externalSession) {
       return this._executeRecoverTransaction(criteria, userId, externalSession)
     } else {
@@ -802,9 +813,11 @@ export class BoardService
 
   public async clone(
     criteria: BoardCriteria,
-    userId: Types.ObjectId,
+    user: IUser,
     externalSession?: ClientSession
   ): Promise<ClonedBoardsResult> {
+    const userId = user.id
+
     if (externalSession) {
       return this._executeCloneTransaction(criteria, userId, externalSession)
     } else {

@@ -1,5 +1,6 @@
-import { ClientSession, Types } from 'mongoose'
+import { ClientSession } from 'mongoose'
+import { IUser } from '@entities/IUser.ts'
 
 export interface IRecoverService<TCriteria, TEntity> {
-  recover(criteria: TCriteria, userId: Types.ObjectId, session?: ClientSession): Promise<TEntity[]>
+  recover(criteria: TCriteria, user: IUser, session?: ClientSession): Promise<TEntity[]>
 }

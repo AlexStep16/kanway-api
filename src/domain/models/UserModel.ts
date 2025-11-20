@@ -2,8 +2,7 @@ import { Schema, model, Model, HydratedDocument } from 'mongoose'
 import { IUserRaw } from '@entities/IUserRaw.ts'
 import bcrypt from 'bcrypt'
 import { BASE_COLORS } from '@constants/BASE_COLORS.ts'
-
-const SALT_ROUNDS = 10
+import { SALT_ROUNDS } from '@constants/SALT_ROUNDS.ts'
 
 interface IUserRawMethods {
   comparePassword(password: string): Promise<boolean>
@@ -48,9 +47,10 @@ export const UserSchema = new Schema<IUserRaw, IUserRawStatics, IUserRawMethods>
       type: Boolean,
       default: false,
     },
-    subscription: {
-      type: String,
-      default: 'trial',
+    subscription_id: {
+      type: Schema.Types.ObjectId,
+      ref: 'Subscription',
+      required: true,
     },
     subscription_until: {
       type: Date,
@@ -71,6 +71,13 @@ export const UserSchema = new Schema<IUserRaw, IUserRawStatics, IUserRawMethods>
       type: String,
       enum: BASE_COLORS,
       default: '#3b82f6',
+    },
+    avatar_url: {
+      type: String,
+    },
+    timezone: {
+      type: String,
+      required: true,
     },
     phone: {
       type: String,
@@ -99,7 +106,7 @@ UserSchema.pre('save', async function (next) {
 })
 
 UserSchema.statics.findByEmailWithPassword = async function (email: string) {
-  return this.findOne({ email }).select('+password_hash')
+  return this.findOne({ email }).select('+password_hash').lean()
 }
 
 UserSchema.methods.comparePassword = function (password: string) {

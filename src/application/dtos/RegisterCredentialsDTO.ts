@@ -14,6 +14,10 @@ export const RegisterCredentialsSchema = z.object({
           : ErrorsMessage.INVALID_PASSWORD_FORMAT,
     })
     .min(6, ErrorsMessage.PASSWORD_TOO_SHORT),
+  timezone: z.string({
+    error: (iss) =>
+      iss.input === undefined ? ErrorsMessage.TIMEZONE_REQUIRED : ErrorsMessage.INVALID_TIMEZONE,
+  }),
 })
 
 export type RegisterCredentialsDTO = z.infer<typeof RegisterCredentialsSchema>

@@ -7,6 +7,7 @@ import { globalErrorHandler } from '@middlewares/globalErrorHandler.ts'
 import dayjs from 'dayjs'
 import utc from 'dayjs/plugin/utc.js'
 import timezone from 'dayjs/plugin/timezone.js'
+import { initSubscriptions } from './initSubscriptions.ts'
 
 dayjs.locale('ru')
 dayjs.extend(utc)
@@ -27,3 +28,5 @@ app.listen(3333, () => {
 startOpenAIProxy(8080)
 
 app.use(globalErrorHandler)
+
+initSubscriptions()

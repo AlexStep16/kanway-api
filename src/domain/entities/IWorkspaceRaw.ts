@@ -11,6 +11,6 @@ export interface IWorkspaceRaw {
   embeddings: Array<Number>
   is_deleted: boolean
   deleted_time?: Date
-  created_at: Date
-  updated_at: Date
+  createdAt: Date
+  updatedAt: Date
 }

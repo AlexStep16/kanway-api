@@ -87,8 +87,6 @@ export const TaskDTOSchema = z.object({
     })
     .nullable()
     .optional(),
-
-  timezone: z.string().optional(),
 })
 
 export type TaskDTO = z.infer<typeof TaskDTOSchema>

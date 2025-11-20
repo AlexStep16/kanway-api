@@ -5,14 +5,16 @@ export interface IUser {
   username?: string
   email: string
   passwordHash: string
+  avatarUrl?: string
+  timezone: string
   role?: string
   isDeleted?: boolean
   deletedTime?: Date
   isConfirmed: boolean
   isPasswordInResetState?: boolean
-  subscription: string
+  subscriptionId: Types.ObjectId
   subscriptionUntil?: Date | null
-  generationsBalance: number
+  generationsBalance?: number
   avatarColor: string
   isTipsCompleted?: boolean
   phone?: string

@@ -13,6 +13,6 @@ export interface ICategoryRaw {
   is_deleted: boolean
   is_deleted_external: boolean
   deleted_time?: Date
-  created_at: Date
-  updated_at: Date
+  createdAt: Date
+  updatedAt: Date
 }

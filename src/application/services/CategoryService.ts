@@ -21,6 +21,7 @@ import { BoardService } from '@application/services/BoardService.ts'
 import { ClonedCategoriesResult } from '@dtos/ClonedCategoriesResult.ts'
 import { SingleUpdateDTO } from '../dtos/SingleUpdateDTO.ts'
 import { ICategory } from '@/domain/entities/ICategory.ts'
+import { IUser } from '@/domain/entities/IUser.ts'
 
 const MAX_RETRIES = 3
 
@@ -153,9 +154,11 @@ export class CategoryService
 
   public async create(
     data: CategoryDTO,
-    userId: Types.ObjectId,
+    user: IUser,
     externalSession?: ClientSession
   ): Promise<ICategoryServerResponse[]> {
+    const userId = user.id
+
     if (externalSession) {
       return this._executeCreateTransaction(data, userId, externalSession)
     } else {
@@ -236,9 +239,11 @@ export class CategoryService
 
   public async createMany(
     data: CategoryDTO[],
-    userId: Types.ObjectId,
+    user: IUser,
     externalSession?: ClientSession
   ): Promise<ICategoryServerResponse[]> {
+    const userId = user.id
+
     if (externalSession) {
       return this._executeCreateManyTransaction(data, userId, externalSession)
     } else {
@@ -345,9 +350,11 @@ export class CategoryService
   public async edit(
     data: CategoryEditDTO,
     criteria: CategoryCriteria,
-    userId: Types.ObjectId,
+    user: IUser,
     externalSession?: ClientSession
   ): Promise<ICategoryServerResponse[]> {
+    const userId = user.id
+
     if (externalSession) {
       return this._executeEditTransaction(data, criteria, userId, externalSession)
     } else {
@@ -468,9 +475,11 @@ export class CategoryService
 
   public async editMany(
     data: CategoryEditDTO[],
-    userId: Types.ObjectId,
+    user: IUser,
     externalSession?: ClientSession
   ): Promise<ICategoryServerResponse[]> {
+    const userId = user.id
+
     if (externalSession) {
       return this._executeEditManyTransaction(data, userId, externalSession)
     } else {
@@ -745,9 +754,11 @@ export class CategoryService
 
   public async delete(
     criteria: CategoryCriteria,
-    userId: Types.ObjectId,
+    user: IUser,
     externalSession?: ClientSession
   ): Promise<ICategoryServerResponse[]> {
+    const userId = user.id
+
     if (externalSession) {
       return this._executeDeleteTransaction(criteria, userId, externalSession)
     } else {
@@ -825,9 +836,11 @@ export class CategoryService
 
   public async archive(
     criteria: CategoryCriteria,
-    userId: Types.ObjectId,
+    user: IUser,
     externalSession?: ClientSession
   ): Promise<ICategoryServerResponse[]> {
+    const userId = user.id
+
     if (externalSession) {
       return this._executeArchiveTransaction(criteria, userId, externalSession)
     } else {
@@ -908,9 +921,11 @@ export class CategoryService
 
   public async recover(
     criteria: CategoryCriteria,
-    userId: Types.ObjectId,
+    user: IUser,
     externalSession?: ClientSession
   ): Promise<ICategoryServerResponse[]> {
+    const userId = user.id
+
     if (externalSession) {
       return this._executeRecoverTransaction(criteria, userId, externalSession)
     } else {
@@ -997,9 +1012,11 @@ export class CategoryService
 
   public async clone(
     criteria: CategoryCriteria,
-    userId: Types.ObjectId,
+    user: IUser,
     externalSession?: ClientSession
   ): Promise<ClonedCategoriesResult> {
+    const userId = user.id
+
     if (externalSession) {
       return this._executeCloneTransaction(criteria, userId, externalSession)
     } else {

@@ -21,6 +21,7 @@ import { CategoryService } from '@application/services/CategoryService.ts'
 
 import dayjs from 'dayjs'
 import { SingleUpdateDTO } from '../dtos/SingleUpdateDTO.ts'
+import { IUser } from '@/domain/entities/IUser.ts'
 
 const MAX_RETRIES = 3
 
@@ -80,7 +81,8 @@ export class TaskService
   private async _executeCreateTransaction(
     data: TaskDTO,
     userId: Types.ObjectId,
-    session: ClientSession
+    session: ClientSession,
+    timezone: string
   ): Promise<ITaskServerResponse[]> {
     let reorderedTasks: ReorderResultDTO<ITaskRaw>[] = []
 
@@ -89,7 +91,7 @@ export class TaskService
 
     delete data.id // Remove temp client ID before creation
 
-    const taskPayload = await this.prepareTaskCreationPayload(data, userId)
+    const taskPayload = await this.prepareTaskCreationPayload(data, userId, timezone)
 
     /* CREATE */
     const newTask = await this.repository.create(taskPayload, session)
@@ -144,14 +146,16 @@ export class TaskService
 
   public async create(
     data: TaskDTO,
-    userId: Types.ObjectId,
+    user: IUser,
     externalSession?: ClientSession
   ): Promise<ITaskServerResponse[]> {
+    const userId = user.id
+
     if (externalSession) {
-      return this._executeCreateTransaction(data, userId, externalSession)
+      return this._executeCreateTransaction(data, userId, externalSession, user.timezone)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeCreateTransaction(data, userId, session)
+        this._executeCreateTransaction(data, userId, session, user.timezone)
       )
     }
   }
@@ -159,13 +163,14 @@ export class TaskService
   private async _executeCreateManyTransaction(
     data: TaskDTO[],
     userId: Types.ObjectId,
-    session: ClientSession
+    session: ClientSession,
+    timezone: string
   ): Promise<ITaskServerResponse[]> {
     let reorderedTasks: ReorderResultDTO<ITaskRaw>[] = []
 
     const finalEntitiesMap = new Map<string, ITaskServerResponse>()
 
-    const tasksPayload = await this.prepareTasksCreationPayload(data, userId, session)
+    const tasksPayload = await this.prepareTasksCreationPayload(data, userId, timezone, session)
 
     /* CREATE */
     const newTasks = await this.repository.createMany(tasksPayload, session)
@@ -228,14 +233,16 @@ export class TaskService
 
   public async createMany(
     data: TaskDTO[],
-    userId: Types.ObjectId,
+    user: IUser,
     externalSession?: ClientSession
   ): Promise<ITaskServerResponse[]> {
+    const userId = user.id
+
     if (externalSession) {
-      return this._executeCreateManyTransaction(data, userId, externalSession)
+      return this._executeCreateManyTransaction(data, userId, externalSession, user.timezone)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeCreateManyTransaction(data, userId, session)
+        this._executeCreateManyTransaction(data, userId, session, user.timezone)
       )
     }
   }
@@ -244,7 +251,8 @@ export class TaskService
     data: TaskEditDTO,
     criteria: TaskCriteria,
     userId: Types.ObjectId,
-    session: ClientSession
+    session: ClientSession,
+    timezone: string
   ): Promise<ITaskServerResponse[]> {
     let reorderedTasks: ReorderResultDTO<ITaskRaw>[] = []
     let dependencies: Types.ObjectId[] = []
@@ -256,7 +264,7 @@ export class TaskService
 
     if (tasksToUpdate.length === 0) throw new NotFoundError('Задачи для обновления не найдены.')
 
-    const taskPayload = await this.prepareTaskEditPayload(data, tasksToUpdate, userId)
+    const taskPayload = await this.prepareTaskEditPayload(data, tasksToUpdate, userId, timezone)
 
     /* UPDATE */
     const newEntities = await this.repository.updateByFilter(filter, taskPayload, session)
@@ -338,14 +346,16 @@ export class TaskService
   public async edit(
     data: TaskEditDTO,
     criteria: TaskCriteria,
-    userId: Types.ObjectId,
+    user: IUser,
     externalSession?: ClientSession
   ): Promise<ITaskServerResponse[]> {
+    const userId = user.id
+
     if (externalSession) {
-      return this._executeEditTransaction(data, criteria, userId, externalSession)
+      return this._executeEditTransaction(data, criteria, userId, externalSession, user.timezone)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeEditTransaction(data, criteria, userId, session)
+        this._executeEditTransaction(data, criteria, userId, session, user.timezone)
       )
     }
   }
@@ -353,7 +363,8 @@ export class TaskService
   private async _executeEditManyTransaction(
     data: TaskEditDTO[],
     userId: Types.ObjectId,
-    session: ClientSession
+    session: ClientSession,
+    timezone: string
   ) {
     let taskIdsToReorder: string[] = []
     let reorderedTasks: ReorderResultDTO<ITaskRaw>[] = []
@@ -376,7 +387,7 @@ export class TaskService
 
       if (!task) continue
 
-      const taskPayload = await this.prepareTaskEditPayload(dto, [task], userId)
+      const taskPayload = await this.prepareTaskEditPayload(dto, [task], userId, timezone)
 
       tasksToUpdate.push(taskPayload)
 
@@ -459,14 +470,16 @@ export class TaskService
 
   public async editMany(
     data: TaskEditDTO[],
-    userId: Types.ObjectId,
+    user: IUser,
     externalSession?: ClientSession
   ): Promise<ITaskServerResponse[]> {
+    const userId = user.id
+
     if (externalSession) {
-      return this._executeEditManyTransaction(data, userId, externalSession)
+      return this._executeEditManyTransaction(data, userId, externalSession, user.timezone)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeEditManyTransaction(data, userId, session)
+        this._executeEditManyTransaction(data, userId, session, user.timezone)
       )
     }
   }
@@ -791,9 +804,11 @@ export class TaskService
 
   public async delete(
     criteria: TaskCriteria,
-    userId: Types.ObjectId,
+    user: IUser,
     externalSession?: ClientSession
   ): Promise<ITaskServerResponse[]> {
+    const userId = user.id
+
     if (externalSession) {
       return this._executeDeleteTransaction(criteria, userId, externalSession)
     } else {
@@ -861,9 +876,11 @@ export class TaskService
 
   public async archive(
     criteria: TaskCriteria,
-    userId: Types.ObjectId,
+    user: IUser,
     externalSession?: ClientSession
   ): Promise<ITaskServerResponse[]> {
+    const userId = user.id
+
     if (externalSession) {
       return this._executeArchiveTransaction(criteria, userId, externalSession)
     } else {
@@ -932,9 +949,11 @@ export class TaskService
 
   public async recover(
     criteria: TaskCriteria,
-    userId: Types.ObjectId,
+    user: IUser,
     externalSession?: ClientSession
   ): Promise<ITaskServerResponse[]> {
+    const userId = user.id
+
     if (externalSession) {
       return this._executeRecoverTransaction(criteria, userId, externalSession)
     } else {
@@ -1007,9 +1026,11 @@ export class TaskService
 
   public async clone(
     criteria: TaskCriteria,
-    userId: Types.ObjectId,
+    user: IUser,
     externalSession?: ClientSession
   ): Promise<ITaskServerResponse[]> {
+    const userId = user.id
+
     if (externalSession) {
       return this._executeCloneTransaction(criteria, userId, externalSession)
     } else {
@@ -1140,6 +1161,7 @@ export class TaskService
   private async prepareTaskCreationPayload(
     data: TaskDTO,
     userId: Types.ObjectId,
+    timezone: string,
     session?: ClientSession
   ) {
     const taskName = data.name.trim()
@@ -1153,7 +1175,7 @@ export class TaskService
       user_id: userId,
     }
 
-    this.prepareTaskMainFields(data, taskPayload)
+    this.prepareTaskMainFields(data, taskPayload, timezone)
 
     if (data.order === undefined) {
       const allTasksCount = await this.getCount({ categoryId: data.categoryId }, userId, session)
@@ -1166,6 +1188,7 @@ export class TaskService
   private async prepareTasksCreationPayload(
     data: TaskDTO[],
     userId: Types.ObjectId,
+    timezone: string,
     session?: ClientSession
   ) {
     const tasksPayloads: Omit<ITaskRaw, '_id'>[] = []
@@ -1214,7 +1237,7 @@ export class TaskService
           user_id: userId,
         }
 
-        this.prepareTaskMainFields(task, taskPayload)
+        this.prepareTaskMainFields(task, taskPayload, timezone)
 
         tasksPayloads.push(taskPayload)
       }
@@ -1223,14 +1246,18 @@ export class TaskService
     return tasksPayloads
   }
 
-  private prepareTaskMainFields(data: TaskDTO | TaskEditDTO, taskPayload: Partial<ITaskRaw>) {
+  private prepareTaskMainFields(
+    data: TaskDTO | TaskEditDTO,
+    taskPayload: Partial<ITaskRaw>,
+    timezone: string
+  ) {
     if (data.color && TASK_COLORS_MAP[data.color]) {
       taskPayload.color_name = TASK_COLORS_MAP[data.color]
     }
 
-    if (data.dueDate && data.dueHours != null && data.dueMinutes != null && data.timezone) {
+    if (data.dueDate && data.dueHours != null && data.dueMinutes != null && timezone) {
       const collectedDateTime = `${data.dueDate}T${data.dueHours}:${data.dueMinutes}`
-      const utcDueDate = dayjs.tz(collectedDateTime, data.timezone).utc()
+      const utcDueDate = dayjs.tz(collectedDateTime, timezone).utc()
 
       taskPayload.due_date = utcDueDate.format('YYYY-MM-DD')
       taskPayload.due_hours = utcDueDate.hour()
@@ -1241,7 +1268,8 @@ export class TaskService
   private async prepareTaskEditPayload(
     data: TaskEditDTO,
     tasksToUpdate: ITaskRaw[],
-    userId: Types.ObjectId
+    userId: Types.ObjectId,
+    timezone: string
   ) {
     const taskPayload: SingleUpdateDTO<Partial<ITaskRaw>> = {
       ...toMongoCaseKeys(data),
@@ -1255,7 +1283,7 @@ export class TaskService
       taskPayload.order = parseInt(data.order, 10)
     }
 
-    this.prepareTaskMainFields(data, taskPayload)
+    this.prepareTaskMainFields(data, taskPayload, timezone)
 
     if (data.name && tasksToUpdate.length > 0) {
       const needEmbeddingsUpdate = tasksToUpdate.some(

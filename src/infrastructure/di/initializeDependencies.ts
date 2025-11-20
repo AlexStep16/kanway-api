@@ -26,6 +26,11 @@ import { ICategoryRaw } from '@entities/ICategoryRaw.ts'
 import { IBoardRaw } from '@entities/IBoardRaw.ts'
 import { IWorkspaceRaw } from '@entities/IWorkspaceRaw.ts'
 import ArchiveController from '@controllers/ArchiveController.ts'
+import { UserController } from '@controllers/UserController.ts'
+import SettingRepository from '@repositories/SettingRepository.ts'
+import { SettingService } from '@application/services/SettingService.ts'
+import { SettingController } from '@controllers/SettingController.ts'
+import SubscriptionRepository from '@repositories/SubscriptionRepository.ts'
 
 export function initializeDependencies() {
   const userRepository = new UserRepository()
@@ -35,13 +40,8 @@ export function initializeDependencies() {
   const boardRepository = new BoardRepository()
   const categoryRepository = new CategoryRepository()
   const taskRepository = new TaskRepository()
-
-  /* AUTH SERVICES START */
-  const tokenService = new TokenService(tokenRepository)
-  const userService = new UserService(userRepository)
-  const emailService = new EmailService(tokenRepository, tokenService)
-  const authService = new AuthService(userService, emailService, tokenService)
-  /* AUTH SERVICES END */
+  const settingRepository = new SettingRepository()
+  const subscriptionRepository = new SubscriptionRepository()
 
   /* BASE SERVICES START */
   const embeddingService = new EmbeddingService()
@@ -90,6 +90,17 @@ export function initializeDependencies() {
     taskService
   )
   /* BOARD SERVICES END */
+
+  /* SETTING SERVICES START */
+  const settingService = new SettingService(settingRepository)
+  /* SETTING SERVICES END */
+
+  /* AUTH SERVICES START */
+  const tokenService = new TokenService(tokenRepository)
+  const userService = new UserService(userRepository, subscriptionRepository)
+  const emailService = new EmailService(tokenRepository, tokenService)
+  const authService = new AuthService(userService, emailService, tokenService, settingService)
+  /* AUTH SERVICES END */
 
   Object.assign(mockCategoryService, categoryService)
   Object.assign(mockBoardService, boardService)
@@ -142,6 +153,8 @@ export function initializeDependencies() {
     boardService,
     workspaceService
   )
+  const userController = new UserController(userService)
+  const settingController = new SettingController(settingService)
 
   return {
     services: {
@@ -153,6 +166,7 @@ export function initializeDependencies() {
       categoryService,
       boardService,
       taskService,
+      settingService,
     },
     controllers: {
       authController,
@@ -161,6 +175,8 @@ export function initializeDependencies() {
       categoryController,
       taskController,
       archiveController,
+      userController,
+      settingController,
     },
   }
 }

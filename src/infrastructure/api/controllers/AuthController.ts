@@ -12,9 +12,7 @@ export default class AuthController {
   }
 
   public async register(req: Request, res: Response, next: NextFunction) {
-    const { email, password } = req.body as RegisterCredentialsDTO
-
-    const credentials: RegisterCredentialsDTO = { email, password }
+    const credentials = req.body as RegisterCredentialsDTO
 
     try {
       const { user, serialized } = await this.service.register(credentials)
@@ -28,24 +26,12 @@ export default class AuthController {
   }
 
   public async login(req: Request, res: Response, next: NextFunction) {
-    const { email, password } = req.body as LoginCredentialsDTO
-
-    const credentials: LoginCredentialsDTO = { email, password }
+    const credentials = req.body as LoginCredentialsDTO
 
     try {
       const { user, serialized } = await this.service.login(credentials)
 
       res.setHeader('Set-Cookie', serialized)
-
-      return res.status(200).json(new SuccessResponse(user))
-    } catch (error) {
-      next(error)
-    }
-  }
-
-  public async me(req: Request, res: Response, next: NextFunction) {
-    try {
-      const user = await this.service.me(req.user!.id)
 
       return res.status(200).json(new SuccessResponse(user))
     } catch (error) {

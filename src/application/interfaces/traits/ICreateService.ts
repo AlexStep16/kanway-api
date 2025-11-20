@@ -1,5 +1,6 @@
-import { ClientSession, Types } from 'mongoose'
+import { IUser } from '@entities/IUser.ts'
+import { ClientSession } from 'mongoose'
 
 export interface ICreateService<TEntity, TCreateDTO> {
-  create(data: TCreateDTO, userId: Types.ObjectId, session?: ClientSession): Promise<TEntity[]>
+  create(data: TCreateDTO, user: IUser, session?: ClientSession): Promise<TEntity[]>
 }

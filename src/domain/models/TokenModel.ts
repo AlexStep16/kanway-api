@@ -1,5 +1,5 @@
 import { model, Schema } from 'mongoose'
-import { ITokenRaw } from '../entities/ITokenRaw.ts'
+import { ITokenRaw } from '@entities/ITokenRaw.ts'
 
 export const TokenSchema = new Schema<ITokenRaw>(
   {

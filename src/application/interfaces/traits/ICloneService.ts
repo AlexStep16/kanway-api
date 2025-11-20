@@ -1,5 +1,6 @@
-import { Types } from 'mongoose'
+import { IUser } from '@entities/IUser.ts'
+import { ClientSession } from 'mongoose'
 
 export interface ICloneService<TCriteria, TClonedResult> {
-  clone(criteria: TCriteria, userId: Types.ObjectId): Promise<TClonedResult>
+  clone(criteria: TCriteria, user: IUser, session?: ClientSession): Promise<TClonedResult>
 }

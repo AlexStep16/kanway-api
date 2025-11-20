@@ -9,6 +9,7 @@ import {
   UpdateWriteOpResult,
 } from 'mongoose'
 import { SingleUpdateDTO } from '../dtos/SingleUpdateDTO.ts'
+import { SystemFields } from '@/infrastructure/types/SystemFields.ts'
 
 export abstract class BaseRepository<TEntity, TModel extends Model<TEntity>> {
   protected model: TModel
@@ -33,7 +34,7 @@ export abstract class BaseRepository<TEntity, TModel extends Model<TEntity>> {
   }
 
   public async create(
-    data: Omit<TEntity, '_id'>,
+    data: Omit<TEntity, SystemFields>,
     session: ClientSession | null = null
   ): Promise<TEntity> {
     const [newDoc] = await this.model.create([data], { session })
@@ -44,7 +45,7 @@ export abstract class BaseRepository<TEntity, TModel extends Model<TEntity>> {
   }
 
   public async createMany(
-    data: Omit<TEntity, '_id'>[],
+    data: Omit<TEntity, SystemFields>[],
     session: ClientSession | null = null
   ): Promise<TEntity[]> {
     const options: CreateOptions = { session }
