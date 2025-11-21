@@ -12,9 +12,10 @@ export interface IUserRaw {
   timezone: string
   is_confirmed: boolean
   is_password_in_reset_state?: boolean
-  subscription_id: Types.ObjectId
+  subscription_id: number
   subscription_until?: Date | null
-  generations_balance?: number
+  is_subscription_active?: boolean
+  generations_count?: number
   avatar_color: string
   is_tips_completed?: boolean
   phone?: string

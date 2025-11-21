@@ -10,6 +10,10 @@ export default class SubscriptionRepository {
     return newDoc
   }
 
+  public async findAll(): Promise<ISubscriptionRaw[]> {
+    return await SubscriptionModel.find().lean()
+  }
+
   public async findById(id: string): Promise<ISubscriptionRaw | null> {
     return await SubscriptionModel.findById(id).lean()
   }

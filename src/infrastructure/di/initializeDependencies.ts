@@ -31,6 +31,14 @@ import SettingRepository from '@repositories/SettingRepository.ts'
 import { SettingService } from '@application/services/SettingService.ts'
 import { SettingController } from '@controllers/SettingController.ts'
 import SubscriptionRepository from '@repositories/SubscriptionRepository.ts'
+import { SubscriptionService } from '@application/services/SubscriptionService.ts'
+import { SubscriptionController } from '@controllers/SubscriptionController.ts'
+import PaymentRepository from '@repositories/PaymentRepository.ts'
+import { PaymentService } from '@application/services/PaymentService.ts'
+import { PaymentController } from '@controllers/PaymentController.ts'
+import PaymentMethodRepository from '@repositories/PaymentMethodRepository.ts'
+import { PaymentMethodService } from '@application/services/PaymentMethodService.ts'
+import { PaymentMethodController } from '@controllers/PaymentMethodController.ts'
 
 export function initializeDependencies() {
   const userRepository = new UserRepository()
@@ -42,6 +50,8 @@ export function initializeDependencies() {
   const taskRepository = new TaskRepository()
   const settingRepository = new SettingRepository()
   const subscriptionRepository = new SubscriptionRepository()
+  const paymentRepository = new PaymentRepository()
+  const paymentMethodRepository = new PaymentMethodRepository()
 
   /* BASE SERVICES START */
   const embeddingService = new EmbeddingService()
@@ -52,6 +62,26 @@ export function initializeDependencies() {
   const mockCategoryService = {} as CategoryService
   const mockBoardService = {} as BoardService
   /* MOCK SERVICES END */
+
+  /* SETTING SERVICES START */
+  const settingService = new SettingService(settingRepository)
+  /* SETTING SERVICES END */
+
+  /* SUBSCRIPTION SERVICES START */
+  const subscriptionService = new SubscriptionService(subscriptionRepository)
+  /* SUBSCRIPTION SERVICES END */
+
+  /* AUTH SERVICES START */
+  const tokenService = new TokenService(tokenRepository)
+  const userService = new UserService(userRepository)
+  const emailService = new EmailService(tokenRepository, tokenService)
+  const authService = new AuthService(userService, emailService, tokenService, settingService)
+  /* AUTH SERVICES END */
+
+  /* PAYMENT SERVICES START */
+  const paymentService = new PaymentService(paymentRepository)
+  const paymentMethodService = new PaymentMethodService(paymentMethodRepository, userService)
+  /* PAYMENT SERVICES END */
 
   /* TASK SERVICES START */
   const taskReorderService = new ReorderService<ITaskRaw>(taskRepository, operationLogService)
@@ -90,17 +120,6 @@ export function initializeDependencies() {
     taskService
   )
   /* BOARD SERVICES END */
-
-  /* SETTING SERVICES START */
-  const settingService = new SettingService(settingRepository)
-  /* SETTING SERVICES END */
-
-  /* AUTH SERVICES START */
-  const tokenService = new TokenService(tokenRepository)
-  const userService = new UserService(userRepository, subscriptionRepository)
-  const emailService = new EmailService(tokenRepository, tokenService)
-  const authService = new AuthService(userService, emailService, tokenService, settingService)
-  /* AUTH SERVICES END */
 
   Object.assign(mockCategoryService, categoryService)
   Object.assign(mockBoardService, boardService)
@@ -155,6 +174,9 @@ export function initializeDependencies() {
   )
   const userController = new UserController(userService)
   const settingController = new SettingController(settingService)
+  const subscriptionController = new SubscriptionController(subscriptionService)
+  const paymentController = new PaymentController(paymentService)
+  const paymentMethodController = new PaymentMethodController(paymentMethodService)
 
   return {
     services: {
@@ -167,6 +189,9 @@ export function initializeDependencies() {
       boardService,
       taskService,
       settingService,
+      subscriptionService,
+      paymentService,
+      paymentMethodService,
     },
     controllers: {
       authController,
@@ -177,6 +202,9 @@ export function initializeDependencies() {
       archiveController,
       userController,
       settingController,
+      subscriptionController,
+      paymentController,
+      paymentMethodController,
     },
   }
 }

@@ -1,5 +1,7 @@
+import { SubscriptionPlanEnum } from '@domain/enums/SubscriptionPlanEnum.ts'
+
 export interface ISubscription {
-  id: number
+  id: SubscriptionPlanEnum
   name: string
   price: number
   currency: string

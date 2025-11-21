@@ -1,5 +1,6 @@
 import { model, Schema } from 'mongoose'
 import { ISettingRaw } from '@entities/ISettingRaw.ts'
+import { AiConfirmationTypeEnum } from '@domain/enums/AiConfirmationTypeEnum.ts'
 
 export const SettingSchema = new Schema<ISettingRaw>(
   {
@@ -9,6 +10,7 @@ export const SettingSchema = new Schema<ISettingRaw>(
     },
     ai_confirmation_type: {
       type: Number,
+      enum: AiConfirmationTypeEnum,
       required: true,
     },
     ai_default_category: {

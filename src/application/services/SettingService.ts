@@ -7,8 +7,17 @@ import { SettingEditDTO } from '@dtos/SettingEditDTO.ts'
 import { SettingCriteria } from '@criterias/SettingCriteria.ts'
 import { ClientSession, Types } from 'mongoose'
 import { SystemFields } from '@/infrastructure/types/SystemFields.ts'
+import { ICreateWithUserIdService } from '../interfaces/traits/ICreateWithUserIdService.ts'
+import { IUser } from '@/domain/entities/IUser.ts'
+import { IEditService } from '../interfaces/traits/IEditService.ts'
+import { IGetAllByUserIdService } from '../interfaces/traits/IGetAllByUserIdService.ts'
 
-export class SettingService {
+export class SettingService
+  implements
+    ICreateWithUserIdService<ISetting, SettingDTO>,
+    IEditService<SettingCriteria, ISetting, SettingEditDTO>,
+    IGetAllByUserIdService<ISetting>
+{
   protected repository: SettingRepository
 
   constructor(settingRepository: SettingRepository) {
@@ -36,19 +45,22 @@ export class SettingService {
   public async edit(
     data: SettingEditDTO,
     criteria: SettingCriteria,
-    userId: Types.ObjectId
-  ): Promise<ISetting> {
-    const filter = this.repository.buildFilter(criteria, userId)
+    user: IUser
+  ): Promise<ISetting[]> {
+    const filter = this.repository.buildFilter(criteria, user.id)
     const payload = toMongoCaseKeys<ISettingRaw>(data)
 
     const updatedSetting = await this.repository.updateByFilter(filter, payload)
 
-    return toServerCaseKeys<ISetting>(updatedSetting[0])
+    return updatedSetting.map(toServerCaseKeys<ISetting>)
   }
 
-  public async get(userId: Types.ObjectId): Promise<ISetting | null> {
-    const setting = await this.repository.getByUserId(userId)
+  public async getAllByUserId(
+    userId: Types.ObjectId,
+    session?: ClientSession
+  ): Promise<ISetting[]> {
+    const settings = await this.repository.getByUserId(userId, session)
 
-    return toServerCaseKeys<ISetting>(setting)
+    return settings.map(toServerCaseKeys<ISetting>)
   }
 }

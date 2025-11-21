@@ -13,6 +13,7 @@ export default (controller: IBoardRawController): Router => {
   router.use(jwtAuthMiddleware)
 
   router.get('/', controller.getAll)
+  router.get('/count', controller.getCount)
   router.get('/:id', controller.getById)
   router.post('/', validationMiddleware(BoardDTOSchema), controller.create)
   router.patch('/:id', validationMiddleware(BoardEditDTOSchema), controller.update)

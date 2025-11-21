@@ -60,6 +60,19 @@ export abstract class BaseController<
     }
   }
 
+  public getCount = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const count = await this.service.getCount(
+        { ...req.query, isDeleted: false } as TCriteria,
+        req.user!.id
+      )
+
+      res.status(200).json(new SuccessResponse(count))
+    } catch (error) {
+      next(error)
+    }
+  }
+
   public update = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const timezone = req.user?.timezone || 'Europe/Moscow'

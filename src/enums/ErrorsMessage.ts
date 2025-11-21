@@ -64,6 +64,23 @@ export enum ErrorsMessage {
   SETTING_AI_DEFAULT_BOARD_TOO_LONG = 'Доска по умолчанию для ИИ не должна превышать 100 символов.',
   SETTING_ID_INVALID = 'Неверный идентификатор настройки.',
 
+  PAYMENT_DESCRIPTION_TOO_SHORT = 'Описание платежа должно содержать не менее 1 символа.',
+  PAYMENT_DESCRIPTION_TOO_LONG = 'Описание платежа не должно превышать 255 символов.',
+  PAYMENT_AMOUNT_TOO_SMALL = 'Сумма платежа должна быть не менее 0.01.',
+  PAYMENT_CURRENCY_INVALID = 'Валюта платежа должна содержать ровно 3 символа.',
+  PAYMENT_STATUS_INVALID = 'Неверный статус платежа.',
+
+  PAYMENT_METHOD_SERVICE_ID_REQUIRED = 'Требуется идентификатор сервиса метода оплаты.',
+  PAYMENT_METHOD_TYPE_REQUIRED = 'Требуется тип метода оплаты.',
+  PAYMENT_METHOD_CARD_FIRST6_INVALID = 'Первые 6 цифр карты метода оплаты неверны.',
+  PAYMENT_METHOD_CARD_LAST4_INVALID = 'Последние 4 цифры карты метода оплаты неверны.',
+  PAYMENT_METHOD_CARD_TYPE_REQUIRED = 'Требуется тип карты метода оплаты.',
+  PAYMENT_METHOD_LAST4_INVALID = 'Последние 4 цифры метода оплаты неверны.',
+  PAYMENT_METHOD_EXPIRY_MONTH_INVALID = 'Неверный месяц истечения срока действия метода оплаты.',
+  PAYMENT_METHOD_EXPIRY_YEAR_INVALID = 'Неверный год истечения срока действия метода оплаты.',
+  PAYMENT_METHOD_ID_REQUIRED = 'Требуется идентификатор метода оплаты.',
+  INVALID_PAYMENT_METHOD_ID = 'Неверный идентификатор метода оплаты.',
+
   SUBSCRIPTION_PLAN_NOT_FOUND = 'План подписки не найден. Обратитесь в поддержку.',
   INVALID_ID_FORMAT = 'Неверный формат идентификатора.',
   WORKSPACE_ID_INVALID = 'Неверный идентификатор рабочего пространства.',

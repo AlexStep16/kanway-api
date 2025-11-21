@@ -31,6 +31,12 @@ export const UserDTOSchema = z.object({
     error: (iss) =>
       iss.input === undefined ? ErrorsMessage.TIMEZONE_REQUIRED : ErrorsMessage.INVALID_TIMEZONE,
   }),
+  paymentMethodId: z.string({
+    error: (iss) =>
+      iss.input === undefined
+        ? ErrorsMessage.PAYMENT_METHOD_ID_REQUIRED
+        : ErrorsMessage.INVALID_PAYMENT_METHOD_ID,
+  }),
 })
 
 export type UserDTO = z.infer<typeof UserDTOSchema>

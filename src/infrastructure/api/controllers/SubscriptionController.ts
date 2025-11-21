@@ -1,0 +1,21 @@
+import SuccessResponse from '@application/services/SuccessResponse.ts'
+import { SubscriptionService } from '@application/services/SubscriptionService.ts'
+import { Request, Response, NextFunction } from 'express'
+
+export class SubscriptionController {
+  protected service: SubscriptionService
+
+  constructor(serviceInstance: SubscriptionService) {
+    this.service = serviceInstance
+  }
+
+  public getAll = async (_: Request, res: Response, next: NextFunction) => {
+    try {
+      const entity = await this.service.getAll()
+
+      res.status(200).json(new SuccessResponse(entity))
+    } catch (error) {
+      next(error)
+    }
+  }
+}

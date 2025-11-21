@@ -9,11 +9,14 @@ import categoryRoutes from '@routes/categoryRoutes.ts'
 import taskRoutes from '@routes/taskRoutes.ts'
 import archiveRoutes from '@routes/archiveRoutes.ts'
 import settingRoutes from '@routes/settingRoutes.ts'
+import userRoutes from '@routes/userRoutes.ts'
+import subscriptionRoutes from '@routes/subscriptionRoutes.ts'
+import paymentRoutes from '@routes/paymentRoutes.ts'
+import paymentMethodRoutes from '@routes/paymentMethodRoutes.ts'
 
 //import { initWorkspace } from '@middlewares/Workspace.ts'
 import cookieParser from 'cookie-parser'
 import { initializeDependencies } from '@infrastructure/di/initializeDependencies.ts'
-import userRoutes from './userRoutes.ts'
 import path from 'path'
 
 export function attachRoutes(app: Application) {
@@ -49,6 +52,12 @@ export function attachRoutes(app: Application) {
   app.use('/archive', archiveRoutes(dependencies.controllers.archiveController))
 
   app.use('/settings', settingRoutes(dependencies.controllers.settingController))
+
+  app.use('/subscriptions', subscriptionRoutes(dependencies.controllers.subscriptionController))
+
+  app.use('/payments', paymentRoutes(dependencies.controllers.paymentController))
+
+  app.use('/payment-methods', paymentMethodRoutes(dependencies.controllers.paymentMethodController))
 
   app.use('/me', userRoutes(dependencies.controllers.userController))
 }

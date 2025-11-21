@@ -1,6 +1,7 @@
 import SuccessResponse from '@application/services/SuccessResponse.ts'
 import { Request, Response, NextFunction } from 'express'
 import { SettingService } from '@application/services/SettingService.ts'
+import { IUser } from '@/domain/entities/IUser.ts'
 
 export class SettingController {
   protected service: SettingService
@@ -11,7 +12,7 @@ export class SettingController {
 
   public update = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const result = await this.service.edit(req.body, {}, req.user!.id)
+      const result = await this.service.edit(req.body, {}, req.user as IUser)
 
       res.status(200).json(new SuccessResponse(result))
     } catch (error) {
@@ -21,7 +22,7 @@ export class SettingController {
 
   public get = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const entity = await this.service.get(req.user!.id)
+      const entity = await this.service.getAllByUserId(req.user!.id)
 
       res.status(200).json(new SuccessResponse(entity))
     } catch (error) {

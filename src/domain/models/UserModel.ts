@@ -48,17 +48,20 @@ export const UserSchema = new Schema<IUserRaw, IUserRawStatics, IUserRawMethods>
       default: false,
     },
     subscription_id: {
-      type: Schema.Types.ObjectId,
-      ref: 'Subscription',
+      type: Number,
       required: true,
     },
     subscription_until: {
       type: Date,
       required: false,
     },
-    generations_balance: {
+    is_subscription_active: {
+      type: Boolean,
+      required: false,
+    },
+    generations_count: {
       type: Number,
-      default: 20,
+      default: 0,
     },
     is_password_in_reset_state: {
       type: Boolean,

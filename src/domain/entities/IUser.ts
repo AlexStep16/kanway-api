@@ -12,9 +12,10 @@ export interface IUser {
   deletedTime?: Date
   isConfirmed: boolean
   isPasswordInResetState?: boolean
-  subscriptionId: Types.ObjectId
+  subscriptionId: number
   subscriptionUntil?: Date | null
-  generationsBalance?: number
+  isSubscriptionActive?: boolean
+  generationsCount?: number
   avatarColor: string
   isTipsCompleted?: boolean
   phone?: string

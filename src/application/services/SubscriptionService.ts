@@ -26,6 +26,12 @@ export class SubscriptionService {
     await this.repository.create(subscription)
   }
 
+  public async getAll(): Promise<ISubscription[]> {
+    const subscriptions = await this.repository.findAll()
+
+    return subscriptions.map(toServerCaseKeys<ISubscription>)
+  }
+
   public async getById(id: string): Promise<ISubscription | null> {
     const subscription = await this.repository.findById(id)
 

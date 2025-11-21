@@ -2,7 +2,7 @@ import SettingModel from '@models/SettingModel.ts'
 import { BaseRepository } from '@repositories/BaseRepository.ts'
 import { ISettingRaw } from '@entities/ISettingRaw.ts'
 import { SettingCriteria } from '@criterias/SettingCriteria.ts'
-import { FilterQuery, Types } from 'mongoose'
+import { ClientSession, FilterQuery, Types } from 'mongoose'
 
 export default class SettingRepository extends BaseRepository<ISettingRaw, typeof SettingModel> {
   constructor() {
@@ -21,7 +21,13 @@ export default class SettingRepository extends BaseRepository<ISettingRaw, typeo
     return filter
   }
 
-  public getByUserId(userId: Types.ObjectId): Promise<ISettingRaw | null> {
-    return this.model.findOne({ user_id: userId }).lean()
+  public async getByUserId(
+    userId: Types.ObjectId,
+    session?: ClientSession
+  ): Promise<ISettingRaw[]> {
+    return await this.model
+      .find({ user_id: userId })
+      .session(session ?? null)
+      .lean()
   }
 }

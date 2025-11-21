@@ -13,7 +13,6 @@ import UserRepository from '@repositories/UserRepository.ts'
 import { SALT_ROUNDS } from '@constants/SALT_ROUNDS.ts'
 import { ICreateUserService } from '@traits/ICreateUserService.ts'
 import { SystemFields } from '@infrastructure/types/SystemFields.ts'
-import SubscriptionRepository from '@repositories/SubscriptionRepository.ts'
 import { SubscriptionPlanEnum } from '@domain/enums/SubscriptionPlanEnum.ts'
 
 import { ClientSession, Types } from 'mongoose'
@@ -24,28 +23,20 @@ export class UserService
   implements ICreateUserService<IUser, RegisterCredentialsDTO>, IGetByIdService<IUser>
 {
   private repository: UserRepository
-  private subscriptionRepository: SubscriptionRepository
 
-  constructor(repository: UserRepository, subscriptionRepository: SubscriptionRepository) {
+  constructor(repository: UserRepository) {
     this.repository = repository
-    this.subscriptionRepository = subscriptionRepository
   }
 
   public async create(
     credentials: RegisterCredentialsDTO,
     session?: ClientSession
   ): Promise<IUser[]> {
-    const subscription = await this.subscriptionRepository.findByCustomId(
-      SubscriptionPlanEnum.Basic
-    )
-
-    if (!subscription) throw new AppError(ErrorsMessage.SUBSCRIPTION_PLAN_NOT_FOUND, 404)
-
     const user: Omit<IUserRaw, SystemFields> = {
       email: credentials.email.toLowerCase(),
       password_hash: credentials.password,
       timezone: credentials.timezone,
-      subscription_id: subscription._id,
+      subscription_id: SubscriptionPlanEnum.Basic,
       is_confirmed: false,
       avatar_color: BASE_COLORS[Math.floor(Math.random() * 7)],
       is_tips_completed: false,
