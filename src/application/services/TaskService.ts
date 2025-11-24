@@ -1,4 +1,3 @@
-import { ITaskServerResponse } from '@entities/ITaskServerResponse.ts'
 import { ITaskRaw } from '@entities/ITaskRaw.ts'
 import TaskRepository from '@repositories/TaskRepository.ts'
 import { TaskDTO } from '@application/dtos/TaskDTO.ts'
@@ -9,25 +8,26 @@ import { IBaseService } from '@interfaces/IBaseService.ts'
 import { OperationLogService } from '@application/services/OperationLogService.ts'
 import { OperationTypesEnum } from '@domain/enums/OperationTypesEnum.ts'
 import { CollectionsEnum } from '@domain/enums/CollectionsEnum.ts'
+import { IUser } from '@entities/IUser.ts'
+import { ITask } from '@entities/ITask.ts'
 import { ReorderService } from '@application/services/ReorderService.ts'
 import { toServerCaseKeys, toMongoCaseKeys } from '@utils/objectTransformers.ts'
 import { TaskEditDTO } from '@dtos/TaskEditDTO.ts'
 import { ReorderResultDTO } from '@dtos/ReorderResultDTO.ts'
 import { IOperationResult } from '@interfaces/IOperationResult.ts'
-import { NotFoundError } from '@/domain/errors/NotFound.ts'
+import { NotFoundError } from '@errors/NotFound.ts'
 import { TASK_COLORS_MAP } from '@/constants/TASK_COLORS.ts'
 import { IMoveResult } from '@interfaces/IMoveResult.ts'
 import { CategoryService } from '@application/services/CategoryService.ts'
+import { TaskArchiveResponse } from '@application/interfaces/ITaskArchiveResponse.ts'
+import { ITaskWithTempClientId } from '@application/interfaces/ITaskWithTempClientId.ts'
 
 import dayjs from 'dayjs'
 import { SingleUpdateDTO } from '../dtos/SingleUpdateDTO.ts'
-import { IUser } from '@/domain/entities/IUser.ts'
-
 const MAX_RETRIES = 3
 
 export class TaskService
-  implements
-    IBaseService<ITaskServerResponse, TaskCriteria, TaskDTO, TaskEditDTO, ITaskServerResponse[]>
+  implements IBaseService<ITask, TaskCriteria, TaskDTO, TaskEditDTO, ITask[], TaskArchiveResponse>
 {
   protected repository: TaskRepository
   protected embeddingService: EmbeddingService
@@ -83,10 +83,10 @@ export class TaskService
     userId: Types.ObjectId,
     session: ClientSession,
     timezone: string
-  ): Promise<ITaskServerResponse[]> {
+  ): Promise<ITaskWithTempClientId[]> {
     let reorderedTasks: ReorderResultDTO<ITaskRaw>[] = []
 
-    const finalEntitiesMap = new Map<string, ITaskServerResponse>()
+    const finalEntitiesMap = new Map<string, ITask>()
     const tempClientId = data.id
 
     delete data.id // Remove temp client ID before creation
@@ -125,7 +125,7 @@ export class TaskService
       session
     )
 
-    const toServerCaseTask = toServerCaseKeys<ITaskServerResponse>(newTask)
+    const toServerCaseTask = toServerCaseKeys<ITaskWithTempClientId>(newTask)
     toServerCaseTask.tempClientId = tempClientId // Attach temp client ID back to the response to connect with client-side entity
 
     finalEntitiesMap.set(newTask._id.toString(), toServerCaseTask)
@@ -134,10 +134,7 @@ export class TaskService
       const reorderedEntities = reorderedTasks.map((r) => r.updatedEntities).flat()
 
       reorderedEntities.forEach((reorderedTask) => {
-        finalEntitiesMap.set(
-          reorderedTask._id.toString(),
-          toServerCaseKeys<ITaskServerResponse>(reorderedTasks)
-        )
+        finalEntitiesMap.set(reorderedTask._id.toString(), toServerCaseKeys<ITask>(reorderedTasks))
       })
     }
 
@@ -148,7 +145,7 @@ export class TaskService
     data: TaskDTO,
     user: IUser,
     externalSession?: ClientSession
-  ): Promise<ITaskServerResponse[]> {
+  ): Promise<ITaskWithTempClientId[]> {
     const userId = user.id
 
     if (externalSession) {
@@ -165,10 +162,10 @@ export class TaskService
     userId: Types.ObjectId,
     session: ClientSession,
     timezone: string
-  ): Promise<ITaskServerResponse[]> {
+  ): Promise<ITaskWithTempClientId[]> {
     let reorderedTasks: ReorderResultDTO<ITaskRaw>[] = []
 
-    const finalEntitiesMap = new Map<string, ITaskServerResponse>()
+    const finalEntitiesMap = new Map<string, ITask>()
 
     const tasksPayload = await this.prepareTasksCreationPayload(data, userId, timezone, session)
 
@@ -206,7 +203,7 @@ export class TaskService
     )
 
     const toServerCaseKeysTasks = newTasks.map((nt, index) => {
-      const transformed = toServerCaseKeys<ITaskServerResponse>(nt)
+      const transformed = toServerCaseKeys<ITaskWithTempClientId>(nt)
 
       transformed.tempClientId = data[index].id // Attach temp client ID back to the response to connect with client-side entity
 
@@ -221,10 +218,7 @@ export class TaskService
       const reorderedEntities = reorderedTasks.map((r) => r.updatedEntities).flat()
 
       reorderedEntities.forEach((reorderedTask) => {
-        finalEntitiesMap.set(
-          reorderedTask._id.toString(),
-          toServerCaseKeys<ITaskServerResponse>(reorderedTask)
-        )
+        finalEntitiesMap.set(reorderedTask._id.toString(), toServerCaseKeys<ITask>(reorderedTask))
       })
     }
 
@@ -235,7 +229,7 @@ export class TaskService
     data: TaskDTO[],
     user: IUser,
     externalSession?: ClientSession
-  ): Promise<ITaskServerResponse[]> {
+  ): Promise<ITaskWithTempClientId[]> {
     const userId = user.id
 
     if (externalSession) {
@@ -253,7 +247,7 @@ export class TaskService
     userId: Types.ObjectId,
     session: ClientSession,
     timezone: string
-  ): Promise<ITaskServerResponse[]> {
+  ): Promise<ITask[]> {
     let reorderedTasks: ReorderResultDTO<ITaskRaw>[] = []
     let dependencies: Types.ObjectId[] = []
 
@@ -338,9 +332,7 @@ export class TaskService
       })
     }
 
-    return Array.from(finalEntitiesMap.values()).map((ut) =>
-      toServerCaseKeys<ITaskServerResponse>(ut)
-    )
+    return Array.from(finalEntitiesMap.values()).map((ut) => toServerCaseKeys<ITask>(ut))
   }
 
   public async edit(
@@ -348,7 +340,7 @@ export class TaskService
     criteria: TaskCriteria,
     user: IUser,
     externalSession?: ClientSession
-  ): Promise<ITaskServerResponse[]> {
+  ): Promise<ITask[]> {
     const userId = user.id
 
     if (externalSession) {
@@ -463,16 +455,14 @@ export class TaskService
       })
     }
 
-    return Array.from(finalEntitiesMap.values()).map((ut) =>
-      toServerCaseKeys<ITaskServerResponse>(ut)
-    )
+    return Array.from(finalEntitiesMap.values()).map((ut) => toServerCaseKeys<ITask>(ut))
   }
 
   public async editMany(
     data: TaskEditDTO[],
     user: IUser,
     externalSession?: ClientSession
-  ): Promise<ITaskServerResponse[]> {
+  ): Promise<ITask[]> {
     const userId = user.id
 
     if (externalSession) {
@@ -591,7 +581,7 @@ export class TaskService
     >,
     userId: Types.ObjectId,
     session?: ClientSession
-  ): Promise<IOperationResult<ITaskServerResponse[]>> {
+  ): Promise<IOperationResult<ITask[]>> {
     const filter = this.repository.buildFilter(
       { categoryIds: Array.from(categoriesMap.keys()).map((id) => id.toString()) },
       userId
@@ -628,7 +618,7 @@ export class TaskService
     )
 
     return {
-      entities: updatedTasks.map((t) => toServerCaseKeys<ITaskServerResponse>(t)),
+      entities: updatedTasks.map((t) => toServerCaseKeys<ITask>(t)),
       logIds: [log[0].id],
     }
   }
@@ -643,7 +633,7 @@ export class TaskService
     },
     userId: Types.ObjectId,
     session?: ClientSession
-  ): Promise<IOperationResult<ITaskServerResponse[]>> {
+  ): Promise<IOperationResult<ITask[]>> {
     const filter = this.repository.buildFilter(
       { categoryIds: categoryIds.map((id) => id.toString()) },
       userId
@@ -676,7 +666,7 @@ export class TaskService
     )
 
     return {
-      entities: updatedTasks.map((t) => toServerCaseKeys<ITaskServerResponse>(t)),
+      entities: updatedTasks.map((t) => toServerCaseKeys<ITask>(t)),
       logIds: [log[0].id],
     }
   }
@@ -691,7 +681,7 @@ export class TaskService
     >,
     userId: Types.ObjectId,
     session?: ClientSession
-  ): Promise<IOperationResult<ITaskServerResponse[]>> {
+  ): Promise<IOperationResult<ITask[]>> {
     const filter = this.repository.buildFilter(
       { boardIds: Array.from(boardsMap.keys()).map((id) => id.toString()) },
       userId
@@ -726,7 +716,7 @@ export class TaskService
     )
 
     return {
-      entities: updatedTasks.map((t) => toServerCaseKeys<ITaskServerResponse>(t)),
+      entities: updatedTasks.map((t) => toServerCaseKeys<ITask>(t)),
       logIds: [log[0].id],
     }
   }
@@ -739,7 +729,7 @@ export class TaskService
     },
     userId: Types.ObjectId,
     session?: ClientSession
-  ): Promise<IOperationResult<ITaskServerResponse[]>> {
+  ): Promise<IOperationResult<ITask[]>> {
     const filter = this.repository.buildFilter(
       { boardIds: boardIds.map((id) => id.toString()) },
       userId
@@ -767,7 +757,7 @@ export class TaskService
     )
 
     return {
-      entities: updatedTasks.map((t) => toServerCaseKeys<ITaskServerResponse>(t)),
+      entities: updatedTasks.map((t) => toServerCaseKeys<ITask>(t)),
       logIds: [log[0].id],
     }
   }
@@ -776,7 +766,7 @@ export class TaskService
     criteria: TaskCriteria,
     userId: Types.ObjectId,
     session: ClientSession
-  ): Promise<ITaskServerResponse[]> {
+  ): Promise<ITask[]> {
     let reorderedTasks: ReorderResultDTO<ITaskRaw>[] = []
 
     const filter = this.repository.buildFilter(criteria, userId)
@@ -799,14 +789,14 @@ export class TaskService
 
     const reorderedEntities = reorderedTasks.map((r) => r.updatedEntities).flat()
 
-    return [...reorderedEntities.map((re) => toServerCaseKeys<ITaskServerResponse>(re))]
+    return [...reorderedEntities.map((re) => toServerCaseKeys<ITask>(re))]
   }
 
   public async delete(
     criteria: TaskCriteria,
     user: IUser,
     externalSession?: ClientSession
-  ): Promise<ITaskServerResponse[]> {
+  ): Promise<ITask[]> {
     const userId = user.id
 
     if (externalSession) {
@@ -822,7 +812,7 @@ export class TaskService
     criteria: TaskCriteria,
     userId: Types.ObjectId,
     session: ClientSession
-  ): Promise<ITaskServerResponse[]> {
+  ): Promise<TaskArchiveResponse> {
     let reorderedTasks: ReorderResultDTO<ITaskRaw>[] = []
 
     const finalEntitiesMap = new Map<string, ITaskRaw>()
@@ -869,16 +859,16 @@ export class TaskService
       finalEntitiesMap.set(task._id.toString(), task)
     })
 
-    return Array.from(finalEntitiesMap.values()).map((ut) =>
-      toServerCaseKeys<ITaskServerResponse>(ut)
-    )
+    return {
+      tasks: Array.from(finalEntitiesMap.values()).map((ut) => toServerCaseKeys<ITask>(ut)),
+    }
   }
 
   public async archive(
     criteria: TaskCriteria,
     user: IUser,
     externalSession?: ClientSession
-  ): Promise<ITaskServerResponse[]> {
+  ): Promise<TaskArchiveResponse> {
     const userId = user.id
 
     if (externalSession) {
@@ -894,7 +884,7 @@ export class TaskService
     criteria: TaskCriteria,
     userId: Types.ObjectId,
     session: ClientSession
-  ): Promise<ITaskServerResponse[]> {
+  ): Promise<ITask[]> {
     let reorderedTasks: ReorderResultDTO<ITaskRaw>[] = []
 
     const finalEntitiesMap = new Map<string, ITaskRaw>()
@@ -942,16 +932,14 @@ export class TaskService
       finalEntitiesMap.set(task._id.toString(), task)
     })
 
-    return Array.from(finalEntitiesMap.values()).map((ut) =>
-      toServerCaseKeys<ITaskServerResponse>(ut)
-    )
+    return Array.from(finalEntitiesMap.values()).map((ut) => toServerCaseKeys<ITask>(ut))
   }
 
   public async recover(
     criteria: TaskCriteria,
     user: IUser,
     externalSession?: ClientSession
-  ): Promise<ITaskServerResponse[]> {
+  ): Promise<ITask[]> {
     const userId = user.id
 
     if (externalSession) {
@@ -967,7 +955,7 @@ export class TaskService
     criteria: TaskCriteria,
     userId: Types.ObjectId,
     session: ClientSession
-  ): Promise<ITaskServerResponse[]> {
+  ): Promise<ITask[]> {
     const filter = this.repository.buildFilter(criteria, userId)
 
     const tasksToClone = await this.repository.find(
@@ -990,18 +978,28 @@ export class TaskService
 
     const transformedTasks: Omit<ITaskRaw, '_id'>[] = []
 
+    const categoryIds = Array.from(tasksGrouppedByCategory.keys())
+
+    const filterByCategories = this.repository.buildFilter({ categoryIds }, userId)
+
+    const existingTasksLite = await this.repository.find(
+      filterByCategories,
+      session,
+      'category_id order'
+    )
+
     for (const [categoryId, tasks] of tasksGrouppedByCategory) {
-      let newOrder = tasksToClone.filter((t) => t.category_id.toString() === categoryId).length + 1
+      const categoryTasks = existingTasksLite.filter((t) => t.category_id.toString() === categoryId)
+
+      let currentMaxOrder = categoryTasks.reduce((max, t) => (t.order > max ? t.order : max), 0)
 
       for (const task of tasks) {
         const cleanTask = {
           ...task,
           _id: undefined,
-          order: newOrder,
+          order: ++currentMaxOrder,
           name: `${task?.name}`,
         }
-
-        newOrder += 1
 
         transformedTasks.push(cleanTask)
       }
@@ -1021,14 +1019,14 @@ export class TaskService
       session
     )
 
-    return [...newTasks.map((nt) => toServerCaseKeys<ITaskServerResponse>(nt))]
+    return [...newTasks.map((nt) => toServerCaseKeys<ITask>(nt))]
   }
 
   public async clone(
     criteria: TaskCriteria,
     user: IUser,
     externalSession?: ClientSession
-  ): Promise<ITaskServerResponse[]> {
+  ): Promise<ITask[]> {
     const userId = user.id
 
     if (externalSession) {
@@ -1044,7 +1042,7 @@ export class TaskService
     categoryIdsMap: Map<string, string>,
     userId: Types.ObjectId,
     session: ClientSession
-  ): Promise<IOperationResult<ITaskServerResponse[]>> {
+  ): Promise<IOperationResult<ITask[]>> {
     const categoryIds = Array.from(categoryIdsMap.keys())
     const filter = this.repository.buildFilter({ categoryIds }, userId)
     const sourceTasks = await this.repository.find(filter, session)
@@ -1069,9 +1067,7 @@ export class TaskService
       session
     )
 
-    const clonedTasksTransformed = clonedTasks.map((cb) =>
-      toServerCaseKeys<ITaskServerResponse>(cb)
-    )
+    const clonedTasksTransformed = clonedTasks.map((cb) => toServerCaseKeys<ITask>(cb))
 
     return {
       entities: clonedTasksTransformed,
@@ -1096,9 +1092,9 @@ export class TaskService
     categoryIds: Types.ObjectId[],
     userId: Types.ObjectId,
     session?: ClientSession
-  ): Promise<IOperationResult<ITaskServerResponse[]>> {
+  ): Promise<IOperationResult<ITask[]>> {
     const filter = this.repository.buildFilter(
-      { categoryIds: categoryIds.map((id) => id.toString()) },
+      { categoryIds: categoryIds.map((id) => id.toString()), isDeleted: false },
       userId
     )
     const updatedTasks = await this.repository.updateByFilter(
@@ -1120,7 +1116,7 @@ export class TaskService
     )
 
     return {
-      entities: updatedTasks.map((c) => toServerCaseKeys<ITaskServerResponse>(c)),
+      entities: updatedTasks.map((c) => toServerCaseKeys<ITask>(c)),
       logIds: log.map((l) => l.id),
     }
   }
@@ -1129,7 +1125,7 @@ export class TaskService
     categoryIds: Types.ObjectId[],
     userId: Types.ObjectId,
     session?: ClientSession
-  ): Promise<IOperationResult<ITaskServerResponse[]>> {
+  ): Promise<IOperationResult<ITask[]>> {
     const filter = this.repository.buildFilter(
       { categoryIds: categoryIds.map((id) => id.toString()) },
       userId
@@ -1153,7 +1149,7 @@ export class TaskService
     )
 
     return {
-      entities: updatedTasks.map((c) => toServerCaseKeys<ITaskServerResponse>(c)),
+      entities: updatedTasks.map((c) => toServerCaseKeys<ITask>(c)),
       logIds: log.map((l) => l.id),
     }
   }
@@ -1178,8 +1174,9 @@ export class TaskService
     this.prepareTaskMainFields(data, taskPayload, timezone)
 
     if (data.order === undefined) {
-      const allTasksCount = await this.getCount({ categoryId: data.categoryId }, userId, session)
-      taskPayload.order = allTasksCount + 1
+      const lastOrder = await this.getLastOrder(data.categoryId, userId, session)
+
+      taskPayload.order = lastOrder + 1
     }
 
     return taskPayload
@@ -1203,7 +1200,7 @@ export class TaskService
       tasksGroupedByCategory[categoryId].push(task)
     })
 
-    const grouppedTasksCount = await this.getCountGrouppedByCategory(
+    const grouppedTasksCount = await this.getLastOrderGrouppedByCategory(
       Object.keys(tasksGroupedByCategory),
       userId,
       session
@@ -1220,12 +1217,11 @@ export class TaskService
       const existingCountEntry = grouppedTasksCount.find(
         (entry) => entry.category_id.toString() === categoryId
       )
-      let newOrder = existingCountEntry ? existingCountEntry.count : 0
+      let newOrder = existingCountEntry ? existingCountEntry.lastOrder : 0
 
       tasks.forEach((task) => {
         if (task.order === undefined) {
-          newOrder++
-          task.order = newOrder
+          task.order = ++newOrder
         }
       })
 
@@ -1306,39 +1302,62 @@ export class TaskService
     id: string,
     userId: Types.ObjectId,
     session?: ClientSession
-  ): Promise<ITaskServerResponse | null> {
+  ): Promise<ITask | null> {
     const task = await this.repository.findByIdAndUser(id, userId, session)
 
     return toServerCaseKeys(task)
   }
 
-  public async getCount(
-    criteria: TaskCriteria,
+  public async getLastOrder(
+    categoryId: string,
     userId: Types.ObjectId,
     session?: ClientSession
   ): Promise<number> {
-    const filter = this.repository.buildFilter(criteria, userId)
+    const filter = this.repository.buildFilter({ categoryId }, userId)
 
-    return this.repository.getCount(filter, session)
+    const existingTasksLite = await this.repository.find(filter, session, 'category_id order')
+
+    let currentMaxOrder = existingTasksLite.reduce((max, t) => (t.order > max ? t.order : max), 0)
+
+    return currentMaxOrder
   }
 
-  public async getCountGrouppedByCategory(
+  public async getLastOrderGrouppedByCategory(
     categoryIds: string[],
     userId: Types.ObjectId,
     session?: ClientSession
-  ): Promise<{ category_id: Types.ObjectId; count: number }[]> {
-    return this.repository.getCountGrouppedByCategories(
-      categoryIds.map((id) => new Types.ObjectId(id)),
-      userId,
-      session
+  ): Promise<{ category_id: Types.ObjectId; lastOrder: number }[]> {
+    const counts = []
+
+    const uniqueCategoryIds = Array.from(new Set(categoryIds))
+
+    const filterByCategories = this.repository.buildFilter(
+      { categoryIds: uniqueCategoryIds },
+      userId
     )
+
+    const existingTasksLite = await this.repository.find(
+      filterByCategories,
+      session,
+      'category_id order'
+    )
+
+    for (const categoryId of uniqueCategoryIds) {
+      const categoryTasks = existingTasksLite.filter((t) => t.category_id.toString() === categoryId)
+
+      let currentMaxOrder = categoryTasks.reduce((max, t) => (t.order > max ? t.order : max), 0)
+
+      counts.push({ category_id: new Types.ObjectId(categoryId), lastOrder: currentMaxOrder })
+    }
+
+    return counts
   }
 
   public async getAll(
     criteria: TaskCriteria,
     userId: Types.ObjectId,
     session?: ClientSession
-  ): Promise<ITaskServerResponse[]> {
+  ): Promise<ITask[]> {
     const filter = this.repository.buildFilter(criteria, userId)
     const tasks = await this.repository.find(filter, session)
 

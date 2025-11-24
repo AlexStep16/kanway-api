@@ -15,17 +15,26 @@ import { BoardEditDTO } from '@dtos/BoardEditDTO.ts'
 import { ReorderResultDTO } from '@dtos/ReorderResultDTO.ts'
 import { IOperationResult } from '@interfaces/IOperationResult.ts'
 import { CategoryService } from '@application/services/CategoryService.ts'
-import { NotFoundError } from '@/domain/errors/NotFound.ts'
+import { NotFoundError } from '@errors/NotFound.ts'
 import { TaskService } from '@application/services/TaskService.ts'
 import { IMoveResult } from '@interfaces/IMoveResult.ts'
 import { ClonedBoardsResult } from '@dtos/ClonedBoardsResult.ts'
-import { SingleUpdateDTO } from '../dtos/SingleUpdateDTO.ts'
-import { IUser } from '@/domain/entities/IUser.ts'
+import { SingleUpdateDTO } from '@dtos/SingleUpdateDTO.ts'
+import { IUser } from '@entities/IUser.ts'
+import { IBoardArchiveResponse } from '@application/interfaces/IBoardArchiveResponse.ts'
 
 const MAX_RETRIES = 3
 
 export class BoardService
-  implements IBaseService<IBoard, BoardCriteria, BoardDTO, BoardEditDTO, ClonedBoardsResult>
+  implements
+    IBaseService<
+      IBoard,
+      BoardCriteria,
+      BoardDTO,
+      BoardEditDTO,
+      ClonedBoardsResult,
+      IBoardArchiveResponse
+    >
 {
   protected repository: BoardRepository
   protected embeddingService: EmbeddingService
@@ -573,7 +582,7 @@ export class BoardService
     criteria: BoardCriteria,
     userId: Types.ObjectId,
     session: ClientSession
-  ): Promise<IBoard[]> {
+  ): Promise<IBoardArchiveResponse> {
     let reorderedBoards: ReorderResultDTO<IBoardRaw>[] = []
 
     const finalEntitiesMap = new Map<string, IBoardRaw>()
@@ -632,14 +641,18 @@ export class BoardService
       finalEntitiesMap.set(reorderedBoard._id.toString(), reorderedBoard)
     })
 
-    return Array.from(finalEntitiesMap.values()).map((board) => toServerCaseKeys<IBoard>(board))
+    return {
+      boards: Array.from(finalEntitiesMap.values()).map((board) => toServerCaseKeys<IBoard>(board)),
+      categories: archiveCategoriesResult.entities.categories,
+      tasks: archiveCategoriesResult.entities.tasks,
+    }
   }
 
   public async archive(
     criteria: BoardCriteria,
     user: IUser,
     externalSession?: ClientSession
-  ): Promise<IBoard[]> {
+  ): Promise<IBoardArchiveResponse> {
     const userId = user.id
 
     if (externalSession) {
@@ -760,18 +773,29 @@ export class BoardService
 
     const transformedBoards: Omit<IBoardRaw, '_id'>[] = []
 
+    const workspaceIds = Array.from(boardsGroupedByWorkspace.keys())
+
+    const filterByWorkspaces = this.repository.buildFilter({ workspaceIds }, userId)
+
+    const existingBoardsLite = await this.repository.find(
+      filterByWorkspaces,
+      session,
+      'workspace_id order'
+    )
+
     for (const [workspaceId, boards] of boardsGroupedByWorkspace) {
-      let newOrder =
-        boardsToClone.filter((t) => t.workspace_id.toString() === workspaceId).length + 1
+      const workspaceBoards = existingBoardsLite.filter(
+        (b) => b.workspace_id.toString() === workspaceId
+      )
+
+      let currentMaxOrder = workspaceBoards.reduce((max, t) => (t.order > max ? t.order : max), 0)
 
       for (const board of boards) {
         const cleanBoard = {
           ...board,
           _id: undefined,
-          order: newOrder,
+          order: ++currentMaxOrder,
         }
-
-        newOrder += 1
 
         transformedBoards.push(cleanBoard)
       }
@@ -844,9 +868,9 @@ export class BoardService
     workspaceIds: Types.ObjectId[],
     userId: Types.ObjectId,
     session?: ClientSession
-  ): Promise<IOperationResult<IBoard[]>> {
+  ): Promise<IOperationResult<IBoardArchiveResponse>> {
     const filter = this.repository.buildFilter(
-      { workspaceIds: workspaceIds.map((id) => id.toString()) },
+      { workspaceIds: workspaceIds.map((id) => id.toString()), isDeleted: false },
       userId
     )
     const updatedBoards = await this.repository.updateByFilter(
@@ -875,7 +899,11 @@ export class BoardService
     const combinedLogIds = log.map((l) => l.id).concat(archiveCategoriesResult.logIds)
 
     return {
-      entities: updatedBoards.map((wb) => toServerCaseKeys<IBoard>(wb)),
+      entities: {
+        boards: updatedBoards.map((wb) => toServerCaseKeys<IBoard>(wb)),
+        categories: archiveCategoriesResult.entities.categories,
+        tasks: archiveCategoriesResult.entities.tasks,
+      },
       logIds: combinedLogIds,
     }
   }
@@ -991,8 +1019,8 @@ export class BoardService
     }
 
     if (data.order === undefined) {
-      const allBoardsCount = await this.getCount({ workspaceId: data.workspaceId }, userId, session)
-      boardPayload.order = allBoardsCount + 1
+      const lastOrder = await this.getLastOrder(data.workspaceId, userId, session)
+      boardPayload.order = lastOrder + 1
     }
 
     return boardPayload
@@ -1015,7 +1043,7 @@ export class BoardService
       boardsGroupedByWorkspace[wsId].push(board)
     })
 
-    const grouppedBoardsCount = await this.getCountGrouppedByWorkspaces(
+    const grouppedBoardsCount = await this.getLastOrderGrouppedByWorkspace(
       Object.keys(boardsGroupedByWorkspace),
       userId,
       session
@@ -1032,12 +1060,11 @@ export class BoardService
       const existingCountEntry = grouppedBoardsCount.find(
         (entry) => entry.workspace_id.toString() === wsId
       )
-      let newOrder = existingCountEntry ? existingCountEntry.count : 0
+      let newOrder = existingCountEntry ? existingCountEntry.lastOrder : 0
 
       boards.forEach((board) => {
         if (board.order === undefined) {
-          newOrder++
-          board.order = newOrder
+          board.order = ++newOrder
         }
       })
 
@@ -1098,26 +1125,50 @@ export class BoardService
     return toServerCaseKeys(board)
   }
 
-  public async getCount(
-    criteria: BoardCriteria,
+  public async getLastOrder(
+    workspaceId: string,
     userId: Types.ObjectId,
     session?: ClientSession
   ): Promise<number> {
-    const filter = this.repository.buildFilter(criteria, userId)
+    const filter = this.repository.buildFilter({ workspaceId }, userId)
+    const existingBoardsLite = await this.repository.find(filter, session, 'workspace_id order')
 
-    return this.repository.getCount(filter, session)
+    let currentMaxOrder = existingBoardsLite.reduce((max, b) => (b.order > max ? b.order : max), 0)
+
+    return currentMaxOrder
   }
 
-  public async getCountGrouppedByWorkspaces(
+  public async getLastOrderGrouppedByWorkspace(
     workspaceIds: string[],
     userId: Types.ObjectId,
     session?: ClientSession
-  ): Promise<{ workspace_id: Types.ObjectId; count: number }[]> {
-    return this.repository.getCountGrouppedByWorkspaces(
-      workspaceIds.map((id) => new Types.ObjectId(id)),
-      userId,
-      session
+  ): Promise<{ workspace_id: Types.ObjectId; lastOrder: number }[]> {
+    const counts = []
+
+    const uniqueWorkspaceIds = Array.from(new Set(workspaceIds))
+
+    const filterByWorkspaces = this.repository.buildFilter(
+      { workspaceIds: uniqueWorkspaceIds },
+      userId
     )
+
+    const existingBoardsLite = await this.repository.find(
+      filterByWorkspaces,
+      session,
+      'workspace_id order'
+    )
+
+    for (const workspaceId of uniqueWorkspaceIds) {
+      const workspaceBoards = existingBoardsLite.filter(
+        (b) => b.workspace_id.toString() === workspaceId
+      )
+
+      let currentMaxOrder = workspaceBoards.reduce((max, b) => (b.order > max ? b.order : max), 0)
+
+      counts.push({ workspace_id: new Types.ObjectId(workspaceId), lastOrder: currentMaxOrder })
+    }
+
+    return counts
   }
 
   public async getAll(

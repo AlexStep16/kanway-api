@@ -7,9 +7,19 @@ export abstract class BaseController<
   TEntity,
   TCreateDTO,
   TCriteria,
-  TService extends IBaseService<TEntity, TCriteria, TCreateDTO, TEditDTO, TClonedResult>,
+  TService extends IBaseService<
+    TEntity,
+    TCriteria,
+    TCreateDTO,
+    TEditDTO,
+    TClonedResult,
+    TArchiveResult,
+    TCreateResult
+  >,
   TEditDTO,
-  TClonedResult
+  TClonedResult,
+  TArchiveResult,
+  TCreateResult = TEntity
 > {
   protected service: TService
 

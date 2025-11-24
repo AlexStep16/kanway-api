@@ -17,7 +17,8 @@ import { NotFoundError } from '@errors/NotFound.ts'
 import { BoardService } from '@application/services/BoardService.ts'
 import { ClonedWorkspacesResult } from '@dtos/ClonedWorkspacesResult.ts'
 import { SingleUpdateDTO } from '../dtos/SingleUpdateDTO.ts'
-import { IUser } from '@/domain/entities/IUser.ts'
+import { IUser } from '@entities/IUser.ts'
+import { IWorkspaceArchiveResponse } from '@application/interfaces/IWorkspaceArchiveResponse.ts'
 
 const MAX_RETRIES = 3
 
@@ -28,7 +29,8 @@ export class WorkspaceService
       WorkspaceCriteria,
       WorkspaceDTO,
       WorkspaceEditDTO,
-      ClonedWorkspacesResult
+      ClonedWorkspacesResult,
+      IWorkspaceArchiveResponse
     >
 {
   protected repository: WorkspaceRepository
@@ -486,7 +488,7 @@ export class WorkspaceService
     criteria: WorkspaceCriteria,
     userId: Types.ObjectId,
     session: ClientSession
-  ): Promise<IWorkspace[]> {
+  ): Promise<IWorkspaceArchiveResponse> {
     let reorderedWorkspaces: ReorderResultDTO<IWorkspaceRaw>[] = []
 
     const finalEntitiesMap = new Map<string, IWorkspaceRaw>()
@@ -544,16 +546,21 @@ export class WorkspaceService
       finalEntitiesMap.set(reorderedWorkspace._id.toString(), reorderedWorkspace)
     })
 
-    return Array.from(finalEntitiesMap.values()).map((workspace) =>
-      toServerCaseKeys<IWorkspace>(workspace)
-    )
+    return {
+      workspaces: Array.from(finalEntitiesMap.values()).map((workspace) =>
+        toServerCaseKeys<IWorkspace>(workspace)
+      ),
+      boards: archiveBoardsResult.entities.boards,
+      categories: archiveBoardsResult.entities.categories,
+      tasks: archiveBoardsResult.entities.tasks,
+    }
   }
 
   public async archive(
     criteria: WorkspaceCriteria,
     user: IUser,
     externalSession?: ClientSession
-  ): Promise<IWorkspace[]> {
+  ): Promise<IWorkspaceArchiveResponse> {
     const userId = user.id
 
     if (externalSession) {
@@ -661,7 +668,7 @@ export class WorkspaceService
       '+embeddings -createdAt -updatedAt'
     )
 
-    const allWorkspacesCount = await this.getCount({}, userId, session)
+    let lastOrder = await this.getLastOrder('', userId, session)
 
     if (workspacesToClone.length === 0)
       throw new NotFoundError('Пространства для клонирования не найдены.')
@@ -669,12 +676,10 @@ export class WorkspaceService
     const transformedWorkspaces: Omit<IWorkspaceRaw, '_id'>[] = []
 
     for (const workspace of workspacesToClone) {
-      let newOrder = allWorkspacesCount + 1
-
       const cleanWorkspace = {
         ...workspace,
         _id: undefined,
-        order: newOrder,
+        order: ++lastOrder,
       }
 
       transformedWorkspaces.push(cleanWorkspace)
@@ -745,8 +750,8 @@ export class WorkspaceService
     }
 
     if (data.order === undefined) {
-      const allWorkspacesCount = await this.getCount({}, userId, session)
-      workspacePayload.order = allWorkspacesCount + 1
+      const lastOrder = await this.getLastOrder('', userId, session)
+      workspacePayload.order = lastOrder + 1
     }
 
     return workspacePayload
@@ -757,8 +762,8 @@ export class WorkspaceService
     userId: Types.ObjectId,
     session?: ClientSession
   ) {
-    const allWorkspacesCount = await this.getCount({}, userId, session)
-    let newOrder = allWorkspacesCount + 1
+    const lastOrder = await this.getLastOrder('', userId, session)
+    let newOrder = lastOrder + 1
 
     const workspaceNames = data.map((workspace) => workspace.name.trim())
     const embeddingsArray = await this.embeddingService.getEmbeddingsForMultipleTexts(
@@ -826,14 +831,21 @@ export class WorkspaceService
     return toServerCaseKeys(workspace)
   }
 
-  public async getCount(
-    criteria: WorkspaceCriteria,
+  public async getLastOrder(
+    _: string,
     userId: Types.ObjectId,
     session?: ClientSession
   ): Promise<number> {
-    const filter = this.repository.buildFilter(criteria, userId)
+    const filter = this.repository.buildFilter({}, userId)
 
-    return this.repository.getCount(filter, session)
+    const existingWorkspacesLite = await this.repository.find(filter, session, 'order')
+
+    let currentMaxOrder = existingWorkspacesLite.reduce(
+      (max, w) => (w.order > max ? w.order : max),
+      0
+    )
+
+    return currentMaxOrder
   }
 
   public async getAll(

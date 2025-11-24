@@ -7,6 +7,8 @@ import { Request, Response, NextFunction } from 'express'
 import SuccessResponse from '@application/services/SuccessResponse.ts'
 import { CategoryEditDTO } from '@dtos/CategoryEditDTO.ts'
 import { ClonedCategoriesResult } from '@dtos/ClonedCategoriesResult.ts'
+import { ICategoryArchiveResponse } from '@application/interfaces/ICategoryArchiveResponse.ts'
+import { ICategoryWithTempClientId } from '@application/interfaces/ICategoryWithTempClientId.ts'
 
 export default class CategoryController extends BaseController<
   ICategory,
@@ -14,7 +16,9 @@ export default class CategoryController extends BaseController<
   CategoryCriteria,
   CategoryService,
   CategoryEditDTO,
-  ClonedCategoriesResult
+  ClonedCategoriesResult,
+  ICategoryArchiveResponse,
+  ICategoryWithTempClientId
 > {
   constructor(serviceInstance: CategoryService) {
     super(serviceInstance)

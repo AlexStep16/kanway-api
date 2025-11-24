@@ -1,4 +1,3 @@
-import { ICategoryServerResponse } from '@entities/ICategoryServerResponse.ts'
 import { ICategoryRaw } from '@entities/ICategoryRaw.ts'
 import CategoryRepository from '@repositories/CategoryRepository.ts'
 import { CategoryDTO } from '@application/dtos/CategoryDTO.ts'
@@ -20,19 +19,22 @@ import { IMoveResult } from '@interfaces/IMoveResult.ts'
 import { BoardService } from '@application/services/BoardService.ts'
 import { ClonedCategoriesResult } from '@dtos/ClonedCategoriesResult.ts'
 import { SingleUpdateDTO } from '../dtos/SingleUpdateDTO.ts'
-import { ICategory } from '@/domain/entities/ICategory.ts'
-import { IUser } from '@/domain/entities/IUser.ts'
+import { ICategory } from '@entities/ICategory.ts'
+import { IUser } from '@entities/IUser.ts'
+import { ICategoryArchiveResponse } from '@application/interfaces/ICategoryArchiveResponse.ts'
+import { ICategoryWithTempClientId } from '@application/interfaces/ICategoryWithTempClientId.ts'
 
 const MAX_RETRIES = 3
 
 export class CategoryService
   implements
     IBaseService<
-      ICategoryServerResponse,
+      ICategory,
       CategoryCriteria,
       CategoryDTO,
       CategoryEditDTO,
-      ClonedCategoriesResult
+      ClonedCategoriesResult,
+      ICategoryArchiveResponse
     >
 {
   protected repository: CategoryRepository
@@ -91,10 +93,10 @@ export class CategoryService
     data: CategoryDTO,
     userId: Types.ObjectId,
     session: ClientSession
-  ): Promise<ICategoryServerResponse[]> {
+  ): Promise<ICategoryWithTempClientId[]> {
     let reorderedCategories: ReorderResultDTO<ICategoryRaw>[] = []
 
-    const finalEntitiesMap = new Map<string, ICategoryServerResponse>()
+    const finalEntitiesMap = new Map<string, ICategory>()
     const tempClientId = data.id
 
     delete data.id // Remove temp client ID before creation
@@ -133,7 +135,7 @@ export class CategoryService
       session
     )
 
-    const toServerCaseCategory = toServerCaseKeys<ICategoryServerResponse>(newCategory)
+    const toServerCaseCategory = toServerCaseKeys<ICategoryWithTempClientId>(newCategory)
     toServerCaseCategory.tempClientId = tempClientId // Attach temp client ID back to the response to connect with client-side entity
 
     finalEntitiesMap.set(toServerCaseCategory.id.toString(), toServerCaseCategory)
@@ -144,7 +146,7 @@ export class CategoryService
       reorderedEntities.forEach((reorderedCategory) => {
         finalEntitiesMap.set(
           reorderedCategory._id.toString(),
-          toServerCaseKeys<ICategoryServerResponse>(reorderedCategory)
+          toServerCaseKeys<ICategory>(reorderedCategory)
         )
       })
     }
@@ -156,7 +158,7 @@ export class CategoryService
     data: CategoryDTO,
     user: IUser,
     externalSession?: ClientSession
-  ): Promise<ICategoryServerResponse[]> {
+  ): Promise<ICategoryWithTempClientId[]> {
     const userId = user.id
 
     if (externalSession) {
@@ -172,10 +174,10 @@ export class CategoryService
     data: CategoryDTO[],
     userId: Types.ObjectId,
     session: ClientSession
-  ): Promise<ICategoryServerResponse[]> {
+  ): Promise<ICategoryWithTempClientId[]> {
     let reorderedCategories: ReorderResultDTO<ICategoryRaw>[] = []
 
-    const finalEntitiesMap = new Map<string, ICategoryServerResponse>()
+    const finalEntitiesMap = new Map<string, ICategory>()
     const categoriesPayload = await this.prepareCategoriesCreationPayload(data, userId, session)
 
     /* CREATE */
@@ -212,7 +214,7 @@ export class CategoryService
     )
 
     const toServerCaseKeysCategories = newCategories.map((nc, index) => {
-      const transformed = toServerCaseKeys<ICategoryServerResponse>(nc)
+      const transformed = toServerCaseKeys<ICategoryWithTempClientId>(nc)
 
       transformed.tempClientId = data[index].id // Attach temp client ID back to the response to connect with client-side entity
 
@@ -229,7 +231,7 @@ export class CategoryService
       reorderedEntities.forEach((reorderedCategory) => {
         finalEntitiesMap.set(
           reorderedCategory._id.toString(),
-          toServerCaseKeys<ICategoryServerResponse>(reorderedCategory)
+          toServerCaseKeys<ICategory>(reorderedCategory)
         )
       })
     }
@@ -241,7 +243,7 @@ export class CategoryService
     data: CategoryDTO[],
     user: IUser,
     externalSession?: ClientSession
-  ): Promise<ICategoryServerResponse[]> {
+  ): Promise<ICategory[]> {
     const userId = user.id
 
     if (externalSession) {
@@ -258,7 +260,7 @@ export class CategoryService
     criteria: CategoryCriteria,
     userId: Types.ObjectId,
     session: ClientSession
-  ): Promise<ICategoryServerResponse[]> {
+  ): Promise<ICategory[]> {
     let reorderedCategories: ReorderResultDTO<ICategoryRaw>[] = []
     let dependencies: Types.ObjectId[] = []
 
@@ -343,7 +345,7 @@ export class CategoryService
     }
 
     return Array.from(finalEntitiesMap.values()).map((category) =>
-      toServerCaseKeys<ICategoryServerResponse>(category)
+      toServerCaseKeys<ICategory>(category)
     )
   }
 
@@ -352,7 +354,7 @@ export class CategoryService
     criteria: CategoryCriteria,
     user: IUser,
     externalSession?: ClientSession
-  ): Promise<ICategoryServerResponse[]> {
+  ): Promise<ICategory[]> {
     const userId = user.id
 
     if (externalSession) {
@@ -469,7 +471,7 @@ export class CategoryService
     }
 
     return Array.from(finalEntitiesMap.values()).map((category) =>
-      toServerCaseKeys<ICategoryServerResponse>(category)
+      toServerCaseKeys<ICategory>(category)
     )
   }
 
@@ -477,7 +479,7 @@ export class CategoryService
     data: CategoryEditDTO[],
     user: IUser,
     externalSession?: ClientSession
-  ): Promise<ICategoryServerResponse[]> {
+  ): Promise<ICategory[]> {
     const userId = user.id
 
     if (externalSession) {
@@ -672,7 +674,7 @@ export class CategoryService
     )
 
     return {
-      entities: updatedCategories.map((c) => toServerCaseKeys<ICategoryServerResponse>(c)),
+      entities: updatedCategories.map((c) => toServerCaseKeys<ICategory>(c)),
       logIds: [log[0].id],
     }
   }
@@ -685,7 +687,7 @@ export class CategoryService
     },
     userId: Types.ObjectId,
     session?: ClientSession
-  ): Promise<IOperationResult<ICategoryServerResponse[]>> {
+  ): Promise<IOperationResult<ICategory[]>> {
     const filter = this.repository.buildFilter(
       { boardIds: boardIds.map((id) => id.toString()) },
       userId
@@ -713,7 +715,7 @@ export class CategoryService
     )
 
     return {
-      entities: updatedCategories.map((c) => toServerCaseKeys<ICategoryServerResponse>(c)),
+      entities: updatedCategories.map((c) => toServerCaseKeys<ICategory>(c)),
       logIds: [log[0].id],
     }
   }
@@ -722,7 +724,7 @@ export class CategoryService
     criteria: CategoryCriteria,
     userId: Types.ObjectId,
     session: ClientSession
-  ): Promise<ICategoryServerResponse[]> {
+  ): Promise<ICategory[]> {
     let reorderedCategories: ReorderResultDTO<ICategoryRaw>[] = []
     const filter = this.repository.buildFilter(criteria, userId)
 
@@ -749,14 +751,14 @@ export class CategoryService
 
     const reorderedEntities = reorderedCategories.map((r) => r.updatedEntities).flat()
 
-    return [...reorderedEntities.map((re) => toServerCaseKeys<ICategoryServerResponse>(re))]
+    return [...reorderedEntities.map((re) => toServerCaseKeys<ICategory>(re))]
   }
 
   public async delete(
     criteria: CategoryCriteria,
     user: IUser,
     externalSession?: ClientSession
-  ): Promise<ICategoryServerResponse[]> {
+  ): Promise<ICategory[]> {
     const userId = user.id
 
     if (externalSession) {
@@ -772,7 +774,7 @@ export class CategoryService
     criteria: CategoryCriteria,
     userId: Types.ObjectId,
     session: ClientSession
-  ): Promise<ICategoryServerResponse[]> {
+  ): Promise<ICategoryArchiveResponse> {
     let reorderedCategories: ReorderResultDTO<ICategoryRaw>[] = []
 
     const filter = this.repository.buildFilter(criteria, userId)
@@ -829,16 +831,19 @@ export class CategoryService
       finalEntitiesMap.set(reorderedCategory._id.toString(), reorderedCategory)
     })
 
-    return Array.from(finalEntitiesMap.values()).map((category) =>
-      toServerCaseKeys<ICategoryServerResponse>(category)
-    )
+    return {
+      categories: Array.from(finalEntitiesMap.values()).map((category) =>
+        toServerCaseKeys<ICategory>(category)
+      ),
+      tasks: archiveTasksResult.entities,
+    }
   }
 
   public async archive(
     criteria: CategoryCriteria,
     user: IUser,
     externalSession?: ClientSession
-  ): Promise<ICategoryServerResponse[]> {
+  ): Promise<ICategoryArchiveResponse> {
     const userId = user.id
 
     if (externalSession) {
@@ -854,7 +859,7 @@ export class CategoryService
     criteria: CategoryCriteria,
     userId: Types.ObjectId,
     session: ClientSession
-  ): Promise<ICategoryServerResponse[]> {
+  ): Promise<ICategory[]> {
     let reorderedCategories: ReorderResultDTO<ICategoryRaw>[] = []
 
     const finalEntitiesMap = new Map<string, ICategoryRaw>()
@@ -915,7 +920,7 @@ export class CategoryService
     })
 
     return Array.from(finalEntitiesMap.values()).map((category) =>
-      toServerCaseKeys<ICategoryServerResponse>(category)
+      toServerCaseKeys<ICategory>(category)
     )
   }
 
@@ -923,7 +928,7 @@ export class CategoryService
     criteria: CategoryCriteria,
     user: IUser,
     externalSession?: ClientSession
-  ): Promise<ICategoryServerResponse[]> {
+  ): Promise<ICategory[]> {
     const userId = user.id
 
     if (externalSession) {
@@ -963,17 +968,29 @@ export class CategoryService
 
     const transformedCategories: Omit<ICategoryRaw, '_id'>[] = []
 
+    const boardIds = Array.from(categoriesGroupedByBoard.keys())
+
+    const filterByBoards = this.repository.buildFilter({ boardIds }, userId)
+
+    const existingCategoriesLite = await this.repository.find(
+      filterByBoards,
+      session,
+      'board_id order'
+    )
+
     for (const [boardId, categories] of categoriesGroupedByBoard) {
-      let newOrder = categoriesToClone.filter((t) => t.board_id.toString() === boardId).length + 1
+      const boardCategories = existingCategoriesLite.filter(
+        (c) => c.board_id.toString() === boardId
+      )
+
+      let currentMaxOrder = boardCategories.reduce((max, t) => (t.order > max ? t.order : max), 0)
 
       for (const category of categories) {
         const cleanCategory = {
           ...category,
           _id: undefined,
-          order: newOrder,
+          order: ++currentMaxOrder,
         }
-
-        newOrder += 1
 
         transformedCategories.push(cleanCategory)
       }
@@ -1005,7 +1022,7 @@ export class CategoryService
     )
 
     return {
-      categories: newCategories.map((cb) => toServerCaseKeys<ICategoryServerResponse>(cb)),
+      categories: newCategories.map((cb) => toServerCaseKeys<ICategory>(cb)),
       tasks: cloneTasksResult.entities,
     }
   }
@@ -1043,9 +1060,9 @@ export class CategoryService
     boardIds: Types.ObjectId[],
     userId: Types.ObjectId,
     session?: ClientSession
-  ): Promise<IOperationResult<ICategoryServerResponse[]>> {
+  ): Promise<IOperationResult<ICategoryArchiveResponse>> {
     const filter = this.repository.buildFilter(
-      { boardIds: boardIds.map((id) => id.toString()) },
+      { boardIds: boardIds.map((id) => id.toString()), isDeleted: false },
       userId
     )
     const updatedCategories = await this.repository.updateByFilter(
@@ -1074,7 +1091,10 @@ export class CategoryService
     const combinedLogIds = log.map((l) => l.id).concat(archiveTasksResult.logIds)
 
     return {
-      entities: updatedCategories.map((c) => toServerCaseKeys<ICategoryServerResponse>(c)),
+      entities: {
+        categories: updatedCategories.map((c) => toServerCaseKeys<ICategory>(c)),
+        tasks: archiveTasksResult.entities,
+      },
       logIds: combinedLogIds,
     }
   }
@@ -1083,7 +1103,7 @@ export class CategoryService
     boardIds: Types.ObjectId[],
     userId: Types.ObjectId,
     session?: ClientSession
-  ): Promise<IOperationResult<ICategoryServerResponse[]>> {
+  ): Promise<IOperationResult<ICategory[]>> {
     const filter = this.repository.buildFilter(
       { boardIds: boardIds.map((id) => id.toString()) },
       userId
@@ -1114,7 +1134,7 @@ export class CategoryService
     const combinedLogIds = log.map((l) => l.id).concat(recoverTasksResult.logIds)
 
     return {
-      entities: updatedCategories.map((c) => toServerCaseKeys<ICategoryServerResponse>(c)),
+      entities: updatedCategories.map((c) => toServerCaseKeys<ICategory>(c)),
       logIds: combinedLogIds,
     }
   }
@@ -1161,7 +1181,7 @@ export class CategoryService
     const combinedLogIds = logs.map((log) => log.id).concat(tasksCloneResult.logIds)
 
     const clonedCategoriesTransformed = clonedCategories.map((cb) =>
-      toServerCaseKeys<ICategoryServerResponse>(cb)
+      toServerCaseKeys<ICategory>(cb)
     )
 
     return {
@@ -1189,8 +1209,8 @@ export class CategoryService
     }
 
     if (data.order === undefined) {
-      const allCategoriesCount = await this.getCount({ boardId: data.boardId }, userId, session)
-      categoryPayload.order = allCategoriesCount + 1
+      const lastOrder = await this.getLastOrder(data.boardId, userId, session)
+      categoryPayload.order = lastOrder + 1
     }
 
     return categoryPayload
@@ -1213,7 +1233,7 @@ export class CategoryService
       categoriesGroupedByBoard[boardId].push(category)
     })
 
-    const grouppedCategoriesCount = await this.getCountGrouppedByBoards(
+    const grouppedCategoriesCount = await this.getLastOrderGrouppedByBoard(
       Object.keys(categoriesGroupedByBoard),
       userId,
       session
@@ -1230,12 +1250,11 @@ export class CategoryService
       const existingCountEntry = grouppedCategoriesCount.find(
         (entry) => entry.board_id.toString() === boardId
       )
-      let newOrder = existingCountEntry ? existingCountEntry.count : 0
+      let newOrder = existingCountEntry ? existingCountEntry.lastOrder : 0
 
       categories.forEach((category) => {
         if (category.order === undefined) {
-          newOrder++
-          category.order = newOrder
+          category.order = ++newOrder
         }
       })
 
@@ -1290,39 +1309,62 @@ export class CategoryService
     id: string,
     userId: Types.ObjectId,
     session?: ClientSession
-  ): Promise<ICategoryServerResponse | null> {
+  ): Promise<ICategory | null> {
     const category = await this.repository.findByIdAndUser(id, userId, session)
 
     return toServerCaseKeys(category)
   }
 
-  public async getCount(
-    criteria: CategoryCriteria,
+  public async getLastOrder(
+    boardId: string,
     userId: Types.ObjectId,
     session?: ClientSession
   ): Promise<number> {
-    const filter = this.repository.buildFilter(criteria, userId)
+    const filter = this.repository.buildFilter({ boardId }, userId)
+    const existingCategoriesLite = await this.repository.find(filter, session, 'board_id order')
 
-    return this.repository.getCount(filter, session)
+    let currentMaxOrder = existingCategoriesLite.reduce(
+      (max, c) => (c.order > max ? c.order : max),
+      0
+    )
+
+    return currentMaxOrder
   }
 
-  public async getCountGrouppedByBoards(
+  public async getLastOrderGrouppedByBoard(
     boardIds: string[],
     userId: Types.ObjectId,
     session?: ClientSession
-  ): Promise<{ board_id: Types.ObjectId; count: number }[]> {
-    return this.repository.getCountGrouppedByBoards(
-      boardIds.map((id) => new Types.ObjectId(id)),
-      userId,
-      session
+  ): Promise<{ board_id: Types.ObjectId; lastOrder: number }[]> {
+    const counts = []
+
+    const uniqueBoardIds = Array.from(new Set(boardIds))
+
+    const filterByBoards = this.repository.buildFilter({ boardIds: uniqueBoardIds }, userId)
+
+    const existingCategoriesLite = await this.repository.find(
+      filterByBoards,
+      session,
+      'board_id order'
     )
+
+    for (const boardId of uniqueBoardIds) {
+      const boardCategories = existingCategoriesLite.filter(
+        (c) => c.board_id.toString() === boardId
+      )
+      let currentMaxOrder = boardCategories.reduce((max, c) => (c.order > max ? c.order : max), 0)
+
+      counts.push({ board_id: new Types.ObjectId(boardId), lastOrder: currentMaxOrder })
+    }
+
+    return counts
   }
 
   public async getAll(
     criteria: CategoryCriteria,
     userId: Types.ObjectId,
     session?: ClientSession
-  ): Promise<ICategoryServerResponse[]> {
+  ): Promise<ICategory[]> {
     const filter = this.repository.buildFilter(criteria, userId)
     const categories = await this.repository.find(filter, session)
 
