@@ -1125,6 +1125,16 @@ export class BoardService
     return toServerCaseKeys(board)
   }
 
+  public async getCount(
+    criteria: BoardCriteria,
+    userId: Types.ObjectId,
+    session?: ClientSession
+  ): Promise<number> {
+    const filter = this.repository.buildFilter(criteria, userId)
+
+    return await this.repository.getCount(filter, session)
+  }
+
   public async getLastOrder(
     workspaceId: string,
     userId: Types.ObjectId,

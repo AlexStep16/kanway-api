@@ -1308,6 +1308,16 @@ export class TaskService
     return toServerCaseKeys(task)
   }
 
+  public async getCount(
+    criteria: TaskCriteria,
+    userId: Types.ObjectId,
+    session?: ClientSession
+  ): Promise<number> {
+    const filter = this.repository.buildFilter(criteria, userId)
+
+    return await this.repository.getCount(filter, session)
+  }
+
   public async getLastOrder(
     categoryId: string,
     userId: Types.ObjectId,

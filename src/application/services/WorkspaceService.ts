@@ -831,6 +831,16 @@ export class WorkspaceService
     return toServerCaseKeys(workspace)
   }
 
+  public async getCount(
+    criteria: WorkspaceCriteria,
+    userId: Types.ObjectId,
+    session?: ClientSession
+  ): Promise<number> {
+    const filter = this.repository.buildFilter(criteria, userId)
+
+    return await this.repository.getCount(filter, session)
+  }
+
   public async getLastOrder(
     _: string,
     userId: Types.ObjectId,

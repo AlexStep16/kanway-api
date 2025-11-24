@@ -9,6 +9,7 @@ import { IGetLastOrderService } from '@traits/IGetLastOrderService.ts'
 import { IRecoverService } from '@traits/IRecoverService.ts'
 import { ICloneService } from '@traits/ICloneService.ts'
 import { IEditManyService } from '@traits/IEditManyService.ts'
+import { IGetCountService } from '@traits/IGetCountService.ts'
 
 export interface IBaseService<
   TEntity,
@@ -21,6 +22,7 @@ export interface IBaseService<
 > extends ICreateService<TCreateResult, TCreateDTO>,
     ICreateManyService<TCreateDTO, TEntity>,
     IGetByIdService<TEntity>,
+    IGetCountService<TCriteria>,
     IGetLastOrderService,
     IGetAllService<TCriteria, TEntity>,
     IEditService<TCriteria, TEntity, TEditDTO>,

@@ -1315,6 +1315,16 @@ export class CategoryService
     return toServerCaseKeys(category)
   }
 
+  public async getCount(
+    criteria: CategoryCriteria,
+    userId: Types.ObjectId,
+    session?: ClientSession
+  ): Promise<number> {
+    const filter = this.repository.buildFilter(criteria, userId)
+
+    return await this.repository.getCount(filter, session)
+  }
+
   public async getLastOrder(
     boardId: string,
     userId: Types.ObjectId,
