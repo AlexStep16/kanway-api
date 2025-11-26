@@ -25,10 +25,7 @@ export default class ArchiveController {
 
   public async getAllArchivedTasks(req: Request, res: Response, next: NextFunction) {
     try {
-      const entities = await this.taskService.getAll(
-        { isDeleted: true, isDeletedExternal: false },
-        req.user!.id
-      )
+      const entities = await this.taskService.getAll({ isDeleted: true }, req.user!.id)
 
       res.status(200).json(new SuccessResponse(entities))
     } catch (error) {
@@ -38,10 +35,7 @@ export default class ArchiveController {
 
   public async getAllArchivedCategories(req: Request, res: Response, next: NextFunction) {
     try {
-      const entities = await this.categoryService.getAll(
-        { isDeleted: true, isDeletedExternal: false },
-        req.user!.id
-      )
+      const entities = await this.categoryService.getAll({ isDeleted: true }, req.user!.id)
 
       res.status(200).json(new SuccessResponse(entities))
     } catch (error) {
@@ -51,10 +45,7 @@ export default class ArchiveController {
 
   public async getAllArchivedBoards(req: Request, res: Response, next: NextFunction) {
     try {
-      const entities = await this.boardService.getAll(
-        { isDeleted: true, isDeletedExternal: false },
-        req.user!.id
-      )
+      const entities = await this.boardService.getAll({ isDeleted: true }, req.user!.id)
 
       res.status(200).json(new SuccessResponse(entities))
     } catch (error) {
