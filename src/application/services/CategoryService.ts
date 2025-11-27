@@ -11,18 +11,19 @@ import { CollectionsEnum } from '@domain/enums/CollectionsEnum.ts'
 import { ReorderService } from '@application/services/ReorderService.ts'
 import { toServerCaseKeys, toMongoCaseKeys } from '@utils/objectTransformers.ts'
 import { CategoryEditDTO } from '@dtos/CategoryEditDTO.ts'
-import { ReorderResultDTO } from '@dtos/ReorderResultDTO.ts'
-import { IOperationResult } from '@interfaces/IOperationResult.ts'
 import { NotFoundError } from '@errors/NotFound.ts'
 import { TaskService } from '@application/services/TaskService.ts'
-import { IMoveResult } from '@interfaces/IMoveResult.ts'
 import { BoardService } from '@application/services/BoardService.ts'
 import { ClonedCategoriesResult } from '@dtos/ClonedCategoriesResult.ts'
 import { SingleUpdateDTO } from '../dtos/SingleUpdateDTO.ts'
 import { ICategory } from '@entities/ICategory.ts'
 import { IUser } from '@entities/IUser.ts'
-import { ICategoryArchiveResponse } from '@application/interfaces/ICategoryArchiveResponse.ts'
+import { ICategoriesWithChildrenResponse } from '@/application/interfaces/ICategoriesWithChildrenResponse.ts'
 import { ICategoryWithTempClientId } from '@application/interfaces/ICategoryWithTempClientId.ts'
+import { projectProperties } from '@/utils/projectProperties.ts'
+import { IResponseWithLog } from '@interfaces/IResponseWithLog.ts'
+import { IOperationLog } from '@/domain/entities/IOperationLog.ts'
+import { IUndoResponse } from '../interfaces/IUndoResponse.ts'
 
 const MAX_RETRIES = 3
 
@@ -34,7 +35,7 @@ export class CategoryService
       CategoryDTO,
       CategoryEditDTO,
       ClonedCategoriesResult,
-      ICategoryArchiveResponse
+      ICategoriesWithChildrenResponse
     >
 {
   protected repository: CategoryRepository
@@ -93,8 +94,8 @@ export class CategoryService
     data: CategoryDTO,
     userId: Types.ObjectId,
     session: ClientSession
-  ): Promise<ICategoryWithTempClientId[]> {
-    let reorderedCategories: ReorderResultDTO<ICategoryRaw>[] = []
+  ): Promise<IResponseWithLog<ICategoryWithTempClientId[]>> {
+    let reorderedCategories: ICategoryRaw[] = []
 
     const finalEntitiesMap = new Map<string, ICategory>()
     const tempClientId = data.id
@@ -111,25 +112,18 @@ export class CategoryService
       reorderedCategories = await this.reorderService.reorder(
         'board_id',
         [newCategory],
-        CollectionsEnum.CATEGORIES,
         userId,
         session
       )
     }
 
     /* LOG */
-    let dependencies: Types.ObjectId[] = []
-
-    reorderedCategories.forEach((r) => {
-      if (r.log) dependencies.push(r.log.id)
-    })
-
-    await this.operationLogService.create(
+    const log = await this.operationLogService.create(
       {
         operationType: OperationTypesEnum.CREATE,
         collectionName: CollectionsEnum.CATEGORIES,
         entitiesAfter: [newCategory],
-        dependencies,
+        dependencies: [],
       },
       userId,
       session
@@ -141,9 +135,7 @@ export class CategoryService
     finalEntitiesMap.set(toServerCaseCategory.id.toString(), toServerCaseCategory)
 
     if (reorderedCategories.length > 0) {
-      const reorderedEntities = reorderedCategories.map((r) => r.updatedEntities).flat()
-
-      reorderedEntities.forEach((reorderedCategory) => {
+      reorderedCategories.forEach((reorderedCategory) => {
         finalEntitiesMap.set(
           reorderedCategory._id.toString(),
           toServerCaseKeys<ICategory>(reorderedCategory)
@@ -151,14 +143,17 @@ export class CategoryService
       })
     }
 
-    return Array.from(finalEntitiesMap.values())
+    return {
+      data: Array.from(finalEntitiesMap.values()),
+      logId: log[0].id,
+    }
   }
 
   public async create(
     data: CategoryDTO,
     user: IUser,
     externalSession?: ClientSession
-  ): Promise<ICategoryWithTempClientId[]> {
+  ): Promise<IResponseWithLog<ICategoryWithTempClientId[]>> {
     const userId = user.id
 
     if (externalSession) {
@@ -174,8 +169,8 @@ export class CategoryService
     data: CategoryDTO[],
     userId: Types.ObjectId,
     session: ClientSession
-  ): Promise<ICategoryWithTempClientId[]> {
-    let reorderedCategories: ReorderResultDTO<ICategoryRaw>[] = []
+  ): Promise<IResponseWithLog<ICategoryWithTempClientId[]>> {
+    let reorderedCategories: ICategoryRaw[] = []
 
     const finalEntitiesMap = new Map<string, ICategory>()
     const categoriesPayload = await this.prepareCategoriesCreationPayload(data, userId, session)
@@ -189,25 +184,18 @@ export class CategoryService
       reorderedCategories = await this.reorderService.reorder(
         'board_id',
         newCategories,
-        CollectionsEnum.CATEGORIES,
         userId,
         session
       )
     }
 
     /* LOG */
-    let dependencies: Types.ObjectId[] = []
-
-    reorderedCategories.forEach((r) => {
-      if (r.log) dependencies.push(r.log.id)
-    })
-
-    await this.operationLogService.create(
+    const log = await this.operationLogService.create(
       {
         operationType: OperationTypesEnum.CREATE,
         collectionName: CollectionsEnum.CATEGORIES,
         entitiesAfter: newCategories,
-        dependencies,
+        dependencies: [],
       },
       userId,
       session
@@ -226,9 +214,7 @@ export class CategoryService
     })
 
     if (reorderedCategories.length > 0) {
-      const reorderedEntities = reorderedCategories.map((r) => r.updatedEntities).flat()
-
-      reorderedEntities.forEach((reorderedCategory) => {
+      reorderedCategories.forEach((reorderedCategory) => {
         finalEntitiesMap.set(
           reorderedCategory._id.toString(),
           toServerCaseKeys<ICategory>(reorderedCategory)
@@ -236,14 +222,17 @@ export class CategoryService
       })
     }
 
-    return Array.from(finalEntitiesMap.values())
+    return {
+      data: Array.from(finalEntitiesMap.values()),
+      logId: log[0].id,
+    }
   }
 
   public async createMany(
     data: CategoryDTO[],
     user: IUser,
     externalSession?: ClientSession
-  ): Promise<ICategory[]> {
+  ): Promise<IResponseWithLog<ICategory[]>> {
     const userId = user.id
 
     if (externalSession) {
@@ -260,9 +249,8 @@ export class CategoryService
     criteria: CategoryCriteria,
     userId: Types.ObjectId,
     session: ClientSession
-  ): Promise<ICategory[]> {
-    let reorderedCategories: ReorderResultDTO<ICategoryRaw>[] = []
-    let dependencies: Types.ObjectId[] = []
+  ): Promise<IResponseWithLog<ICategory[]>> {
+    let reorderedCategories: ICategoryRaw[] = []
 
     const finalEntitiesMap = new Map<string, ICategoryRaw>()
     const filter = this.repository.buildFilter(criteria, userId)
@@ -272,20 +260,21 @@ export class CategoryService
     if (categoriesToUpdate.length === 0)
       throw new NotFoundError('Категории для редактирования не найдены.')
 
-    const categoryPayload = await this.prepareCategoryEditPayload(data, categoriesToUpdate, userId)
+    const categoryPayload = await this.prepareCategoryEditPayload(data, categoriesToUpdate)
+    const categoriesBefore = projectProperties<ICategoryRaw>(categoriesToUpdate, categoryPayload)
 
     /* UPDATE */
     const newEntities = await this.repository.updateByFilter(filter, categoryPayload, session)
     const newEntity = newEntities[0]
 
-    if (!newEntity) return []
+    if (!newEntity) return { data: [], logId: null }
 
     /* MOVE */
     const categoriesToMove = categoriesToUpdate.filter(
       (b) => data.boardId !== undefined && b.board_id.toString() !== data.boardId
     )
     if (categoriesToMove.length > 0) {
-      const moveResult = await this.moveCategoriesToBoard(
+      await this.moveCategoriesToBoard(
         categoriesToMove.map((c) => c._id),
         {
           workspaceId: newEntity.workspace_id,
@@ -294,11 +283,8 @@ export class CategoryService
           boardName: newEntity.board_name,
         },
         userId,
-        newEntities,
         session
       )
-
-      dependencies.push(...moveResult.logIds)
     }
 
     /* REORDER */
@@ -309,24 +295,19 @@ export class CategoryService
       reorderedCategories = await this.reorderService.reorder(
         'board_id',
         newEntities,
-        CollectionsEnum.CATEGORIES,
         userId,
         session
       )
     }
 
     /* LOG */
-    reorderedCategories.forEach((r) => {
-      if (r.log) dependencies.push(r.log.id)
-    })
-
-    await this.operationLogService.create(
+    const log = await this.operationLogService.create(
       {
-        operationType: OperationTypesEnum.CREATE,
+        operationType: OperationTypesEnum.UPDATE,
         collectionName: CollectionsEnum.CATEGORIES,
-        entitiesBefore: categoriesToUpdate,
+        entitiesBefore: categoriesBefore,
         entitiesAfter: newEntities,
-        dependencies,
+        dependencies: [],
       },
       userId,
       session
@@ -337,16 +318,19 @@ export class CategoryService
     })
 
     if (reorderedCategories.length > 0) {
-      const reorderedEntities = reorderedCategories.map((r) => r.updatedEntities).flat()
-
-      reorderedEntities.forEach((reorderedCategory) => {
+      reorderedCategories.forEach((reorderedCategory) => {
         finalEntitiesMap.set(reorderedCategory._id.toString(), reorderedCategory)
       })
     }
 
-    return Array.from(finalEntitiesMap.values()).map((category) =>
+    const finalObj = Array.from(finalEntitiesMap.values()).map((category) =>
       toServerCaseKeys<ICategory>(category)
     )
+
+    return {
+      data: finalObj,
+      logId: log[0].id,
+    }
   }
 
   public async edit(
@@ -354,7 +338,7 @@ export class CategoryService
     criteria: CategoryCriteria,
     user: IUser,
     externalSession?: ClientSession
-  ): Promise<ICategory[]> {
+  ): Promise<IResponseWithLog<ICategory[]>> {
     const userId = user.id
 
     if (externalSession) {
@@ -370,14 +354,14 @@ export class CategoryService
     data: CategoryEditDTO[],
     userId: Types.ObjectId,
     session: ClientSession
-  ) {
+  ): Promise<IResponseWithLog<ICategory[]>> {
     let categoryIdsToReorder: string[] = []
-    let reorderedCategories: ReorderResultDTO<ICategoryRaw>[] = []
+    let reorderedCategories: ICategoryRaw[] = []
     let categoriesPayloadToMove: SingleUpdateDTO<Partial<ICategoryRaw>>[] = []
-    let dependencies: Types.ObjectId[] = []
 
     const finalEntitiesMap = new Map<string, ICategoryRaw>()
     const categoriesToUpdate: SingleUpdateDTO<Partial<ICategoryRaw>>[] = []
+    const categoriesBefore: Partial<ICategoryRaw>[] = []
 
     const categoryIds = data.map((d) => d.id)
 
@@ -393,7 +377,8 @@ export class CategoryService
 
       if (!category) continue
 
-      const categoryPayload = await this.prepareCategoryEditPayload(dto, [category], userId)
+      const categoryPayload = await this.prepareCategoryEditPayload(dto, [category])
+      categoriesBefore.push(projectProperties<ICategoryRaw>([category], categoryPayload)[0])
 
       categoriesToUpdate.push(categoryPayload)
 
@@ -411,17 +396,14 @@ export class CategoryService
 
     /* MOVE */
     if (categoriesPayloadToMove.length > 0) {
-      const moveResult = await this.moveCategoriesToBoardBulk(
+      await this.moveCategoriesToBoardBulk(
         categoriesPayloadToMove as (SingleUpdateDTO<Partial<ICategoryRaw>> & {
           board_id: Types.ObjectId
           board_name: string
         })[],
         userId,
-        existingCategories,
         session
       )
-
-      dependencies.push(...moveResult.logIds)
     }
 
     /* REORDER */
@@ -434,25 +416,20 @@ export class CategoryService
         reorderedCategories = await this.reorderService.reorder(
           'board_id',
           updatedCategoriesToReorder,
-          CollectionsEnum.CATEGORIES,
           userId,
           session
         )
-
-        reorderedCategories.forEach((r) => {
-          if (r.log) dependencies.push(r.log.id)
-        })
       }
     }
 
     /* LOG */
-    await this.operationLogService.create(
+    const log = await this.operationLogService.create(
       {
         operationType: OperationTypesEnum.UPDATE,
         collectionName: CollectionsEnum.CATEGORIES,
-        entitiesBefore: existingCategories,
+        entitiesBefore: categoriesBefore,
         entitiesAfter: updatedCategories,
-        dependencies,
+        dependencies: [],
       },
       userId,
       session
@@ -463,23 +440,26 @@ export class CategoryService
     })
 
     if (reorderedCategories.length > 0) {
-      const reorderedEntities = reorderedCategories.map((r) => r.updatedEntities).flat()
-
-      reorderedEntities.forEach((reorderedCategory) => {
+      reorderedCategories.forEach((reorderedCategory) => {
         finalEntitiesMap.set(reorderedCategory._id.toString(), reorderedCategory)
       })
     }
 
-    return Array.from(finalEntitiesMap.values()).map((category) =>
+    const finalObj = Array.from(finalEntitiesMap.values()).map((category) =>
       toServerCaseKeys<ICategory>(category)
     )
+
+    return {
+      data: finalObj,
+      logId: log[0].id,
+    }
   }
 
   public async editMany(
     data: CategoryEditDTO[],
     user: IUser,
     externalSession?: ClientSession
-  ): Promise<ICategory[]> {
+  ): Promise<IResponseWithLog<ICategory[]>> {
     const userId = user.id
 
     if (externalSession) {
@@ -497,9 +477,8 @@ export class CategoryService
       board_name: string
     })[],
     userId: Types.ObjectId,
-    updatedCategoriesBefore: ICategoryRaw[],
     session?: ClientSession
-  ): Promise<IMoveResult> {
+  ): Promise<ICategoryRaw[]> {
     const newBoardIds = data.map((d) => d.board_id.toString() || '')
     const rawUpdates: SingleUpdateDTO<Partial<ICategoryRaw>>[] = []
 
@@ -519,6 +498,7 @@ export class CategoryService
       rawUpdates.push({
         _id: dto._id,
         workspace_id: board.workspaceId,
+        workspace_name: board.workspaceName,
       })
     }
 
@@ -543,28 +523,9 @@ export class CategoryService
       })
     }
 
-    const tasksMoveResult = await this.taskService.moveTasksToBoardByCategoriesBulk(
-      categoriesMap,
-      userId,
-      session
-    )
+    await this.taskService.moveTasksToBoardByCategoriesBulk(categoriesMap, userId, session)
 
-    /* LOG */
-    const logs = await this.operationLogService.create(
-      {
-        operationType: OperationTypesEnum.UPDATE,
-        collectionName: CollectionsEnum.CATEGORIES,
-        entitiesBefore: updatedCategoriesBefore,
-        entitiesAfter: updatedCategories,
-        dependencies: [],
-      },
-      userId,
-      session
-    )
-
-    return {
-      logIds: logs.map((l) => l.id).concat(tasksMoveResult.logIds),
-    }
+    return updatedCategories
   }
 
   public async moveCategoriesToBoard(
@@ -576,9 +537,8 @@ export class CategoryService
       boardName: string
     },
     userId: Types.ObjectId,
-    updatedCategoriesBefore: ICategoryRaw[],
     session?: ClientSession
-  ): Promise<IMoveResult> {
+  ): Promise<ICategoryRaw[]> {
     if (!targets) throw new NotFoundError('Доска для перемещения не найдена.')
 
     const filter = this.repository.buildFilter(
@@ -597,20 +557,7 @@ export class CategoryService
       session
     )
 
-    /* LOG */
-    const log = await this.operationLogService.create(
-      {
-        operationType: OperationTypesEnum.UPDATE,
-        collectionName: CollectionsEnum.CATEGORIES,
-        entitiesBefore: updatedCategoriesBefore,
-        entitiesAfter: updatedCategories,
-        dependencies: [],
-      },
-      userId,
-      session
-    )
-
-    const tasksMoveResult = await this.taskService.moveTasksToBoardByCategories(
+    await this.taskService.moveTasksToBoardByCategories(
       categoryIds,
       {
         boardId: targets.boardId,
@@ -622,9 +569,7 @@ export class CategoryService
       session
     )
 
-    return {
-      logIds: [log[0].id, ...tasksMoveResult.logIds],
-    }
+    return updatedCategories
   }
 
   public async moveCategoriesToWorkspaceByBoardsBulk(
@@ -637,7 +582,7 @@ export class CategoryService
     >,
     userId: Types.ObjectId,
     session?: ClientSession
-  ): Promise<IOperationResult<ICategory[]>> {
+  ): Promise<ICategory[]> {
     const filter = this.repository.buildFilter(
       { boardIds: Array.from(boardsMap.keys()).map((id) => id.toString()) },
       userId
@@ -660,23 +605,7 @@ export class CategoryService
     }
     const updatedCategories = await this.repository.bulkUpdate(updates, userId, session)
 
-    /* LOG */
-    const log = await this.operationLogService.create(
-      {
-        operationType: OperationTypesEnum.UPDATE,
-        collectionName: CollectionsEnum.CATEGORIES,
-        entitiesBefore: categoriesToUpdate,
-        entitiesAfter: updatedCategories,
-        dependencies: [],
-      },
-      userId,
-      session
-    )
-
-    return {
-      entities: updatedCategories.map((c) => toServerCaseKeys<ICategory>(c)),
-      logIds: [log[0].id],
-    }
+    return updatedCategories.map((c) => toServerCaseKeys<ICategory>(c))
   }
 
   public async moveCategoriesToWorkspaceByBoards(
@@ -687,13 +616,13 @@ export class CategoryService
     },
     userId: Types.ObjectId,
     session?: ClientSession
-  ): Promise<IOperationResult<ICategory[]>> {
+  ): Promise<ICategory[]> {
     const filter = this.repository.buildFilter(
       { boardIds: boardIds.map((id) => id.toString()) },
       userId
     )
 
-    const categoriesToUpdate = await this.repository.find(filter, session)
+    await this.repository.find(filter, session)
 
     const updatedCategories = await this.repository.updateByFilter(
       filter,
@@ -701,23 +630,7 @@ export class CategoryService
       session
     )
 
-    /* LOG */
-    const log = await this.operationLogService.create(
-      {
-        operationType: OperationTypesEnum.UPDATE,
-        collectionName: CollectionsEnum.CATEGORIES,
-        entitiesBefore: categoriesToUpdate,
-        entitiesAfter: updatedCategories,
-        dependencies: [],
-      },
-      userId,
-      session
-    )
-
-    return {
-      entities: updatedCategories.map((c) => toServerCaseKeys<ICategory>(c)),
-      logIds: [log[0].id],
-    }
+    return updatedCategories.map((c) => toServerCaseKeys<ICategory>(c))
   }
 
   private async _executeDeleteTransaction(
@@ -725,7 +638,7 @@ export class CategoryService
     userId: Types.ObjectId,
     session: ClientSession
   ): Promise<ICategory[]> {
-    let reorderedCategories: ReorderResultDTO<ICategoryRaw>[] = []
+    let reorderedCategories: ICategoryRaw[] = []
     const filter = this.repository.buildFilter(criteria, userId)
 
     const categoriesToDelete = await this.repository.find(filter, session)
@@ -744,14 +657,13 @@ export class CategoryService
     /* REORDER */
     reorderedCategories = await this.reorderService.reorderByParentIds(
       categoriesToDelete.map((c) => c.board_id),
-      CollectionsEnum.CATEGORIES,
       userId,
       session
     )
 
-    const reorderedEntities = reorderedCategories.map((r) => r.updatedEntities).flat()
-
-    return [...reorderedEntities.map((re) => toServerCaseKeys<ICategory>(re))]
+    return reorderedCategories.map((reorderedCategory) =>
+      toServerCaseKeys<ICategory>(reorderedCategory)
+    )
   }
 
   public async delete(
@@ -774,8 +686,8 @@ export class CategoryService
     criteria: CategoryCriteria,
     userId: Types.ObjectId,
     session: ClientSession
-  ): Promise<ICategoryArchiveResponse> {
-    let reorderedCategories: ReorderResultDTO<ICategoryRaw>[] = []
+  ): Promise<IResponseWithLog<ICategoriesWithChildrenResponse>> {
+    let reorderedCategories: ICategoryRaw[] = []
 
     const filter = this.repository.buildFilter(criteria, userId)
 
@@ -791,7 +703,6 @@ export class CategoryService
     /* REORDER */
     reorderedCategories = await this.reorderService.reorderByParentIds(
       categoriesToArchive.map((c) => c.board_id),
-      CollectionsEnum.CATEGORIES,
       userId,
       session
     )
@@ -803,19 +714,13 @@ export class CategoryService
     )
 
     /* LOG */
-    let dependencies: Types.ObjectId[] = archiveTasksResult.logIds
-
-    reorderedCategories.forEach((r) => {
-      if (r.log) dependencies.push(r.log.id)
-    })
-
-    await this.operationLogService.create(
+    const log = await this.operationLogService.create(
       {
-        operationType: OperationTypesEnum.UPDATE,
+        operationType: OperationTypesEnum.ARCHIVE,
         collectionName: CollectionsEnum.CATEGORIES,
         entitiesBefore: updatedCategories.map((ws) => ({ ...ws, is_deleted: false })),
         entitiesAfter: updatedCategories,
-        dependencies,
+        dependencies: [],
       },
       userId,
       session
@@ -825,17 +730,20 @@ export class CategoryService
       finalEntitiesMap.set(uc._id.toString(), uc)
     })
 
-    const reorderedEntities = reorderedCategories.map((r) => r.updatedEntities).flat()
-
-    reorderedEntities.forEach((reorderedCategory) => {
+    reorderedCategories.forEach((reorderedCategory) => {
       finalEntitiesMap.set(reorderedCategory._id.toString(), reorderedCategory)
     })
 
-    return {
+    const finalObj = {
       categories: Array.from(finalEntitiesMap.values()).map((category) =>
         toServerCaseKeys<ICategory>(category)
       ),
-      tasks: archiveTasksResult.entities,
+      tasks: archiveTasksResult,
+    }
+
+    return {
+      data: finalObj,
+      logId: log[0].id,
     }
   }
 
@@ -843,7 +751,7 @@ export class CategoryService
     criteria: CategoryCriteria,
     user: IUser,
     externalSession?: ClientSession
-  ): Promise<ICategoryArchiveResponse> {
+  ): Promise<IResponseWithLog<ICategoriesWithChildrenResponse>> {
     const userId = user.id
 
     if (externalSession) {
@@ -859,8 +767,8 @@ export class CategoryService
     criteria: CategoryCriteria,
     userId: Types.ObjectId,
     session: ClientSession
-  ): Promise<ICategory[]> {
-    let reorderedCategories: ReorderResultDTO<ICategoryRaw>[] = []
+  ): Promise<IResponseWithLog<ICategoriesWithChildrenResponse>> {
+    let reorderedCategories: ICategoryRaw[] = []
 
     const finalEntitiesMap = new Map<string, ICategoryRaw>()
     const filter = this.repository.buildFilter(criteria, userId)
@@ -879,7 +787,6 @@ export class CategoryService
     /* REORDER */
     reorderedCategories = await this.reorderService.reorderByParentIds(
       categoriesToRecover.map((c) => c.board_id),
-      CollectionsEnum.CATEGORIES,
       userId,
       session
     )
@@ -891,19 +798,13 @@ export class CategoryService
     )
 
     /* LOG */
-    let dependencies: Types.ObjectId[] = recoverTasksResult.logIds
-
-    reorderedCategories.forEach((r) => {
-      if (r.log) dependencies.push(r.log.id)
-    })
-
-    await this.operationLogService.create(
+    const log = await this.operationLogService.create(
       {
-        operationType: OperationTypesEnum.CREATE,
+        operationType: OperationTypesEnum.RECOVER,
         collectionName: CollectionsEnum.CATEGORIES,
         entitiesBefore: updatedCategories.map((ws) => ({ ...ws, is_deleted: false })),
         entitiesAfter: updatedCategories,
-        dependencies,
+        dependencies: [],
       },
       userId,
       session
@@ -913,22 +814,28 @@ export class CategoryService
       finalEntitiesMap.set(uc._id.toString(), uc)
     })
 
-    const reorderedEntities = reorderedCategories.map((r) => r.updatedEntities).flat()
-
-    reorderedEntities.forEach((reorderedCategory) => {
+    reorderedCategories.forEach((reorderedCategory) => {
       finalEntitiesMap.set(reorderedCategory._id.toString(), reorderedCategory)
     })
 
-    return Array.from(finalEntitiesMap.values()).map((category) =>
-      toServerCaseKeys<ICategory>(category)
-    )
+    const finalObj = {
+      categories: Array.from(finalEntitiesMap.values()).map((category) =>
+        toServerCaseKeys<ICategory>(category)
+      ),
+      tasks: recoverTasksResult,
+    }
+
+    return {
+      data: finalObj,
+      logId: log[0].id,
+    }
   }
 
   public async recover(
     criteria: CategoryCriteria,
     user: IUser,
     externalSession?: ClientSession
-  ): Promise<ICategory[]> {
+  ): Promise<IResponseWithLog<ICategoriesWithChildrenResponse>> {
     const userId = user.id
 
     if (externalSession) {
@@ -944,7 +851,7 @@ export class CategoryService
     criteria: CategoryCriteria,
     userId: Types.ObjectId,
     session: ClientSession
-  ): Promise<ClonedCategoriesResult> {
+  ): Promise<IResponseWithLog<ClonedCategoriesResult>> {
     const filter = this.repository.buildFilter(criteria, userId)
 
     const categoriesToClone = await this.repository.find(
@@ -1010,20 +917,25 @@ export class CategoryService
     )
 
     /* LOG */
-    await this.operationLogService.create(
+    const log = await this.operationLogService.create(
       {
         operationType: OperationTypesEnum.CREATE,
         collectionName: CollectionsEnum.CATEGORIES,
         entitiesAfter: newCategories,
-        dependencies: cloneTasksResult.logIds,
+        dependencies: [],
       },
       userId,
       session
     )
 
-    return {
+    const finalObj = {
       categories: newCategories.map((cb) => toServerCaseKeys<ICategory>(cb)),
-      tasks: cloneTasksResult.entities,
+      tasks: cloneTasksResult,
+    }
+
+    return {
+      data: finalObj,
+      logId: log[0].id,
     }
   }
 
@@ -1031,7 +943,7 @@ export class CategoryService
     criteria: CategoryCriteria,
     user: IUser,
     externalSession?: ClientSession
-  ): Promise<ClonedCategoriesResult> {
+  ): Promise<IResponseWithLog<ClonedCategoriesResult>> {
     const userId = user.id
 
     if (externalSession) {
@@ -1041,6 +953,58 @@ export class CategoryService
         this._executeCloneTransaction(criteria, userId, session)
       )
     }
+  }
+
+  public async revert(
+    log: IOperationLog,
+    user: IUser,
+    session: ClientSession
+  ): Promise<IResponseWithLog<IUndoResponse<Partial<ICategoriesWithChildrenResponse>>>> {
+    const entitiesBefore = log.entitiesBefore as (Partial<ICategory> & { id: Types.ObjectId })[]
+    const entitiesAfter = log.entitiesAfter as ICategory[]
+
+    const categoryBeforeIds = entitiesBefore.map((e) => e.id.toString())
+    const categoryAfterIds = entitiesAfter.map((e) => e.id.toString())
+    const operationType = log.operationType
+
+    if (operationType === OperationTypesEnum.CREATE) {
+      await this.delete({ ids: categoryAfterIds }, user, session)
+
+      return {
+        data: { delete: { categories: entitiesAfter } },
+        logId: null,
+      }
+    } else if (operationType === OperationTypesEnum.UPDATE) {
+      const entitiesBeforeToEditSchema = entitiesBefore.map((e) => {
+        return {
+          ...toServerCaseKeys<ICategory>(e),
+          id: e.id.toString(),
+          boardId: e.boardId?.toString(),
+          workspaceId: e.workspaceId?.toString(),
+        }
+      })
+
+      const editResult = await this.editMany(entitiesBeforeToEditSchema, user, session)
+
+      return {
+        data: { update: { categories: editResult.data } },
+        logId: editResult.logId,
+      }
+    } else if (operationType === OperationTypesEnum.ARCHIVE) {
+      const recoverResult = await this.recover({ ids: categoryBeforeIds }, user, session)
+
+      return {
+        data: { update: { categories: recoverResult.data.categories } },
+        logId: recoverResult.logId,
+      }
+    } else if (operationType === OperationTypesEnum.RECOVER) {
+      const archiveResult = await this.archive({ ids: categoryBeforeIds }, user, session)
+
+      return {
+        data: { update: archiveResult.data },
+        logId: archiveResult.logId,
+      }
+    } else throw new Error(`Операция ${operationType} не поддерживается для отката.`)
   }
 
   public async deleteCategoriesByBoards(
@@ -1060,7 +1024,7 @@ export class CategoryService
     boardIds: Types.ObjectId[],
     userId: Types.ObjectId,
     session?: ClientSession
-  ): Promise<IOperationResult<ICategoryArchiveResponse>> {
+  ): Promise<ICategoriesWithChildrenResponse> {
     const filter = this.repository.buildFilter(
       { boardIds: boardIds.map((id) => id.toString()), isDeleted: false },
       userId
@@ -1071,31 +1035,15 @@ export class CategoryService
       session
     )
 
-    const log = await this.operationLogService.create(
-      {
-        operationType: OperationTypesEnum.UPDATE,
-        collectionName: CollectionsEnum.CATEGORIES,
-        entitiesBefore: updatedCategories.map((c) => ({ ...c, is_deleted: false })),
-        entitiesAfter: updatedCategories,
-        dependencies: [],
-      },
-      userId,
-      session
-    )
-
     const archiveTasksResult = await this.taskService.archiveTasksByCategories(
       updatedCategories.map((category) => category._id),
       userId,
       session
     )
-    const combinedLogIds = log.map((l) => l.id).concat(archiveTasksResult.logIds)
 
     return {
-      entities: {
-        categories: updatedCategories.map((c) => toServerCaseKeys<ICategory>(c)),
-        tasks: archiveTasksResult.entities,
-      },
-      logIds: combinedLogIds,
+      categories: updatedCategories.map((c) => toServerCaseKeys<ICategory>(c)),
+      tasks: archiveTasksResult,
     }
   }
 
@@ -1103,7 +1051,7 @@ export class CategoryService
     boardIds: Types.ObjectId[],
     userId: Types.ObjectId,
     session?: ClientSession
-  ): Promise<IOperationResult<ICategory[]>> {
+  ): Promise<ICategoriesWithChildrenResponse> {
     const filter = this.repository.buildFilter(
       { boardIds: boardIds.map((id) => id.toString()) },
       userId
@@ -1114,28 +1062,15 @@ export class CategoryService
       session
     )
 
-    const log = await this.operationLogService.create(
-      {
-        operationType: OperationTypesEnum.UPDATE,
-        collectionName: CollectionsEnum.CATEGORIES,
-        entitiesBefore: updatedCategories.map((c) => ({ ...c, is_deleted: true })),
-        entitiesAfter: updatedCategories,
-        dependencies: [],
-      },
-      userId,
-      session
-    )
-
-    const recoverTasksResult = await this.taskService.recoverTasksByCategories(
+    const recoverTasks = await this.taskService.recoverTasksByCategories(
       updatedCategories.map((category) => category._id),
       userId,
       session
     )
-    const combinedLogIds = log.map((l) => l.id).concat(recoverTasksResult.logIds)
 
     return {
-      entities: updatedCategories.map((c) => toServerCaseKeys<ICategory>(c)),
-      logIds: combinedLogIds,
+      categories: updatedCategories.map((c) => toServerCaseKeys<ICategory>(c)),
+      tasks: recoverTasks,
     }
   }
 
@@ -1143,7 +1078,7 @@ export class CategoryService
     boardIdsMap: Map<string, string>,
     userId: Types.ObjectId,
     session: ClientSession
-  ): Promise<IOperationResult<ClonedCategoriesResult>> {
+  ): Promise<ClonedCategoriesResult> {
     const boardIds = Array.from(boardIdsMap.keys())
     const filter = this.repository.buildFilter({ boardIds }, userId)
     const sourceCategories = await this.repository.find(filter, session)
@@ -1161,35 +1096,19 @@ export class CategoryService
       categoryIdsMap.set(category._id.toString(), clonedCategories[index]._id.toString())
     })
 
-    /* LOG */
-    const logs = await this.operationLogService.create(
-      {
-        operationType: OperationTypesEnum.CREATE,
-        collectionName: CollectionsEnum.CATEGORIES,
-        entitiesAfter: clonedCategories,
-        dependencies: [],
-      },
-      userId,
-      session
-    )
-
     const tasksCloneResult = await this.taskService.cloneTasksByCategories(
       categoryIdsMap,
       userId,
       session
     )
-    const combinedLogIds = logs.map((log) => log.id).concat(tasksCloneResult.logIds)
 
     const clonedCategoriesTransformed = clonedCategories.map((cb) =>
       toServerCaseKeys<ICategory>(cb)
     )
 
     return {
-      entities: {
-        categories: clonedCategoriesTransformed,
-        tasks: tasksCloneResult.entities,
-      },
-      logIds: combinedLogIds,
+      categories: clonedCategoriesTransformed,
+      tasks: tasksCloneResult,
     }
   }
 
@@ -1274,12 +1193,10 @@ export class CategoryService
 
   private async prepareCategoryEditPayload(
     data: CategoryEditDTO,
-    categoriesToUpdate: ICategoryRaw[],
-    userId: Types.ObjectId
+    categoriesToUpdate: ICategoryRaw[]
   ) {
     const categoryPayload: SingleUpdateDTO<Partial<ICategoryRaw>> = {
       ...toMongoCaseKeys(data),
-      user_id: userId,
     }
 
     if (data.name && categoriesToUpdate.length > 0) {

@@ -1,26 +1,19 @@
 import { IReordable } from '@entities/IReordable.ts'
 import { IReorderRepository } from '@traits/IReorderRepository.ts'
 import { ClientSession, Types } from 'mongoose'
-import { ReorderResultDTO } from '@dtos/ReorderResultDTO.ts'
-import { CollectionsEnum } from '@domain/enums/CollectionsEnum.ts'
-import { OperationTypesEnum } from '@domain/enums/OperationTypesEnum.ts'
-import { OperationLogService } from '@application/services/OperationLogService.ts'
 
 export class ReorderService<TEntity extends IReordable> {
   protected repository: IReorderRepository<TEntity>
-  protected operationLogService: OperationLogService
 
-  constructor(repository: IReorderRepository<TEntity>, operationLogService: OperationLogService) {
+  constructor(repository: IReorderRepository<TEntity>) {
     this.repository = repository
-    this.operationLogService = operationLogService
   }
 
   private async _baseReorderLogic(
     entities: IReordable[],
-    collectionName: CollectionsEnum,
     userId: Types.ObjectId,
     session?: ClientSession
-  ): Promise<ReorderResultDTO<TEntity>> {
+  ): Promise<TEntity[]> {
     const entitiesToUpdate: IReordable[] = []
 
     for (let i = 0; i < entities.length; i++) {
@@ -41,39 +34,19 @@ export class ReorderService<TEntity extends IReordable> {
         session
       )
 
-      /* LOG */
-      const logs = await this.operationLogService.create(
-        {
-          operationType: OperationTypesEnum.UPDATE,
-          collectionName,
-          entitiesBefore: entities,
-          entitiesAfter: updatedEntities,
-          dependencies: [],
-        },
-        userId,
-        session
-      )
-
-      return {
-        updatedEntities,
-        log: logs[0],
-      }
+      return updatedEntities
     }
 
-    return {
-      updatedEntities: [],
-      log: null,
-    }
+    return []
   }
 
   public async reorder(
     parentIdKey: keyof TEntity,
     newEntities: TEntity[],
-    collectionName: CollectionsEnum,
     userId: Types.ObjectId,
     session?: ClientSession
-  ): Promise<ReorderResultDTO<TEntity>[]> {
-    const allUpdatedEntities: ReorderResultDTO<TEntity>[] = []
+  ): Promise<TEntity[]> {
+    const allUpdatedEntities: TEntity[] = []
     const groupedEntities = newEntities.reduce((map, entity) => {
       const parentId = entity[parentIdKey] as Types.ObjectId
       map.set(parentId.toString(), [...(map.get(parentId.toString()) || []), entity])
@@ -94,13 +67,8 @@ export class ReorderService<TEntity extends IReordable> {
         entitiesOld.splice(newIndex, 0, newEntity)
       }
 
-      const updatedEntities = await this._baseReorderLogic(
-        entitiesOld,
-        collectionName,
-        userId,
-        session
-      )
-      allUpdatedEntities.push(updatedEntities)
+      const updatedEntities = await this._baseReorderLogic(entitiesOld, userId, session)
+      allUpdatedEntities.push(...updatedEntities)
     }
 
     return allUpdatedEntities
@@ -108,25 +76,19 @@ export class ReorderService<TEntity extends IReordable> {
 
   public async reorderByParentIds(
     parentIds: Types.ObjectId[],
-    collectionName: CollectionsEnum,
     userId: Types.ObjectId,
     session?: ClientSession
-  ): Promise<ReorderResultDTO<TEntity>[]> {
+  ): Promise<TEntity[]> {
     const uniqueParentIds = Array.from(new Set(parentIds.map((id) => id.toHexString()))).map(
       (id) => new Types.ObjectId(id)
     )
-    const allUpdatedEntities: ReorderResultDTO<TEntity>[] = []
+    const allUpdatedEntities: TEntity[] = []
 
     for (let parentId of uniqueParentIds) {
       const entities: IReordable[] = await this.repository.getAllToOrder(parentId, userId, session)
 
-      const updatedEntities = await this._baseReorderLogic(
-        entities,
-        collectionName,
-        userId,
-        session
-      )
-      allUpdatedEntities.push(updatedEntities)
+      const updatedEntities = await this._baseReorderLogic(entities, userId, session)
+      allUpdatedEntities.push(...updatedEntities)
     }
 
     return allUpdatedEntities

@@ -13,8 +13,8 @@ import userRoutes from '@routes/userRoutes.ts'
 import subscriptionRoutes from '@routes/subscriptionRoutes.ts'
 import paymentRoutes from '@routes/paymentRoutes.ts'
 import paymentMethodRoutes from '@routes/paymentMethodRoutes.ts'
+import operationLogRoutes from '@routes/operationLogRoutes.ts'
 
-//import { initWorkspace } from '@middlewares/Workspace.ts'
 import cookieParser from 'cookie-parser'
 import { initializeDependencies } from '@infrastructure/di/initializeDependencies.ts'
 import path from 'path'
@@ -58,6 +58,8 @@ export function attachRoutes(app: Application) {
   app.use('/payments', paymentRoutes(dependencies.controllers.paymentController))
 
   app.use('/payment-methods', paymentMethodRoutes(dependencies.controllers.paymentMethodController))
+
+  app.use('/operation-logs', operationLogRoutes(dependencies.controllers.operationLogController))
 
   app.use('/me', userRoutes(dependencies.controllers.userController))
 }

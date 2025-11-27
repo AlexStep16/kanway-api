@@ -81,6 +81,8 @@ export enum ErrorsMessage {
   PAYMENT_METHOD_ID_REQUIRED = 'Требуется идентификатор метода оплаты.',
   INVALID_PAYMENT_METHOD_ID = 'Неверный идентификатор метода оплаты.',
 
+  OPERATION_LOG_NOT_FOUND = 'Запись журнала операций не найдена.',
+
   SUBSCRIPTION_PLAN_NOT_FOUND = 'План подписки не найден. Обратитесь в поддержку.',
   INVALID_ID_FORMAT = 'Неверный формат идентификатора.',
   WORKSPACE_ID_INVALID = 'Неверный идентификатор рабочего пространства.',

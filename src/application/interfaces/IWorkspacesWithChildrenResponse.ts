@@ -3,7 +3,7 @@ import { IBoard } from '@entities/IBoard.ts'
 import { ICategory } from '@entities/ICategory.ts'
 import { ITask } from '@entities/ITask.ts'
 
-export interface IWorkspaceArchiveResponse {
+export interface IWorkspacesWithChildrenResponse {
   workspaces: IWorkspace[]
   boards: IBoard[]
   categories: ICategory[]

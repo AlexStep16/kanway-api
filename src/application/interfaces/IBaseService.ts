@@ -10,6 +10,7 @@ import { IRecoverService } from '@traits/IRecoverService.ts'
 import { ICloneService } from '@traits/ICloneService.ts'
 import { IEditManyService } from '@traits/IEditManyService.ts'
 import { IGetCountService } from '@traits/IGetCountService.ts'
+import { IRevertableService } from '@traits/IRevertableService.ts'
 
 export interface IBaseService<
   TEntity,
@@ -17,7 +18,7 @@ export interface IBaseService<
   TCreateDTO = Record<string, any>,
   TEditDTO = Record<string, any>,
   TClonedResult = Record<string, Array<any>>,
-  TArchiveResult = Record<string, Array<any>>,
+  TWithChildrenResult = Record<string, Array<any>>,
   TCreateResult = Record<string, any>
 > extends ICreateService<TCreateResult, TCreateDTO>,
     ICreateManyService<TCreateDTO, TEntity>,
@@ -28,6 +29,7 @@ export interface IBaseService<
     IEditService<TCriteria, TEntity, TEditDTO>,
     IEditManyService<TEntity, TEditDTO>,
     IDeleteService<TEntity, TCriteria>,
-    IRecoverService<TCriteria, TEntity>,
-    IArchiveService<TCriteria, TArchiveResult>,
-    ICloneService<TCriteria, TClonedResult> {}
+    IRecoverService<TCriteria, TWithChildrenResult>,
+    IArchiveService<TCriteria, TWithChildrenResult>,
+    ICloneService<TCriteria, TClonedResult>,
+    IRevertableService<Partial<TWithChildrenResult>> {}

@@ -1,12 +1,12 @@
 import { Schema, model } from 'mongoose'
 import { IOperationLogRaw } from '@entities/IOperationLogRaw.ts'
-import { OPERATION_TYPES } from '@constants/OPERATION_TYPES.ts'
+import { OperationTypesEnum } from '@domain/enums/OperationTypesEnum.ts'
 
 export const OperationLogSchema = new Schema<IOperationLogRaw>(
   {
     operation_type: {
       type: String,
-      enum: OPERATION_TYPES,
+      enum: OperationTypesEnum,
       required: true,
     },
     collection_name: {
@@ -19,7 +19,7 @@ export const OperationLogSchema = new Schema<IOperationLogRaw>(
     entities_after: {
       type: [Schema.Types.Mixed],
     },
-    undo_status: {
+    is_undone: {
       type: Boolean,
       default: false,
     },

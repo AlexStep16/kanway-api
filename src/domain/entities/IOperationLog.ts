@@ -1,13 +1,13 @@
 import { Types } from 'mongoose'
-import { OPERATION_TYPES } from '@constants/OPERATION_TYPES.ts'
+import { OperationTypesEnum } from '@domain/enums/OperationTypesEnum.ts'
 
 export interface IOperationLog {
   id: Types.ObjectId
-  operationType: (typeof OPERATION_TYPES)[number]
+  operationType: OperationTypesEnum
   collectionName: string
   entitiesBefore?: any[]
   entitiesAfter?: any[]
-  undoStatus: boolean
+  isUndone: boolean
   userId: Types.ObjectId
   dependencies: Types.ObjectId[]
   threadId?: string

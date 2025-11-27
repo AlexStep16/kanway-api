@@ -5,7 +5,7 @@ import { BaseController } from '@controllers/BaseController.ts'
 import { WorkspaceCriteria } from '@interfaces/criterias/WorkspaceCriteria.ts'
 import { WorkspaceEditDTO } from '@dtos/WorkspaceEditDTO.ts'
 import { ClonedWorkspacesResult } from '@dtos/ClonedWorkspacesResult.ts'
-import { IWorkspaceArchiveResponse } from '@application/interfaces/IWorkspaceArchiveResponse.ts'
+import { IWorkspacesWithChildrenResponse } from '@/application/interfaces/IWorkspacesWithChildrenResponse.ts'
 
 export default class WorkspaceController extends BaseController<
   IWorkspace,
@@ -14,7 +14,7 @@ export default class WorkspaceController extends BaseController<
   WorkspaceService,
   WorkspaceEditDTO,
   ClonedWorkspacesResult,
-  IWorkspaceArchiveResponse
+  IWorkspacesWithChildrenResponse
 > {
   constructor(serviceInstance: WorkspaceService) {
     super(serviceInstance)

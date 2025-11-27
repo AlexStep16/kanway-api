@@ -1,11 +1,11 @@
 import { Types } from 'mongoose'
 import { z } from 'zod'
-import { OPERATION_TYPES } from '@constants/OPERATION_TYPES.ts'
+import { OperationTypesEnum } from '@domain/enums/OperationTypesEnum.ts'
 
 const objectIdRegex = /^[0-9a-fA-F]{24}$/
 
 export const OperationLogCreationSchema = z.object({
-  operationType: z.enum(OPERATION_TYPES),
+  operationType: z.enum(OperationTypesEnum),
   collectionName: z.string().min(3).max(100),
   entitiesBefore: z.array(z.any()).optional(),
   entitiesAfter: z.array(z.any()).optional(),

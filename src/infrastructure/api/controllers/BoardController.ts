@@ -7,7 +7,7 @@ import { Request, Response, NextFunction } from 'express'
 import SuccessResponse from '@application/services/SuccessResponse.ts'
 import { BoardEditDTO } from '@dtos/BoardEditDTO.ts'
 import { ClonedBoardsResult } from '@dtos/ClonedBoardsResult.ts'
-import { IBoardArchiveResponse } from '@/application/interfaces/IBoardArchiveResponse.ts'
+import { IBoardsWithChildrenResponse } from '@/application/interfaces/IBoardsWithChildrenResponse.ts'
 
 export default class BoardController extends BaseController<
   IBoard,
@@ -16,7 +16,7 @@ export default class BoardController extends BaseController<
   BoardService,
   BoardEditDTO,
   ClonedBoardsResult,
-  IBoardArchiveResponse
+  IBoardsWithChildrenResponse
 > {
   constructor(serviceInstance: BoardService) {
     super(serviceInstance)

@@ -1,13 +1,13 @@
 import { Types } from 'mongoose'
-import { OPERATION_TYPES } from '@constants/OPERATION_TYPES.ts'
+import { OperationTypesEnum } from '@domain/enums/OperationTypesEnum.ts'
 
 export interface IOperationLogRaw {
   _id: Types.ObjectId
-  operation_type: (typeof OPERATION_TYPES)[number]
+  operation_type: OperationTypesEnum
   collection_name: string
   entities_before?: any[]
   entities_after?: any[]
-  undo_status: boolean
+  is_undone: boolean
   user_id: Types.ObjectId
   dependencies: Types.ObjectId[]
   thread_id?: string

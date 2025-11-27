@@ -1,5 +1,5 @@
 import { ITask } from '@entities/ITask.ts'
 
-export interface TaskArchiveResponse {
+export interface ITasksResponse {
   tasks: ITask[]
 }

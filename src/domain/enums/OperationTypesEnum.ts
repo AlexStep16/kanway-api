@@ -1,6 +1,7 @@
 export enum OperationTypesEnum {
   CREATE = 'CREATE',
-  READ = 'READ',
   UPDATE = 'UPDATE',
+  ARCHIVE = 'ARCHIVE',
+  RECOVER = 'RECOVER',
   DELETE = 'DELETE',
 }

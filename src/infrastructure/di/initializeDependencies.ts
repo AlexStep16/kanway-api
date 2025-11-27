@@ -39,6 +39,8 @@ import { PaymentController } from '@controllers/PaymentController.ts'
 import PaymentMethodRepository from '@repositories/PaymentMethodRepository.ts'
 import { PaymentMethodService } from '@application/services/PaymentMethodService.ts'
 import { PaymentMethodController } from '@controllers/PaymentMethodController.ts'
+import { IRevertableService } from '@interfaces/traits/IRevertableService.ts'
+import { OperationLogController } from '@controllers/OperationLogController.ts'
 
 export function initializeDependencies() {
   const userRepository = new UserRepository()
@@ -53,15 +55,23 @@ export function initializeDependencies() {
   const paymentRepository = new PaymentRepository()
   const paymentMethodRepository = new PaymentMethodRepository()
 
-  /* BASE SERVICES START */
-  const embeddingService = new EmbeddingService()
-  const operationLogService = new OperationLogService(operationLogRepository)
-  /* BASE SERVICES END */
-
   /* MOCK SERVICES START */
   const mockCategoryService = {} as CategoryService
   const mockBoardService = {} as BoardService
+  const mockTaskService = {} as TaskService
+  const mockWorkspaceService = {} as WorkspaceService
   /* MOCK SERVICES END */
+
+  const embeddingService = new EmbeddingService()
+  const operationLogService = new OperationLogService(
+    operationLogRepository,
+    new Map<string, IRevertableService<any>>([
+      ['tasks', mockTaskService],
+      ['categories', mockCategoryService],
+      ['boards', mockBoardService],
+      ['workspaces', mockWorkspaceService],
+    ])
+  )
 
   /* SETTING SERVICES START */
   const settingService = new SettingService(settingRepository)
@@ -84,7 +94,7 @@ export function initializeDependencies() {
   /* PAYMENT SERVICES END */
 
   /* TASK SERVICES START */
-  const taskReorderService = new ReorderService<ITaskRaw>(taskRepository, operationLogService)
+  const taskReorderService = new ReorderService<ITaskRaw>(taskRepository)
   const taskService = new TaskService(
     taskRepository,
     embeddingService,
@@ -95,10 +105,7 @@ export function initializeDependencies() {
   /* TASK SERVICES END */
 
   /* CATEGORY SERVICES START */
-  const categoryReorderService = new ReorderService<ICategoryRaw>(
-    categoryRepository,
-    operationLogService
-  )
+  const categoryReorderService = new ReorderService<ICategoryRaw>(categoryRepository)
   const categoryService = new CategoryService(
     categoryRepository,
     embeddingService,
@@ -110,7 +117,7 @@ export function initializeDependencies() {
   /* CATEGORY SERVICES END */
 
   /* BOARD SERVICES START */
-  const boardReorderService = new ReorderService<IBoardRaw>(boardRepository, operationLogService)
+  const boardReorderService = new ReorderService<IBoardRaw>(boardRepository)
   const boardService = new BoardService(
     boardRepository,
     embeddingService,
@@ -121,8 +128,16 @@ export function initializeDependencies() {
   )
   /* BOARD SERVICES END */
 
-  Object.assign(mockCategoryService, categoryService)
-  Object.assign(mockBoardService, boardService)
+  /* WORKSPACE SERVICES START */
+  const workspaceReorderService = new ReorderService<IWorkspaceRaw>(workspaceRepository)
+  const workspaceService = new WorkspaceService(
+    workspaceRepository,
+    embeddingService,
+    operationLogService,
+    workspaceReorderService,
+    boardService
+  )
+  /* WORKSPACE SERVICES END */
 
   const categoryMethodsToCopy = Object.getOwnPropertyNames(CategoryService.prototype).filter(
     (name) => name !== 'constructor'
@@ -147,19 +162,34 @@ export function initializeDependencies() {
     }
   }
 
-  /* WORKSPACE SERVICES START */
-  const workspaceReorderService = new ReorderService<IWorkspaceRaw>(
-    workspaceRepository,
-    operationLogService
+  const taskMethodsToCopy = Object.getOwnPropertyNames(TaskService.prototype).filter(
+    (name) => name !== 'constructor'
   )
-  const workspaceService = new WorkspaceService(
-    workspaceRepository,
-    embeddingService,
-    operationLogService,
-    workspaceReorderService,
-    boardService
+
+  for (const methodName of taskMethodsToCopy) {
+    const method = (taskService.constructor.prototype as any)[methodName]
+
+    if (typeof method === 'function') {
+      ;(mockTaskService as any)[methodName] = method.bind(taskService)
+    }
+  }
+
+  const workspaceMethodsToCopy = Object.getOwnPropertyNames(WorkspaceService.prototype).filter(
+    (name) => name !== 'constructor'
   )
-  /* WORKSPACE SERVICES END */
+
+  for (const methodName of workspaceMethodsToCopy) {
+    const method = (workspaceService.constructor.prototype as any)[methodName]
+
+    if (typeof method === 'function') {
+      ;(mockWorkspaceService as any)[methodName] = method.bind(workspaceService)
+    }
+  }
+
+  Object.assign(mockCategoryService, categoryService)
+  Object.assign(mockBoardService, boardService)
+  Object.assign(mockTaskService, taskService)
+  Object.assign(mockWorkspaceService, workspaceService)
 
   const authController = new AuthController(authService)
   const workspaceController = new WorkspaceController(workspaceService)
@@ -177,6 +207,7 @@ export function initializeDependencies() {
   const subscriptionController = new SubscriptionController(subscriptionService)
   const paymentController = new PaymentController(paymentService)
   const paymentMethodController = new PaymentMethodController(paymentMethodService)
+  const operationLogController = new OperationLogController(operationLogService)
 
   return {
     services: {
@@ -205,6 +236,7 @@ export function initializeDependencies() {
       subscriptionController,
       paymentController,
       paymentMethodController,
+      operationLogController,
     },
   }
 }

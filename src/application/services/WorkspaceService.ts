@@ -12,13 +12,16 @@ import { CollectionsEnum } from '@domain/enums/CollectionsEnum.ts'
 import { ReorderService } from '@application/services/ReorderService.ts'
 import { toServerCaseKeys, toMongoCaseKeys } from '@utils/objectTransformers.ts'
 import { WorkspaceEditDTO } from '@dtos/WorkspaceEditDTO.ts'
-import { ReorderResultDTO } from '@dtos/ReorderResultDTO.ts'
 import { NotFoundError } from '@errors/NotFound.ts'
 import { BoardService } from '@application/services/BoardService.ts'
 import { ClonedWorkspacesResult } from '@dtos/ClonedWorkspacesResult.ts'
 import { SingleUpdateDTO } from '../dtos/SingleUpdateDTO.ts'
 import { IUser } from '@entities/IUser.ts'
-import { IWorkspaceArchiveResponse } from '@application/interfaces/IWorkspaceArchiveResponse.ts'
+import { IWorkspacesWithChildrenResponse } from '@/application/interfaces/IWorkspacesWithChildrenResponse.ts'
+import { projectProperties } from '@/utils/projectProperties.ts'
+import { IResponseWithLog } from '@interfaces/IResponseWithLog.ts'
+import { IOperationLog } from '@/domain/entities/IOperationLog.ts'
+import { IUndoResponse } from '../interfaces/IUndoResponse.ts'
 
 const MAX_RETRIES = 3
 
@@ -30,7 +33,7 @@ export class WorkspaceService
       WorkspaceDTO,
       WorkspaceEditDTO,
       ClonedWorkspacesResult,
-      IWorkspaceArchiveResponse
+      IWorkspacesWithChildrenResponse
     >
 {
   protected repository: WorkspaceRepository
@@ -86,8 +89,8 @@ export class WorkspaceService
     data: WorkspaceDTO,
     userId: Types.ObjectId,
     session: ClientSession
-  ) {
-    let reorderedWorkspaces: ReorderResultDTO<IWorkspaceRaw>[] = []
+  ): Promise<IResponseWithLog<IWorkspace[]>> {
+    let reorderedWorkspaces: IWorkspaceRaw[] = []
 
     const finalEntitiesMap = new Map<string, IWorkspaceRaw>()
     const workspacePayload = await this.prepareWorkspaceCreationPayload(data, userId, session)
@@ -100,25 +103,18 @@ export class WorkspaceService
       reorderedWorkspaces = await this.reorderService.reorder(
         'user_id',
         [newWorkspace],
-        CollectionsEnum.WORKSPACES,
         userId,
         session
       )
     }
 
     /* LOG */
-    let dependencies: Types.ObjectId[] = []
-
-    reorderedWorkspaces.forEach((r) => {
-      if (r.log) dependencies.push(r.log.id)
-    })
-
-    await this.operationLogService.create(
+    const log = await this.operationLogService.create(
       {
         operationType: OperationTypesEnum.CREATE,
         collectionName: CollectionsEnum.WORKSPACES,
         entitiesAfter: [newWorkspace],
-        dependencies,
+        dependencies: [],
       },
       userId,
       session
@@ -127,23 +123,24 @@ export class WorkspaceService
     finalEntitiesMap.set(newWorkspace._id.toString(), newWorkspace)
 
     if (reorderedWorkspaces.length > 0) {
-      const reorderedEntities = reorderedWorkspaces.map((r) => r.updatedEntities).flat()
-
-      reorderedEntities.forEach((reorderedWorkspace) => {
+      reorderedWorkspaces.forEach((reorderedWorkspace) => {
         finalEntitiesMap.set(reorderedWorkspace._id.toString(), reorderedWorkspace)
       })
     }
 
-    return Array.from(finalEntitiesMap.values()).map((workspace) =>
-      toServerCaseKeys<IWorkspace>(workspace)
-    )
+    return {
+      data: Array.from(finalEntitiesMap.values()).map((workspace) =>
+        toServerCaseKeys<IWorkspace>(workspace)
+      ),
+      logId: log[0].id,
+    }
   }
 
   public async create(
     data: WorkspaceDTO,
     user: IUser,
     externalSession?: ClientSession
-  ): Promise<IWorkspace[]> {
+  ): Promise<IResponseWithLog<IWorkspace[]>> {
     const userId = user.id
 
     if (externalSession) {
@@ -159,8 +156,8 @@ export class WorkspaceService
     data: WorkspaceDTO[],
     userId: Types.ObjectId,
     session: ClientSession
-  ) {
-    let reorderedWorkspaces: ReorderResultDTO<IWorkspaceRaw>[] = []
+  ): Promise<IResponseWithLog<IWorkspace[]>> {
+    let reorderedWorkspaces: IWorkspaceRaw[] = []
 
     const finalEntitiesMap = new Map<string, IWorkspaceRaw>()
     const workspacesPayload = await this.prepareWorkspacesCreationPayload(data, userId, session)
@@ -179,25 +176,18 @@ export class WorkspaceService
       reorderedWorkspaces = await this.reorderService.reorder(
         'user_id',
         workspacesToReorder,
-        CollectionsEnum.WORKSPACES,
         userId,
         session
       )
     }
 
     /* LOG */
-    let dependencies: Types.ObjectId[] = []
-
-    reorderedWorkspaces.forEach((r) => {
-      if (r.log) dependencies.push(r.log.id)
-    })
-
-    await this.operationLogService.create(
+    const log = await this.operationLogService.create(
       {
         operationType: OperationTypesEnum.CREATE,
         collectionName: CollectionsEnum.WORKSPACES,
         entitiesAfter: newWorkspaces,
-        dependencies,
+        dependencies: [],
       },
       userId,
       session
@@ -208,23 +198,24 @@ export class WorkspaceService
     })
 
     if (reorderedWorkspaces.length > 0) {
-      const reorderedEntities = reorderedWorkspaces.map((r) => r.updatedEntities).flat()
-
-      reorderedEntities.forEach((reorderedWorkspace) => {
+      reorderedWorkspaces.forEach((reorderedWorkspace) => {
         finalEntitiesMap.set(reorderedWorkspace._id.toString(), reorderedWorkspace)
       })
     }
 
-    return Array.from(finalEntitiesMap.values()).map((workspace) =>
-      toServerCaseKeys<IWorkspace>(workspace)
-    )
+    return {
+      data: Array.from(finalEntitiesMap.values()).map((workspace) =>
+        toServerCaseKeys<IWorkspace>(workspace)
+      ),
+      logId: log[0].id,
+    }
   }
 
   public async createMany(
     data: WorkspaceDTO[],
     user: IUser,
     externalSession?: ClientSession
-  ): Promise<IWorkspace[]> {
+  ): Promise<IResponseWithLog<IWorkspace[]>> {
     const userId = user.id
 
     if (externalSession) {
@@ -241,8 +232,8 @@ export class WorkspaceService
     criteria: WorkspaceCriteria,
     userId: Types.ObjectId,
     session: ClientSession
-  ): Promise<IWorkspace[]> {
-    let reorderedWorkspaces: ReorderResultDTO<IWorkspaceRaw>[] = []
+  ): Promise<IResponseWithLog<IWorkspace[]>> {
+    let reorderedWorkspaces: IWorkspaceRaw[] = []
 
     const filter = this.repository.buildFilter(criteria, userId)
 
@@ -252,11 +243,8 @@ export class WorkspaceService
     if (workspacesToUpdate.length === 0)
       throw new NotFoundError('Пространства для редактирования не найдены.')
 
-    const workspacePayload = await this.prepareWorkspaceEditPayload(
-      data,
-      workspacesToUpdate,
-      userId
-    )
+    const workspacePayload = await this.prepareWorkspaceEditPayload(data, workspacesToUpdate)
+    const workspacesBefore = projectProperties<IWorkspaceRaw>(workspacesToUpdate, workspacePayload)
 
     /* UPDATE */
     const newEntities = await this.repository.updateByFilter(filter, workspacePayload, session)
@@ -269,26 +257,19 @@ export class WorkspaceService
       reorderedWorkspaces = await this.reorderService.reorder(
         'user_id',
         newEntities,
-        CollectionsEnum.WORKSPACES,
         userId,
         session
       )
     }
 
     /* LOG */
-    let dependencies: Types.ObjectId[] = []
-
-    reorderedWorkspaces.forEach((r) => {
-      if (r.log) dependencies.push(r.log.id)
-    })
-
-    await this.operationLogService.create(
+    const log = await this.operationLogService.create(
       {
-        operationType: OperationTypesEnum.CREATE,
+        operationType: OperationTypesEnum.UPDATE,
         collectionName: CollectionsEnum.WORKSPACES,
-        entitiesBefore: workspacesToUpdate,
+        entitiesBefore: workspacesBefore,
         entitiesAfter: newEntities,
-        dependencies,
+        dependencies: [],
       },
       userId,
       session
@@ -299,16 +280,17 @@ export class WorkspaceService
     })
 
     if (reorderedWorkspaces.length > 0) {
-      const reorderedEntities = reorderedWorkspaces.map((r) => r.updatedEntities).flat()
-
-      reorderedEntities.forEach((reorderedWorkspace) => {
+      reorderedWorkspaces.forEach((reorderedWorkspace) => {
         finalEntitiesMap.set(reorderedWorkspace._id.toString(), reorderedWorkspace)
       })
     }
 
-    return Array.from(finalEntitiesMap.values()).map((workspace) =>
-      toServerCaseKeys<IWorkspace>(workspace)
-    )
+    return {
+      data: Array.from(finalEntitiesMap.values()).map((workspace) =>
+        toServerCaseKeys<IWorkspace>(workspace)
+      ),
+      logId: log[0].id,
+    }
   }
 
   public async edit(
@@ -316,7 +298,7 @@ export class WorkspaceService
     criteria: WorkspaceCriteria,
     user: IUser,
     externalSession?: ClientSession
-  ): Promise<IWorkspace[]> {
+  ): Promise<IResponseWithLog<IWorkspace[]>> {
     const userId = user.id
 
     if (externalSession) {
@@ -332,13 +314,13 @@ export class WorkspaceService
     data: WorkspaceEditDTO[],
     userId: Types.ObjectId,
     session: ClientSession
-  ) {
+  ): Promise<IResponseWithLog<IWorkspace[]>> {
     let workspaceIdsToReorder: string[] = []
-    let reorderedWorkspaces: ReorderResultDTO<IWorkspaceRaw>[] = []
-    let dependencies: Types.ObjectId[] = []
+    let reorderedWorkspaces: IWorkspaceRaw[] = []
 
     const finalEntitiesMap = new Map<string, IWorkspaceRaw>()
     const workspacesToUpdate: SingleUpdateDTO<Partial<IWorkspaceRaw>>[] = []
+    const workspacesBefore: Partial<IWorkspaceRaw>[] = []
 
     const workspaceIds = data.map((d) => d.id)
 
@@ -354,7 +336,8 @@ export class WorkspaceService
 
       if (!workspace) continue
 
-      const workspacePayload = await this.prepareWorkspaceEditPayload(dto, [workspace], userId)
+      const workspacePayload = await this.prepareWorkspaceEditPayload(dto, [workspace])
+      workspacesBefore.push(projectProperties<IWorkspaceRaw>([workspace], workspacePayload)[0])
 
       workspacesToUpdate.push(workspacePayload)
 
@@ -376,25 +359,20 @@ export class WorkspaceService
         reorderedWorkspaces = await this.reorderService.reorder(
           'user_id',
           updatedWorkspacesToReorder,
-          CollectionsEnum.WORKSPACES,
           userId,
           session
         )
-
-        reorderedWorkspaces.forEach((r) => {
-          if (r.log) dependencies.push(r.log.id)
-        })
       }
     }
 
     /* LOG */
-    await this.operationLogService.create(
+    const log = await this.operationLogService.create(
       {
         operationType: OperationTypesEnum.UPDATE,
         collectionName: CollectionsEnum.WORKSPACES,
-        entitiesBefore: existingWorkspaces,
+        entitiesBefore: workspacesBefore,
         entitiesAfter: updatedWorkspaces,
-        dependencies,
+        dependencies: [],
       },
       userId,
       session
@@ -405,23 +383,24 @@ export class WorkspaceService
     })
 
     if (reorderedWorkspaces.length > 0) {
-      const reorderedEntities = reorderedWorkspaces.map((r) => r.updatedEntities).flat()
-
-      reorderedEntities.forEach((reorderedWorkspace) => {
+      reorderedWorkspaces.forEach((reorderedWorkspace) => {
         finalEntitiesMap.set(reorderedWorkspace._id.toString(), reorderedWorkspace)
       })
     }
 
-    return Array.from(finalEntitiesMap.values()).map((workspace) =>
-      toServerCaseKeys<IWorkspace>(workspace)
-    )
+    return {
+      data: Array.from(finalEntitiesMap.values()).map((workspace) =>
+        toServerCaseKeys<IWorkspace>(workspace)
+      ),
+      logId: log[0].id,
+    }
   }
 
   public async editMany(
     data: WorkspaceEditDTO[],
     user: IUser,
     externalSession?: ClientSession
-  ): Promise<IWorkspace[]> {
+  ): Promise<IResponseWithLog<IWorkspace[]>> {
     const userId = user.id
 
     if (externalSession) {
@@ -438,7 +417,7 @@ export class WorkspaceService
     userId: Types.ObjectId,
     session: ClientSession
   ): Promise<IWorkspace[]> {
-    let reorderedWorkspaces: ReorderResultDTO<IWorkspaceRaw>[] = []
+    let reorderedWorkspaces: IWorkspaceRaw[] = []
 
     const filter = this.repository.buildFilter(criteria, userId)
 
@@ -456,16 +435,9 @@ export class WorkspaceService
     )
 
     /* REORDER */
-    reorderedWorkspaces = await this.reorderService.reorderByParentIds(
-      [userId],
-      CollectionsEnum.WORKSPACES,
-      userId,
-      session
-    )
+    reorderedWorkspaces = await this.reorderService.reorderByParentIds([userId], userId, session)
 
-    const reorderedEntities = reorderedWorkspaces.map((r) => r.updatedEntities).flat()
-
-    return [...reorderedEntities.map((re) => toServerCaseKeys<IWorkspace>(re))]
+    return [...reorderedWorkspaces.map((rw) => toServerCaseKeys<IWorkspace>(rw))]
   }
 
   public async delete(
@@ -488,8 +460,8 @@ export class WorkspaceService
     criteria: WorkspaceCriteria,
     userId: Types.ObjectId,
     session: ClientSession
-  ): Promise<IWorkspaceArchiveResponse> {
-    let reorderedWorkspaces: ReorderResultDTO<IWorkspaceRaw>[] = []
+  ): Promise<IResponseWithLog<IWorkspacesWithChildrenResponse>> {
+    let reorderedWorkspaces: IWorkspaceRaw[] = []
 
     const finalEntitiesMap = new Map<string, IWorkspaceRaw>()
     const filter = this.repository.buildFilter(criteria, userId)
@@ -504,12 +476,7 @@ export class WorkspaceService
       throw new NotFoundError('Пространства для архивации не найдены.')
 
     /* REORDER */
-    reorderedWorkspaces = await this.reorderService.reorderByParentIds(
-      [userId],
-      CollectionsEnum.WORKSPACES,
-      userId,
-      session
-    )
+    reorderedWorkspaces = await this.reorderService.reorderByParentIds([userId], userId, session)
 
     const archiveBoardsResult = await this.boardService.archiveBoardsByWorkspaces(
       updatedWorkspaces.map((ws) => ws._id),
@@ -518,19 +485,13 @@ export class WorkspaceService
     )
 
     /* LOG */
-    let dependencies: Types.ObjectId[] = archiveBoardsResult.logIds
-
-    reorderedWorkspaces.forEach((r) => {
-      if (r.log) dependencies.push(r.log.id)
-    })
-
-    await this.operationLogService.create(
+    const log = await this.operationLogService.create(
       {
-        operationType: OperationTypesEnum.UPDATE,
+        operationType: OperationTypesEnum.ARCHIVE,
         collectionName: CollectionsEnum.WORKSPACES,
         entitiesBefore: updatedWorkspaces.map((ws) => ({ ...ws, is_deleted: false })),
         entitiesAfter: updatedWorkspaces,
-        dependencies,
+        dependencies: [],
       },
       userId,
       session
@@ -540,19 +501,22 @@ export class WorkspaceService
       finalEntitiesMap.set(updatedWorkspace._id.toString(), updatedWorkspace)
     })
 
-    const reorderedEntities = reorderedWorkspaces.map((r) => r.updatedEntities).flat()
-
-    reorderedEntities.forEach((reorderedWorkspace) => {
+    reorderedWorkspaces.forEach((reorderedWorkspace) => {
       finalEntitiesMap.set(reorderedWorkspace._id.toString(), reorderedWorkspace)
     })
 
-    return {
+    const finalObj = {
       workspaces: Array.from(finalEntitiesMap.values()).map((workspace) =>
         toServerCaseKeys<IWorkspace>(workspace)
       ),
-      boards: archiveBoardsResult.entities.boards,
-      categories: archiveBoardsResult.entities.categories,
-      tasks: archiveBoardsResult.entities.tasks,
+      boards: archiveBoardsResult.boards,
+      categories: archiveBoardsResult.categories,
+      tasks: archiveBoardsResult.tasks,
+    }
+
+    return {
+      data: finalObj,
+      logId: log[0].id,
     }
   }
 
@@ -560,7 +524,7 @@ export class WorkspaceService
     criteria: WorkspaceCriteria,
     user: IUser,
     externalSession?: ClientSession
-  ): Promise<IWorkspaceArchiveResponse> {
+  ): Promise<IResponseWithLog<IWorkspacesWithChildrenResponse>> {
     const userId = user.id
 
     if (externalSession) {
@@ -576,8 +540,8 @@ export class WorkspaceService
     criteria: WorkspaceCriteria,
     userId: Types.ObjectId,
     session: ClientSession
-  ): Promise<IWorkspace[]> {
-    let reorderedWorkspaces: ReorderResultDTO<IWorkspaceRaw>[] = []
+  ): Promise<IResponseWithLog<IWorkspacesWithChildrenResponse>> {
+    let reorderedWorkspaces: IWorkspaceRaw[] = []
 
     const finalEntitiesMap = new Map<string, IWorkspaceRaw>()
     const filter = this.repository.buildFilter(criteria, userId)
@@ -592,12 +556,7 @@ export class WorkspaceService
       throw new NotFoundError('Пространства для восстановления не найдены.')
 
     /* REORDER */
-    reorderedWorkspaces = await this.reorderService.reorderByParentIds(
-      [userId],
-      CollectionsEnum.WORKSPACES,
-      userId,
-      session
-    )
+    reorderedWorkspaces = await this.reorderService.reorderByParentIds([userId], userId, session)
 
     const recoverBoardsResult = await this.boardService.recoverBoardsByWorkspaces(
       updatedWorkspaces.map((ws) => ws._id),
@@ -606,19 +565,13 @@ export class WorkspaceService
     )
 
     /* LOG */
-    let dependencies: Types.ObjectId[] = recoverBoardsResult.logIds
-
-    reorderedWorkspaces.forEach((r) => {
-      if (r.log) dependencies.push(r.log.id)
-    })
-
-    await this.operationLogService.create(
+    const log = await this.operationLogService.create(
       {
-        operationType: OperationTypesEnum.CREATE,
+        operationType: OperationTypesEnum.RECOVER,
         collectionName: CollectionsEnum.WORKSPACES,
         entitiesBefore: updatedWorkspaces.map((ws) => ({ ...ws, is_deleted: false })),
         entitiesAfter: updatedWorkspaces,
-        dependencies,
+        dependencies: [],
       },
       userId,
       session
@@ -628,22 +581,30 @@ export class WorkspaceService
       finalEntitiesMap.set(updatedWorkspace._id.toString(), updatedWorkspace)
     })
 
-    const reorderedEntities = reorderedWorkspaces.map((r) => r.updatedEntities).flat()
-
-    reorderedEntities.forEach((reorderedWorkspace) => {
+    reorderedWorkspaces.forEach((reorderedWorkspace) => {
       finalEntitiesMap.set(reorderedWorkspace._id.toString(), reorderedWorkspace)
     })
 
-    return Array.from(finalEntitiesMap.values()).map((workspace) =>
-      toServerCaseKeys<IWorkspace>(workspace)
-    )
+    const finalObj = {
+      workspaces: Array.from(finalEntitiesMap.values()).map((workspace) =>
+        toServerCaseKeys<IWorkspace>(workspace)
+      ),
+      boards: recoverBoardsResult.boards,
+      categories: recoverBoardsResult.categories,
+      tasks: recoverBoardsResult.tasks,
+    }
+
+    return {
+      data: finalObj,
+      logId: log[0].id,
+    }
   }
 
   public async recover(
     criteria: WorkspaceCriteria,
     user: IUser,
     externalSession?: ClientSession
-  ): Promise<IWorkspace[]> {
+  ): Promise<IResponseWithLog<IWorkspacesWithChildrenResponse>> {
     const userId = user.id
 
     if (externalSession) {
@@ -659,7 +620,7 @@ export class WorkspaceService
     criteria: WorkspaceCriteria,
     userId: Types.ObjectId,
     session: ClientSession
-  ): Promise<ClonedWorkspacesResult> {
+  ): Promise<IResponseWithLog<ClonedWorkspacesResult>> {
     const filter = this.repository.buildFilter(criteria, userId)
 
     const workspacesToClone = await this.repository.find(
@@ -699,22 +660,27 @@ export class WorkspaceService
     )
 
     /* LOG */
-    await this.operationLogService.create(
+    const log = await this.operationLogService.create(
       {
         operationType: OperationTypesEnum.CREATE,
         collectionName: CollectionsEnum.WORKSPACES,
         entitiesAfter: newWorkspaces,
-        dependencies: cloneBoardsResult.logIds,
+        dependencies: [],
       },
       userId,
       session
     )
 
-    return {
+    const finalObj = {
       workspaces: newWorkspaces.map((wb) => toServerCaseKeys<IWorkspace>(wb)),
-      boards: cloneBoardsResult.entities.boards,
-      categories: cloneBoardsResult.entities.categories,
-      tasks: cloneBoardsResult.entities.tasks,
+      boards: cloneBoardsResult.boards,
+      categories: cloneBoardsResult.categories,
+      tasks: cloneBoardsResult.tasks,
+    }
+
+    return {
+      data: finalObj,
+      logId: log[0].id,
     }
   }
 
@@ -722,7 +688,7 @@ export class WorkspaceService
     criteria: WorkspaceCriteria,
     user: IUser,
     externalSession?: ClientSession
-  ): Promise<ClonedWorkspacesResult> {
+  ): Promise<IResponseWithLog<ClonedWorkspacesResult>> {
     const userId = user.id
 
     if (externalSession) {
@@ -732,6 +698,56 @@ export class WorkspaceService
         this._executeCloneTransaction(criteria, userId, session)
       )
     }
+  }
+
+  public async revert(
+    log: IOperationLog,
+    user: IUser,
+    session: ClientSession
+  ): Promise<IResponseWithLog<IUndoResponse<Partial<IWorkspacesWithChildrenResponse>>>> {
+    const entitiesBefore = log.entitiesBefore as (Partial<IWorkspace> & { id: Types.ObjectId })[]
+    const entitiesAfter = log.entitiesAfter as IWorkspace[]
+
+    const boardBeforeIds = entitiesBefore.map((e) => e.id.toString())
+    const boardAfterIds = entitiesAfter.map((e) => e.id.toString())
+    const operationType = log.operationType
+
+    if (operationType === OperationTypesEnum.CREATE) {
+      await this.delete({ ids: boardAfterIds }, user, session)
+
+      return {
+        data: { delete: { workspaces: entitiesAfter } },
+        logId: null,
+      }
+    } else if (operationType === OperationTypesEnum.UPDATE) {
+      const entitiesBeforeToEditSchema = entitiesBefore.map((e) => {
+        return {
+          ...toServerCaseKeys<IWorkspace>(e),
+          id: e.id.toString(),
+        }
+      })
+
+      const editResult = await this.editMany(entitiesBeforeToEditSchema, user, session)
+
+      return {
+        data: { update: { workspaces: editResult.data } },
+        logId: editResult.logId,
+      }
+    } else if (operationType === OperationTypesEnum.ARCHIVE) {
+      const recoverResult = await this.recover({ ids: boardBeforeIds }, user, session)
+
+      return {
+        data: { update: { workspaces: recoverResult.data.workspaces } },
+        logId: recoverResult.logId,
+      }
+    } else if (operationType === OperationTypesEnum.RECOVER) {
+      const archiveResult = await this.archive({ ids: boardBeforeIds }, user, session)
+
+      return {
+        data: { update: archiveResult.data },
+        logId: archiveResult.logId,
+      }
+    } else throw new Error(`Операция ${operationType} не поддерживается для отката.`)
   }
 
   private async prepareWorkspaceCreationPayload(
@@ -790,12 +806,10 @@ export class WorkspaceService
 
   private async prepareWorkspaceEditPayload(
     data: WorkspaceEditDTO,
-    workspacesToUpdate: IWorkspaceRaw[],
-    userId: Types.ObjectId
+    workspacesToUpdate: IWorkspaceRaw[]
   ) {
     const workspacePayload: SingleUpdateDTO<Partial<IWorkspaceRaw>> = {
       ...toMongoCaseKeys(data),
-      user_id: userId,
     }
 
     if (data.name && workspacesToUpdate.length > 0) {
