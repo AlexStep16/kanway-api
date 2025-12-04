@@ -13,4 +13,8 @@ export class EmbeddingService {
     const embeddings = await embeddingModel.embedDocuments(texts)
     return embeddings
   }
+
+  public getEmbeddingModel(): OpenAIEmbeddings {
+    return embeddingModel
+  }
 }

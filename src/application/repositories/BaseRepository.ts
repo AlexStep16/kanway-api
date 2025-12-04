@@ -179,9 +179,12 @@ export abstract class BaseRepository<TEntity, TModel extends Model<TEntity>> {
   public async find(
     filter: FilterQuery<TEntity>,
     session: ClientSession | null = null,
-    projection: ProjectionType<TEntity> | null = null
+    projection: ProjectionType<TEntity> | null = null,
+    limit: number = 1000
   ): Promise<TEntity[]> {
-    return this.model.find(filter, projection).session(session).lean() as Promise<TEntity[]>
+    return this.model.find(filter, projection).session(session).limit(limit).lean() as Promise<
+      TEntity[]
+    >
   }
 
   public async getCount(

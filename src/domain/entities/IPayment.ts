@@ -1,4 +1,4 @@
-import { PaymentStatusEnum } from '@/domain/enums/PaymentStatusEnum.ts'
+import { PaymentStatusEnum } from '@domain/enums/PaymentStatusEnum.ts'
 import { Types } from 'mongoose'
 
 export interface IPayment {

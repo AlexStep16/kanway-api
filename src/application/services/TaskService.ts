@@ -1,7 +1,7 @@
 import { ITaskRaw } from '@entities/ITaskRaw.ts'
 import TaskRepository from '@repositories/TaskRepository.ts'
 import { TaskDTO } from '@application/dtos/TaskDTO.ts'
-import mongoose, { ClientSession, Types } from 'mongoose'
+import mongoose, { ClientSession, FilterQuery, Types } from 'mongoose'
 import { EmbeddingService } from '@infrastructure/services/EmbeddingService.ts'
 import { TaskCriteria } from '@criterias/TaskCriteria.ts'
 import { IBaseService } from '@interfaces/IBaseService.ts'
@@ -1253,6 +1253,18 @@ export class TaskService
   ): Promise<ITask[]> {
     const filter = this.repository.buildFilter(criteria, userId)
     const tasks = await this.repository.find(filter, session)
+
+    return tasks.map((ws) => toServerCaseKeys(ws))
+  }
+
+  public async getByFilter(
+    filter: FilterQuery<ITaskRaw>,
+    userId: Types.ObjectId,
+    limit: number,
+    session?: ClientSession
+  ): Promise<ITask[]> {
+    const filterWithUser = { ...filter, user_id: userId }
+    const tasks = await this.repository.find(filterWithUser, session, null, limit)
 
     return tasks.map((ws) => toServerCaseKeys(ws))
   }
