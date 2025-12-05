@@ -14,7 +14,7 @@ import { ReorderService } from '@application/services/ReorderService.ts'
 import { toServerCaseKeys, toMongoCaseKeys } from '@utils/objectTransformers.ts'
 import { TaskEditDTO } from '@dtos/TaskEditDTO.ts'
 import { NotFoundError } from '@errors/NotFound.ts'
-import { TASK_COLORS_MAP } from '@/constants/TASK_COLORS.ts'
+import { TASK_COLORS, TASK_COLORS_MAP } from '@/constants/TASK_COLORS.ts'
 import { CategoryService } from '@application/services/CategoryService.ts'
 import { ITasksResponse } from '@/application/interfaces/ITasksResponse.ts'
 import { ITaskWithTempClientId } from '@application/interfaces/ITaskWithTempClientId.ts'
@@ -25,6 +25,7 @@ import { projectProperties } from '@/utils/projectProperties.ts'
 import { IResponseWithLog } from '../interfaces/IResponseWithLog.ts'
 import { IOperationLog } from '@/domain/entities/IOperationLog.ts'
 import { IUndoResponse } from '../interfaces/IUndoResponse.ts'
+import chroma from 'chroma-js'
 
 const MAX_RETRIES = 3
 
@@ -1244,6 +1245,22 @@ export class TaskService
     }
 
     return counts
+  }
+
+  public getNearestColor(hexColor: string) {
+    let closestColor: (typeof TASK_COLORS)[number] | null = null
+    let minDistance = Infinity
+
+    for (const colorValue in TASK_COLORS_MAP) {
+      const distance = chroma.distance(hexColor, colorValue)
+
+      if (distance < minDistance) {
+        minDistance = distance
+        closestColor = colorValue as (typeof TASK_COLORS)[number]
+      }
+    }
+
+    return closestColor
   }
 
   public async getAll(

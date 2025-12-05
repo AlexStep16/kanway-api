@@ -92,4 +92,5 @@ export enum ErrorsMessage {
   EMAIL_REQUIRED = 'Требуется электронная почта.',
   PASSWORD_REQUIRED = 'Требуется пароль.',
   INVALID_PASSWORD_FORMAT = 'Неверный формат пароля.',
+  THREAD_ID_INVALID = 'Неверный идентификатор чата.',
 }

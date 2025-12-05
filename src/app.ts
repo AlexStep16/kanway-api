@@ -7,11 +7,13 @@ import { globalErrorHandler } from '@middlewares/globalErrorHandler.ts'
 import dayjs from 'dayjs'
 import utc from 'dayjs/plugin/utc.js'
 import timezone from 'dayjs/plugin/timezone.js'
+import duration from 'dayjs/plugin/duration.js'
 import { initSubscriptions } from './initSubscriptions.ts'
 
 dayjs.locale('ru')
 dayjs.extend(utc)
 dayjs.extend(timezone)
+dayjs.extend(duration)
 
 dotenv.config()
 

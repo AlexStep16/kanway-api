@@ -512,7 +512,7 @@ const editTasksChangesObject = {
   /**
    * Установить новый ID категории.
    */
-  categoryId: zodString.optional(),
+  categoryId: zodCategoryId.optional(),
 
   /**
    * Установить статус выполнения задачи.
@@ -579,7 +579,7 @@ const editCategoriesChangesObject = {
   /**
    * Установить новый ID категории.
    */
-  boardId: zodString.optional(),
+  boardId: zodBoardId.optional(),
 
   /**
    * Установить или удалить порядковый номер.

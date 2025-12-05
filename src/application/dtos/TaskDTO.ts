@@ -87,6 +87,7 @@ export const TaskDTOSchema = z.object({
     })
     .nullable()
     .optional(),
+    threadId: z.string(ErrorsMessage.THREAD_ID_INVALID).nullable().optional(),
 })
 
 export type TaskDTO = z.infer<typeof TaskDTOSchema>

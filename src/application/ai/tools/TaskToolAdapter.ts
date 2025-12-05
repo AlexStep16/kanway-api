@@ -6,6 +6,8 @@ import {
   ConditionalTaskFilterSchema,
   TaskCreateDTO,
   TaskCreateSchema,
+  EditTasksDTO,
+  EditTasksSchema,
 } from './toolSchemes.ts'
 import { LangGraphRunnableConfig } from '@langchain/langgraph'
 import { filterToMongoQuery } from '@infrastructure/ai/filterToMongoQuery.ts'
@@ -13,13 +15,28 @@ import { getFilterNameField } from '../helpers/getFilterNameField.ts'
 import IToolResult from '@/application/interfaces/IToolResult.ts'
 import { FailedToolResult } from './FailedToolResult.ts'
 import { SuccessToolResult } from './SuccessToolResult.ts'
+import { CategoryService } from '@application/services/CategoryService.ts'
+import { TaskDTO } from '@/application/dtos/TaskDTO.ts'
+import { Types } from 'mongoose'
+import { IUser } from '@/domain/entities/IUser.ts'
+import { TaskCommandAdapterService } from '@application/services/TaskCommandAdapterService.ts'
 
 export class TaskToolAdapter extends BaseToolAdapter {
   private taskService: TaskService
+  private taskCommandAdapterService: TaskCommandAdapterService
+  private categoryService: CategoryService
 
-  constructor(baseService: BaseService, taskService: TaskService) {
+  constructor(
+    baseService: BaseService,
+    taskService: TaskService,
+    taskCommandAdapterService: TaskCommandAdapterService,
+    categoryService: CategoryService
+  ) {
     super(baseService)
+
     this.taskService = taskService
+    this.taskCommandAdapterService = taskCommandAdapterService
+    this.categoryService = categoryService
   }
 
   // [Tool 1]
@@ -27,7 +44,7 @@ export class TaskToolAdapter extends BaseToolAdapter {
     dto: ConditionalTaskFilterDTO,
     config: LangGraphRunnableConfig
   ): Promise<string> {
-    const userId = config.configurable?.userId
+    const user = config.configurable?.user as IUser
     const timezone = config.configurable?.timezone || 'Europe/Moscow'
 
     try {
@@ -43,7 +60,7 @@ export class TaskToolAdapter extends BaseToolAdapter {
 
       if (Object.keys(mongoFilter).length === 0) return JSON.stringify([])
 
-      const tasks = await this.taskService.getByFilter(mongoFilter, userId, 30)
+      const tasks = await this.taskService.getByFilter(mongoFilter, user.id, 30)
 
       if (tasks.length === 0) {
         const taskName = getFilterNameField(mongoFilter)
@@ -52,7 +69,7 @@ export class TaskToolAdapter extends BaseToolAdapter {
           // If no tasks found but filter includes 'name', try semantic search as fallback
           const semanticSearchResults = await this.baseService.similaritySearchTasks(
             taskName,
-            userId,
+            user.id,
             2
           )
 
@@ -103,8 +120,8 @@ export class TaskToolAdapter extends BaseToolAdapter {
     dto: TaskCreateDTO,
     config: LangGraphRunnableConfig
   ): Promise<IToolResult> {
-    const userId = config.configurable?.userId
-    const threadId = config.configurable?.threadId
+    const user = config.configurable?.user as IUser
+    const threadId = config.configurable?.threadId as string | undefined
 
     try {
       const tasks = dto.tasks
@@ -113,15 +130,28 @@ export class TaskToolAdapter extends BaseToolAdapter {
         return new FailedToolResult('No tasks provided for creation.')
       }
 
-      const errorMsgs = this.baseService.validateInputBySchema(tasks, TaskCreateSchema)
+      const errors: string[] = []
 
-      if (errorMsgs.length > 0) {
+      const extendedTasks = await this._extendTaskCreateDTOWithContext(
+        tasks,
+        errors,
+        user.id,
+        threadId
+      )
+
+      const validationSchemaMessages = this.baseService.validateInputBySchema(dto, TaskCreateSchema)
+
+      errors.push(...validationSchemaMessages)
+
+      if (errors.length > 0) {
         return new FailedToolResult(
-          'Filter validation error:\n' + errorMsgs + '\nPlease correct the filter and try again.'
+          'There are some errors in create Tasks schema:\n' +
+            errors.join('\n') +
+            '\nPlease correct it and try again.'
         )
       }
 
-      const tasksResult = await this.taskService.createMany(tasks, userId)
+      const tasksResult = await this.taskService.createMany(extendedTasks, user)
 
       if (!tasksResult) {
         return new FailedToolResult('Tasks creation failed.')
@@ -137,5 +167,97 @@ export class TaskToolAdapter extends BaseToolAdapter {
     } catch (e) {
       return new FailedToolResult(`Error creating tasks: ${(e as Error).message}`)
     }
+  }
+
+  public async editTasks(dto: EditTasksDTO, config: LangGraphRunnableConfig): Promise<IToolResult> {
+    const user = config.configurable?.user as IUser
+    const threadId = config.configurable?.threadId as string | undefined
+    const timezone = config.configurable?.timezone || 'Europe/Moscow'
+
+    try {
+      const categoryIdValidationMessage = dto.changes.categoryId
+        ? await this._validateCategoryId(dto.changes.categoryId, user.id)
+        : ''
+
+      if (categoryIdValidationMessage) {
+        return new FailedToolResult(categoryIdValidationMessage)
+      }
+
+      const errors: string[] = []
+
+      const validationSchemaMessages = this.baseService.validateInputBySchema(dto, EditTasksSchema)
+
+      errors.push(...validationSchemaMessages)
+
+      if (errors.length > 0) {
+        return new FailedToolResult(
+          'There are some errors in edit Tasks schema:\n' +
+            errors.join('\n') +
+            '\nPlease correct it and try again.'
+        )
+      }
+
+      const editResult = await this.taskCommandAdapterService.translateAndExecute(
+        dto.filter.ids,
+        dto.changes,
+        timezone,
+        user,
+        undefined,
+        threadId
+      )
+
+      return new SuccessToolResult(editResult)
+    } catch (e) {
+      return new FailedToolResult(`Error editing tasks: ${(e as Error).message}`)
+    }
+  }
+
+  private async _extendTaskCreateDTOWithContext(
+    tasks: TaskCreateDTO['tasks'],
+    errors: string[],
+    userId: Types.ObjectId,
+    threadId?: string
+  ): Promise<TaskDTO[]> {
+    const extendedTasks: TaskDTO[] = []
+
+    for (const task of tasks) {
+      const category = await this.categoryService.getById(task.categoryId, userId)
+
+      if (!category) {
+        errors.push(`Category with ID ${task.categoryId} not found.`)
+
+        continue
+      }
+
+      const closestColor = task.color ? this.taskService.getNearestColor(task.color) : undefined
+
+      const taskExtended: TaskDTO = {
+        ...task,
+        color: closestColor ? closestColor : undefined,
+        categoryName: category.name,
+        boardId: category.boardId.toString(),
+        boardName: category.boardName,
+        workspaceId: category.workspaceId.toString(),
+        workspaceName: category.workspaceName,
+      }
+
+      if (threadId) {
+        taskExtended.threadId = threadId
+      }
+
+      extendedTasks.push(taskExtended)
+    }
+
+    return extendedTasks
+  }
+
+  private async _validateCategoryId(categoryId: string, userId: Types.ObjectId): Promise<string> {
+    const category = await this.categoryService.getById(categoryId, userId)
+
+    if (!category) {
+      return `Category with ID ${categoryId} not found.`
+    }
+
+    return ''
   }
 }
