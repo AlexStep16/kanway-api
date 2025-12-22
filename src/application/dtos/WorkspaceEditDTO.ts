@@ -1,13 +1,13 @@
 import { z } from 'zod'
 import { WorkspaceDTOSchema } from '@/application/dtos/WorkspaceDTO.ts'
-import { ErrorsMessage } from '@/enums/ErrorsMessage.ts'
+import { ErrorMessages } from '@/enums/ErrorMessages.ts'
 
 const objectIdRegex = /^[0-9a-fA-F]{24}$/
 
 export const WorkspaceEditDTOSchema = WorkspaceDTOSchema.partial().extend({
   id: z
-    .string(ErrorsMessage.WORKSPACE_ID_INVALID)
-    .regex(objectIdRegex, ErrorsMessage.WORKSPACE_ID_INVALID),
+    .string(ErrorMessages.WORKSPACE_ID_INVALID)
+    .regex(objectIdRegex, ErrorMessages.WORKSPACE_ID_INVALID),
 })
 
 export type WorkspaceEditDTO = z.infer<typeof WorkspaceEditDTOSchema>

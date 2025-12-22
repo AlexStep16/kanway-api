@@ -2,7 +2,7 @@ import { IBoard } from '@entities/IBoard.ts'
 import { IBoardRaw } from '@entities/IBoardRaw.ts'
 import BoardRepository from '@repositories/BoardRepository.ts'
 import { BoardDTO } from '@/application/dtos/BoardDTO.ts'
-import mongoose, { ClientSession, Types } from 'mongoose'
+import mongoose, { ClientSession, FilterQuery, Types } from 'mongoose'
 import { EmbeddingService } from '@infrastructure/services/EmbeddingService.ts'
 import { BoardCriteria } from '@criterias/BoardCriteria.ts'
 import { IBaseService } from '@interfaces/IBaseService.ts'
@@ -722,11 +722,14 @@ export class BoardService
     if (boardsToClone.length === 0) throw new NotFoundError('Доски для клонирования не найдены.')
 
     const boardsGroupedByWorkspace: Map<string, IBoardRaw[]> = new Map()
+
     boardsToClone.forEach((board) => {
       const workspaceId = board.workspace_id.toString()
+
       if (!boardsGroupedByWorkspace.has(workspaceId)) {
-        boardsGroupedByWorkspace.set(workspaceId, [board])
+        boardsGroupedByWorkspace.set(workspaceId, [])
       }
+
       boardsGroupedByWorkspace.get(workspaceId)!.push(board)
     })
 
@@ -762,9 +765,23 @@ export class BoardService
 
     const newBoards = await this.repository.createMany(transformedBoards, session)
 
-    const boardIdsMap: Map<string, string> = new Map()
+    const boardIdsMap: Map<
+      string,
+      {
+        boardId: Types.ObjectId
+        boardName: string
+        workspaceId: Types.ObjectId
+        workspaceName: string
+      }
+    > = new Map()
+
     boardsToClone.forEach((board, index) => {
-      boardIdsMap.set(board._id.toString(), newBoards[index]._id.toString())
+      boardIdsMap.set(board._id.toString(), {
+        boardId: newBoards[index]._id,
+        boardName: newBoards[index].name,
+        workspaceId: newBoards[index].workspace_id,
+        workspaceName: newBoards[index].workspace_name,
+      })
     })
 
     const cloneCategoriesResult = await this.categoryService.cloneCategoriesByBoards(
@@ -819,7 +836,7 @@ export class BoardService
     log: IOperationLog,
     user: IUser,
     session: ClientSession
-  ): Promise<IResponseWithLog<IUndoResponse<Partial<IBoardsWithChildrenResponse>>>> {
+  ): Promise<IUndoResponse<Partial<IBoardsWithChildrenResponse>>> {
     const entitiesBefore = log.entitiesBefore as (Partial<IBoard> & { id: Types.ObjectId })[]
     const entitiesAfter = log.entitiesAfter as IBoard[]
 
@@ -831,8 +848,7 @@ export class BoardService
       await this.delete({ ids: boardAfterIds }, user, session)
 
       return {
-        data: { delete: { boards: entitiesAfter } },
-        logId: null,
+        delete: { boards: entitiesAfter },
       }
     } else if (operationType === OperationTypesEnum.UPDATE) {
       const entitiesBeforeToEditSchema = entitiesBefore.map((e) => {
@@ -846,22 +862,19 @@ export class BoardService
       const editResult = await this.editMany(entitiesBeforeToEditSchema, user, session)
 
       return {
-        data: { update: { boards: editResult.data } },
-        logId: editResult.logId,
+        update: { boards: editResult.data },
       }
     } else if (operationType === OperationTypesEnum.ARCHIVE) {
       const recoverResult = await this.recover({ ids: boardBeforeIds }, user, session)
 
       return {
-        data: { update: { boards: recoverResult.data.boards } },
-        logId: recoverResult.logId,
+        update: { boards: recoverResult.data.boards },
       }
     } else if (operationType === OperationTypesEnum.RECOVER) {
       const archiveResult = await this.archive({ ids: boardBeforeIds }, user, session)
 
       return {
-        data: { update: archiveResult.data },
-        logId: archiveResult.logId,
+        update: archiveResult.data,
       }
     } else throw new Error(`Операция ${operationType} не поддерживается для отката.`)
   }
@@ -936,7 +949,13 @@ export class BoardService
   }
 
   public async cloneBoardsByWorkspaces(
-    workspaceIdsMap: Map<string, string>,
+    workspaceIdsMap: Map<
+      string,
+      {
+        workspaceId: Types.ObjectId
+        workspaceName: string
+      }
+    >,
     userId: Types.ObjectId,
     session: ClientSession
   ): Promise<ClonedBoardsResult> {
@@ -946,17 +965,40 @@ export class BoardService
 
     const sourceBoards = await this.repository.find(filter, session)
 
-    const cleanBoards = sourceBoards.map((board) => ({
-      ...board,
-      workspace_id: new Types.ObjectId(workspaceIdsMap.get(board.workspace_id.toString())),
-      _id: undefined,
-    }))
+    const cleanBoards = sourceBoards.map((board) => {
+      const workpsaceData = workspaceIdsMap.get(board.workspace_id.toString())
+
+      if (!workpsaceData) {
+        throw new Error('Не удалось найти данные рабочего пространства для клонирования доски.')
+      }
+
+      return {
+        ...board,
+        workspace_id: workpsaceData.workspaceId,
+        workspace_name: workpsaceData.workspaceName,
+        _id: undefined,
+      }
+    })
 
     const clonedBoards = await this.repository.createMany(cleanBoards, session)
 
-    const boardIdsMap: Map<string, string> = new Map()
+    const boardIdsMap: Map<
+      string,
+      {
+        boardId: Types.ObjectId
+        boardName: string
+        workspaceId: Types.ObjectId
+        workspaceName: string
+      }
+    > = new Map()
+
     sourceBoards.forEach((board, index) => {
-      boardIdsMap.set(board._id.toString(), clonedBoards[index]._id.toString())
+      boardIdsMap.set(board._id.toString(), {
+        boardId: clonedBoards[index]._id,
+        boardName: clonedBoards[index].name,
+        workspaceId: clonedBoards[index].workspace_id,
+        workspaceName: clonedBoards[index].workspace_name,
+      })
     })
 
     const categoriesCloneResult = await this.categoryService.cloneCategoriesByBoards(
@@ -1156,5 +1198,17 @@ export class BoardService
     const boards = await this.repository.find(filter, session)
 
     return boards.map((ws) => toServerCaseKeys(ws))
+  }
+
+  public async getByFilter(
+    filter: FilterQuery<IBoardRaw>,
+    userId: Types.ObjectId,
+    limit: number,
+    session?: ClientSession
+  ): Promise<IBoard[]> {
+    const filterWithUser = { ...filter, user_id: userId }
+    const boards = await this.repository.find(filterWithUser, session, null, limit)
+
+    return boards.map((b) => toServerCaseKeys(b))
   }
 }

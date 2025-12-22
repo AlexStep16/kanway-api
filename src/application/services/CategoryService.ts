@@ -1,7 +1,7 @@
 import { ICategoryRaw } from '@entities/ICategoryRaw.ts'
 import CategoryRepository from '@repositories/CategoryRepository.ts'
 import { CategoryDTO } from '@application/dtos/CategoryDTO.ts'
-import mongoose, { ClientSession, Types } from 'mongoose'
+import mongoose, { ClientSession, FilterQuery, Types } from 'mongoose'
 import { EmbeddingService } from '@infrastructure/services/EmbeddingService.ts'
 import { CategoryCriteria } from '@criterias/CategoryCriteria.ts'
 import { IBaseService } from '@interfaces/IBaseService.ts'
@@ -866,6 +866,7 @@ export class CategoryService
     const categoriesGroupedByBoard: Map<string, ICategoryRaw[]> = new Map()
     categoriesToClone.forEach((category) => {
       const boardId = category.board_id.toString()
+
       if (!categoriesGroupedByBoard.has(boardId)) {
         categoriesGroupedByBoard.set(boardId, [])
       }
@@ -905,9 +906,27 @@ export class CategoryService
 
     const newCategories = await this.repository.createMany(transformedCategories, session)
 
-    const categoryIdsMap: Map<string, string> = new Map()
+    const categoryIdsMap: Map<
+      string,
+      {
+        categoryId: Types.ObjectId
+        categoryName: string
+        boardId: Types.ObjectId
+        boardName: string
+        workspaceId: Types.ObjectId
+        workspaceName: string
+      }
+    > = new Map()
+
     categoriesToClone.forEach((category, index) => {
-      categoryIdsMap.set(category._id.toString(), newCategories[index]._id.toString())
+      categoryIdsMap.set(category._id.toString(), {
+        categoryId: newCategories[index]._id,
+        categoryName: newCategories[index].name,
+        boardId: newCategories[index].board_id,
+        boardName: newCategories[index].board_name,
+        workspaceId: newCategories[index].workspace_id,
+        workspaceName: newCategories[index].workspace_name,
+      })
     })
 
     const cloneTasksResult = await this.taskService.cloneTasksByCategories(
@@ -959,7 +978,7 @@ export class CategoryService
     log: IOperationLog,
     user: IUser,
     session: ClientSession
-  ): Promise<IResponseWithLog<IUndoResponse<Partial<ICategoriesWithChildrenResponse>>>> {
+  ): Promise<IUndoResponse<Partial<ICategoriesWithChildrenResponse>>> {
     const entitiesBefore = log.entitiesBefore as (Partial<ICategory> & { id: Types.ObjectId })[]
     const entitiesAfter = log.entitiesAfter as ICategory[]
 
@@ -971,8 +990,7 @@ export class CategoryService
       await this.delete({ ids: categoryAfterIds }, user, session)
 
       return {
-        data: { delete: { categories: entitiesAfter } },
-        logId: null,
+        delete: { categories: entitiesAfter },
       }
     } else if (operationType === OperationTypesEnum.UPDATE) {
       const entitiesBeforeToEditSchema = entitiesBefore.map((e) => {
@@ -987,22 +1005,19 @@ export class CategoryService
       const editResult = await this.editMany(entitiesBeforeToEditSchema, user, session)
 
       return {
-        data: { update: { categories: editResult.data } },
-        logId: editResult.logId,
+        update: { categories: editResult.data },
       }
     } else if (operationType === OperationTypesEnum.ARCHIVE) {
       const recoverResult = await this.recover({ ids: categoryBeforeIds }, user, session)
 
       return {
-        data: { update: { categories: recoverResult.data.categories } },
-        logId: recoverResult.logId,
+        update: { categories: recoverResult.data.categories },
       }
     } else if (operationType === OperationTypesEnum.RECOVER) {
       const archiveResult = await this.archive({ ids: categoryBeforeIds }, user, session)
 
       return {
-        data: { update: archiveResult.data },
-        logId: archiveResult.logId,
+        update: archiveResult.data,
       }
     } else throw new Error(`Операция ${operationType} не поддерживается для отката.`)
   }
@@ -1075,7 +1090,15 @@ export class CategoryService
   }
 
   public async cloneCategoriesByBoards(
-    boardIdsMap: Map<string, string>,
+    boardIdsMap: Map<
+      string,
+      {
+        boardId: Types.ObjectId
+        boardName: string
+        workspaceId: Types.ObjectId
+        workspaceName: string
+      }
+    >,
     userId: Types.ObjectId,
     session: ClientSession
   ): Promise<ClonedCategoriesResult> {
@@ -1083,17 +1106,46 @@ export class CategoryService
     const filter = this.repository.buildFilter({ boardIds }, userId)
     const sourceCategories = await this.repository.find(filter, session)
 
-    const cleanCategories = sourceCategories.map((category) => ({
-      ...category,
-      board_id: new Types.ObjectId(boardIdsMap.get(category.board_id.toString())),
-      _id: undefined,
-    }))
+    const cleanCategories = sourceCategories.map((category) => {
+      const boardData = boardIdsMap.get(category.board_id.toString())
+
+      if (!boardData) {
+        throw new Error('Ошибка при клонировании категорий: не найдена целевая доска.')
+      }
+
+      return {
+        ...category,
+        board_id: boardData.boardId,
+        board_name: boardData.boardName,
+        workspace_id: boardData.workspaceId,
+        workspace_name: boardData.workspaceName,
+        _id: undefined,
+      }
+    })
 
     const clonedCategories = await this.repository.createMany(cleanCategories, session)
 
-    const categoryIdsMap: Map<string, string> = new Map()
+    const categoryIdsMap: Map<
+      string,
+      {
+        categoryId: Types.ObjectId
+        categoryName: string
+        boardId: Types.ObjectId
+        boardName: string
+        workspaceId: Types.ObjectId
+        workspaceName: string
+      }
+    > = new Map()
+
     sourceCategories.forEach((category, index) => {
-      categoryIdsMap.set(category._id.toString(), clonedCategories[index]._id.toString())
+      categoryIdsMap.set(category._id.toString(), {
+        categoryId: clonedCategories[index]._id,
+        categoryName: clonedCategories[index].name,
+        boardId: clonedCategories[index].board_id,
+        boardName: clonedCategories[index].board_name,
+        workspaceId: clonedCategories[index].workspace_id,
+        workspaceName: clonedCategories[index].workspace_name,
+      })
     })
 
     const tasksCloneResult = await this.taskService.cloneTasksByCategories(
@@ -1296,5 +1348,17 @@ export class CategoryService
     const categories = await this.repository.find(filter, session)
 
     return categories.map((ws) => toServerCaseKeys(ws))
+  }
+
+  public async getByFilter(
+    filter: FilterQuery<ICategoryRaw>,
+    userId: Types.ObjectId,
+    limit: number,
+    session?: ClientSession
+  ): Promise<ICategory[]> {
+    const filterWithUser = { ...filter, user_id: userId }
+    const categories = await this.repository.find(filterWithUser, session, null, limit)
+
+    return categories.map((c) => toServerCaseKeys(c))
   }
 }

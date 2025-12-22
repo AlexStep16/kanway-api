@@ -843,6 +843,7 @@ export class TaskService
     const tasksGrouppedByCategory: Map<string, ITaskRaw[]> = new Map()
     tasksToClone.forEach((task) => {
       const categoryId = task.category_id.toString()
+
       if (!tasksGrouppedByCategory.has(categoryId)) {
         tasksGrouppedByCategory.set(categoryId, [])
       }
@@ -919,7 +920,7 @@ export class TaskService
     log: IOperationLog,
     user: IUser,
     session: ClientSession
-  ): Promise<IResponseWithLog<IUndoResponse<ITasksResponse>>> {
+  ): Promise<IUndoResponse<ITasksResponse>> {
     const entitiesBefore = log.entitiesBefore as (Partial<ITask> & { id: Types.ObjectId })[]
     const entitiesAfter = log.entitiesAfter as ITask[]
 
@@ -931,8 +932,7 @@ export class TaskService
       await this.delete({ ids: taskAfterIds }, user, session)
 
       return {
-        data: { delete: { tasks: entitiesAfter } },
-        logId: null,
+        delete: { tasks: entitiesAfter },
       }
     } else if (operationType === OperationTypesEnum.UPDATE) {
       const entitiesBeforeToEditSchema = entitiesBefore.map((e) => {
@@ -948,28 +948,35 @@ export class TaskService
       const editResult = await this.editMany(entitiesBeforeToEditSchema, user, session)
 
       return {
-        data: { update: { tasks: editResult.data } },
-        logId: editResult.logId,
+        update: { tasks: editResult.data },
       }
     } else if (operationType === OperationTypesEnum.ARCHIVE) {
       const recoverResult = await this.recover({ ids: taskBeforeIds }, user, session)
 
       return {
-        data: { update: { tasks: recoverResult.data.tasks } },
-        logId: recoverResult.logId,
+        update: { tasks: recoverResult.data.tasks },
       }
     } else if (operationType === OperationTypesEnum.RECOVER) {
       const archiveResult = await this.archive({ ids: taskBeforeIds }, user, session)
 
       return {
-        data: { update: archiveResult.data },
-        logId: archiveResult.logId,
+        update: archiveResult.data,
       }
     } else throw new Error(`Операция ${operationType} не поддерживается для отката.`)
   }
 
   public async cloneTasksByCategories(
-    categoryIdsMap: Map<string, string>,
+    categoryIdsMap: Map<
+      string,
+      {
+        categoryId: Types.ObjectId
+        categoryName: string
+        boardId: Types.ObjectId
+        boardName: string
+        workspaceId: Types.ObjectId
+        workspaceName: string
+      }
+    >,
     userId: Types.ObjectId,
     session: ClientSession
   ): Promise<ITask[]> {
@@ -977,11 +984,26 @@ export class TaskService
     const filter = this.repository.buildFilter({ categoryIds }, userId)
     const sourceTasks = await this.repository.find(filter, session)
 
-    const cleanTasks = sourceTasks.map((task) => ({
-      ...task,
-      category_id: new Types.ObjectId(categoryIdsMap.get(task.category_id.toString())),
-      _id: undefined,
-    }))
+    const cleanTasks = sourceTasks.map((task) => {
+      const categoryData = categoryIdsMap.get(task.category_id.toString())
+
+      if (!categoryData) {
+        throw new NotFoundError('Категория для клонирования не найдена.')
+      }
+
+      return {
+        ...task,
+        category_id: categoryData.categoryId,
+        category_name: categoryData.categoryName,
+        board_id: categoryData.boardId,
+        board_name: categoryData.boardName,
+        workspace_id: categoryData.workspaceId,
+        workspace_name: categoryData.workspaceName,
+        createdAt: undefined,
+        updatedAt: undefined,
+        _id: undefined,
+      }
+    })
 
     const clonedTasks = await this.repository.createMany(cleanTasks, session)
 
@@ -1136,7 +1158,7 @@ export class TaskService
       taskPayload.color_name = TASK_COLORS_MAP[data.color]
     }
 
-    if (data.dueDate && data.dueHours != null && data.dueMinutes != null && timezone) {
+    if (data.dueDate && data.dueHours != null && data.dueMinutes != null) {
       const collectedDateTime = `${data.dueDate}T${data.dueHours}:${data.dueMinutes}`
       const utcDueDate = dayjs.tz(collectedDateTime, timezone).utc()
 

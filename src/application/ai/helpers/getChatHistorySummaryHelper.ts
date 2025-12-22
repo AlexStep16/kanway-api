@@ -4,13 +4,14 @@ import { ChatPromptTemplate } from '@langchain/core/prompts'
 import { SummarySystem } from '../SystemMessages/Summary.ts'
 import z from 'zod'
 import { ChatFireworks } from '@langchain/community/chat_models/fireworks'
+import { AgentRoles } from '@/enums/AgentRoles.ts'
 
-export async function getChatHistorySummaryHelper(messages: any[], call_id: string) {
-  await dispatchCustomEvent('history_summarization_start', {})
+export async function getChatHistorySummaryHelper(messages: any[], call_id?: string) {
+  if (!call_id) return null
+
+  await dispatchCustomEvent(AgentRoles.HISTORY_RETRIEVING, null)
 
   if (!messages || messages.length < 2) {
-    await dispatchCustomEvent('history_summarization_end', {})
-
     return {
       messages: [
         new ToolMessage({
@@ -38,8 +39,6 @@ export async function getChatHistorySummaryHelper(messages: any[], call_id: stri
   )
 
   const response = await chain.invoke({})
-
-  await dispatchCustomEvent('history_summarization_end', {})
 
   return new ToolMessage({
     content: response.summary,

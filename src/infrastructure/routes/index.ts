@@ -14,6 +14,8 @@ import subscriptionRoutes from '@routes/subscriptionRoutes.ts'
 import paymentRoutes from '@routes/paymentRoutes.ts'
 import paymentMethodRoutes from '@routes/paymentMethodRoutes.ts'
 import operationLogRoutes from '@routes/operationLogRoutes.ts'
+import chatRoutes from '@routes/chatRoutes.ts'
+import chatMessageRoutes from '@routes/chatMessageRoutes.ts'
 
 import cookieParser from 'cookie-parser'
 import { initializeDependencies } from '@infrastructure/di/initializeDependencies.ts'
@@ -47,6 +49,13 @@ export function attachRoutes(app: Application) {
   app.use(
     '/workspaces/:workspaceId/boards/:boardId/tasks',
     taskRoutes(dependencies.controllers.taskController)
+  )
+
+  app.use('/workspaces/:workspaceId/chats', chatRoutes(dependencies.controllers.chatController))
+
+  app.use(
+    '/workspaces/:workspaceId/chat-messages',
+    chatMessageRoutes(dependencies.controllers.chatMessageController)
   )
 
   app.use('/archive', archiveRoutes(dependencies.controllers.archiveController))

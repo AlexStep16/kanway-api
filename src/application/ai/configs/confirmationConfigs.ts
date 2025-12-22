@@ -1,80 +1,73 @@
-import { ObjectId } from "mongodb";
-import TaskController from "../Controllers/TaskControllers/TaskController.ts";
-import { AgentStateAnnotation } from "./AgentStateAnnotation.ts";
-import CategoryController from "../Controllers/CategoryControllers/Category.ts";
-import BoardController from "../Controllers/BoardControllers/Board.ts";
-import WorkspaceController from "../Controllers/WorkspaceControllers/Workspace.ts";
+import { ToolCall } from '@langchain/core/messages'
+import { AgentStateAnnotation } from '@application/ai/agents/AgentStateAnnotation.ts'
+import { RunnableConfig } from '@langchain/core/runnables'
+import { initializeDependencies } from '@infrastructure/di/initializeDependencies.ts'
 
-type ConfirmationContextMode = 'tool' | 'external';
+const dependencies = initializeDependencies()
+
+type ConfirmationContextMode = 'tool' | 'external'
 
 interface ConfirmationContextConfig {
-  tip: string;
+  title: string
   context: {
-    mode: ConfirmationContextMode;
-    toolName?: string; // если mode === 'tool'
+    mode: ConfirmationContextMode
+    toolName?: string // если mode === 'tool'
+    entityType?: 'task' | 'category' | 'board' | 'workspace' // если mode === 'external'
     externalFetch?: (params: {
-      toolCall: any;
-      state: typeof AgentStateAnnotation.State;
-      config: any;
-    }) => Promise<any>;
-  };
+      toolCall: ToolCall
+      state: typeof AgentStateAnnotation.State
+      config: RunnableConfig
+    }) => Promise<any>
+  }
   // (опционально) dependencies, другие поля
 }
 export const confirmationConfigs: Record<string, ConfirmationContextConfig> = {
   deleteTasks: {
-    tip: "Будут удалены следующие задачи:",
+    title: 'Будут удалены следующие задачи:',
     context: {
       mode: 'external',
-      externalFetch: async ({ toolCall }) => {
-        const ids: string[] = toolCall.args?._ids || [];
-        const objectIds = ids.map(id => ObjectId.createFromHexString(id));
+      entityType: 'task',
+      externalFetch: async ({ toolCall, config }) => {
+        const ids: string[] = toolCall.args?.ids || []
 
-        return {
-          result: await TaskController.getTasksByIdFilledHandler(objectIds)
-        };
-      }
-    }
+        return dependencies.services.taskService.getAll({ ids }, config.configurable?.user?.id)
+      },
+    },
   },
   deleteCategories: {
-    tip: "Будут удалены следующие категории:",
+    title: 'Будут удалены следующие категории:',
     context: {
       mode: 'external',
-      externalFetch: async ({ toolCall }) => {
-        const ids: string[] = toolCall.args?._ids || [];
-        const objectIds = ids.map(id => ObjectId.createFromHexString(id));
+      entityType: 'category',
+      externalFetch: async ({ toolCall, config }) => {
+        const ids: string[] = toolCall.args?.ids || []
 
-        return {
-          result: await CategoryController.getCategoriesByIdFilledHandler(objectIds)
-        };
-      }
-    }
+        return dependencies.services.categoryService.getAll({ ids }, config.configurable?.user?.id)
+      },
+    },
   },
   deleteBoards: {
-    tip: "Будут удалены следующие доски:",
+    title: 'Будут удалены следующие доски:',
     context: {
       mode: 'external',
-      externalFetch: async ({ toolCall }) => {
-        const ids: string[] = toolCall.args?._ids || [];
-        const objectIds = ids.map(id => ObjectId.createFromHexString(id));
+      entityType: 'board',
+      externalFetch: async ({ toolCall, config }) => {
+        const ids: string[] = toolCall.args?.ids || []
 
-        return {
-          result: await BoardController.getBoardsByIdFilledHandler(objectIds)
-        };
-      }
-    }
+        return dependencies.services.boardService.getAll({ ids }, config.configurable?.user?.id)
+      },
+    },
   },
   deleteWorkspaces: {
-    tip: "Будут удалены следующие пространства:",
+    title: 'Будут удалены следующие пространства:',
     context: {
       mode: 'external',
-      externalFetch: async ({ toolCall }) => {
-        const ids: string[] = toolCall.args?._ids || [];
-        const objectIds = ids.map(id => ObjectId.createFromHexString(id));
+      entityType: 'workspace',
+      externalFetch: async ({ toolCall, config }) => {
+        const ids: string[] = toolCall.args?.ids || []
 
-        return {
-          result: await WorkspaceController.getManyByIds(objectIds)
-        };
-      }
-    }
+        return dependencies.services.workspaceService.getAll({ ids }, config.configurable?.user?.id)
+      },
+    },
   },
-};
+}

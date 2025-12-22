@@ -1,4 +1,4 @@
-export enum ErrorsMessage {
+export enum ErrorMessages {
   SERVER_ERROR = 'Возникла непредвиденная ошибка.',
   INVALID_CREDENTIALS = 'Неверный email или пароль.',
   INVALID_CURRENT_PASSWORD = 'Неверный текущий пароль.',
@@ -81,7 +81,12 @@ export enum ErrorsMessage {
   PAYMENT_METHOD_ID_REQUIRED = 'Требуется идентификатор метода оплаты.',
   INVALID_PAYMENT_METHOD_ID = 'Неверный идентификатор метода оплаты.',
 
+  OPERATION_LOGS_NOT_FOUND = 'Записи журнала операций не найдены.',
   OPERATION_LOG_NOT_FOUND = 'Запись журнала операций не найдена.',
+
+  MESSAGE_TYPE_INVALID = 'Неверный тип сообщения.',
+  MESSAGE_TOO_SHORT = 'Сообщение должно содержать не менее 1 символа.',
+  MESSAGE_TOO_LONG = 'Сообщение не должно превышать 1000 символов.',
 
   SUBSCRIPTION_PLAN_NOT_FOUND = 'План подписки не найден. Обратитесь в поддержку.',
   INVALID_ID_FORMAT = 'Неверный формат идентификатора.',

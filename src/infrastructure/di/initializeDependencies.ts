@@ -37,12 +37,35 @@ import PaymentRepository from '@repositories/PaymentRepository.ts'
 import { PaymentService } from '@application/services/PaymentService.ts'
 import { PaymentController } from '@controllers/PaymentController.ts'
 import PaymentMethodRepository from '@repositories/PaymentMethodRepository.ts'
+import ChatMessageRepository from '@repositories/ChatMessageRepository.ts'
 import { PaymentMethodService } from '@application/services/PaymentMethodService.ts'
 import { PaymentMethodController } from '@controllers/PaymentMethodController.ts'
 import { IRevertableService } from '@interfaces/traits/IRevertableService.ts'
 import { OperationLogController } from '@controllers/OperationLogController.ts'
+import { TaskToolAdapter } from '@application/ai/tools/TaskToolAdapter.ts'
+import { BaseService } from '@application/services/BaseService.ts'
+import { MongoClient } from 'mongodb'
+import { TaskCommandAdapterService } from '@/application/ai/services/TaskCommandAdapterService.ts'
+import { AISemanticService } from '@application/services/AISemanticService.ts'
+import { FilterToMongoQueryService } from '@application/ai/services/FilterToMongoQueryService.ts'
+import { CategoryCommandAdapterService } from '@application/ai/services/CategoryCommandAdapterService.ts'
+import { CategoryToolAdapter } from '@application/ai/tools/CategoryToolAdapter.ts'
+import { BoardCommandAdapterService } from '@application/ai/services/BoardCommandAdapterService.ts'
+import { BoardToolAdapter } from '@application/ai/tools/BoardToolAdapter.ts'
+import { WorkspaceCommandAdapterService } from '@application/ai/services/WorkspaceCommandAdapterService.ts'
+import { WorkspaceToolAdapter } from '@application/ai/tools/WorkspaceToolAdapter.ts'
+import { ToolExecutorService } from '@application/ai/services/ToolExecutorService.ts'
+import { ChatMessageService } from '@application/services/ChatMessageService.ts'
+import { ChatService } from '@application/services/ChatService.ts'
+import ChatRepository from '@application/repositories/ChatRepository.ts'
+import ChatController from '@controllers/ChatController.ts'
+import ChatMessageController from '@controllers/ChatMessageController.ts'
+import { ToolService } from '@/application/services/ToolService.ts'
+import ToolRepository from '@/application/repositories/ToolRepository.ts'
 
 export function initializeDependencies() {
+  const mongoClient = new MongoClient(process.env.MONGODB_URI || '')
+
   const userRepository = new UserRepository()
   const tokenRepository = new TokenRepository()
   const workspaceRepository = new WorkspaceRepository()
@@ -54,6 +77,9 @@ export function initializeDependencies() {
   const subscriptionRepository = new SubscriptionRepository()
   const paymentRepository = new PaymentRepository()
   const paymentMethodRepository = new PaymentMethodRepository()
+  const chatMessageRepository = new ChatMessageRepository()
+  const chatRespository = new ChatRepository()
+  const toolRepository = new ToolRepository()
 
   /* MOCK SERVICES START */
   const mockCategoryService = {} as CategoryService
@@ -72,6 +98,7 @@ export function initializeDependencies() {
       ['workspaces', mockWorkspaceService],
     ])
   )
+  const baseService = new BaseService(embeddingService, mongoClient)
 
   /* SETTING SERVICES START */
   const settingService = new SettingService(settingRepository)
@@ -191,6 +218,80 @@ export function initializeDependencies() {
   Object.assign(mockTaskService, taskService)
   Object.assign(mockWorkspaceService, workspaceService)
 
+  /** AI SERVICES START */
+  const aiSemanticService = new AISemanticService()
+  const filterToMongoQueryService = new FilterToMongoQueryService(
+    taskService,
+    categoryService,
+    boardService
+  )
+  const chatMessageService = new ChatMessageService(chatMessageRepository, operationLogService)
+  const chatService = new ChatService(chatRespository, operationLogService, chatMessageService)
+  const toolService = new ToolService(toolRepository, embeddingService)
+  /** AI SERVICES END */
+
+  /** TOOLS ADAPTERS START */
+  const taskCommandAdapter = new TaskCommandAdapterService(
+    taskService,
+    baseService,
+    aiSemanticService
+  )
+  const taskToolAdapter = new TaskToolAdapter(
+    baseService,
+    taskService,
+    taskCommandAdapter,
+    categoryService,
+    filterToMongoQueryService
+  )
+
+  const categoryCommandAdapter = new CategoryCommandAdapterService(
+    categoryService,
+    baseService,
+    aiSemanticService
+  )
+  const categoryToolAdapter = new CategoryToolAdapter(
+    baseService,
+    categoryService,
+    categoryCommandAdapter,
+    filterToMongoQueryService,
+    boardService
+  )
+
+  const boardCommandAdapter = new BoardCommandAdapterService(
+    boardService,
+    baseService,
+    aiSemanticService
+  )
+  const boardToolAdapter = new BoardToolAdapter(
+    baseService,
+    boardService,
+    boardCommandAdapter,
+    filterToMongoQueryService,
+    workspaceService
+  )
+
+  const workspaceCommandAdapter = new WorkspaceCommandAdapterService(
+    workspaceService,
+    baseService,
+    aiSemanticService
+  )
+  const workspaceToolAdapter = new WorkspaceToolAdapter(
+    baseService,
+    workspaceService,
+    workspaceCommandAdapter,
+    filterToMongoQueryService
+  )
+  /** TOOLS ADAPTERS END */
+
+  const toolExecutorService = new ToolExecutorService(
+    baseService,
+    operationLogService,
+    taskToolAdapter,
+    categoryToolAdapter,
+    boardToolAdapter,
+    workspaceToolAdapter
+  )
+
   const authController = new AuthController(authService)
   const workspaceController = new WorkspaceController(workspaceService)
   const boardController = new BoardController(boardService)
@@ -208,9 +309,12 @@ export function initializeDependencies() {
   const paymentController = new PaymentController(paymentService)
   const paymentMethodController = new PaymentMethodController(paymentMethodService)
   const operationLogController = new OperationLogController(operationLogService)
+  const chatController = new ChatController(chatService)
+  const chatMessageController = new ChatMessageController(chatMessageService)
 
   return {
     services: {
+      baseService,
       authService,
       userService,
       emailService,
@@ -221,8 +325,13 @@ export function initializeDependencies() {
       taskService,
       settingService,
       subscriptionService,
+      filterToMongoQueryService,
       paymentService,
       paymentMethodService,
+      operationLogService,
+      toolExecutorService,
+      chatMessageService,
+      toolService,
     },
     controllers: {
       authController,
@@ -237,6 +346,14 @@ export function initializeDependencies() {
       paymentController,
       paymentMethodController,
       operationLogController,
+      chatController,
+      chatMessageController,
+    },
+    adapters: {
+      taskToolAdapter,
+      categoryToolAdapter,
+      boardToolAdapter,
+      workspaceToolAdapter,
     },
   }
 }

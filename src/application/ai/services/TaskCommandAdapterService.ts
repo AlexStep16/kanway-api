@@ -24,6 +24,16 @@ export class TaskCommandAdapterService {
     this.aiSemanticService = aiSemanticService
   }
 
+  private _getCollectedTaskDateTime(task: ITask, timezone: string): string {
+    let collectedTaskDateTime = ''
+
+    if (task.dueDate) {
+      collectedTaskDateTime = `${task.dueDate}T${task.dueHours}:${task.dueMinutes}`
+    } else collectedTaskDateTime = dayjs().tz(timezone).toISOString()
+
+    return collectedTaskDateTime
+  }
+
   public async translateAndExecute(
     taskIds: string[],
     changes: EditTasksDTO['changes'],
@@ -95,16 +105,22 @@ export class TaskCommandAdapterService {
               } else {
                 updatedTask.dueDate = valueTyped.set
               }
+
+              const utcDueDate = dayjs.tz(updatedTask.dueDate, timezone)
+
+              updatedTask.dueHours = utcDueDate.hour()
+              updatedTask.dueMinutes = utcDueDate.minute()
             }
 
             if (typeof valueTyped.shift_duration !== 'undefined') {
-              if (!updatedTask.dueDate) updatedTask.dueDate = dayjs().tz(timezone).toISOString()
+              const collectedTaskDateTime = this._getCollectedTaskDateTime(task, timezone)
 
-              const taskDate = updatedTask.dueDate
               const duration = dayjs.duration(valueTyped.shift_duration)
-              const shiftedDate = dayjs.utc(taskDate).add(duration).toISOString()
+              const shiftedDate = dayjs.utc(collectedTaskDateTime).add(duration).tz(timezone)
 
-              updatedTask.dueDate = shiftedDate
+              updatedTask.dueDate = shiftedDate.format('YYYY-MM-DD')
+              updatedTask.dueHours = shiftedDate.hour()
+              updatedTask.dueMinutes = shiftedDate.minute()
             }
           }
         }
@@ -112,19 +128,17 @@ export class TaskCommandAdapterService {
 
       if (typeof changes.dueTime !== 'undefined') {
         if (changes.dueTime === null) {
-          updatedTask.dueDate = null
+          updatedTask.dueHours = null
+          updatedTask.dueMinutes = null
         } else {
           const valueTyped = changes.dueTime as EditTasksDTO['changes']['dueTime']
-          const taskDueDate = task.dueDate
-            ? dayjs.tz(task.dueDate, timezone)
-            : dayjs.tz(dayjs(), timezone)
 
           if (valueTyped) {
             if (typeof valueTyped.set !== 'undefined') {
               const [hours, minutes] = valueTyped.set.split(':').map(Number)
-              const updatedDate = taskDueDate.hour(hours).minute(minutes)
 
-              updatedTask.dueDate = updatedDate.toISOString()
+              updatedTask.dueHours = hours
+              updatedTask.dueMinutes = minutes
             }
           }
         }

@@ -2,7 +2,7 @@ import TokenRepository from '@repositories/TokenRepository.ts'
 import nodemailer from 'nodemailer'
 import { TokenService } from '@application/services/TokenService.ts'
 import { NotFoundError } from '@errors/NotFound.ts'
-import { ErrorsMessage } from '@/enums/ErrorsMessage.ts'
+import { ErrorMessages } from '@/enums/ErrorMessages.ts'
 import { Types } from 'mongoose'
 
 const transporter = nodemailer.createTransport({
@@ -32,7 +32,7 @@ export class EmailService {
     const tokenModel = await this.tokenService.generateAndSaveConfirmationToken(user_id)
 
     if (!tokenModel) {
-      throw new NotFoundError(ErrorsMessage.TOKEN_NOT_FOUND)
+      throw new NotFoundError(ErrorMessages.TOKEN_NOT_FOUND)
     }
 
     const mailOptions = {

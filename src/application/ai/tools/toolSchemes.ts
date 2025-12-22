@@ -1,3 +1,4 @@
+import { BASE_COLORS } from '@/constants/BASE_COLORS.ts'
 import z from 'zod'
 
 const objectIdRegex = /^[0-9a-fA-F]{24}$/
@@ -21,10 +22,6 @@ const zodTaskIds = z.array(zodTaskId, 'Each task ID must be a valid ObjectId str
 const zodCategoryIds = z.array(zodCategoryId, 'Each category ID must be a valid ObjectId string')
 const zodBoardIds = z.array(zodBoardId, 'Each board ID must be a valid ObjectId string')
 const zodWorkspaceIds = z.array(zodWorkspaceId, 'Each workspace ID must be a valid ObjectId string')
-const zodDateAndTime = z.union([
-  z.iso.time('should be a valid ISO 8601 time'),
-  z.iso.datetime('should be a valid ISO 8601 datetime'),
-])
 const zodTime = z.iso.time('should be a valid ISO 8601 time')
 const zodDate = z.iso.datetime('should be a valid ISO 8601 datetime')
 const zodNumber = z.union(
@@ -127,6 +124,7 @@ type BoardCreateDTO = z.infer<typeof BoardCreateSchema>
 
 const workspaceFieldsObject = {
   name: zodName,
+  color: z.enum(BASE_COLORS).describe('HEX color code'),
   order: zodOrder.optional(),
 }
 const WorkspaceCreateSchema = z
@@ -166,11 +164,11 @@ const StringFilter = z
   .describe('A filter for text-based fields.')
 
 const zodDateTimeFilterObject = {
-  equal: zodDateAndTime.optional(),
-  greater_than: zodDateAndTime.optional(),
-  greater_than_equal: zodDateAndTime.optional(),
-  less_than: zodDateAndTime.optional(),
-  less_than_equal: zodDateAndTime.optional(),
+  equal: zodString.optional(),
+  greater_than: zodString.optional(),
+  greater_than_equal: zodString.optional(),
+  less_than: zodString.optional(),
+  less_than_equal: zodString.optional(),
 }
 
 const DateTimeFilter = z
@@ -813,9 +811,3 @@ export {
   Step,
   FinishResponseSchema,
 }
-
-console.log(
-  EditTasksSchema.safeParse({
-    dwqwd: 1,
-  })
-)

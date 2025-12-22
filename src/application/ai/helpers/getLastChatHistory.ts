@@ -1,21 +1,15 @@
-import { BaseMessageLike } from '@langchain/core/messages'
-import { getLCMessageKind } from './getLCMessageKind.ts'
+import { BaseMessage } from '@langchain/core/messages'
 
-export function getLastChatHistory(messages: any[], count: number = 10): BaseMessageLike[] {
+export function getLastChatHistory(messages: BaseMessage[], count: number = 10): BaseMessage[] {
   if (messages.length === 0) return []
 
-  const newMessages: BaseMessageLike[] = []
+  const newMessages: BaseMessage[] = []
   let counter = 0
 
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i]
-    const content = m.content || m.kwargs?.content || ''
 
     newMessages.unshift(m)
-
-    if (['human', 'ai'].includes(getLCMessageKind(m)) && content && i !== messages.length - 1) {
-      counter++
-    }
 
     if (counter >= count) {
       break

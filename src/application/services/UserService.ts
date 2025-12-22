@@ -2,7 +2,7 @@ import { IUserRaw } from '@entities/IUserRaw.ts'
 import { IUser } from '@entities/IUser.ts'
 import { AppError } from '@errors/AppError.ts'
 import bcrypt from 'bcrypt'
-import { ErrorsMessage } from '@/enums/ErrorsMessage.ts'
+import { ErrorMessages } from '@/enums/ErrorMessages.ts'
 import { RegisterCredentialsDTO } from '@/application/dtos/RegisterCredentialsDTO.ts'
 import { IGetByIdService } from '@interfaces/traits/IGetByIdService.ts'
 import { BASE_COLORS } from '@constants/BASE_COLORS.ts'
@@ -60,7 +60,7 @@ export class UserService
       const isOldPasswordSameAsNew = await bcrypt.compare(data.password, oldPasswordHash)
 
       if (isOldPasswordSameAsNew) {
-        throw new AppError({ newPassword: ErrorsMessage.PASSWORD_SAME_AS_OLD }, 422)
+        throw new AppError({ newPassword: ErrorMessages.PASSWORD_SAME_AS_OLD }, 422)
       }
 
       payload.password_hash = await bcrypt.hash(data.password, SALT_ROUNDS)
@@ -78,12 +78,12 @@ export class UserService
       const isMatch = await bcrypt.compare(oldPassword, passwordHash)
 
       if (!isMatch) {
-        throw new AppError({ oldPassword: ErrorsMessage.INVALID_CURRENT_PASSWORD }, 422)
+        throw new AppError({ oldPassword: ErrorMessages.INVALID_CURRENT_PASSWORD }, 422)
       }
 
       return passwordHash
     } else {
-      throw new AppError(ErrorsMessage.USER_NOT_FOUND, 404)
+      throw new AppError(ErrorMessages.USER_NOT_FOUND, 404)
     }
   }
 
@@ -103,13 +103,13 @@ export class UserService
     const user = await this.repository.findByEmail(email)
 
     if (!user) {
-      throw new AppError(ErrorsMessage.INVALID_CREDENTIALS, 401)
+      throw new AppError(ErrorMessages.INVALID_CREDENTIALS, 401)
     }
 
     const isMatch = await bcrypt.compare(passwordPlain, user.password_hash)
 
     if (!isMatch) {
-      throw new AppError(ErrorsMessage.INVALID_CREDENTIALS, 401)
+      throw new AppError(ErrorMessages.INVALID_CREDENTIALS, 401)
     }
 
     return toServerCaseKeys(user)

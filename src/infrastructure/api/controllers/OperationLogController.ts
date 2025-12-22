@@ -10,9 +10,9 @@ export class OperationLogController {
     this.service = serviceInstance
   }
 
-  public undoOperation = async (req: Request, res: Response, next: NextFunction) => {
+  public undoOperations = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const result = await this.service.undoOperation(req.params.id, req.user as IUser)
+      const result = await this.service.undoOperations([req.params.id], req.user as IUser)
 
       res.status(200).json(new SuccessResponse(result))
     } catch (error) {

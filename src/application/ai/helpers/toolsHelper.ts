@@ -1,106 +1,47 @@
 import {
-  findTasksByFilter,
-  findCategoriesByFilter,
-  findBoardsByFilter,
-  findWorkspacesByFilter,
-  findRelevantTasks,
-  findRelevantCategories,
-  findRelevantBoards,
-  findRelevantWorkspaces,
-  createTasks,
-  createCategories,
-  createBoards,
-  createWorkspaces,
-  editTasks,
-  editCategories,
-  editBoards,
-  editWorkspaces,
-  archiveWorkspaces,
-  archiveBoards,
-  archiveCategories,
-  archiveTasks,
-  recoverWorkspaces,
-  recoverBoards,
-  recoverCategories,
-  recoverTasks,
-  deleteWorkspaces,
-  deleteBoards,
-  deleteCategories,
-  deleteTasks,
-  getChatHistory,
-  getRelevantTools,
-  undoOperations,
-  finishResponse,
+  createBaseTools,
+  createBoardTools,
+  createCategoryTools,
+  createTaskTools,
+  createWorkspaceTools,
 } from '@application/ai/tools/tools.ts'
+import { TaskToolAdapter } from '../tools/TaskToolAdapter.ts'
+import { BoardToolAdapter } from '../tools/BoardToolAdapter.ts'
+import { CategoryToolAdapter } from '../tools/CategoryToolAdapter.ts'
+import { OperationLogService } from '@/application/services/OperationLogService.ts'
+import { WorkspaceToolAdapter } from '../tools/WorkspaceToolAdapter.ts'
 
-export const tools = [
-  findTasksByFilter,
-  findCategoriesByFilter,
-  findBoardsByFilter,
-  findWorkspacesByFilter,
+export function createTools(
+  taskToolAdapter: TaskToolAdapter,
+  boardToolAdapter: BoardToolAdapter,
+  categoryToolAdapter: CategoryToolAdapter,
+  workspaceToolAdapter: WorkspaceToolAdapter,
+  operationLogService: OperationLogService
+) {
+  const entityTools = [
+    ...createTaskTools(taskToolAdapter),
+    ...createBoardTools(boardToolAdapter),
+    ...createCategoryTools(categoryToolAdapter),
+    ...createWorkspaceTools(workspaceToolAdapter),
+  ]
 
-  findRelevantTasks,
-  findRelevantCategories,
-  findRelevantBoards,
-  findRelevantWorkspaces,
+  const hotTools = [...createBaseTools(operationLogService)]
+  const allTools = [...entityTools, ...hotTools]
+  const toolsWithIntegration = [...entityTools]
 
-  createTasks,
-  createCategories,
-  createBoards,
-  createWorkspaces,
+  const toolsByName = Object.fromEntries(
+    [...entityTools, ...hotTools].map((tool) => [tool.name, tool])
+  )
+  const toolsWithIntegrationByName = Object.fromEntries(
+    [...toolsWithIntegration].map((tool) => [tool.name, tool])
+  )
 
-  editTasks,
-  editCategories,
-  editBoards,
-  editWorkspaces,
-
-  archiveWorkspaces,
-  archiveBoards,
-  archiveCategories,
-  archiveTasks,
-
-  recoverWorkspaces,
-  recoverBoards,
-  recoverCategories,
-  recoverTasks,
-
-  deleteWorkspaces,
-  deleteBoards,
-  deleteCategories,
-  deleteTasks,
-]
-
-export const hotTools = [getRelevantTools, getChatHistory, undoOperations, finishResponse]
-export const toolsWithOperationLogs = [
-  createTasks,
-  createBoards,
-  createCategories,
-  createWorkspaces,
-
-  editWorkspaces,
-  editCategories,
-  editBoards,
-  editTasks,
-
-  archiveTasks,
-  archiveCategories,
-  archiveBoards,
-  archiveWorkspaces,
-
-  recoverTasks,
-  recoverCategories,
-  recoverBoards,
-  recoverWorkspaces,
-
-  deleteTasks,
-  deleteCategories,
-  deleteBoards,
-  deleteWorkspaces,
-]
-
-export const toolsByName = Object.fromEntries(
-  [...tools, ...hotTools].map((tool) => [tool.name, tool])
-)
-export const toolsWithOperationLogsByName = Object.fromEntries(
-  [...toolsWithOperationLogs].map((tool) => [tool.name, tool])
-)
+  return {
+    entityTools,
+    hotTools,
+    allTools,
+    toolsByName,
+    toolsWithIntegration,
+    toolsWithIntegrationByName,
+  }
+}

@@ -1,0 +1,102 @@
+import { EditCategoriesDTO } from '@application/ai/tools/toolSchemes.ts'
+import { ClientSession } from 'mongoose'
+import { IResponseWithLog } from '@interfaces/IResponseWithLog.ts'
+import { BaseService } from '@application/services/BaseService.ts'
+import { AISemanticService } from '@application/services/AISemanticService.ts'
+import { IUser } from '@domain/entities/IUser.ts'
+import { CategoryService } from '../../services/CategoryService.ts'
+import { CategoryEditDTO } from '../../dtos/CategoryEditDTO.ts'
+import { ICategory } from '@/domain/entities/ICategory.ts'
+
+export class CategoryCommandAdapterService {
+  protected categoryService: CategoryService
+  protected baseService: BaseService
+  protected aiSemanticService: AISemanticService
+
+  constructor(
+    categoryService: CategoryService,
+    baseService: BaseService,
+    aiSemanticService: AISemanticService
+  ) {
+    this.categoryService = categoryService
+    this.baseService = baseService
+    this.aiSemanticService = aiSemanticService
+  }
+
+  public async translateAndExecute(
+    categoryIds: string[],
+    changes: EditCategoriesDTO['changes'],
+    user: IUser,
+    session?: ClientSession,
+    threadId?: string
+  ): Promise<IResponseWithLog<ICategory[]>> {
+    const categoriesToUpdate: CategoryEditDTO[] = []
+
+    const existingCategories = await this.categoryService.getAll(
+      { ids: categoryIds },
+      user.id,
+      session
+    )
+
+    for (const category of existingCategories) {
+      const updatedCategory = {
+        id: category.id.toString(),
+        threadId: threadId,
+      } as CategoryEditDTO
+
+      if (typeof changes.boardId !== 'undefined' && typeof changes.boardId === 'string') {
+        updatedCategory.boardId = changes.boardId
+      }
+
+      if (typeof changes.order !== 'undefined') {
+        if (typeof changes.order === 'string') updatedCategory.order = parseInt(changes.order, 10)
+        else if (typeof changes.order === 'number') updatedCategory.order = changes.order
+      }
+
+      categoriesToUpdate.push(updatedCategory)
+    }
+
+    if (typeof changes.name !== 'undefined') {
+      let updatedNames: { id: string; name: string }[] = []
+
+      if (changes.name.set) {
+        updatedNames = await this.aiSemanticService.buildNamesForEntities(
+          existingCategories,
+          String(changes.name.set),
+          'set'
+        )
+      } else if (changes.name.append) {
+        updatedNames = await this.aiSemanticService.buildNamesForEntities(
+          existingCategories,
+          String(changes.name.append),
+          'append'
+        )
+      } else if (changes.name.prepend) {
+        updatedNames = await this.aiSemanticService.buildNamesForEntities(
+          existingCategories,
+          String(changes.name.prepend),
+          'prepend'
+        )
+      } else if (changes.name.replace_part) {
+        updatedNames = await this.aiSemanticService.buildNamesForEntities(
+          existingCategories,
+          String(changes.name.replace_part.replace_with),
+          'replace',
+          String(changes.name.replace_part.find)
+        )
+      }
+
+      for (const updatedCategory of categoriesToUpdate) {
+        const updatedNameData = updatedNames.find(
+          (data) => data.id === updatedCategory.id.toString()
+        )
+
+        if (updatedNameData) {
+          updatedCategory.name = updatedNameData.name
+        }
+      }
+    }
+
+    return await this.categoryService.editMany(categoriesToUpdate, user, session)
+  }
+}

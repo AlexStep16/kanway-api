@@ -9,6 +9,7 @@ import utc from 'dayjs/plugin/utc.js'
 import timezone from 'dayjs/plugin/timezone.js'
 import duration from 'dayjs/plugin/duration.js'
 import { initSubscriptions } from './initSubscriptions.ts'
+import { initializeTools } from './infrastructure/ai/initializeTools.ts'
 
 dayjs.locale('ru')
 dayjs.extend(utc)
@@ -32,3 +33,4 @@ startOpenAIProxy(8080)
 app.use(globalErrorHandler)
 
 initSubscriptions()
+initializeTools()

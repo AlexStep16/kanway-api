@@ -7,7 +7,7 @@ export default (controller: OperationLogController): Router => {
 
   router.use(jwtAuthMiddleware)
 
-  router.patch('/:id/undo', controller.undoOperation)
+  router.patch('/:id/undo', controller.undoOperations)
 
   return router
 }

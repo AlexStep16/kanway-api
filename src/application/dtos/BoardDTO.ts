@@ -1,4 +1,4 @@
-import { ErrorsMessage } from '@/enums/ErrorsMessage.ts'
+import { ErrorMessages } from '@/enums/ErrorMessages.ts'
 import { z } from 'zod'
 
 const objectIdRegex = /^[0-9a-fA-F]{24}$/
@@ -8,27 +8,28 @@ export const BoardDTOSchema = z.object({
     .string({
       error: (iss) =>
         iss.input === undefined
-          ? ErrorsMessage.BOARD_NAME_REQUIRED
-          : ErrorsMessage.BOARD_NAME_INVALID,
+          ? ErrorMessages.BOARD_NAME_REQUIRED
+          : ErrorMessages.BOARD_NAME_INVALID,
     })
-    .min(1, ErrorsMessage.BOARD_NAME_LESS_THAN_1)
-    .max(100, ErrorsMessage.BOARD_NAME_MORE_THAN_100),
+    .min(1, ErrorMessages.BOARD_NAME_LESS_THAN_1)
+    .max(100, ErrorMessages.BOARD_NAME_MORE_THAN_100),
   workspaceId: z
     .string({
       error: (iss) =>
         iss.input === undefined
-          ? ErrorsMessage.WORKSPACE_ID_REQUIRED
-          : ErrorsMessage.WORKSPACE_ID_INVALID,
+          ? ErrorMessages.WORKSPACE_ID_REQUIRED
+          : ErrorMessages.WORKSPACE_ID_INVALID,
     })
-    .regex(objectIdRegex, ErrorsMessage.WORKSPACE_ID_INVALID),
+    .regex(objectIdRegex, ErrorMessages.WORKSPACE_ID_INVALID),
   workspaceName: z.string({
     error: (iss) =>
       iss.input === undefined
-        ? ErrorsMessage.WORKSPACE_NAME_REQUIRED
-        : ErrorsMessage.WORKSPACE_NAME_INVALID,
+        ? ErrorMessages.WORKSPACE_NAME_REQUIRED
+        : ErrorMessages.WORKSPACE_NAME_INVALID,
   }),
-  order: z.union([z.string(), z.number()], ErrorsMessage.BOARD_ORDER_TYPE_INVALID).optional(),
-  isFavorite: z.boolean(ErrorsMessage.BOARD_IS_FAVORITE_TYPE_INVALID).optional(),
+  order: z.union([z.string(), z.number()], ErrorMessages.BOARD_ORDER_TYPE_INVALID).optional(),
+  isFavorite: z.boolean(ErrorMessages.BOARD_IS_FAVORITE_TYPE_INVALID).optional(),
+  threadId: z.string(ErrorMessages.THREAD_ID_INVALID).nullable().optional(),
 })
 
 export type BoardDTO = z.infer<typeof BoardDTOSchema>

@@ -6,11 +6,11 @@ import mongoose, { ClientSession, Types } from 'mongoose'
 import { toMongoCaseKeys, toServerCaseKeys } from '@utils/objectTransformers.ts'
 import { IOperationLogRaw } from '@entities/IOperationLogRaw.ts'
 import { SystemFields } from '@/infrastructure/types/SystemFields.ts'
-import { ErrorsMessage } from '@/enums/ErrorsMessage.ts'
+import { ErrorMessages } from '@/enums/ErrorMessages.ts'
 import { IUser } from '@/domain/entities/IUser.ts'
 import { IRevertableService } from '@traits/IRevertableService.ts'
-import { IResponseWithLog } from '@interfaces/IResponseWithLog.ts'
 import { IUndoResponse } from '../interfaces/IUndoResponse.ts'
+import { OperationLogCriteria } from '../interfaces/criterias/OperationLogCriteria.ts'
 
 const MAX_RETRIES = 3
 
@@ -72,37 +72,54 @@ export class OperationLogService
     return [toServerCaseKeys(newOperationLog)]
   }
 
-  private async _executeUndoOperation(
-    logId: string,
+  private async _executeUndoOperations(
+    logIds: string[],
     user: IUser,
     session: ClientSession
-  ): Promise<IResponseWithLog<IUndoResponse<any>>> {
-    const log = await this.repository.findByIdAndUser(logId, user.id, session)
+  ): Promise<IUndoResponse<any>[]> {
+    const filter = this.repository.buildFilter({ ids: logIds }, user.id)
+    const logs = await this.repository.find(filter, session)
+    const results: IUndoResponse<any>[] = []
 
-    if (!log) {
-      throw new Error(ErrorsMessage.OPERATION_LOG_NOT_FOUND)
+    if (!logs) {
+      throw new Error(ErrorMessages.OPERATION_LOGS_NOT_FOUND)
     }
 
-    const service = this.revertAdapters.get(log.collection_name)
+    for (const log of logs) {
+      const service = this.revertAdapters.get(log.collection_name)
 
-    if (!service) {
-      throw new Error(`Нет адаптера для сущности: ${log.collection_name}`)
+      if (!service) {
+        throw new Error(`Нет адаптера для сущности: ${log.collection_name}`)
+      }
+
+      results.push(await service.revert(toServerCaseKeys<IOperationLog>(log), user, session))
     }
 
-    return await service.revert(toServerCaseKeys<IOperationLog>(log), user, session)
+    return results
   }
 
-  public async undoOperation(
-    logId: string,
+  public async undoOperations(
+    logIds: string[],
     user: IUser,
     externalSession: ClientSession | null = null
-  ): Promise<IResponseWithLog<IUndoResponse<any>>> {
+  ): Promise<IUndoResponse<any>[]> {
     if (externalSession) {
-      return this._executeUndoOperation(logId, user, externalSession)
+      return this._executeUndoOperations(logIds, user, externalSession)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeUndoOperation(logId, user, session)
+        this._executeUndoOperations(logIds, user, session)
       )
     }
+  }
+
+  public async getAll(
+    criteria: OperationLogCriteria,
+    userId: Types.ObjectId,
+    session?: ClientSession
+  ): Promise<IOperationLog[]> {
+    const filter = this.repository.buildFilter(criteria, userId)
+    const logs = await this.repository.find(filter, session)
+
+    return logs.map((log) => toServerCaseKeys(log))
   }
 }

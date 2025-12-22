@@ -6,4 +6,5 @@ export enum CollectionsEnum {
   TASKS = 'tasks',
   TOKENS = 'tokens',
   OPERATION_LOGS = 'operation_logs',
+  CHAT_HISTORIES = 'chat_histories',
 }

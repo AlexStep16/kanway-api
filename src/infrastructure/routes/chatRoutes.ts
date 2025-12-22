@@ -1,0 +1,18 @@
+import express, { Router } from 'express'
+import { jwtAuthMiddleware } from '@infrastructure/auth/passportJWTStrategy.ts'
+import ChatController from '@controllers/ChatController.ts'
+import { validationMiddleware } from '@middlewares/validationMiddleware.ts'
+import { ChatSendDTOSchema } from '@dtos/ChatSendDTO.ts'
+
+export default (controller: ChatController): Router => {
+  const router = express.Router()
+
+  router.use(jwtAuthMiddleware)
+
+  router.get('/', controller.getAll)
+  router.post('/send', validationMiddleware(ChatSendDTOSchema), controller.send.bind(controller))
+  router.get('/stream/:jobId/status', controller.streamStatus.bind(controller))
+  router.post('/tools/approve', controller.approveToolCall.bind(controller))
+
+  return router
+}

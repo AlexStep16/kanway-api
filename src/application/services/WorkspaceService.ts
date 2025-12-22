@@ -2,7 +2,7 @@ import { IWorkspace } from '@entities/IWorkspace.ts'
 import { IWorkspaceRaw } from '@entities/IWorkspaceRaw.ts'
 import WorkspaceRepository from '@repositories/WorkspaceRepository.ts'
 import { WorkspaceDTO } from '@dtos/WorkspaceDTO.ts'
-import mongoose, { ClientSession, Types } from 'mongoose'
+import mongoose, { ClientSession, FilterQuery, Types } from 'mongoose'
 import { EmbeddingService } from '@infrastructure/services/EmbeddingService.ts'
 import { WorkspaceCriteria } from '@criterias/WorkspaceCriteria.ts'
 import { IBaseService } from '@interfaces/IBaseService.ts'
@@ -648,9 +648,19 @@ export class WorkspaceService
 
     const newWorkspaces = await this.repository.createMany(transformedWorkspaces, session)
 
-    const workspaceIdsMap: Map<string, string> = new Map()
+    const workspaceIdsMap: Map<
+      string,
+      {
+        workspaceId: Types.ObjectId
+        workspaceName: string
+      }
+    > = new Map()
+
     workspacesToClone.forEach((workspace, index) => {
-      workspaceIdsMap.set(workspace._id.toString(), newWorkspaces[index]._id.toString())
+      workspaceIdsMap.set(workspace._id.toString(), {
+        workspaceId: newWorkspaces[index]._id,
+        workspaceName: newWorkspaces[index].name,
+      })
     })
 
     const cloneBoardsResult = await this.boardService.cloneBoardsByWorkspaces(
@@ -704,7 +714,7 @@ export class WorkspaceService
     log: IOperationLog,
     user: IUser,
     session: ClientSession
-  ): Promise<IResponseWithLog<IUndoResponse<Partial<IWorkspacesWithChildrenResponse>>>> {
+  ): Promise<IUndoResponse<Partial<IWorkspacesWithChildrenResponse>>> {
     const entitiesBefore = log.entitiesBefore as (Partial<IWorkspace> & { id: Types.ObjectId })[]
     const entitiesAfter = log.entitiesAfter as IWorkspace[]
 
@@ -716,8 +726,7 @@ export class WorkspaceService
       await this.delete({ ids: boardAfterIds }, user, session)
 
       return {
-        data: { delete: { workspaces: entitiesAfter } },
-        logId: null,
+        delete: { workspaces: entitiesAfter },
       }
     } else if (operationType === OperationTypesEnum.UPDATE) {
       const entitiesBeforeToEditSchema = entitiesBefore.map((e) => {
@@ -730,22 +739,19 @@ export class WorkspaceService
       const editResult = await this.editMany(entitiesBeforeToEditSchema, user, session)
 
       return {
-        data: { update: { workspaces: editResult.data } },
-        logId: editResult.logId,
+        update: { workspaces: editResult.data },
       }
     } else if (operationType === OperationTypesEnum.ARCHIVE) {
       const recoverResult = await this.recover({ ids: boardBeforeIds }, user, session)
 
       return {
-        data: { update: { workspaces: recoverResult.data.workspaces } },
-        logId: recoverResult.logId,
+        update: { workspaces: recoverResult.data.workspaces },
       }
     } else if (operationType === OperationTypesEnum.RECOVER) {
       const archiveResult = await this.archive({ ids: boardBeforeIds }, user, session)
 
       return {
-        data: { update: archiveResult.data },
-        logId: archiveResult.logId,
+        update: archiveResult.data,
       }
     } else throw new Error(`Операция ${operationType} не поддерживается для отката.`)
   }
@@ -879,6 +885,18 @@ export class WorkspaceService
   ): Promise<IWorkspace[]> {
     const filter = this.repository.buildFilter(criteria, userId)
     const workspaces = await this.repository.find(filter, session)
+
+    return workspaces.map((ws) => toServerCaseKeys(ws))
+  }
+
+  public async getByFilter(
+    filter: FilterQuery<IWorkspaceRaw>,
+    userId: Types.ObjectId,
+    limit: number,
+    session?: ClientSession
+  ): Promise<IWorkspace[]> {
+    const filterWithUser = { ...filter, user_id: userId }
+    const workspaces = await this.repository.find(filterWithUser, session, null, limit)
 
     return workspaces.map((ws) => toServerCaseKeys(ws))
   }
