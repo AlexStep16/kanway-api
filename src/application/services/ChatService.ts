@@ -19,7 +19,11 @@ import dayjs from 'dayjs'
 import { langgraphQueue } from '@/infrastructure/queues/index.ts'
 import { ApproveToolCallDTO } from '@dtos/ApproveToolCallDTO.ts'
 import { Command } from '@langchain/langgraph'
-import { ChatMessageContent } from '@interfaces/ChatMessageContent.ts'
+import { ChatMessageContent } from '@/application/ai/interfaces/ChatMessageContent.ts'
+import { SettingService } from './SettingService.ts'
+import { ContextExternalFetchService } from '@application/ai/services/ContextExternalFetchService.ts'
+import { Configurable } from '../ai/interfaces/Configurable.ts'
+import { RetryAgentDTO } from '../dtos/RetryAgentDTO.ts'
 
 const MAX_RETRIES = 3
 
@@ -27,15 +31,54 @@ export class ChatService implements ICreateService<IChat, ChatDTO> {
   protected repository: ChatRepository
   protected operationLogService: OperationLogService
   protected chatMessageService: ChatMessageService
+  protected settingService: SettingService
+  protected contextExternalFetchService: ContextExternalFetchService
 
   constructor(
     ChatRepository: ChatRepository,
     operationLogService: OperationLogService,
-    chatMessageService: ChatMessageService
+    chatMessageService: ChatMessageService,
+    settingService: SettingService,
+    contextExternalFetchService: ContextExternalFetchService
   ) {
     this.repository = ChatRepository
     this.operationLogService = operationLogService
     this.chatMessageService = chatMessageService
+    this.settingService = settingService
+    this.contextExternalFetchService = contextExternalFetchService
+  }
+
+  private async _getConfigurableFromUserSetting(
+    user: IUser,
+    data: {
+      threadId: string
+      chatId: string
+      boardId: string
+      workspaceId: string
+      timezone: string
+    }
+  ): Promise<RunnableConfig<Configurable>> {
+    const userSetting = await this.settingService.getByUserId(user.id)
+
+    const config: RunnableConfig<Configurable> = {
+      recursionLimit: 25,
+      configurable: {
+        thread_id: data.threadId,
+        user,
+        chatId: data.chatId,
+        activeBoardId: data.boardId,
+        activeWorkspaceId: data.workspaceId,
+        currentDate: dayjs.tz(dayjs(), data.timezone).toISOString(),
+        timezone: data.timezone,
+
+        aiName: userSetting.aiName || 'Kanbar',
+        aiConfirmationType: userSetting.aiConfirmationType,
+        defaultCategoryName: userSetting.aiDefaultCategory,
+        defaultBoardName: userSetting.aiDefaultBoard,
+      },
+    }
+
+    return config
   }
 
   private async _retryExecutor<T>(executor: (session: ClientSession) => Promise<T>): Promise<T> {
@@ -57,6 +100,7 @@ export class ChatService implements ICreateService<IChat, ChatDTO> {
           await new Promise((resolve) => setTimeout(resolve, 50 * attempt))
           continue
         }
+
         throw error
       } finally {
         session.endSession()
@@ -110,18 +154,13 @@ export class ChatService implements ICreateService<IChat, ChatDTO> {
         user
       )
 
-      const config: RunnableConfig = {
-        recursionLimit: 20,
-        configurable: {
-          thread_id: threadId,
-          user,
-          chatId: chat.id.toString(),
-          activeBoardId: data.boardId,
-          activeWorkspaceId: data.workspaceId,
-          currentDate: dayjs.tz(dayjs(), data.timezone).toISOString(),
-          timezone: data.timezone,
-        },
-      }
+      const config = await this._getConfigurableFromUserSetting(user, {
+        threadId: threadId,
+        chatId: chat.id.toString(),
+        boardId: data.boardId,
+        workspaceId: data.workspaceId,
+        timezone: data.timezone,
+      })
 
       const jobPayload = { payload: messages, config }
 
@@ -135,6 +174,41 @@ export class ChatService implements ICreateService<IChat, ChatDTO> {
       }
     } catch (error) {
       throw error
+    }
+  }
+
+  public async retry(data: RetryAgentDTO, user: IUser, externalSession?: ClientSession) {
+    const chatMessages = await this.chatMessageService.getAll(
+      { chatId: data.chatId, threadId: data.threadId },
+      user.id
+    )
+
+    const lastHumanMessage = [...chatMessages].reverse().find((msg) => msg.role === 'user')
+
+    if (!lastHumanMessage) {
+      throw new Error('Не найдено сообщение для повторной попытки.')
+    }
+
+    const messageIdsAfterLastHuman = chatMessages
+      .filter((msg) => msg.createdAt > lastHumanMessage.createdAt)
+      .map((msg) => msg.id.toString())
+
+    await this.chatMessageService.delete({ ids: messageIdsAfterLastHuman }, user, externalSession)
+
+    const config = await this._getConfigurableFromUserSetting(user, {
+      threadId: data.threadId,
+      chatId: data.chatId.toString(),
+      boardId: data.boardId,
+      workspaceId: data.workspaceId,
+      timezone: data.timezone,
+    })
+
+    const jobPayload = { payload: [], config, isRetry: true }
+
+    const job = await langgraphQueue.add('process_query', jobPayload)
+
+    return {
+      jobId: job.id,
     }
   }
 
@@ -230,8 +304,10 @@ export class ChatService implements ICreateService<IChat, ChatDTO> {
       externalSession
     )
 
+    const userSetting = await this.settingService.getByUserId(user.id)
+
     if (toolsWithNoDecision === 0) {
-      const config: RunnableConfig = {
+      const config: RunnableConfig<Configurable> = {
         recursionLimit: 20,
         configurable: {
           thread_id: chatMessage.threadId,
@@ -241,6 +317,11 @@ export class ChatService implements ICreateService<IChat, ChatDTO> {
           activeWorkspaceId: data.workspaceId,
           currentDate: dayjs.tz(dayjs(), data.timezone).toISOString(),
           timezone: data.timezone,
+
+          aiConfirmationType: userSetting.aiConfirmationType,
+          aiName: userSetting.aiName || 'Kanbar',
+          defaultCategoryName: userSetting.aiDefaultCategory,
+          defaultBoardName: userSetting.aiDefaultBoard,
         },
       }
 

@@ -1,5 +1,5 @@
-import { EditBoardsDTO } from '@application/ai/tools/toolSchemes.ts'
-import { ClientSession } from 'mongoose'
+import { EditWorkspacesDTO } from '@application/ai/tools/toolSchemes.ts'
+import { ClientSession, Types } from 'mongoose'
 import { IResponseWithLog } from '@interfaces/IResponseWithLog.ts'
 import { BaseService } from '@application/services/BaseService.ts'
 import { AISemanticService } from '@application/services/AISemanticService.ts'
@@ -24,8 +24,8 @@ export class WorkspaceCommandAdapterService {
   }
 
   public async translateAndExecute(
-    boardIds: string[],
-    changes: EditBoardsDTO['changes'],
+    workspaceIds: string[],
+    changes: EditWorkspacesDTO['changes'],
     user: IUser,
     session?: ClientSession,
     threadId?: string
@@ -33,7 +33,7 @@ export class WorkspaceCommandAdapterService {
     const workspacesToUpdate: WorkspaceEditDTO[] = []
 
     const existingWorkspaces = await this.workspaceService.getAll(
-      { ids: boardIds },
+      { ids: workspaceIds },
       user.id,
       session
     )
@@ -49,11 +49,19 @@ export class WorkspaceCommandAdapterService {
         else if (typeof changes.order === 'number') updatedWorkspace.order = changes.order
       }
 
+      if (typeof changes.isFavorite !== 'undefined') {
+        updatedWorkspace.isFavorite = Boolean(changes.isFavorite)
+      }
+
+      if (typeof changes.color !== 'undefined') {
+        updatedWorkspace.color = this.workspaceService.getNearestColor(changes.color)
+      }
+
       workspacesToUpdate.push(updatedWorkspace)
     }
 
     if (typeof changes.name !== 'undefined') {
-      let updatedNames: { id: string; name: string }[] = []
+      let updatedNames: { id: Types.ObjectId; name: string }[] = []
 
       if (changes.name.set) {
         updatedNames = await this.aiSemanticService.buildNamesForEntities(
@@ -61,21 +69,24 @@ export class WorkspaceCommandAdapterService {
           String(changes.name.set),
           'set'
         )
-      } else if (changes.name.append) {
+      }
+      if (changes.name.append) {
         updatedNames = await this.aiSemanticService.buildNamesForEntities(
-          existingWorkspaces,
+          updatedNames.length > 0 ? updatedNames : existingWorkspaces,
           String(changes.name.append),
           'append'
         )
-      } else if (changes.name.prepend) {
+      }
+      if (changes.name.prepend) {
         updatedNames = await this.aiSemanticService.buildNamesForEntities(
-          existingWorkspaces,
+          updatedNames.length > 0 ? updatedNames : existingWorkspaces,
           String(changes.name.prepend),
           'prepend'
         )
-      } else if (changes.name.replace_part) {
+      }
+      if (changes.name.replace_part) {
         updatedNames = await this.aiSemanticService.buildNamesForEntities(
-          existingWorkspaces,
+          updatedNames.length > 0 ? updatedNames : existingWorkspaces,
           String(changes.name.replace_part.replace_with),
           'replace',
           String(changes.name.replace_part.find)
@@ -83,9 +94,7 @@ export class WorkspaceCommandAdapterService {
       }
 
       for (const updatedWorkspace of workspacesToUpdate) {
-        const updatedNameData = updatedNames.find(
-          (data) => data.id === updatedWorkspace.id.toString()
-        )
+        const updatedNameData = updatedNames.find((data) => data.id.equals(updatedWorkspace.id))
 
         if (updatedNameData) {
           updatedWorkspace.name = updatedNameData.name

@@ -8,6 +8,7 @@ export interface IWorkspace {
   isFavorite: boolean
   order: number
   color: (typeof BASE_COLORS)[number]
+  colorName: string
   embeddings: Array<Number>
   isDeleted: boolean
   deletedTime?: Date

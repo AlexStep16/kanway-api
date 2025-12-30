@@ -21,6 +21,7 @@
     "@langchain/langgraph-checkpoint-mongodb": "^1.0.0",
     "@langchain/mongodb": "^1.0.0",
     "@langchain/openai": "^1.0.0",
+    "@sentry/node": "^10.32.1",
     "@types/bcrypt": "^6.0.0",
     "@types/passport": "^1.0.17",
     "bcrypt": "^6.0.0",

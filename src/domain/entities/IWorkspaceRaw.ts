@@ -8,6 +8,7 @@ export interface IWorkspaceRaw {
   is_favorite: boolean
   order: number
   color: (typeof BASE_COLORS)[number]
+  color_name: string
   embeddings: Array<Number>
   is_deleted: boolean
   deleted_time?: Date

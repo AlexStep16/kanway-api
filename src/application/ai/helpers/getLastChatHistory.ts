@@ -10,6 +10,7 @@ export function getLastChatHistory(messages: BaseMessage[], count: number = 10):
     const m = messages[i]
 
     newMessages.unshift(m)
+    counter++
 
     if (counter >= count) {
       break

@@ -25,7 +25,9 @@ import { projectProperties } from '@/utils/projectProperties.ts'
 import { IResponseWithLog } from '../interfaces/IResponseWithLog.ts'
 import { IOperationLog } from '@/domain/entities/IOperationLog.ts'
 import { IUndoResponse } from '../interfaces/IUndoResponse.ts'
+
 import chroma from 'chroma-js'
+import { BASE_COLORS } from '@/constants/BASE_COLORS.ts'
 
 const MAX_RETRIES = 3
 
@@ -71,6 +73,7 @@ export class TaskService
           await new Promise((resolve) => setTimeout(resolve, 50 * attempt))
           continue
         }
+
         throw error
       } finally {
         session.endSession()
@@ -257,6 +260,7 @@ export class TaskService
       await this.moveTasksToCategory(
         tasksToMove.map((t) => t._id),
         {
+          categoryName: newEntity.category_name,
           boardId: newEntity.board_id,
           boardName: newEntity.board_name,
           workspaceId: newEntity.workspace_id,
@@ -465,10 +469,12 @@ export class TaskService
 
       rawUpdates.push({
         _id: dto._id,
+        category_name: category.name,
         board_id: category.boardId,
         board_name: category.boardName,
         workspace_id: category.workspaceId,
         workspace_name: category.workspaceName,
+        order: 9999, // Reset order to allow proper reordering later
       })
     }
 
@@ -478,6 +484,7 @@ export class TaskService
   public async moveTasksToCategory(
     taskIds: Types.ObjectId[],
     targets: {
+      categoryName: string
       boardId: Types.ObjectId
       boardName: string
       workspaceId: Types.ObjectId
@@ -493,10 +500,12 @@ export class TaskService
     return await this.repository.updateByFilter(
       filter,
       {
+        category_name: targets.categoryName,
         board_id: targets.boardId,
         board_name: targets.boardName,
         workspace_id: targets.workspaceId,
         workspace_name: targets.workspaceName,
+        order: 9999, // Reset order to allow proper reordering later
       },
       session
     )
@@ -506,6 +515,7 @@ export class TaskService
     categoriesMap: Map<
       string,
       {
+        categoryName: string
         boardId: Types.ObjectId
         boardName: string
         workspaceId: Types.ObjectId
@@ -529,6 +539,7 @@ export class TaskService
       if (newEntity) {
         updates.push({
           _id: task._id,
+          category_name: newEntity.categoryName,
           board_id: newEntity.boardId,
           board_name: newEntity.boardName,
           workspace_id: newEntity.workspaceId,
@@ -1270,7 +1281,7 @@ export class TaskService
   }
 
   public getNearestColor(hexColor: string) {
-    let closestColor: (typeof TASK_COLORS)[number] | null = null
+    let closestColor: (typeof TASK_COLORS)[number] | (typeof TASK_COLORS)[number] = BASE_COLORS[3]
     let minDistance = Infinity
 
     for (const colorValue in TASK_COLORS_MAP) {

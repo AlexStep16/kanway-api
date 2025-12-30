@@ -1,7 +1,7 @@
 import { ToolMessage } from '@langchain/core/messages'
 import { dispatchCustomEvent } from '@langchain/core/callbacks/dispatch'
 import { ChatPromptTemplate } from '@langchain/core/prompts'
-import { SummarySystem } from '../SystemMessages/Summary.ts'
+import { SummarySystem } from '../systemMessages/Summary.ts'
 import z from 'zod'
 import { ChatFireworks } from '@langchain/community/chat_models/fireworks'
 import { AgentRoles } from '@/enums/AgentRoles.ts'

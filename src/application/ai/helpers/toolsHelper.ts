@@ -5,18 +5,18 @@ import {
   createTaskTools,
   createWorkspaceTools,
 } from '@application/ai/tools/tools.ts'
-import { TaskToolAdapter } from '../tools/TaskToolAdapter.ts'
-import { BoardToolAdapter } from '../tools/BoardToolAdapter.ts'
-import { CategoryToolAdapter } from '../tools/CategoryToolAdapter.ts'
-import { OperationLogService } from '@/application/services/OperationLogService.ts'
-import { WorkspaceToolAdapter } from '../tools/WorkspaceToolAdapter.ts'
+import { TaskToolAdapter } from '@application/ai/tools/TaskToolAdapter.ts'
+import { BoardToolAdapter } from '@application/ai/tools/BoardToolAdapter.ts'
+import { CategoryToolAdapter } from '@application/ai/tools/CategoryToolAdapter.ts'
+import { WorkspaceToolAdapter } from '@application/ai/tools/WorkspaceToolAdapter.ts'
+import { BaseToolAdapter } from '@application/ai/tools/BaseToolAdapter.ts'
 
 export function createTools(
+  baseToolAdapter: BaseToolAdapter,
   taskToolAdapter: TaskToolAdapter,
   boardToolAdapter: BoardToolAdapter,
   categoryToolAdapter: CategoryToolAdapter,
-  workspaceToolAdapter: WorkspaceToolAdapter,
-  operationLogService: OperationLogService
+  workspaceToolAdapter: WorkspaceToolAdapter
 ) {
   const entityTools = [
     ...createTaskTools(taskToolAdapter),
@@ -25,9 +25,12 @@ export function createTools(
     ...createWorkspaceTools(workspaceToolAdapter),
   ]
 
-  const hotTools = [...createBaseTools(operationLogService)]
+  const baseTools = createBaseTools(baseToolAdapter)
+
+  const hotTools = [...baseTools.filter((t) => t.name !== 'submitPlan')]
+  const plannerTools = [...baseTools.filter((t) => t.name === 'submitPlan')]
   const allTools = [...entityTools, ...hotTools]
-  const toolsWithIntegration = [...entityTools]
+  const toolsWithIntegration = [...entityTools, baseTools.find((t) => t.name === 'undoOperations')!]
 
   const toolsByName = Object.fromEntries(
     [...entityTools, ...hotTools].map((tool) => [tool.name, tool])
@@ -39,6 +42,7 @@ export function createTools(
   return {
     entityTools,
     hotTools,
+    plannerTools,
     allTools,
     toolsByName,
     toolsWithIntegration,

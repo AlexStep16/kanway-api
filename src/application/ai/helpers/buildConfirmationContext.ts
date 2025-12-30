@@ -1,59 +1,87 @@
 import { ToolCall, ToolMessage } from '@langchain/core/messages'
-import { AgentStateAnnotation } from '@application/ai/agents/AgentStateAnnotation.ts'
-import { confirmationConfigs } from '@application/ai/configs/confirmationConfigs.ts'
+import { AgentStateAnnotation } from '@/application/ai/agent/AgentStateAnnotation.ts'
 import { RunnableConfig } from '@langchain/core/runnables'
+import { ConfirmationContextConfig } from '@/application/ai/interfaces/ConfirmationContextConfig.ts'
+import * as Sentry from '@sentry/node'
+
+interface Confirmation {
+  title: string | null
+  data: any | null
+  entityType?: string
+  toolCall: ToolCall | null
+}
 
 export async function buildConfirmationContext(
-  toolCall: ToolCall,
+  toolCalls: ToolCall[],
   state: typeof AgentStateAnnotation.State,
-  config: RunnableConfig
+  config: RunnableConfig,
+  confirmationConfig: Record<string, ConfirmationContextConfig>
 ) {
-  const conf = confirmationConfigs[toolCall.name]
-  if (!conf) return { title: null, contextData: null }
+  const confirmations: Array<Confirmation> = []
 
-  const { context } = conf
+  if (!confirmationConfig) return [{ title: null, data: null, toolCall: null }]
 
-  // 1. Контекст из предыдущего ToolMessage
-  if (context.mode === 'tool') {
-    const toolMsg = [...state.messages]
-      .reverse()
-      .find(
-        (m) => m.constructor?.name === 'ToolMessage' && (m as any).name === context.toolName
-      ) as ToolMessage | undefined
+  for (const toolCall of toolCalls) {
+    const toolConfig = confirmationConfig[toolCall.name]
+    const { context } = toolConfig
 
-    if (!toolMsg) {
-      return {
-        title: conf.title,
-        contextData: null,
+    // 1. Контекст из предыдущего ToolMessage
+    if (context.mode === 'tool') {
+      const toolMsg = [...state.messages]
+        .reverse()
+        .find((m) => m instanceof ToolMessage && m.name === context.toolName) as
+        | ToolMessage
+        | undefined
+
+      if (!toolMsg) {
+        confirmations.push({
+          title: toolConfig.title,
+          data: null,
+          toolCall,
+        })
+
+        continue
+      }
+
+      let parsed: any = toolMsg.content
+
+      try {
+        parsed = JSON.parse(toolMsg.content as string)
+      } catch {
+        parsed = {}
+      }
+
+      return { title: toolConfig.title, data: parsed, toolCall }
+    }
+
+    // 2. Внешний контекст через контроллер
+    if (context.mode === 'external') {
+      if (!context.externalFetch) {
+        confirmations.push({ title: toolConfig.title, data: null, toolCall })
+
+        continue
+      }
+
+      try {
+        const data = await context.externalFetch({ toolCall, state, config })
+
+        confirmations.push({
+          title: toolConfig.title,
+          entityType: context.entityType,
+          data: data,
+          toolCall,
+        })
+      } catch (e: any) {
+        Sentry.captureException(e)
+
+        confirmations.push({
+          title: toolConfig.title,
+          data: null,
+          toolCall,
+        })
       }
     }
-
-    let parsed: any = toolMsg.content
-
-    try {
-      parsed = JSON.parse(toolMsg.content as string)
-    } catch {
-      parsed = {}
-    }
-    return { title: conf.title, contextData: parsed }
   }
 
-  // 2. Внешний контекст через контроллер
-  if (context.mode === 'external') {
-    if (!context.externalFetch) {
-      return { title: conf.title, contextData: null }
-    }
-    try {
-      const data = await context.externalFetch({ toolCall, state, config })
-
-      return { title: conf.title, entityType: context.entityType, contextData: data }
-    } catch (e: any) {
-      return {
-        title: conf.title,
-        contextData: null,
-      }
-    }
-  }
-
-  return { title: conf.title, contextData: null }
+  return confirmations
 }

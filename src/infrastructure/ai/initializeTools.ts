@@ -5,11 +5,11 @@ const dependencies = initializeDependencies()
 
 export function initializeTools() {
   const tools = createTools(
+    dependencies.adapters.baseToolAdapter,
     dependencies.adapters.taskToolAdapter,
     dependencies.adapters.boardToolAdapter,
     dependencies.adapters.categoryToolAdapter,
-    dependencies.adapters.workspaceToolAdapter,
-    dependencies.services.operationLogService
+    dependencies.adapters.workspaceToolAdapter
   )
 
   for (const tool of tools.allTools) {

@@ -3,25 +3,26 @@ import * as z from 'zod'
 import {
   BoardCreateSchema,
   CategoryCreateSchema,
-  ConditionalBoardFilterSchema,
-  ConditionalCategoryFilterSchema,
-  ConditionalTaskFilterSchema,
-  ConditionalWorkspaceFilterSchema,
+  BoardFilterSchema,
+  CategoryFilterSchema,
+  TaskFilterSchema,
+  WorkspaceFilterSchema,
   EditBoardsSchema,
   EditCategoriesSchema,
   EditTasksSchema,
   EditWorkspacesSchema,
-  FinishResponseSchema,
   GetChatHistorySchema,
   Plan,
   TaskCreateSchema,
   WorkspaceCreateSchema,
+  PlanToolSchema,
+  ShowEntitiesToUserSchema,
 } from './toolSchemes.ts'
 import { TaskToolAdapter } from '@application/ai/tools/TaskToolAdapter.ts'
 import { CategoryToolAdapter } from '@application/ai/tools/CategoryToolAdapter.ts'
 import { BoardToolAdapter } from '@application/ai/tools/BoardToolAdapter.ts'
 import { WorkspaceToolAdapter } from '@application/ai/tools/WorkspaceToolAdapter.ts'
-import { OperationLogService } from '@/application/services/OperationLogService.ts'
+import { BaseToolAdapter } from './BaseToolAdapter.ts'
 
 export function createCategoryTools(adapter: CategoryToolAdapter) {
   const findCategoriesByFilter = tool(
@@ -29,8 +30,8 @@ export function createCategoryTools(adapter: CategoryToolAdapter) {
     {
       name: 'findCategoriesByFilter',
       description:
-        'Используй этот инструмент, чтобы найти одну или несколько категорий по ее названию или другим атрибутам. Это необходимый шаг перед созданием задачи в конкретной категории или перед перемещением задачи в нее.',
-      schema: ConditionalCategoryFilterSchema,
+        'Используй этот инструмент, чтобы найти одну или несколько категорий по ее названию или другим атрибутам. Это необходимый шаг перед созданием задачи в конкретной категории или перед перемещением задачи в нее. Указывай ТОЛЬКО необходимые фильтры.',
+      schema: CategoryFilterSchema,
     }
   )
 
@@ -101,8 +102,8 @@ export function createBoardTools(adapter: BoardToolAdapter) {
   const findBoardsByFilter = tool((filter, config) => adapter.findBoardsByFilter(filter, config), {
     name: 'findBoardsByFilter',
     description:
-      'Используй, чтобы найти одну или несколько досок по её названию, порядку, архивированию, пространству. Это нужно, чтобы создавать в ней категории, перемещать в нее задачи или изменять саму доску. Обязательный шаг, если ID доски не предоставлен явно.',
-    schema: ConditionalBoardFilterSchema,
+      'Используй, чтобы найти одну или несколько досок по её названию, порядку, архивированию, пространству. Это нужно, чтобы создавать в ней категории, перемещать в нее задачи или изменять саму доску. Обязательный шаг, если ID доски не предоставлен явно. Указывай ТОЛЬКО необходимые фильтры.',
+    schema: BoardFilterSchema,
   })
 
   const findRelevantBoards = tool(
@@ -174,8 +175,8 @@ export function createWorkspaceTools(adapter: WorkspaceToolAdapter) {
     {
       name: 'findWorkspacesByFilter',
       description:
-        'Используй, чтобы найти одно или несколько рабочих пространств по его названию, порядку или архивированию. Это необходимо для создания в нем досок или для его изменения, если ID не известен.',
-      schema: ConditionalWorkspaceFilterSchema,
+        'Используй, чтобы найти одно или несколько рабочих пространств по его названию, порядку или архивированию. Это необходимо для создания в нем досок или для его изменения, если ID не известен. Указывай ТОЛЬКО необходимые фильтры.',
+      schema: WorkspaceFilterSchema,
     }
   )
 
@@ -246,8 +247,8 @@ export function createTaskTools(adapter: TaskToolAdapter) {
   const findTasksByFilter = tool((args, config) => adapter.findTasksByFilter(args, config), {
     name: 'findTasksByFilter',
     description:
-      "Используй, чтобы найти одну или несколько задач по их свойствам (названию, статусу, дате). Это необходимо, чтобы затем изменить, архивировать, удалить или просто проверить информацию о задаче. Применяй, когда пользователь говорит 'найди задачу...' или 'что со статусом задачи...'",
-    schema: ConditionalTaskFilterSchema,
+      "Используй, чтобы найти одну или несколько задач по их свойствам (названию, статусу, дате). Это необходимо, чтобы затем изменить, архивировать, удалить или просто проверить информацию о задаче. Применяй, когда пользователь говорит 'найди задачу...' или 'что со статусом задачи...'. Указывай ТОЛЬКО необходимые фильтры.",
+    schema: TaskFilterSchema,
   })
 
   const findRelevantTasks = tool(
@@ -313,29 +314,28 @@ export function createTaskTools(adapter: TaskToolAdapter) {
   ]
 }
 
-export function createBaseTools(operationLogService: OperationLogService) {
-  const undoOperations = tool(
+export function createBaseTools(adapter: BaseToolAdapter) {
+  const showEntitiesToUser = tool(
     async (data, config) => {
-      const operationIds = data.operationIds
-      const userId = config.configurable?.user_id
+      await adapter.showEntitiesToUser(data, config)
 
-      if (!Array.isArray(operationIds) || operationIds.length === 0) {
-        return 'Invalid operation IDs.'
-      }
-
-      const result = await operationLogService.undoOperations(operationIds, userId)
-
-      return JSON.stringify(result)
+      return 'Entities have been presented to the user.'
     },
     {
-      name: 'undoOperations',
-      description:
-        'Критически важный инструмент. Используй, когда пользователь явно просит отменить действие. Например, отменить архивирование, отменить создание, редактирование, но не удаление',
-      schema: z.object({
-        operationIds: z.array(z.string()).describe('IDs of the operations to undo'),
-      }),
+      name: 'showEntitiesToUser',
+      description: 'Показывает пользователю сущности по их ID и типу.',
+      schema: ShowEntitiesToUserSchema,
     }
   )
+
+  const undoOperations = tool(async (data, config) => adapter.undoOperations(data, config), {
+    name: 'undoOperations',
+    description:
+      'Критически важный инструмент. Используй, когда пользователь явно просит отменить действие. Например, отменить архивирование, отменить создание, редактирование, но не удаление',
+    schema: z.object({
+      operationIds: z.array(z.string()).describe('IDs of the operations to undo'),
+    }),
+  })
 
   const getChatHistory = tool(
     async () => {
@@ -366,9 +366,28 @@ export function createBaseTools(operationLogService: OperationLogService) {
     {
       name: 'finishResponse',
       description: `Внутренний инструмент для завершения работы. Используй его, чтобы сообщить о успехе, задать вопросы или сообщить об ошибках.`,
-      schema: FinishResponseSchema,
+      schema: z.object({
+        response: z.string().describe('The final response to the user.'),
+      }),
     }
   )
 
-  return [undoOperations, getChatHistory, getRelevantTools, finishResponse]
+  const submitPlan = tool(
+    async () => {
+      return
+    },
+    {
+      name: 'submitPlan',
+      schema: PlanToolSchema,
+    }
+  )
+
+  return [
+    showEntitiesToUser,
+    undoOperations,
+    getChatHistory,
+    getRelevantTools,
+    finishResponse,
+    submitPlan,
+  ]
 }

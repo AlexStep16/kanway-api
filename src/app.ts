@@ -7,14 +7,26 @@ import { globalErrorHandler } from '@middlewares/globalErrorHandler.ts'
 import dayjs from 'dayjs'
 import utc from 'dayjs/plugin/utc.js'
 import timezone from 'dayjs/plugin/timezone.js'
-import duration from 'dayjs/plugin/duration.js'
 import { initSubscriptions } from './initSubscriptions.ts'
 import { initializeTools } from './infrastructure/ai/initializeTools.ts'
+import * as Sentry from '@sentry/node'
+import { initializeAgentInstructions } from '@infrastructure/ai/initializeAgentInstructions.ts'
+import customParseFormat from 'dayjs/plugin/customParseFormat.js'
 
 dayjs.locale('ru')
 dayjs.extend(utc)
 dayjs.extend(timezone)
-dayjs.extend(duration)
+dayjs.extend(customParseFormat)
+
+Sentry.init({
+  dsn: 'https://2aa4717bdc17380896b4b44e49d09363@o4510595293249536.ingest.de.sentry.io/4510595296264272',
+
+  // Send structured logs to Sentry
+  enableLogs: true,
+  // Setting this option to true will send default PII data to Sentry.
+  // For example, automatic IP address collection on events
+  sendDefaultPii: true,
+})
 
 dotenv.config()
 
@@ -32,5 +44,6 @@ startOpenAIProxy(8080)
 
 app.use(globalErrorHandler)
 
-initSubscriptions()
+initSubscriptions() //mock
 initializeTools()
+initializeAgentInstructions()

@@ -47,6 +47,7 @@ export class OperationLogService
           await new Promise((resolve) => setTimeout(resolve, 50 * attempt))
           continue
         }
+
         throw error
       } finally {
         session.endSession()
@@ -96,6 +97,24 @@ export class OperationLogService
     }
 
     return results
+  }
+
+  public async combineUndoResult(result: IUndoResponse<any>[]): Promise<IUndoResponse<any>> {
+    const combinedResult: IUndoResponse<any> = {}
+
+    for (const res of result) {
+      for (const key in res) {
+        if (!combinedResult[key as keyof IUndoResponse<any>]) {
+          combinedResult[key as keyof IUndoResponse<any>] = res[key as keyof IUndoResponse<any>]
+        } else {
+          const existingArray = combinedResult[key as keyof IUndoResponse<any>] as any[]
+          const newArray = res[key as keyof IUndoResponse<any>] as any[]
+          combinedResult[key as keyof IUndoResponse<any>] = existingArray.concat(newArray)
+        }
+      }
+    }
+
+    return combinedResult
   }
 
   public async undoOperations(

@@ -22,6 +22,8 @@ import { projectProperties } from '@/utils/projectProperties.ts'
 import { IResponseWithLog } from '@interfaces/IResponseWithLog.ts'
 import { IOperationLog } from '@/domain/entities/IOperationLog.ts'
 import { IUndoResponse } from '../interfaces/IUndoResponse.ts'
+import { BASE_COLORS, BASE_COLORS_MAP } from '@/constants/BASE_COLORS.ts'
+import chroma from 'chroma-js'
 
 const MAX_RETRIES = 3
 
@@ -75,6 +77,7 @@ export class WorkspaceService
           await new Promise((resolve) => setTimeout(resolve, 50 * attempt))
           continue
         }
+
         throw error
       } finally {
         session.endSession()
@@ -600,6 +603,22 @@ export class WorkspaceService
     }
   }
 
+  public getNearestColor(hexColor: string) {
+    let closestColor: (typeof BASE_COLORS)[number] | (typeof BASE_COLORS)[number] = BASE_COLORS[3]
+    let minDistance = Infinity
+
+    for (const colorValue in BASE_COLORS_MAP) {
+      const distance = chroma.distance(hexColor, colorValue)
+
+      if (distance < minDistance) {
+        minDistance = distance
+        closestColor = colorValue as (typeof BASE_COLORS)[number]
+      }
+    }
+
+    return closestColor
+  }
+
   public async recover(
     criteria: WorkspaceCriteria,
     user: IUser,
@@ -771,6 +790,10 @@ export class WorkspaceService
       user_id: userId,
     }
 
+    if (data.color && BASE_COLORS_MAP[data.color]) {
+      workspacePayload.color_name = BASE_COLORS_MAP[data.color]
+    }
+
     if (data.order === undefined) {
       const lastOrder = await this.getLastOrder('', userId, session)
       workspacePayload.order = lastOrder + 1
@@ -792,14 +815,18 @@ export class WorkspaceService
       workspaceNames
     )
 
-    const workspacePayloads: Omit<IWorkspaceRaw, '_id'>[] = data.map((workspace, index) => {
+    const workspacePayloads: Omit<IWorkspaceRaw, '_id'>[] = data.map((dto, index) => {
       const payload = {
-        ...toMongoCaseKeys<IWorkspaceRaw>(workspace),
+        ...toMongoCaseKeys<IWorkspaceRaw>(dto),
         embeddings: embeddingsArray[index],
         user_id: userId,
       }
 
-      if (workspace.order === undefined) {
+      if (dto.color && BASE_COLORS_MAP[dto.color]) {
+        payload.color_name = BASE_COLORS_MAP[dto.color]
+      }
+
+      if (dto.order === undefined) {
         payload.order = newOrder
         newOrder += 1
       }

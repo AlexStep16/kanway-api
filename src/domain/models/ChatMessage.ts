@@ -11,6 +11,10 @@ const ChatMessageSchema = new Schema<IChatMessageRaw>(
       type: Schema.Types.Mixed,
       required: true,
     },
+    list_type: {
+      type: String,
+      required: false,
+    },
     chat_id: {
       type: Schema.Types.ObjectId,
       ref: 'Chat',

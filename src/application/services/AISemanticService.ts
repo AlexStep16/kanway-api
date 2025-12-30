@@ -6,7 +6,7 @@ export class AISemanticService {
     text: string,
     mode: 'set' | 'append' | 'prepend' | 'replace',
     text_to_replace?: string
-  ): Promise<{ id: string; name: string }[]> {
+  ): Promise<{ id: Types.ObjectId; name: string }[]> {
     if (!entities || entities.length === 0 || !text.trim()) {
       return []
     }
@@ -26,7 +26,7 @@ export class AISemanticService {
       }
 
       return {
-        id: entity.id.toString(),
+        id: entity.id,
         name: newName.trim(),
       }
     })
@@ -50,7 +50,7 @@ export class AISemanticService {
     text: string,
     mode: 'set' | 'append' | 'prepend' | 'replace',
     text_to_replace?: string
-  ): Promise<{ id: string; description: string }[]> {
+  ): Promise<{ id: Types.ObjectId; description: string }[]> {
     if (!entities || entities.length === 0 || !text.trim()) {
       return []
     }
@@ -72,7 +72,7 @@ export class AISemanticService {
         }
 
         return {
-          id: entity.id.toString(),
+          id: entity.id,
           description: newDescription.trim(),
         }
       })

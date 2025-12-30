@@ -1,6 +1,6 @@
 import { TaskService } from '@application/services/TaskService.ts'
 import { EditTasksDTO } from '@application/ai/tools/toolSchemes.ts'
-import { ClientSession } from 'mongoose'
+import { ClientSession, Types } from 'mongoose'
 import { IResponseWithLog } from '@interfaces/IResponseWithLog.ts'
 import { ITask } from '@entities/ITask.ts'
 import { TaskEditDTO } from '@dtos/TaskEditDTO.ts'
@@ -8,30 +8,36 @@ import dayjs from 'dayjs'
 import { BaseService } from '@application/services/BaseService.ts'
 import { AISemanticService } from '@application/services/AISemanticService.ts'
 import { IUser } from '@domain/entities/IUser.ts'
+import { CategoryService } from '@application/services/CategoryService.ts'
+import { NotFoundError } from '@/domain/errors/NotFound.ts'
 
 export class TaskCommandAdapterService {
   protected taskService: TaskService
+  protected categoryService: CategoryService
   protected baseService: BaseService
   protected aiSemanticService: AISemanticService
 
   constructor(
     taskService: TaskService,
+    categoryService: CategoryService,
     baseService: BaseService,
     aiSemanticService: AISemanticService
   ) {
     this.taskService = taskService
+    this.categoryService = categoryService
     this.baseService = baseService
     this.aiSemanticService = aiSemanticService
   }
 
-  private _getCollectedTaskDateTime(task: ITask, timezone: string): string {
-    let collectedTaskDateTime = ''
+  private _getCollectedTaskDateTime(task: ITask, timezone: string): dayjs.Dayjs {
+    const dateStr = task.dueDate || dayjs.utc().format('YYYY-MM-DD')
+    const h = task.dueHours ?? 0
+    const m = task.dueMinutes ?? 0
 
-    if (task.dueDate) {
-      collectedTaskDateTime = `${task.dueDate}T${task.dueHours}:${task.dueMinutes}`
-    } else collectedTaskDateTime = dayjs().tz(timezone).toISOString()
-
-    return collectedTaskDateTime
+    // Сначала собираем UTC, потом переводим в локальное
+    return dayjs
+      .utc(`${dateStr}T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00`)
+      .tz(timezone)
   }
 
   public async translateAndExecute(
@@ -54,6 +60,14 @@ export class TaskCommandAdapterService {
 
       if (typeof changes.categoryId !== 'undefined' && typeof changes.categoryId === 'string') {
         updatedTask.categoryId = changes.categoryId
+
+        const category = await this.categoryService.getById(changes.categoryId, user.id, session)
+
+        if (!category) {
+          throw new NotFoundError(`Category with id ${changes.categoryId} not found`)
+        }
+
+        updatedTask.categoryName = category.name
       }
 
       if (typeof changes.order !== 'undefined') {
@@ -63,10 +77,7 @@ export class TaskCommandAdapterService {
 
       if (typeof changes.color !== 'undefined') {
         if (typeof changes.color === 'string') {
-          const nearestColor = this.taskService.getNearestColor(changes.color)
-
-          if (nearestColor) updatedTask.color = nearestColor
-          else updatedTask.color = '#3b82f6'
+          updatedTask.color = this.taskService.getNearestColor(changes.color)
         } else {
           updatedTask.color = null
         }
@@ -77,9 +88,10 @@ export class TaskCommandAdapterService {
       }
 
       if (typeof changes.tags !== 'undefined') {
-        const valueTyped = changes.tags as EditTasksDTO['changes']['tags']
+        const valueTyped = changes.tags
 
-        if (valueTyped) {
+        if (valueTyped === null) updatedTask.tags = []
+        else {
           if (typeof valueTyped.set !== 'undefined') updatedTask.tags = valueTyped.set
           if (typeof valueTyped.add !== 'undefined')
             updatedTask.tags = [...new Set([...(updatedTask.tags || []), ...valueTyped.add])]
@@ -87,41 +99,30 @@ export class TaskCommandAdapterService {
             updatedTask.tags = (updatedTask.tags || []).filter(
               (tag) => !valueTyped.remove!.includes(String(tag))
             )
-        } else {
-          if (valueTyped === null) updatedTask.tags = []
         }
       }
 
       if (typeof changes.dueDate !== 'undefined') {
         if (changes.dueDate === null) {
           updatedTask.dueDate = null
+          updatedTask.dueHours = null
+          updatedTask.dueMinutes = null
         } else {
-          const valueTyped = changes.dueDate as EditTasksDTO['changes']['dueDate']
+          const valueTyped = changes.dueDate
 
-          if (valueTyped) {
-            if (typeof valueTyped.set !== 'undefined') {
-              if (valueTyped.set.split('Z').length > 0) {
-                updatedTask.dueDate = valueTyped.set.split('Z')[0]
-              } else {
-                updatedTask.dueDate = valueTyped.set
-              }
+          if (valueTyped.set) {
+            updatedTask.dueDate = dayjs
+              .tz(valueTyped.set.split('T')[0].split('Z')[0], timezone)
+              .format('YYYY-MM-DD')
+          }
 
-              const utcDueDate = dayjs.tz(updatedTask.dueDate, timezone)
+          if (valueTyped.shift) {
+            const baseDate = this._getCollectedTaskDateTime(task, timezone)
+            const shiftedDate = baseDate.add(valueTyped.shift.value, valueTyped.shift.unit)
 
-              updatedTask.dueHours = utcDueDate.hour()
-              updatedTask.dueMinutes = utcDueDate.minute()
-            }
-
-            if (typeof valueTyped.shift_duration !== 'undefined') {
-              const collectedTaskDateTime = this._getCollectedTaskDateTime(task, timezone)
-
-              const duration = dayjs.duration(valueTyped.shift_duration)
-              const shiftedDate = dayjs.utc(collectedTaskDateTime).add(duration).tz(timezone)
-
-              updatedTask.dueDate = shiftedDate.format('YYYY-MM-DD')
-              updatedTask.dueHours = shiftedDate.hour()
-              updatedTask.dueMinutes = shiftedDate.minute()
-            }
+            updatedTask.dueDate = shiftedDate.format('YYYY-MM-DD')
+            updatedTask.dueHours = shiftedDate.hour()
+            updatedTask.dueMinutes = shiftedDate.minute()
           }
         }
       }
@@ -131,15 +132,25 @@ export class TaskCommandAdapterService {
           updatedTask.dueHours = null
           updatedTask.dueMinutes = null
         } else {
-          const valueTyped = changes.dueTime as EditTasksDTO['changes']['dueTime']
+          const valueTyped = changes.dueTime
 
-          if (valueTyped) {
-            if (typeof valueTyped.set !== 'undefined') {
-              const [hours, minutes] = valueTyped.set.split(':').map(Number)
+          if (valueTyped.set) {
+            const [hours, minutes] = valueTyped.set.split(':').map(Number)
+            updatedTask.dueHours = hours
+            updatedTask.dueMinutes = minutes
 
-              updatedTask.dueHours = hours
-              updatedTask.dueMinutes = minutes
+            if (!updatedTask.dueDate) {
+              updatedTask.dueDate = dayjs().tz(timezone).format('YYYY-MM-DD')
             }
+          }
+
+          if (valueTyped.shift) {
+            const baseDate = this._getCollectedTaskDateTime(task, timezone)
+            const shiftedDate = baseDate.add(valueTyped.shift.value, valueTyped.shift.unit)
+
+            updatedTask.dueDate = shiftedDate.format('YYYY-MM-DD')
+            updatedTask.dueHours = shiftedDate.hour()
+            updatedTask.dueMinutes = shiftedDate.minute()
           }
         }
       }
@@ -148,7 +159,7 @@ export class TaskCommandAdapterService {
     }
 
     if (typeof changes.name !== 'undefined') {
-      let updatedNames: { id: string; name: string }[] = []
+      let updatedNames: { id: Types.ObjectId; name: string }[] = []
 
       if (changes.name.set) {
         updatedNames = await this.aiSemanticService.buildNamesForEntities(
@@ -156,21 +167,24 @@ export class TaskCommandAdapterService {
           String(changes.name.set),
           'set'
         )
-      } else if (changes.name.append) {
+      }
+      if (changes.name.append) {
         updatedNames = await this.aiSemanticService.buildNamesForEntities(
-          existingTasks,
+          updatedNames.length > 0 ? updatedNames : existingTasks,
           String(changes.name.append),
           'append'
         )
-      } else if (changes.name.prepend) {
+      }
+      if (changes.name.prepend) {
         updatedNames = await this.aiSemanticService.buildNamesForEntities(
-          existingTasks,
+          updatedNames.length > 0 ? updatedNames : existingTasks,
           String(changes.name.prepend),
           'prepend'
         )
-      } else if (changes.name.replace_part) {
+      }
+      if (changes.name.replace_part) {
         updatedNames = await this.aiSemanticService.buildNamesForEntities(
-          existingTasks,
+          updatedNames.length > 0 ? updatedNames : existingTasks,
           String(changes.name.replace_part.replace_with),
           'replace',
           String(changes.name.replace_part.find)
@@ -178,7 +192,7 @@ export class TaskCommandAdapterService {
       }
 
       for (const updatedTask of tasksToUpdate) {
-        const updatedNameData = updatedNames.find((data) => data.id === updatedTask.id.toString())
+        const updatedNameData = updatedNames.find((data) => data.id.equals(updatedTask.id))
 
         if (updatedNameData) {
           updatedTask.name = updatedNameData.name
@@ -191,7 +205,7 @@ export class TaskCommandAdapterService {
         task.description = null
       }
     } else if (typeof changes.description !== 'undefined') {
-      let updatedDescriptions: { id: string; description: string }[] = []
+      let updatedDescriptions: { id: Types.ObjectId; description: string }[] = []
 
       if (changes.description.set) {
         updatedDescriptions = await this.aiSemanticService.buildDescriptionsForEntities(
@@ -199,21 +213,24 @@ export class TaskCommandAdapterService {
           String(changes.description.set),
           'set'
         )
-      } else if (changes.description.append) {
+      }
+      if (changes.description.append) {
         updatedDescriptions = await this.aiSemanticService.buildDescriptionsForEntities(
-          existingTasks,
+          updatedDescriptions.length > 0 ? updatedDescriptions : existingTasks,
           String(changes.description.append),
           'append'
         )
-      } else if (changes.description.prepend) {
+      }
+      if (changes.description.prepend) {
         updatedDescriptions = await this.aiSemanticService.buildDescriptionsForEntities(
-          existingTasks,
+          updatedDescriptions.length > 0 ? updatedDescriptions : existingTasks,
           String(changes.description.prepend),
           'prepend'
         )
-      } else if (changes.description.replace_part) {
+      }
+      if (changes.description.replace_part) {
         updatedDescriptions = await this.aiSemanticService.buildDescriptionsForEntities(
-          existingTasks,
+          updatedDescriptions.length > 0 ? updatedDescriptions : existingTasks,
           String(changes.description.replace_part.replace_with),
           'replace',
           String(changes.description.replace_part.find)
@@ -221,8 +238,8 @@ export class TaskCommandAdapterService {
       }
 
       for (const updatedTask of tasksToUpdate) {
-        const updatedDescriptionData = updatedDescriptions.find(
-          (data) => data.id === updatedTask.id.toString()
+        const updatedDescriptionData = updatedDescriptions.find((data) =>
+          data.id.equals(updatedTask.id)
         )
 
         if (updatedDescriptionData) {

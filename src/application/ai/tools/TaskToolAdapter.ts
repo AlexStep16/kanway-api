@@ -1,9 +1,8 @@
 import { TaskService } from '@application/services/TaskService.ts'
-import { BaseToolAdapter } from '@application/ai/tools/BaseToolAdapter.ts'
 import { BaseService } from '@application/services/BaseService.ts'
 import {
-  ConditionalTaskFilterDTO,
-  ConditionalTaskFilterSchema,
+  TaskFilterDTO,
+  TaskFilterSchema,
   TaskCreateDTO,
   TaskCreateSchema,
   EditTasksDTO,
@@ -24,8 +23,19 @@ import { IUndoResponse } from '@/application/interfaces/IUndoResponse.ts'
 import { ITasksResponse } from '@/application/interfaces/ITasksResponse.ts'
 import { ITask } from '@/domain/entities/ITask.ts'
 import dayjs from 'dayjs'
+import * as Sentry from '@sentry/node'
 
-export class TaskToolAdapter extends BaseToolAdapter {
+interface CompressedTask {
+  id: string
+  name: string
+  categoryName?: string
+  description?: string
+  isCompleted: boolean
+  dueDate?: string
+}
+
+export class TaskToolAdapter {
+  private baseService: BaseService
   private taskService: TaskService
   private taskCommandAdapterService: TaskCommandAdapterService
   private categoryService: CategoryService
@@ -38,24 +48,75 @@ export class TaskToolAdapter extends BaseToolAdapter {
     categoryService: CategoryService,
     filterToMongoQueryService: FilterToMongoQueryService
   ) {
-    super(baseService)
-
+    this.baseService = baseService
     this.taskService = taskService
     this.taskCommandAdapterService = taskCommandAdapterService
     this.categoryService = categoryService
     this.filterToMongoQueryService = filterToMongoQueryService
   }
 
+  private _convertDateToTimezone(task: Partial<ITask>, timezone: string) {
+    const collectedDateTime =
+      task.dueDate +
+      'T' +
+      task.dueHours?.toString().padStart(2, '0') +
+      ':' +
+      task.dueMinutes?.toString().padStart(2, '0')
+
+    const date = dayjs.utc(collectedDateTime).tz(timezone)
+
+    return date
+  }
+
+  private _getChangedColumns(changes: EditTasksDTO['changes']): string[] {
+    const changedColumns: string[] = []
+
+    const changesMap: Record<keyof EditTasksDTO['changes'], keyof ITask | Array<keyof ITask>> = {
+      name: 'name',
+      description: 'description',
+      dueDate: 'dueDate',
+      dueTime: ['dueHours', 'dueMinutes'],
+      tags: 'tags',
+      categoryId: 'categoryId',
+      isCompleted: 'isCompleted',
+      color: 'color',
+      order: 'order',
+    }
+
+    for (const key in changes) {
+      const mappedKey = changesMap[key as keyof EditTasksDTO['changes']]
+
+      if (Array.isArray(mappedKey)) {
+        changedColumns.push(...mappedKey)
+      } else {
+        changedColumns.push(mappedKey)
+      }
+    }
+
+    return changedColumns
+  }
+
+  private _compressTasks(tasks: ITask[]): Array<CompressedTask> {
+    return tasks.map((task) => ({
+      id: task.id.toString(),
+      name: task.name,
+      categoryName: task.categoryName,
+      description: task.description ? task.description.slice(0, 100) : '',
+      isCompleted: task.isCompleted,
+      dueDate: task.dueDate,
+    }))
+  }
+
   // [Tool 1]
   public async findTasksByFilter(
-    dto: ConditionalTaskFilterDTO,
+    dto: TaskFilterDTO,
     config: LangGraphRunnableConfig
   ): Promise<string> {
     const user = config.configurable?.user as IUser
     const timezone = config.configurable?.timezone || 'Europe/Moscow'
 
     try {
-      const errorMsgs = this.baseService.validateInputBySchema(dto, ConditionalTaskFilterSchema)
+      const errorMsgs = this.baseService.validateInputBySchema(dto, TaskFilterSchema)
 
       if (errorMsgs.length > 0) {
         return (
@@ -91,8 +152,18 @@ export class TaskToolAdapter extends BaseToolAdapter {
         }
       }
 
-      return JSON.stringify(tasks)
+      const compressedTasks = this._compressTasks(tasks)
+
+      if (compressedTasks.length === 0) {
+        return 'No tasks found matching the provided filter.'
+      } else if (compressedTasks.length > 20) {
+        return `Found ${compressedTasks.length} tasks. Please refine your filter to narrow down the results.`
+      }
+
+      return JSON.stringify(compressedTasks)
     } catch (e) {
+      Sentry.captureException(e)
+
       return `Error retrieving tasks: ${(e as Error).message}`
     }
   }
@@ -110,15 +181,20 @@ export class TaskToolAdapter extends BaseToolAdapter {
 
       const userId = config.configurable?.user?.id
 
-      const tasks = await this.baseService.similaritySearchTasks(nameToFind, userId, 20)
+      const tasks = await this.baseService.similaritySearchTasks(nameToFind, userId, 30)
 
-      return JSON.stringify(
-        tasks.map((task) => ({
-          id: task.id.toString(),
-          name: task.name,
-        }))
-      )
+      const compressedTasks = this._compressTasks(tasks)
+
+      if (compressedTasks.length === 0) {
+        return 'No tasks found matching the provided filter.'
+      } else if (compressedTasks.length > 20) {
+        return `Found ${compressedTasks.length} tasks. Please refine your filter to narrow down the results.`
+      }
+
+      return JSON.stringify(compressedTasks)
     } catch (e) {
+      Sentry.captureException(e)
+
       return `Error finding relevant tasks: ${(e as Error).message}`
     }
   }
@@ -178,13 +254,15 @@ export class TaskToolAdapter extends BaseToolAdapter {
       }
 
       const dataWithIntegration = {
-        ...createResult,
+        data: createResult.data.map((task) => ({ id: task.id, name: task.name })),
+        logId: createResult.logId,
         integration,
       }
 
       return new SuccessToolResult(dataWithIntegration)
     } catch (e) {
-      console.error(e)
+      Sentry.captureException(e)
+
       return new FailedToolResult(`Error creating tasks: ${(e as Error).message}`)
     }
   }
@@ -232,13 +310,40 @@ export class TaskToolAdapter extends BaseToolAdapter {
         },
       }
 
+      // Get only changed columns to return
+      const changedColumns = this._getChangedColumns(dto.changes)
+
+      const dataWithChangedColumns = editResult.data.map((task) => {
+        const taskWithChangedColumns: Partial<ITask> = { id: task.id, name: task.name }
+
+        for (const column of changedColumns) {
+          taskWithChangedColumns[column as keyof ITask] = (task as any)[column]
+        }
+
+        if (
+          taskWithChangedColumns.dueHours !== undefined ||
+          taskWithChangedColumns.dueMinutes !== undefined
+        ) {
+          const date = this._convertDateToTimezone(task, timezone)
+
+          taskWithChangedColumns.dueDate = date.format('YYYY-MM-DD')
+          taskWithChangedColumns.dueHours = date.hour()
+          taskWithChangedColumns.dueMinutes = date.minute()
+        }
+
+        return taskWithChangedColumns
+      })
+
       const dataWithIntegration = {
-        ...editResult,
+        data: dataWithChangedColumns,
+        logId: editResult.logId,
         integration,
       }
 
       return new SuccessToolResult(dataWithIntegration)
     } catch (e) {
+      Sentry.captureException(e)
+
       return new FailedToolResult(`Error editing tasks: ${(e as Error).message}`)
     }
   }
@@ -290,12 +395,15 @@ export class TaskToolAdapter extends BaseToolAdapter {
       }
 
       const dataWithIntegration = {
-        ...archiveResult,
+        data: archiveResult.data.tasks.map((task) => task.id),
+        logId: archiveResult.logId,
         integration,
       }
 
       return new SuccessToolResult(dataWithIntegration)
     } catch (e) {
+      Sentry.captureException(e)
+
       return new FailedToolResult(`Error archiving tasks: ${(e as Error).message}`)
     }
   }
@@ -346,12 +454,14 @@ export class TaskToolAdapter extends BaseToolAdapter {
       }
 
       const dataWithIntegration = {
-        result: deleteResult,
+        data: deleteResult.map((task) => task.id),
         integration,
       }
 
       return new SuccessToolResult(dataWithIntegration)
     } catch (e) {
+      Sentry.captureException(e)
+
       return new FailedToolResult(`Error deleting tasks: ${(e as Error).message}`)
     }
   }
@@ -403,12 +513,15 @@ export class TaskToolAdapter extends BaseToolAdapter {
       }
 
       const dataWithIntegration = {
-        ...recoverResult,
+        data: recoverResult.data.tasks.map((task) => task.id),
+        logId: recoverResult.logId,
         integration,
       }
 
       return new SuccessToolResult(dataWithIntegration)
     } catch (e) {
+      Sentry.captureException(e)
+
       return new FailedToolResult(`Error recovering tasks: ${(e as Error).message}`)
     }
   }
@@ -435,7 +548,7 @@ export class TaskToolAdapter extends BaseToolAdapter {
 
       const taskExtended: TaskDTO = {
         ...task,
-        color: closestColor ? closestColor : undefined,
+        color: closestColor,
         categoryName: category.name,
         boardId: category.boardId.toString(),
         boardName: category.boardName,
@@ -444,11 +557,16 @@ export class TaskToolAdapter extends BaseToolAdapter {
       }
 
       if (task.dueDate) {
-        const date = dayjs.tz(dayjs(task.dueDate), timezone).utc()
+        if (task.dueTime) {
+          const collectedDateTime = task.dueDate + 'T' + task.dueTime
+          const date = dayjs.tz(dayjs(collectedDateTime), timezone).utc()
 
-        taskExtended.dueDate = date.format('YYYY-MM-DD')
-        taskExtended.dueHours = date.hour()
-        taskExtended.dueMinutes = date.minute()
+          taskExtended.dueDate = date.format('YYYY-MM-DD')
+          taskExtended.dueHours = date.hour()
+          taskExtended.dueMinutes = date.minute()
+
+          delete (taskExtended as any).dueTime // Remove dueTime as it's now split into hours and minutes
+        }
       }
 
       if (threadId) {

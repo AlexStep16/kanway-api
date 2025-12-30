@@ -55,13 +55,17 @@ import { BoardToolAdapter } from '@application/ai/tools/BoardToolAdapter.ts'
 import { WorkspaceCommandAdapterService } from '@application/ai/services/WorkspaceCommandAdapterService.ts'
 import { WorkspaceToolAdapter } from '@application/ai/tools/WorkspaceToolAdapter.ts'
 import { ToolExecutorService } from '@application/ai/services/ToolExecutorService.ts'
+import { ContextExternalFetchService } from '@application/ai/services/ContextExternalFetchService.ts'
 import { ChatMessageService } from '@application/services/ChatMessageService.ts'
 import { ChatService } from '@application/services/ChatService.ts'
 import ChatRepository from '@application/repositories/ChatRepository.ts'
 import ChatController from '@controllers/ChatController.ts'
 import ChatMessageController from '@controllers/ChatMessageController.ts'
-import { ToolService } from '@/application/services/ToolService.ts'
-import ToolRepository from '@/application/repositories/ToolRepository.ts'
+import { ToolService } from '@application/services/ToolService.ts'
+import ToolRepository from '@repositories/ToolRepository.ts'
+import AgentInstructionRepository from '@repositories/AgentInstructionRepository.ts'
+import { AgentInstructionService } from '@application/services/AgentInstructionService.ts'
+import { BaseToolAdapter } from '@/application/ai/tools/BaseToolAdapter.ts'
 
 export function initializeDependencies() {
   const mongoClient = new MongoClient(process.env.MONGODB_URI || '')
@@ -80,6 +84,7 @@ export function initializeDependencies() {
   const chatMessageRepository = new ChatMessageRepository()
   const chatRespository = new ChatRepository()
   const toolRepository = new ToolRepository()
+  const agentInstructionRepository = new AgentInstructionRepository()
 
   /* MOCK SERVICES START */
   const mockCategoryService = {} as CategoryService
@@ -225,17 +230,44 @@ export function initializeDependencies() {
     categoryService,
     boardService
   )
+  const contextExternalFetchService = new ContextExternalFetchService(
+    taskService,
+    categoryService,
+    boardService,
+    workspaceService
+  )
   const chatMessageService = new ChatMessageService(chatMessageRepository, operationLogService)
-  const chatService = new ChatService(chatRespository, operationLogService, chatMessageService)
+  const chatService = new ChatService(
+    chatRespository,
+    operationLogService,
+    chatMessageService,
+    settingService,
+    contextExternalFetchService
+  )
   const toolService = new ToolService(toolRepository, embeddingService)
+  const agentInstructionService = new AgentInstructionService(
+    agentInstructionRepository,
+    embeddingService,
+    baseService
+  )
   /** AI SERVICES END */
 
   /** TOOLS ADAPTERS START */
   const taskCommandAdapter = new TaskCommandAdapterService(
     taskService,
+    categoryService,
     baseService,
     aiSemanticService
   )
+  const baseToolAdapter = new BaseToolAdapter(
+    baseService,
+    operationLogService,
+    taskService,
+    categoryService,
+    boardService,
+    workspaceService
+  )
+
   const taskToolAdapter = new TaskToolAdapter(
     baseService,
     taskService,
@@ -246,6 +278,7 @@ export function initializeDependencies() {
 
   const categoryCommandAdapter = new CategoryCommandAdapterService(
     categoryService,
+    boardService,
     baseService,
     aiSemanticService
   )
@@ -259,6 +292,7 @@ export function initializeDependencies() {
 
   const boardCommandAdapter = new BoardCommandAdapterService(
     boardService,
+    workspaceService,
     baseService,
     aiSemanticService
   )
@@ -286,6 +320,7 @@ export function initializeDependencies() {
   const toolExecutorService = new ToolExecutorService(
     baseService,
     operationLogService,
+    baseToolAdapter,
     taskToolAdapter,
     categoryToolAdapter,
     boardToolAdapter,
@@ -332,6 +367,9 @@ export function initializeDependencies() {
       toolExecutorService,
       chatMessageService,
       toolService,
+      contextExternalFetchService,
+      chatService,
+      agentInstructionService,
     },
     controllers: {
       authController,
@@ -350,6 +388,7 @@ export function initializeDependencies() {
       chatMessageController,
     },
     adapters: {
+      baseToolAdapter,
       taskToolAdapter,
       categoryToolAdapter,
       boardToolAdapter,

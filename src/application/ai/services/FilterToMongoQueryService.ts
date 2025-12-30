@@ -4,50 +4,47 @@ import { TaskService } from '@/application/services/TaskService.ts'
 import dayjs from 'dayjs'
 import { FilterQuery, Types } from 'mongoose'
 
-interface StringFilter {
-  equal?: string
-  not_equal?: string
-  contains?: string
-  starts_with?: string
-  ends_with?: string
-}
+type DateAndNumberOperators = 'eq' | 'gt' | 'gte' | 'lt' | 'lte'
+type StringOperators = 'equal' | 'contains' | 'starts_with' | 'ends_with'
+type ArrayOperators = 'equal' | 'contains_all' | 'contains_any'
 
-interface DateTimeFilter {
-  equal?: string
-  greater_than?: string
-  greater_than_equal?: string
-  less_than?: string
-  less_than_equal?: string
-}
-
-interface NumberFilter {
-  equal?: number | string
-  not_equal?: number | string
-  greater_than?: number | string
-  greater_than_equal?: number | string
-  less_than?: number | string
-  less_than_equal?: number | string
+interface DateFilter {
+  value: string
+  operator: DateAndNumberOperators
+  isNegated?: boolean
 }
 
 interface ArrayFilter {
-  contains?: string[]
-  contains_all?: string[]
-  equals?: string[]
+  value: string[]
+  operator: ArrayOperators
+  isNegated?: boolean
+}
+
+interface NumberFilter {
+  value: number
+  operator: DateAndNumberOperators
+  isNegated?: boolean
+}
+
+interface StringFilter {
+  value: string
+  operator: StringOperators
+  isNegated?: boolean
 }
 
 interface Filter {
   ids?: string[]
   name?: StringFilter
   description?: StringFilter
-  dueDate?: DateTimeFilter
-  dueTime?: DateTimeFilter
+  dueDate?: DateFilter
+  dueTime?: DateFilter
   isCompleted?: boolean
   isArchived?: boolean
   categoryIds?: string[]
   boardIds?: string[]
   workspaceIds?: string[]
   tags?: ArrayFilter
-  color?: StringFilter
+  color?: ArrayFilter
   order?: NumberFilter
 
   AND?: Array<any>
@@ -74,22 +71,42 @@ export class FilterToMongoQueryService {
   // ===================================================================
   // ОСНОВНАЯ ФУНКЦИЯ ТРАНСФОРМАЦИИ
   // ===================================================================
-  private _getStringProcessedValue(mongoOp: string, operator: string, value: string) {
-    let processedValue: any = value
+  private _getStringProcessedValue(operator: string, value: string, isNegated: boolean = false) {
+    if (operator === 'equal') {
+      const regex = new RegExp(value, 'i')
 
-    if (mongoOp === '$regex') {
-      // 'i' делает поиск регистронезависимым
-      if (operator === 'starts_with') {
-        processedValue = new RegExp(`^${value}`, 'i')
-      } else if (operator === 'ends_with') {
-        processedValue = new RegExp(`${value}$`, 'i')
-      } else {
-        // contains
-        processedValue = new RegExp(value as string, 'i')
+      if (isNegated) {
+        return { $ne: value }
       }
-    }
 
-    return processedValue
+      return regex
+    } else if (operator === 'contains') {
+      const regex = new RegExp(value, 'i')
+
+      if (isNegated) {
+        return { $not: regex }
+      }
+
+      return regex
+    } else if (operator === 'starts_with') {
+      const regex = new RegExp('^' + value, 'i')
+
+      if (isNegated) {
+        return { $not: regex }
+      }
+
+      return regex
+    } else if (operator === 'ends_with') {
+      const regex = new RegExp(value + '$', 'i')
+
+      if (isNegated) {
+        return { $not: regex }
+      }
+
+      return regex
+    } else {
+      throw new Error(`Unsupported string operator: ${operator}`)
+    }
   }
 
   /**
@@ -102,20 +119,6 @@ export class FilterToMongoQueryService {
     timezone: string,
     userId: Types.ObjectId
   ): Promise<FilterQuery<any>> {
-    const operatorMap: { [key: string]: string } = {
-      equal: '$regex',
-      not_equal: '$ne',
-      contains: '$regex',
-      starts_with: '$regex',
-      ends_with: '$regex',
-      greater_than: '$gt',
-      greater_than_equal: '$gte',
-      less_than: '$lt',
-      less_than_equal: '$lte',
-      contains_any: '$in',
-      contains_all: '$all',
-    }
-
     const currentAndConditions: any[] = []
     const currentOrConditions: any[] = []
 
@@ -140,7 +143,7 @@ export class FilterToMongoQueryService {
         }
       }
 
-      if (input.ids !== undefined) {
+      if (input.ids !== undefined && input.ids.length > 0) {
         currentAndConditions.push({
           _id: { $in: input.ids.map((id) => Types.ObjectId.createFromHexString(id)) },
         })
@@ -148,24 +151,24 @@ export class FilterToMongoQueryService {
       if (input.isCompleted !== undefined) {
         currentAndConditions.push({ is_completed: input.isCompleted })
       }
-      if (input.isArchived !== undefined) {
-        currentAndConditions.push({ is_deleted: input.isArchived })
+      if (input.isArchived === true) {
+        currentAndConditions.push({ is_deleted: true, is_deleted_external: false })
       } else {
         currentAndConditions.push({ is_deleted: false })
       }
-      if (input.categoryIds !== undefined) {
+      if (input.categoryIds !== undefined && input.categoryIds.length > 0) {
         currentAndConditions.push({
           category_id: {
             $in: input.categoryIds.map((id) => Types.ObjectId.createFromHexString(id)),
           },
         })
       }
-      if (input.boardIds !== undefined) {
+      if (input.boardIds !== undefined && input.boardIds.length > 0) {
         currentAndConditions.push({
           board_id: { $in: input.boardIds.map((id) => Types.ObjectId.createFromHexString(id)) },
         })
       }
-      if (input.workspaceIds !== undefined) {
+      if (input.workspaceIds !== undefined && input.workspaceIds.length > 0) {
         currentAndConditions.push({
           workspace_id: {
             $in: input.workspaceIds.map((id) => Types.ObjectId.createFromHexString(id)),
@@ -174,67 +177,53 @@ export class FilterToMongoQueryService {
       }
 
       if (input.name !== undefined) {
-        for (const [key, value] of Object.entries(input.name)) {
-          const mongoOp = operatorMap[key]
-          currentAndConditions.push({
-            name: {
-              [mongoOp]: this._getStringProcessedValue(mongoOp, key, value),
-            },
-          })
-        }
+        const { operator, value, isNegated } = input.name as StringFilter
+
+        currentAndConditions.push({
+          name: this._getStringProcessedValue(operator, value, isNegated),
+        })
       }
 
       if (input.description !== undefined) {
-        for (const [key, value] of Object.entries(input.description)) {
-          const mongoOp = operatorMap[key]
-          currentAndConditions.push({
-            description: {
-              [mongoOp]: this._getStringProcessedValue(mongoOp, key, value),
-            },
-          })
-        }
+        const { operator, value, isNegated } = input.name as StringFilter
+
+        currentAndConditions.push({
+          description: this._getStringProcessedValue(operator, value, isNegated),
+        })
       }
 
       if (input.dueDate !== undefined) {
-        for (const [key, value] of Object.entries(input.dueDate)) {
-          const mongoOp = operatorMap[key]
-          currentAndConditions.push(this._getDateQuery('due_date', value, key, mongoOp, timezone))
-        }
+        const { operator, value, isNegated } = input.dueDate as DateFilter
+
+        currentAndConditions.push(this._getDateQuery(value, operator, timezone, isNegated))
       }
 
       if (input.dueTime !== undefined) {
-        for (const [key, value] of Object.entries(input.dueTime)) {
-          currentAndConditions.push(this._getTimeQuery(value, key, timezone))
-        }
+        const { value, operator, isNegated } = input.dueTime as DateFilter
+
+        currentAndConditions.push(this._getTimeQuery(value, operator, timezone, isNegated))
       }
 
       if (input.tags !== undefined) {
-        for (const [key, value] of Object.entries(input.tags)) {
-          const mongoOp = operatorMap[key]
-          currentAndConditions.push({
-            tags: {
-              [mongoOp]: value,
-            },
-          })
-        }
+        const { value, operator, isNegated } = input.tags as ArrayFilter
+
+        currentAndConditions.push(this._getArrayQuery('tags', value, operator, isNegated))
       }
 
       if (input.order !== undefined) {
-        for (const [key, value] of Object.entries(input.order)) {
-          const mongoOp = operatorMap[key]
-          currentAndConditions.push({
-            order: {
-              [mongoOp]: parseInt(value, 10),
-            },
-          })
-        }
+        const { value, operator, isNegated } = input.order as NumberFilter
+
+        currentAndConditions.push(this._getNumberQuery('order', value, operator, isNegated))
       }
 
       if (input.color !== undefined) {
-        for (const [key, value] of Object.entries(input.color)) {
-          const mongoOp = operatorMap[key]
-          currentAndConditions.push(this._getColorQuery(value, mongoOp))
-        }
+        const { value, operator, isNegated } = input.color as ArrayFilter
+
+        const normalizedColors = value.map((color) => this.taskService.getNearestColor(color) || '')
+
+        currentAndConditions.push(
+          this._getArrayQuery('color', normalizedColors, operator, isNegated)
+        )
       }
 
       if (currentOrConditions.length > 0) {
@@ -253,66 +242,205 @@ export class FilterToMongoQueryService {
     }
   }
 
-  // ===================================================================
-  // ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ ПОСТРОЕНИЯ ОДНОГО УСЛОВИЯ
-  // ===================================================================
+  private _getNumberQuery(
+    field: string,
+    value: number,
+    operator: DateAndNumberOperators,
+    isNegated: boolean = false
+  ): FilterQuery<any> {
+    if (operator === 'eq') {
+      if (isNegated) {
+        return {
+          [field]: { $ne: value },
+        }
+      }
 
-  private _getColorQuery(value: string, mongoOp: string): any {
-    const normalizedColor = this.taskService.getNearestColor(value)
-    const color = normalizedColor || ''
+      return {
+        [field]: { $eq: value },
+      }
+    } else if (operator === 'gt') {
+      if (isNegated) {
+        return {
+          [field]: { $lte: value },
+        }
+      }
 
-    return {
-      color: {
-        [mongoOp]: color,
-      },
+      return {
+        [field]: { $gt: value },
+      }
+    } else if (operator === 'gte') {
+      if (isNegated) {
+        return {
+          [field]: { $lt: value },
+        }
+      }
+
+      return {
+        [field]: { $gte: value },
+      }
+    } else if (operator === 'lt') {
+      if (isNegated) {
+        return {
+          [field]: { $gte: value },
+        }
+      }
+
+      return {
+        [field]: { $lt: value },
+      }
+    } else if (operator === 'lte') {
+      if (isNegated) {
+        return {
+          [field]: { $gt: value },
+        }
+      }
+
+      return {
+        [field]: { $lte: value },
+      }
+    } else {
+      throw new Error(`Unsupported operator: ${operator}`)
+    }
+  }
+
+  private _getArrayQuery(
+    field: string,
+    values: string[],
+    operator: ArrayOperators,
+    isNegated: boolean = false
+  ): FilterQuery<any> {
+    if (operator === 'equal') {
+      if (isNegated) {
+        return {
+          [field]: { $ne: values },
+        }
+      }
+
+      return {
+        [field]: { $eq: values },
+      }
+    } else if (operator === 'contains_all') {
+      if (isNegated) {
+        return {
+          [field]: { $not: { $all: values } },
+        }
+      }
+      return {
+        [field]: { $all: values },
+      }
+    } else if (operator === 'contains_any') {
+      if (isNegated) {
+        return {
+          [field]: { $not: { $in: values } },
+        }
+      }
+      return {
+        [field]: { $in: values },
+      }
+    } else {
+      throw new Error(`Unsupported array operator: ${operator}`)
     }
   }
 
   private _getDateQuery(
-    field: string,
     value: string,
-    operator: string,
-    mongoOp: string,
-    timezone: string
-  ): any {
-    const m = dayjs(value)
-    if (!m.isValid()) {
-      throw new Error(`Invalid date value for due_date: ${value}`)
+    operator: DateAndNumberOperators,
+    userTimezone: string,
+    isNegated: boolean = false
+  ): FilterQuery<any> {
+    const dateStr = value.split('T')[0]
+
+    // 1. Вычисляем границы дня в UTC (как и раньше)
+    const targetDate = dayjs.tz(dateStr, userTimezone)
+    if (!targetDate.isValid()) throw new Error(`Invalid date: ${value}`)
+
+    const startOfDay = targetDate.startOf('day').toDate()
+    const nextDayStart = targetDate.add(1, 'day').startOf('day').toDate()
+
+    // 2. Безопасное извлечение часов и минут
+    // Если в поле лежит пустая строка "", null или мусор -> считаем это за 0
+    const safeDateConversion = {
+      $convert: {
+        input: `$due_date`, // Например $dueDate
+        to: 'date', // Пытаемся сделать дату
+        onError: null, // Если ошибка (пустая строка/мусор) -> null
+        onNull: null, // Если null -> null
+      },
     }
 
-    // Обрезаем часовой пояс и делаем его локальным, затем переводим в UTC
-    const dateWithoutTimeZone = dayjs.tz(m.format('YYYY-MM-DDTHH:mm:ss.SSS'), timezone).utc()
+    // 3. Безопасное время
+    const safeHours = { $convert: { input: '$due_hours', to: 'int', onError: 0, onNull: 0 } }
+    const safeMinutes = { $convert: { input: '$due_minutes', to: 'int', onError: 0, onNull: 0 } }
 
-    if (operator === 'equal') {
-      const isDateOnly =
-        m.hour() === 0 && m.minute() === 0 && m.second() === 0 && m.millisecond() === 0
-
-      if (isDateOnly) {
-        const startOfDay = dateWithoutTimeZone.startOf('day').toDate()
-        const endOfDay = dateWithoutTimeZone.endOf('day').toDate()
-        return {
-          [field]: {
-            $gte: startOfDay,
-            $lte: endOfDay,
-          },
-        }
-      } else {
-        return {
-          [field]: {
-            [mongoOp]: dateWithoutTimeZone.toDate(),
-          },
-        }
-      }
-    } else {
-      return {
-        [field]: {
-          [mongoOp]: dateWithoutTimeZone.toDate(),
+    // 4. Логика сборки
+    // Используем $let, чтобы сначала определить переменные, а потом проверить их
+    const constructedDateExpr = {
+      $let: {
+        vars: {
+          d: safeDateConversion, // Наша безопасная дата
+          h: safeHours,
+          m: safeMinutes,
         },
+        in: {
+          $cond: {
+            // Если дата некорректна (null), возвращаем 1970 год (не попадет в поиск "сегодня")
+            if: { $eq: ['$$d', null] },
+            then: new Date(0),
+            else: {
+              // Иначе собираем дату из частей
+              $dateFromParts: {
+                year: { $year: '$$d' },
+                month: { $month: '$$d' },
+                day: { $dayOfMonth: '$$d' },
+                hour: '$$h',
+                minute: '$$m',
+                timezone: 'UTC',
+              },
+            },
+          },
+        },
+      },
+    }
+
+    // 4. Формируем условия (логика та же, что и выше)
+    if (operator === 'eq') {
+      // Попадает в интервал [startOfDay, nextDayStart)
+      const condition = {
+        $and: [
+          { $gte: [constructedDateExpr, startOfDay] },
+          { $lt: [constructedDateExpr, nextDayStart] },
+        ],
       }
+      return isNegated ? { $expr: { $not: condition } } : { $expr: condition }
+    } else if (operator === 'gt') {
+      const val = isNegated ? nextDayStart : nextDayStart
+      const op = isNegated ? '$lt' : '$gte'
+      return { $expr: { [op]: [constructedDateExpr, val] } }
+    } else if (operator === 'gte') {
+      const val = isNegated ? startOfDay : startOfDay
+      const op = isNegated ? '$lt' : '$gte'
+      return { $expr: { [op]: [constructedDateExpr, val] } }
+    } else if (operator === 'lt') {
+      const val = isNegated ? startOfDay : startOfDay
+      const op = isNegated ? '$gte' : '$lt'
+      return { $expr: { [op]: [constructedDateExpr, val] } }
+    } else if (operator === 'lte') {
+      const val = isNegated ? nextDayStart : nextDayStart
+      const op = isNegated ? '$gte' : '$lt'
+      return { $expr: { [op]: [constructedDateExpr, val] } }
+    } else {
+      throw new Error(`Unsupported operator: ${operator}`)
     }
   }
 
-  private _getTimeQuery(value: string, operator: string, timezone: string): any {
+  private _getTimeQuery(
+    value: string,
+    operator: DateAndNumberOperators,
+    timezone: string,
+    isNegated: boolean = false
+  ): any {
+    value = value.toString().padStart(5, '0') // Гарантируем формат "HH:mm"
+
     // Если приходит field 'time', мы ищем по due_hours и due_minutes
     let hour: string | number = value.split(':')[0]
     let minute: string | number = value.split(':')[1]
@@ -330,23 +458,41 @@ export class FilterToMongoQueryService {
     minute = parseInt(dateUtc.format('m'))
 
     // Для 'equal' и 'not_equal' мы можем использовать прямые сравнения
-    if (operator === 'equal') {
+    if (operator === 'eq') {
+      if (isNegated) {
+        // Логика "не равно" для часа и минуты: (час НЕ РАВЕН ИЛИ минута НЕ РАВНА)
+        // То есть, если час не тот, или час тот, но минута не та.
+        return {
+          $or: [{ due_hours: { $ne: hour } }, { due_minutes: { $ne: minute } }],
+        }
+      }
+
       return {
         $and: [{ due_hours: hour }, { due_minutes: minute }],
-      }
-    } else if (operator === 'not_equal') {
-      // Логика "не равно" для часа и минуты: (час НЕ РАВЕН ИЛИ минута НЕ РАВНА)
-      // То есть, если час не тот, или час тот, но минута не та.
-      return {
-        $or: [{ due_hours: { $ne: hour } }, { due_minutes: { $ne: minute } }],
       }
     }
     // Обработка диапазонов времени (greater_than, less_than и т.д.)
     // Это сложнее, так как требуется комбинировать due_hours и due_minutes
     // Например, "больше 14:30"
     // (due_hours > 14) ИЛИ (due_hours = 14 И due_minutes > 30)
-    else if (operator === 'greater_than' || operator === 'greater_than_equal') {
-      const mongoOperator = operator === 'greater_than' ? '$gt' : '$gte'
+    else if (operator === 'gt' || operator === 'gte') {
+      const mongoOperator = operator === 'gt' ? '$gt' : '$gte'
+
+      if (isNegated) {
+        // Логика "не больше" для часа и минуты:
+        // То есть, если час меньше, или час равен, но минута меньше/равна.
+        const negatedMongoOperator = operator === 'gt' ? '$lt' : '$lte'
+
+        return {
+          $or: [
+            { due_hours: { $lt: hour } },
+            {
+              $and: [{ due_hours: hour }, { due_minutes: { [negatedMongoOperator]: minute } }],
+            },
+          ],
+        }
+      }
+
       return {
         $or: [
           { due_hours: { $gt: hour } }, // Если час больше
@@ -359,8 +505,24 @@ export class FilterToMongoQueryService {
           },
         ],
       }
-    } else if (operator === 'less_than' || operator === 'less_than_equal') {
-      const mongoOperator = operator === 'less_than' ? '$lt' : '$lte'
+    } else if (operator === 'lt' || operator === 'lte') {
+      const mongoOperator = operator === 'lt' ? '$lt' : '$lte'
+
+      if (isNegated) {
+        // Логика "не меньше" для часа и минуты:
+        // То есть, если час больше, или час равен, но минута больше/равна.
+        const negatedMongoOperator = operator === 'lt' ? '$gt' : '$gte'
+
+        return {
+          $or: [
+            { due_hours: { $gt: hour } },
+            {
+              $and: [{ due_hours: hour }, { due_minutes: { [negatedMongoOperator]: minute } }],
+            },
+          ],
+        }
+      }
+
       return {
         $or: [
           { due_hours: { $lt: hour } }, // Если час меньше

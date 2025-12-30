@@ -46,6 +46,7 @@ export class ChatMessageService implements ICreateService<IChatMessage, ChatMess
           await new Promise((resolve) => setTimeout(resolve, 50 * attempt))
           continue
         }
+
         throw error
       } finally {
         session.endSession()
@@ -85,6 +86,7 @@ export class ChatMessageService implements ICreateService<IChatMessage, ChatMess
       {
         role: data.role,
         content: data.content,
+        list_type: data.listType,
         user_id: user.id,
         chat_id: data.chatId,
         thread_id: data.threadId,

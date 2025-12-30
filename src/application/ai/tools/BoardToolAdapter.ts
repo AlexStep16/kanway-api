@@ -1,9 +1,8 @@
 import { BoardService } from '@application/services/BoardService.ts'
-import { BaseToolAdapter } from '@application/ai/tools/BaseToolAdapter.ts'
 import { BaseService } from '@application/services/BaseService.ts'
 import {
-  ConditionalBoardFilterDTO,
-  ConditionalBoardFilterSchema,
+  BoardFilterDTO,
+  BoardFilterSchema,
   BoardCreateDTO,
   BoardCreateSchema,
   EditBoardsDTO,
@@ -23,8 +22,16 @@ import { WorkspaceService } from '@application/services/WorkspaceService.ts'
 import { IUndoResponse } from '@/application/interfaces/IUndoResponse.ts'
 import { IBoardsWithChildrenResponse } from '@/application/interfaces/IBoardsWithChildrenResponse.ts'
 import { IBoard } from '@/domain/entities/IBoard.ts'
+import * as Sentry from '@sentry/node'
 
-export class BoardToolAdapter extends BaseToolAdapter {
+interface CompressedBoard {
+  id: string
+  name: string
+  workspaceName?: string
+}
+
+export class BoardToolAdapter {
+  private baseService: BaseService
   private boardService: BoardService
   private boardCommandAdapterService: BoardCommandAdapterService
   private filterToMongoQueryService: FilterToMongoQueryService
@@ -37,8 +44,7 @@ export class BoardToolAdapter extends BaseToolAdapter {
     filterToMongoQueryService: FilterToMongoQueryService,
     workspaceService: WorkspaceService
   ) {
-    super(baseService)
-
+    this.baseService = baseService
     this.boardService = boardService
     this.boardCommandAdapterService = boardCommandAdapterService
     this.boardService = boardService
@@ -46,16 +52,24 @@ export class BoardToolAdapter extends BaseToolAdapter {
     this.workspaceService = workspaceService
   }
 
+  private _compressBoards(boards: IBoard[]): Array<CompressedBoard> {
+    return boards.map((board) => ({
+      id: board.id.toString(),
+      name: board.name,
+      workspaceName: board.workspaceName,
+    }))
+  }
+
   // [Tool 1]
   public async findBoardsByFilter(
-    dto: ConditionalBoardFilterDTO,
+    dto: BoardFilterDTO,
     config: LangGraphRunnableConfig
   ): Promise<string> {
     const user = config.configurable?.user as IUser
     const timezone = config.configurable?.timezone || 'Europe/Moscow'
 
     try {
-      const errorMsgs = this.baseService.validateInputBySchema(dto, ConditionalBoardFilterSchema)
+      const errorMsgs = this.baseService.validateInputBySchema(dto, BoardFilterSchema)
 
       if (errorMsgs.length > 0) {
         return (
@@ -91,8 +105,18 @@ export class BoardToolAdapter extends BaseToolAdapter {
         }
       }
 
-      return JSON.stringify(boards)
+      const compressedBoards = this._compressBoards(boards)
+
+      if (compressedBoards.length === 0) {
+        return 'No boards found matching the provided filter.'
+      } else if (compressedBoards.length > 20) {
+        return `Found ${compressedBoards.length} boards. Please refine your filter to narrow down the results.`
+      }
+
+      return JSON.stringify(compressedBoards)
     } catch (e) {
+      Sentry.captureException(e)
+
       return `Error retrieving boards: ${(e as Error).message}`
     }
   }
@@ -110,15 +134,20 @@ export class BoardToolAdapter extends BaseToolAdapter {
 
       const userId = config.configurable?.user?.id
 
-      const boards = await this.baseService.similaritySearchBoards(nameToFind, userId, 20)
+      const boards = await this.baseService.similaritySearchBoards(nameToFind, userId, 30)
 
-      return JSON.stringify(
-        boards.map((board) => ({
-          id: board.id.toString(),
-          name: board.name,
-        }))
-      )
+      const compressedBoards = this._compressBoards(boards)
+
+      if (compressedBoards.length === 0) {
+        return 'No boards found matching the provided filter.'
+      } else if (compressedBoards.length > 20) {
+        return `Found ${compressedBoards.length} boards. Please refine your filter to narrow down the results.`
+      }
+
+      return JSON.stringify(compressedBoards)
     } catch (e) {
+      Sentry.captureException(e)
+
       return `Error finding relevant boards: ${(e as Error).message}`
     }
   }
@@ -182,12 +211,15 @@ export class BoardToolAdapter extends BaseToolAdapter {
       }
 
       const dataWithIntegration = {
-        ...boardsResult,
+        data: boardsResult.data.map((board) => ({ id: board.id, name: board.name })),
+        logId: boardsResult.logId,
         integration,
       }
 
       return new SuccessToolResult(dataWithIntegration)
     } catch (e) {
+      Sentry.captureException(e)
+
       return new FailedToolResult(`Error creating boards: ${(e as Error).message}`)
     }
   }
@@ -238,13 +270,29 @@ export class BoardToolAdapter extends BaseToolAdapter {
         },
       }
 
+      // Get only changed columns to return
+      const changedColumns = Object.keys(dto.changes)
+
+      const dataWithChangedColumns = editResult.data.map((task) => {
+        const taskWithChangedColumns: any = { id: task.id, name: task.name }
+
+        for (const column of changedColumns) {
+          taskWithChangedColumns[column] = (task as any)[column]
+        }
+
+        return taskWithChangedColumns
+      })
+
       const dataWithIntegration = {
-        ...editResult,
+        data: dataWithChangedColumns,
+        logId: editResult.logId,
         integration,
       }
 
       return new SuccessToolResult(dataWithIntegration)
     } catch (e) {
+      Sentry.captureException(e)
+
       return new FailedToolResult(`Error editing boards: ${(e as Error).message}`)
     }
   }
@@ -302,12 +350,15 @@ export class BoardToolAdapter extends BaseToolAdapter {
       }
 
       const dataWithIntegration = {
-        ...archiveResult,
+        data: archiveResult.data.boards.map((board) => board.id),
+        logId: archiveResult.logId,
         integration,
       }
 
       return new SuccessToolResult(dataWithIntegration)
     } catch (e) {
+      Sentry.captureException(e)
+
       return new FailedToolResult(`Error archiving boards: ${(e as Error).message}`)
     }
   }
@@ -362,12 +413,14 @@ export class BoardToolAdapter extends BaseToolAdapter {
       }
 
       const dataWithIntegration = {
-        result: deleteResult,
+        data: deleteResult.map((board) => board.id),
         integration,
       }
 
       return new SuccessToolResult(dataWithIntegration)
     } catch (e) {
+      Sentry.captureException(e)
+
       return new FailedToolResult(`Error deleting boards: ${(e as Error).message}`)
     }
   }
@@ -425,12 +478,15 @@ export class BoardToolAdapter extends BaseToolAdapter {
       }
 
       const dataWithIntegration = {
-        ...recoverResult,
+        data: recoverResult.data.boards.map((board) => board.id),
+        logId: recoverResult.logId,
         integration,
       }
 
       return new SuccessToolResult(dataWithIntegration)
     } catch (e) {
+      Sentry.captureException(e)
+
       return new FailedToolResult(`Error recovering boards: ${(e as Error).message}`)
     }
   }

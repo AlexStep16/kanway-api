@@ -9,4 +9,5 @@ export enum AgentRoles {
   ASSISTANT_CHUNK = 'assistant_chunk',
   ASSISTANT_FINAL = 'assistant',
   NEW_MESSAGE = 'new_message',
+  LIST_ENTITIES = 'list_entities',
 }

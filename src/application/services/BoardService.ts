@@ -79,6 +79,7 @@ export class BoardService
           await new Promise((resolve) => setTimeout(resolve, 50 * attempt))
           continue
         }
+
         throw error
       } finally {
         session.endSession()
@@ -460,6 +461,12 @@ export class BoardService
       })
     }
 
+    await this.repository.updateByFilter(
+      { _id: { $in: data.map((d) => d._id) } },
+      { order: 9999 },
+      session
+    )
+
     await this.categoryService.moveCategoriesToWorkspaceByBoardsBulk(boardsMap, userId, session)
 
     await this.taskService.moveTasksToWorkspaceByBoardsBulk(boardsMap, userId, session)
@@ -474,6 +481,8 @@ export class BoardService
     userId: Types.ObjectId,
     session?: ClientSession
   ): Promise<void> {
+    await this.repository.updateByFilter({ _id: { $in: boardIds } }, { order: 9999 }, session)
+
     await this.categoryService.moveCategoriesToWorkspaceByBoards(
       boardIds,
       {
@@ -1114,10 +1123,8 @@ export class BoardService
       }
     }
 
-    if (typeof data.order === 'number') {
-      boardPayload.order = data.order
-    } else if (typeof data.order === 'string') {
-      boardPayload.order = parseInt(data.order, 10)
+    if (typeof data.order !== 'undefined') {
+      boardPayload.order = typeof data.order === 'string' ? parseInt(data.order, 10) : data.order
     }
 
     return boardPayload

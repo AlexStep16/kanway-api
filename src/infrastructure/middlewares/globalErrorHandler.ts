@@ -1,10 +1,13 @@
 import { AppError } from '@errors/AppError.ts'
 import { Request, Response, NextFunction } from 'express'
+import * as Sentry from '@sentry/node'
 
 export const globalErrorHandler = (err: any, _r: Request, res: Response, _n: NextFunction) => {
   if (process.env.NODE_ENV === 'development') {
     console.error(err)
   }
+
+  Sentry.captureException(err)
 
   if (err instanceof AppError) {
     return res.status(err.statusCode).json({

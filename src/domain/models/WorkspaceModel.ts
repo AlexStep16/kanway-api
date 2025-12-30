@@ -38,6 +38,10 @@ export const WorkspaceSchema = new Schema<IWorkspaceRaw>(
       enum: BASE_COLORS,
       default: '#3b82f6',
     },
+    color_name: {
+      type: String,
+      default: 'Blue',
+    },
   },
   { timestamps: true }
 )

@@ -1,5 +1,5 @@
 import { EditBoardsDTO } from '@application/ai/tools/toolSchemes.ts'
-import { ClientSession } from 'mongoose'
+import { ClientSession, Types } from 'mongoose'
 import { IResponseWithLog } from '@interfaces/IResponseWithLog.ts'
 import { BaseService } from '@application/services/BaseService.ts'
 import { AISemanticService } from '@application/services/AISemanticService.ts'
@@ -7,18 +7,23 @@ import { IUser } from '@domain/entities/IUser.ts'
 import { BoardEditDTO } from '@dtos/BoardEditDTO.ts'
 import { BoardService } from '@application/services/BoardService.ts'
 import { IBoard } from '@/domain/entities/IBoard.ts'
+import { WorkspaceService } from '@/application/services/WorkspaceService.ts'
+import { NotFoundError } from '@/domain/errors/NotFound.ts'
 
 export class BoardCommandAdapterService {
   protected boardService: BoardService
+  protected workspaceService: WorkspaceService
   protected baseService: BaseService
   protected aiSemanticService: AISemanticService
 
   constructor(
     boardService: BoardService,
+    workspaceService: WorkspaceService,
     baseService: BaseService,
     aiSemanticService: AISemanticService
   ) {
     this.boardService = boardService
+    this.workspaceService = workspaceService
     this.baseService = baseService
     this.aiSemanticService = aiSemanticService
   }
@@ -42,6 +47,14 @@ export class BoardCommandAdapterService {
 
       if (typeof changes.workspaceId !== 'undefined' && typeof changes.workspaceId === 'string') {
         updatedBoard.workspaceId = changes.workspaceId
+
+        const workspace = await this.workspaceService.getById(changes.workspaceId, user.id, session)
+
+        if (!workspace) {
+          throw new NotFoundError(`Workspace with id ${changes.workspaceId} not found`)
+        }
+
+        updatedBoard.workspaceName = workspace.name
       }
 
       if (typeof changes.order !== 'undefined') {
@@ -49,11 +62,15 @@ export class BoardCommandAdapterService {
         else if (typeof changes.order === 'number') updatedBoard.order = changes.order
       }
 
+      if (typeof changes.isFavorite !== 'undefined') {
+        updatedBoard.isFavorite = Boolean(changes.isFavorite)
+      }
+
       boardsToUpdate.push(updatedBoard)
     }
 
     if (typeof changes.name !== 'undefined') {
-      let updatedNames: { id: string; name: string }[] = []
+      let updatedNames: { id: Types.ObjectId; name: string }[] = []
 
       if (changes.name.set) {
         updatedNames = await this.aiSemanticService.buildNamesForEntities(
@@ -61,21 +78,24 @@ export class BoardCommandAdapterService {
           String(changes.name.set),
           'set'
         )
-      } else if (changes.name.append) {
+      }
+      if (changes.name.append) {
         updatedNames = await this.aiSemanticService.buildNamesForEntities(
-          existingBoards,
+          updatedNames.length > 0 ? updatedNames : existingBoards,
           String(changes.name.append),
           'append'
         )
-      } else if (changes.name.prepend) {
+      }
+      if (changes.name.prepend) {
         updatedNames = await this.aiSemanticService.buildNamesForEntities(
-          existingBoards,
+          updatedNames.length > 0 ? updatedNames : existingBoards,
           String(changes.name.prepend),
           'prepend'
         )
-      } else if (changes.name.replace_part) {
+      }
+      if (changes.name.replace_part) {
         updatedNames = await this.aiSemanticService.buildNamesForEntities(
-          existingBoards,
+          updatedNames.length > 0 ? updatedNames : existingBoards,
           String(changes.name.replace_part.replace_with),
           'replace',
           String(changes.name.replace_part.find)
@@ -83,7 +103,7 @@ export class BoardCommandAdapterService {
       }
 
       for (const updatedBoard of boardsToUpdate) {
-        const updatedNameData = updatedNames.find((data) => data.id === updatedBoard.id.toString())
+        const updatedNameData = updatedNames.find((data) => data.id.equals(updatedBoard.id))
 
         if (updatedNameData) {
           updatedBoard.name = updatedNameData.name

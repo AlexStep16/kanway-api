@@ -74,6 +74,16 @@ export default class ChatController {
     }
   }
 
+  public async retry(req: Request, res: Response, next: NextFunction) {
+    try {
+      const result = await this.service.retry(req.body, req.user!)
+
+      return res.status(200).json(new SuccessResponse(result))
+    } catch (error) {
+      next(error)
+    }
+  }
+
   public async approveToolCall(req: Request, res: Response, next: NextFunction) {
     try {
       const result = await this.service.approveToolCall(req.body, req.user!)

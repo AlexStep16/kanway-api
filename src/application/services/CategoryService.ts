@@ -80,6 +80,7 @@ export class CategoryService
           await new Promise((resolve) => setTimeout(resolve, 50 * attempt))
           continue
         }
+
         throw error
       } finally {
         session.endSession()
@@ -277,10 +278,10 @@ export class CategoryService
       await this.moveCategoriesToBoard(
         categoriesToMove.map((c) => c._id),
         {
-          workspaceId: newEntity.workspace_id,
-          workspaceName: newEntity.workspace_name,
           boardId: newEntity.board_id,
           boardName: newEntity.board_name,
+          workspaceId: newEntity.workspace_id,
+          workspaceName: newEntity.workspace_name,
         },
         userId,
         session
@@ -497,8 +498,11 @@ export class CategoryService
 
       rawUpdates.push({
         _id: dto._id,
+        board_id: board.id,
+        board_name: board.name,
         workspace_id: board.workspaceId,
         workspace_name: board.workspaceName,
+        order: 9999, // Reset order to allow proper reordering later
       })
     }
 
@@ -507,6 +511,7 @@ export class CategoryService
     const categoriesMap: Map<
       string,
       {
+        categoryName: string
         boardId: Types.ObjectId
         boardName: string
         workspaceId: Types.ObjectId
@@ -516,6 +521,7 @@ export class CategoryService
 
     for (const category of updatedCategories) {
       categoriesMap.set(category._id.toString(), {
+        categoryName: category.name,
         boardId: category.board_id,
         boardName: category.board_name,
         workspaceId: category.workspace_id,
@@ -531,10 +537,10 @@ export class CategoryService
   public async moveCategoriesToBoard(
     categoryIds: Types.ObjectId[],
     targets: {
-      workspaceId: Types.ObjectId
-      workspaceName: string
       boardId: Types.ObjectId
       boardName: string
+      workspaceId: Types.ObjectId
+      workspaceName: string
     },
     userId: Types.ObjectId,
     session?: ClientSession
@@ -553,6 +559,7 @@ export class CategoryService
         workspace_name: targets.workspaceName,
         board_id: targets.boardId,
         board_name: targets.boardName,
+        order: 9999, // Reset order to allow proper reordering later
       },
       session
     )

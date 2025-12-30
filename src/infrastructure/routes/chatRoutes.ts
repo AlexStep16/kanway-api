@@ -11,6 +11,7 @@ export default (controller: ChatController): Router => {
 
   router.get('/', controller.getAll)
   router.post('/send', validationMiddleware(ChatSendDTOSchema), controller.send.bind(controller))
+  router.post('/retry', controller.retry.bind(controller))
   router.get('/stream/:jobId/status', controller.streamStatus.bind(controller))
   router.post('/tools/approve', controller.approveToolCall.bind(controller))
 

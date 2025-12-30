@@ -1,9 +1,8 @@
 import { WorkspaceService } from '@application/services/WorkspaceService.ts'
-import { BaseToolAdapter } from '@application/ai/tools/BaseToolAdapter.ts'
 import { BaseService } from '@application/services/BaseService.ts'
 import {
-  ConditionalWorkspaceFilterDTO,
-  ConditionalWorkspaceFilterSchema,
+  WorkspaceFilterDTO,
+  WorkspaceFilterSchema,
   WorkspaceCreateDTO,
   WorkspaceCreateSchema,
   EditWorkspacesDTO,
@@ -22,8 +21,15 @@ import { FilterToMongoQueryService } from '@/application/ai/services/FilterToMon
 import { IUndoResponse } from '@/application/interfaces/IUndoResponse.ts'
 import { IWorkspacesWithChildrenResponse } from '@/application/interfaces/IWorkspacesWithChildrenResponse.ts'
 import { IWorkspace } from '@/domain/entities/IWorkspace.ts'
+import * as Sentry from '@sentry/node'
 
-export class WorkspaceToolAdapter extends BaseToolAdapter {
+interface CompressedWorkspace {
+  id: string
+  name: string
+}
+
+export class WorkspaceToolAdapter {
+  private baseService: BaseService
   private workspaceService: WorkspaceService
   private workspaceCommandAdapterService: WorkspaceCommandAdapterService
   private filterToMongoQueryService: FilterToMongoQueryService
@@ -34,26 +40,29 @@ export class WorkspaceToolAdapter extends BaseToolAdapter {
     workspaceCommandAdapterService: WorkspaceCommandAdapterService,
     filterToMongoQueryService: FilterToMongoQueryService
   ) {
-    super(baseService)
-
+    this.baseService = baseService
     this.workspaceService = workspaceService
     this.workspaceCommandAdapterService = workspaceCommandAdapterService
     this.filterToMongoQueryService = filterToMongoQueryService
   }
 
+  private _compressWorkspaces(workspaces: IWorkspace[]): Array<CompressedWorkspace> {
+    return workspaces.map((workspace) => ({
+      id: workspace.id.toString(),
+      name: workspace.name,
+    }))
+  }
+
   // [Tool 1]
   public async findWorkspacesByFilter(
-    dto: ConditionalWorkspaceFilterDTO,
+    dto: WorkspaceFilterDTO,
     config: LangGraphRunnableConfig
   ): Promise<string> {
     const user = config.configurable?.user as IUser
     const timezone = config.configurable?.timezone || 'Europe/Moscow'
 
     try {
-      const errorMsgs = this.baseService.validateInputBySchema(
-        dto,
-        ConditionalWorkspaceFilterSchema
-      )
+      const errorMsgs = this.baseService.validateInputBySchema(dto, WorkspaceFilterSchema)
 
       if (errorMsgs.length > 0) {
         return (
@@ -89,8 +98,18 @@ export class WorkspaceToolAdapter extends BaseToolAdapter {
         }
       }
 
-      return JSON.stringify(workspaces)
+      const compressedWorkspaces = this._compressWorkspaces(workspaces)
+
+      if (compressedWorkspaces.length === 0) {
+        return 'No workspaces found matching the provided filter.'
+      } else if (compressedWorkspaces.length > 20) {
+        return `Found ${compressedWorkspaces.length} workspaces. Please refine your filter to narrow down the results.`
+      }
+
+      return JSON.stringify(compressedWorkspaces)
     } catch (e) {
+      Sentry.captureException(e)
+
       return `Error retrieving workspaces: ${(e as Error).message}`
     }
   }
@@ -108,15 +127,20 @@ export class WorkspaceToolAdapter extends BaseToolAdapter {
 
       const userId = config.configurable?.user?.id
 
-      const workspaces = await this.baseService.similaritySearchWorkspaces(nameToFind, userId, 20)
+      const workspaces = await this.baseService.similaritySearchWorkspaces(nameToFind, userId, 30)
 
-      return JSON.stringify(
-        workspaces.map((workspace) => ({
-          id: workspace.id.toString(),
-          name: workspace.name,
-        }))
-      )
+      const compressedWorkspaces = this._compressWorkspaces(workspaces)
+
+      if (compressedWorkspaces.length === 0) {
+        return 'No workspaces found matching the provided filter.'
+      } else if (compressedWorkspaces.length > 20) {
+        return `Found ${compressedWorkspaces.length} workspaces. Please refine your filter to narrow down the results.`
+      }
+
+      return JSON.stringify(compressedWorkspaces)
     } catch (e) {
+      Sentry.captureException(e)
+
       return `Error finding relevant workspaces: ${(e as Error).message}`
     }
   }
@@ -179,12 +203,18 @@ export class WorkspaceToolAdapter extends BaseToolAdapter {
       }
 
       const dataWithIntegration = {
-        ...workspacesResult,
+        data: workspacesResult.data.map((workspace) => ({
+          id: workspace.id,
+          name: workspace.name,
+        })),
+        logId: workspacesResult.logId,
         integration,
       }
 
       return new SuccessToolResult(dataWithIntegration)
     } catch (e) {
+      Sentry.captureException(e)
+
       return new FailedToolResult(`Error creating workspaces: ${(e as Error).message}`)
     }
   }
@@ -231,13 +261,29 @@ export class WorkspaceToolAdapter extends BaseToolAdapter {
         },
       }
 
+      // Get only changed columns to return
+      const changedColumns = Object.keys(dto.changes)
+
+      const dataWithChangedColumns = editResult.data.map((workspace) => {
+        const workspaceWithChangedColumns: any = { id: workspace.id, name: workspace.name }
+
+        for (const column of changedColumns) {
+          workspaceWithChangedColumns[column] = (workspace as any)[column]
+        }
+
+        return workspaceWithChangedColumns
+      })
+
       const dataWithIntegration = {
-        ...editResult,
+        data: dataWithChangedColumns,
+        logId: editResult.logId,
         integration,
       }
 
       return new SuccessToolResult(dataWithIntegration)
     } catch (e) {
+      Sentry.captureException(e)
+
       return new FailedToolResult(`Error editing workspaces: ${(e as Error).message}`)
     }
   }
@@ -296,12 +342,15 @@ export class WorkspaceToolAdapter extends BaseToolAdapter {
       }
 
       const dataWithIntegration = {
-        ...archiveResult,
+        data: archiveResult.data.workspaces.map((workspace) => workspace.id),
+        logId: archiveResult.logId,
         integration,
       }
 
       return new SuccessToolResult(dataWithIntegration)
     } catch (e) {
+      Sentry.captureException(e)
+
       return new FailedToolResult(`Error archiving workspaces: ${(e as Error).message}`)
     }
   }
@@ -358,12 +407,14 @@ export class WorkspaceToolAdapter extends BaseToolAdapter {
       }
 
       const dataWithIntegration = {
-        result: deleteResult,
+        data: deleteResult.map((workspace) => workspace.id),
         integration,
       }
 
       return new SuccessToolResult(dataWithIntegration)
     } catch (e) {
+      Sentry.captureException(e)
+
       return new FailedToolResult(`Error deleting workspaces: ${(e as Error).message}`)
     }
   }
@@ -422,12 +473,15 @@ export class WorkspaceToolAdapter extends BaseToolAdapter {
       }
 
       const dataWithIntegration = {
-        ...recoverResult,
+        data: recoverResult.data.workspaces.map((workspace) => workspace.id),
+        logId: recoverResult.logId,
         integration,
       }
 
       return new SuccessToolResult(dataWithIntegration)
     } catch (e) {
+      Sentry.captureException(e)
+
       return new FailedToolResult(`Error recovering workspaces: ${(e as Error).message}`)
     }
   }
@@ -439,8 +493,11 @@ export class WorkspaceToolAdapter extends BaseToolAdapter {
     const extendedWorkspaces: WorkspaceDTO[] = []
 
     for (const workspace of workspaces) {
+      const closestColor = this.workspaceService.getNearestColor(workspace.color)
+
       const workspaceExtended: WorkspaceDTO = {
         ...workspace,
+        color: closestColor,
       }
 
       if (threadId) {

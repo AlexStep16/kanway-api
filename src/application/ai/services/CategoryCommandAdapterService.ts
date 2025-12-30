@@ -1,5 +1,5 @@
 import { EditCategoriesDTO } from '@application/ai/tools/toolSchemes.ts'
-import { ClientSession } from 'mongoose'
+import { ClientSession, Types } from 'mongoose'
 import { IResponseWithLog } from '@interfaces/IResponseWithLog.ts'
 import { BaseService } from '@application/services/BaseService.ts'
 import { AISemanticService } from '@application/services/AISemanticService.ts'
@@ -7,18 +7,23 @@ import { IUser } from '@domain/entities/IUser.ts'
 import { CategoryService } from '../../services/CategoryService.ts'
 import { CategoryEditDTO } from '../../dtos/CategoryEditDTO.ts'
 import { ICategory } from '@/domain/entities/ICategory.ts'
+import { BoardService } from '@/application/services/BoardService.ts'
+import { NotFoundError } from '@/domain/errors/NotFound.ts'
 
 export class CategoryCommandAdapterService {
   protected categoryService: CategoryService
+  protected boardService: BoardService
   protected baseService: BaseService
   protected aiSemanticService: AISemanticService
 
   constructor(
     categoryService: CategoryService,
+    boardService: BoardService,
     baseService: BaseService,
     aiSemanticService: AISemanticService
   ) {
     this.categoryService = categoryService
+    this.boardService = boardService
     this.baseService = baseService
     this.aiSemanticService = aiSemanticService
   }
@@ -46,6 +51,14 @@ export class CategoryCommandAdapterService {
 
       if (typeof changes.boardId !== 'undefined' && typeof changes.boardId === 'string') {
         updatedCategory.boardId = changes.boardId
+
+        const board = await this.boardService.getById(changes.boardId, user.id, session)
+
+        if (!board) {
+          throw new NotFoundError(`Board with id ${changes.boardId} not found`)
+        }
+
+        updatedCategory.boardName = board.name
       }
 
       if (typeof changes.order !== 'undefined') {
@@ -57,7 +70,7 @@ export class CategoryCommandAdapterService {
     }
 
     if (typeof changes.name !== 'undefined') {
-      let updatedNames: { id: string; name: string }[] = []
+      let updatedNames: { id: Types.ObjectId; name: string }[] = []
 
       if (changes.name.set) {
         updatedNames = await this.aiSemanticService.buildNamesForEntities(
@@ -65,21 +78,24 @@ export class CategoryCommandAdapterService {
           String(changes.name.set),
           'set'
         )
-      } else if (changes.name.append) {
+      }
+      if (changes.name.append) {
         updatedNames = await this.aiSemanticService.buildNamesForEntities(
-          existingCategories,
+          updatedNames.length > 0 ? updatedNames : existingCategories,
           String(changes.name.append),
           'append'
         )
-      } else if (changes.name.prepend) {
+      }
+      if (changes.name.prepend) {
         updatedNames = await this.aiSemanticService.buildNamesForEntities(
-          existingCategories,
+          updatedNames.length > 0 ? updatedNames : existingCategories,
           String(changes.name.prepend),
           'prepend'
         )
-      } else if (changes.name.replace_part) {
+      }
+      if (changes.name.replace_part) {
         updatedNames = await this.aiSemanticService.buildNamesForEntities(
-          existingCategories,
+          updatedNames.length > 0 ? updatedNames : existingCategories,
           String(changes.name.replace_part.replace_with),
           'replace',
           String(changes.name.replace_part.find)
@@ -87,9 +103,7 @@ export class CategoryCommandAdapterService {
       }
 
       for (const updatedCategory of categoriesToUpdate) {
-        const updatedNameData = updatedNames.find(
-          (data) => data.id === updatedCategory.id.toString()
-        )
+        const updatedNameData = updatedNames.find((data) => data.id.equals(updatedCategory.id))
 
         if (updatedNameData) {
           updatedCategory.name = updatedNameData.name

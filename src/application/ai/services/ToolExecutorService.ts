@@ -1,11 +1,9 @@
 import { BaseMessage, ToolCall, ToolMessage } from '@langchain/core/messages'
 import { DynamicStructuredTool } from '@langchain/core/tools'
-import { ZodSchema } from 'zod/v3'
 import { getChatHistorySummaryHelper } from '@application/ai/helpers/getChatHistorySummaryHelper.ts'
 import { getChatHistoryWrapper } from '@application/ai/helpers/getChatHistoryWrapper.ts'
 import { dispatchCustomEvent } from '@langchain/core/callbacks/dispatch'
 import { BaseService } from '@application/services/BaseService.ts'
-import IToolResult from '@application/interfaces/IToolResult.ts'
 import { AgentRoles } from '@/enums/AgentRoles.ts'
 import { createTools } from '../helpers/toolsHelper.ts'
 import { TaskToolAdapter } from '../tools/TaskToolAdapter.ts'
@@ -14,6 +12,9 @@ import { BoardToolAdapter } from '../tools/BoardToolAdapter.ts'
 import { WorkspaceToolAdapter } from '../tools/WorkspaceToolAdapter.ts'
 import { OperationLogService } from '@/application/services/OperationLogService.ts'
 import { IUser } from '@/domain/entities/IUser.ts'
+import z from 'zod'
+import { BaseToolAdapter } from '../tools/BaseToolAdapter.ts'
+import { ShowEntitiesToUserDTO } from '../tools/toolSchemes.ts'
 
 export class ToolExecutorService {
   protected baseService: BaseService
@@ -26,10 +27,12 @@ export class ToolExecutorService {
   public toolsByName: Record<string, DynamicStructuredTool>
   public toolsWithIntegrationByName: Record<string, DynamicStructuredTool>
   public hotTools: DynamicStructuredTool[]
+  public plannerTools: DynamicStructuredTool[]
 
   constructor(
     baseService: BaseService,
     operationLogService: OperationLogService,
+    baseToolAdapter: BaseToolAdapter,
     taskToolAdapter: TaskToolAdapter,
     categoryToolAdapter: CategoryToolAdapter,
     boardToolAdapter: BoardToolAdapter,
@@ -43,20 +46,21 @@ export class ToolExecutorService {
     this.operationLogService = operationLogService
 
     const tools = createTools(
+      baseToolAdapter,
       this.taskToolAdapter,
       this.boardToolAdapter,
       this.categoryToolAdapter,
-      this.workspaceToolAdapter,
-      this.operationLogService
+      this.workspaceToolAdapter
     )
 
     this.tools = tools.entityTools
     this.toolsByName = tools.toolsByName
     this.toolsWithIntegrationByName = tools.toolsWithIntegrationByName
     this.hotTools = tools.hotTools
+    this.plannerTools = tools.plannerTools
   }
 
-  private async _getRelevantTools(steps: Array<{ description: string }>) {
+  public async getRelevantTools(steps: Array<{ description: string }>) {
     await dispatchCustomEvent(AgentRoles.TOOLS_RETRIEVING, null)
 
     const toolsFound = await this.baseService.similaritySearchTools(steps)
@@ -76,38 +80,21 @@ export class ToolExecutorService {
     }
   }
 
-  public async executeTool(
-    toolCall: ToolCall,
-    relevantToolNames: string[],
-    messages: BaseMessage[],
-    user: IUser
-  ) {
+  public async executeTool(toolCall: ToolCall, messages: BaseMessage[], user: IUser) {
     const functionName = toolCall.name
     const tool: DynamicStructuredTool = this.toolsByName[functionName]
 
     if (!tool) {
       return new ToolMessage({
-        content: `Инструмент с именем "${functionName}" не найден.`,
+        content: `Tool "${functionName}" not found.`,
         name: toolCall.name,
         tool_call_id: toolCall.id || '',
       })
     }
 
-    const functionSchema = tool.schema as ZodSchema
+    const functionSchema = tool.schema as z.ZodType
 
-    if (functionSchema) {
-      const validationResult = functionSchema.safeParse(toolCall.args)
-
-      if (!validationResult.success) {
-        return new ToolMessage({
-          content: `Ошибка валидации аргументов: ${validationResult.error.issues
-            .map((issue: any) => `${issue.path.join('.')} - ${issue.message}`)
-            .join('; ')}`,
-          tool_call_id: toolCall.id || '',
-          name: toolCall.name,
-        })
-      }
-    }
+    const data = functionSchema.parse(toolCall.args)
 
     if (tool.name === 'getChatHistory') {
       if (toolCall.args.return_summary === true)
@@ -116,18 +103,14 @@ export class ToolExecutorService {
       return getChatHistoryWrapper(messages)
     }
 
-    if (tool.name === 'getRelevantTools') {
-      const { relevantNames } = await this._getRelevantTools(toolCall.args.steps)
+    const observation: any = await tool.invoke(data)
 
-      relevantToolNames.push(...(relevantNames || []))
-
-      return new ToolMessage({
-        content: `Я нашел инструменты.`,
-        tool_call_id: toolCall.id || '',
+    if (tool.name === 'showEntitiesToUser') {
+      await dispatchCustomEvent(AgentRoles.LIST_ENTITIES, {
+        entities: typeof observation === 'string' ? JSON.parse(observation) : observation,
+        type: (data as ShowEntitiesToUserDTO).type,
       })
     }
-
-    const observation: IToolResult = await tool.invoke(toolCall.args)
 
     if (this.toolsWithIntegrationByName[functionName]) {
       const result = observation.result
@@ -140,22 +123,21 @@ export class ToolExecutorService {
         })
       }
 
-      if (result?.integration) {
+      if (result.integration) {
         await dispatchCustomEvent(AgentRoles.INTEGRATION, {
-          integration: result?.integration,
+          integration: result.integration,
           user,
         })
       }
 
       if (result.data !== undefined) {
-        return new ToolMessage({
-          content: typeof result.data === 'string' ? result.data : JSON.stringify(result.data),
-          tool_call_id: toolCall.id || '',
-          name: toolCall.name,
+        const content = JSON.stringify({
+          result: result.data,
+          logId: result.logId,
         })
-      } else {
+
         return new ToolMessage({
-          content: typeof observation === 'string' ? observation : JSON.stringify(observation),
+          content,
           tool_call_id: toolCall.id || '',
           name: toolCall.name,
         })

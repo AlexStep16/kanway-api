@@ -1,9 +1,8 @@
 import { CategoryService } from '@application/services/CategoryService.ts'
-import { BaseToolAdapter } from '@application/ai/tools/BaseToolAdapter.ts'
 import { BaseService } from '@application/services/BaseService.ts'
 import {
-  ConditionalCategoryFilterDTO,
-  ConditionalCategoryFilterSchema,
+  CategoryFilterDTO,
+  CategoryFilterSchema,
   CategoryCreateDTO,
   CategoryCreateSchema,
   EditCategoriesDTO,
@@ -23,8 +22,16 @@ import { BoardService } from '@/application/services/BoardService.ts'
 import { IUndoResponse } from '@/application/interfaces/IUndoResponse.ts'
 import { ICategoriesWithChildrenResponse } from '@/application/interfaces/ICategoriesWithChildrenResponse.ts'
 import { ICategory } from '@/domain/entities/ICategory.ts'
+import * as Sentry from '@sentry/node'
 
-export class CategoryToolAdapter extends BaseToolAdapter {
+interface CompressedCategory {
+  id: string
+  name: string
+  boardName?: string
+}
+
+export class CategoryToolAdapter {
+  private baseService: BaseService
   private categoryService: CategoryService
   private categoryCommandAdapterService: CategoryCommandAdapterService
   private filterToMongoQueryService: FilterToMongoQueryService
@@ -37,8 +44,7 @@ export class CategoryToolAdapter extends BaseToolAdapter {
     filterToMongoQueryService: FilterToMongoQueryService,
     boardService: BoardService
   ) {
-    super(baseService)
-
+    this.baseService = baseService
     this.categoryService = categoryService
     this.categoryCommandAdapterService = categoryCommandAdapterService
     this.categoryService = categoryService
@@ -46,16 +52,24 @@ export class CategoryToolAdapter extends BaseToolAdapter {
     this.boardService = boardService
   }
 
+  private _compressCategories(categories: ICategory[]): Array<CompressedCategory> {
+    return categories.map((category) => ({
+      id: category.id.toString(),
+      name: category.name,
+      boardName: category.boardName,
+    }))
+  }
+
   // [Tool 1]
   public async findCategoriesByFilter(
-    dto: ConditionalCategoryFilterDTO,
+    dto: CategoryFilterDTO,
     config: LangGraphRunnableConfig
   ): Promise<string> {
     const user = config.configurable?.user as IUser
     const timezone = config.configurable?.timezone || 'Europe/Moscow'
 
     try {
-      const errorMsgs = this.baseService.validateInputBySchema(dto, ConditionalCategoryFilterSchema)
+      const errorMsgs = this.baseService.validateInputBySchema(dto, CategoryFilterSchema)
 
       if (errorMsgs.length > 0) {
         return (
@@ -92,8 +106,18 @@ export class CategoryToolAdapter extends BaseToolAdapter {
         }
       }
 
-      return JSON.stringify(categories)
+      const compressedCategories = this._compressCategories(categories)
+
+      if (compressedCategories.length === 0) {
+        return 'No categories found matching the provided filter.'
+      } else if (compressedCategories.length > 20) {
+        return `Found ${compressedCategories.length} categories. Please refine your filter to narrow down the results.`
+      }
+
+      return JSON.stringify(compressedCategories)
     } catch (e) {
+      Sentry.captureException(e)
+
       return `Error retrieving categories: ${(e as Error).message}`
     }
   }
@@ -111,15 +135,20 @@ export class CategoryToolAdapter extends BaseToolAdapter {
 
       const userId = config.configurable?.user?.id
 
-      const categories = await this.baseService.similaritySearchCategories(nameToFind, userId, 20)
+      const categories = await this.baseService.similaritySearchCategories(nameToFind, userId, 30)
 
-      return JSON.stringify(
-        categories.map((category) => ({
-          id: category.id.toString(),
-          name: category.name,
-        }))
-      )
+      const compressedCategories = this._compressCategories(categories)
+
+      if (compressedCategories.length === 0) {
+        return 'No categories found matching the provided filter.'
+      } else if (compressedCategories.length > 20) {
+        return `Found ${compressedCategories.length} categories. Please refine your filter to narrow down the results.`
+      }
+
+      return JSON.stringify(compressedCategories)
     } catch (e) {
+      Sentry.captureException(e)
+
       return `Error finding relevant categories: ${(e as Error).message}`
     }
   }
@@ -182,12 +211,15 @@ export class CategoryToolAdapter extends BaseToolAdapter {
       }
 
       const dataWithIntegration = {
-        ...categoriesResult,
+        data: categoriesResult.data.map((category) => ({ id: category.id, name: category.name })),
+        logId: categoriesResult.logId,
         integration,
       }
 
       return new SuccessToolResult(dataWithIntegration)
     } catch (e) {
+      Sentry.captureException(e)
+
       return new FailedToolResult(`Error creating categories: ${(e as Error).message}`)
     }
   }
@@ -233,6 +265,19 @@ export class CategoryToolAdapter extends BaseToolAdapter {
         threadId
       )
 
+      // Get only changed columns to return
+      const changedColumns = Object.keys(dto.changes)
+
+      const dataWithChangedColumns = editResult.data.map((task) => {
+        const taskWithChangedColumns: any = { id: task.id, name: task.name }
+
+        for (const column of changedColumns) {
+          taskWithChangedColumns[column] = (task as any)[column]
+        }
+
+        return taskWithChangedColumns
+      })
+
       const integration: IUndoResponse<ICategoriesWithChildrenResponse> = {
         update: {
           categories: editResult.data,
@@ -241,12 +286,15 @@ export class CategoryToolAdapter extends BaseToolAdapter {
       }
 
       const dataWithIntegration = {
-        ...editResult,
+        data: dataWithChangedColumns,
+        logId: editResult.logId,
         integration,
       }
 
       return new SuccessToolResult(dataWithIntegration)
     } catch (e) {
+      Sentry.captureException(e)
+
       return new FailedToolResult(`Error editing categories: ${(e as Error).message}`)
     }
   }
@@ -303,12 +351,15 @@ export class CategoryToolAdapter extends BaseToolAdapter {
       }
 
       const dataWithIntegration = {
-        ...archiveResult,
+        data: archiveResult.data.categories.map((category) => category.id),
+        logId: archiveResult.logId,
         integration,
       }
 
       return new SuccessToolResult(dataWithIntegration)
     } catch (e) {
+      Sentry.captureException(e)
+
       return new FailedToolResult(`Error archiving categories: ${(e as Error).message}`)
     }
   }
@@ -361,12 +412,14 @@ export class CategoryToolAdapter extends BaseToolAdapter {
       }
 
       const dataWithIntegration = {
-        result: deleteResult,
+        data: deleteResult.map((category) => category.id),
         integration,
       }
 
       return new SuccessToolResult(dataWithIntegration)
     } catch (e) {
+      Sentry.captureException(e)
+
       return new FailedToolResult(`Error deleting categories: ${(e as Error).message}`)
     }
   }
@@ -423,12 +476,15 @@ export class CategoryToolAdapter extends BaseToolAdapter {
       }
 
       const dataWithIntegration = {
-        ...recoverResult,
+        data: recoverResult.data.categories.map((category) => category.id),
+        logId: recoverResult.logId,
         integration,
       }
 
       return new SuccessToolResult(dataWithIntegration)
     } catch (e) {
+      Sentry.captureException(e)
+
       return new FailedToolResult(`Error recovering categories: ${(e as Error).message}`)
     }
   }

@@ -9,6 +9,7 @@ import { MongoDBAtlasVectorSearch } from '@langchain/mongodb'
 import { MongoClient } from 'mongodb'
 import { Types } from 'mongoose'
 import { ZodType } from 'zod'
+import { IAgentInstruction } from '@/domain/entities/IAgentInstruction.ts'
 
 export class BaseService {
   protected embeddingService: EmbeddingService
@@ -278,6 +279,41 @@ export class BaseService {
     }
 
     return tools
+  }
+
+  public async similaritySearchAgentInstructions(
+    query: string,
+    topK: number = 2
+  ): Promise<Array<IAgentInstruction>> {
+    const collection = this.mongoClient
+      .db(process.env.DATABASE_NAME)
+      .collection('agentinstructions')
+
+    const vectorstore = new MongoDBAtlasVectorSearch(this.embeddingService.getEmbeddingModel(), {
+      collection,
+      indexName: process.env.AGENT_INSTRUCTIONS_INDEX_NAME,
+      textKey: 'example',
+      embeddingKey: 'embeddings',
+    })
+
+    const queryEmbedding = await this.embeddingService.getEmbeddings(query.trim().toLowerCase())
+    const documents = await vectorstore.similaritySearchVectorWithScore(queryEmbedding, topK)
+
+    const agentInstructions = []
+
+    for (const document of documents) {
+      const agentInstruction = {
+        _id: document[0].metadata._id,
+        topic: document[0].metadata.topic,
+        example: document[0].pageContent,
+        rule: document[0].metadata.rule,
+        suggested_tools: document[0].metadata.suggested_tools,
+      }
+
+      agentInstructions.push(toServerCaseKeys<IAgentInstruction>(agentInstruction))
+    }
+
+    return agentInstructions
   }
 
   public validateInputBySchema(input: any, schema: ZodType<any>): string[] {

@@ -1,80 +1,103 @@
 import { BASE_COLORS } from '@/constants/BASE_COLORS.ts'
+import dayjs from 'dayjs'
 import z from 'zod'
-
-const objectIdRegex = /^[0-9a-fA-F]{24}$/
 
 const zodName = z
   .string()
   .min(1, 'Name must be at least 1 character long')
   .max(100, 'Name must be at most 100 characters long')
-
-const zodOrder = z.number().min(1, 'Order must be at least 1')
-const zodTaskId = z.string().regex(objectIdRegex, 'Task ID must be a valid ObjectId string')
-const zodCategoryId = z.string().regex(objectIdRegex, 'Category ID must be a valid ObjectId string')
-const zodBoardId = z.string().regex(objectIdRegex, 'Board ID must be a valid ObjectId string')
-const zodWorkspaceId = z
+const zodDescription = z.string().max(300, 'Description must be at most 300 characters long')
+const zodColor = z
   .string()
-  .regex(objectIdRegex, 'Workspace ID must be a valid ObjectId string')
-const zodIsCompleted = z.boolean('Is Completed must be a boolean')
-const zodIsArchived = z.boolean('Is Archived must be a boolean')
+  .regex(/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/, 'Color must be a HEX code (e.g., #A1B2C3)')
+  .describe('HEX color code')
+const zodWorkspaceColor = z
+  .enum(BASE_COLORS, 'Color must be one of the predefined base colors: ' + BASE_COLORS.join(', '))
+  .default(BASE_COLORS[3])
+  .describe('HEX color code')
+const zodOrder = z.coerce.number().describe('Order must be a number representing the position.')
+const zodTags = z.array(z.string())
+const zodIsNegated = z
+  .boolean()
+  .default(false)
+  .describe('Set to true for "EXCEPT" or "NOT" conditions.')
 
-const zodTaskIds = z.array(zodTaskId, 'Each task ID must be a valid ObjectId string')
-const zodCategoryIds = z.array(zodCategoryId, 'Each category ID must be a valid ObjectId string')
-const zodBoardIds = z.array(zodBoardId, 'Each board ID must be a valid ObjectId string')
-const zodWorkspaceIds = z.array(zodWorkspaceId, 'Each workspace ID must be a valid ObjectId string')
-const zodTime = z.iso.time('should be a valid ISO 8601 time')
-const zodDate = z.iso.datetime('should be a valid ISO 8601 datetime')
-const zodNumber = z.union(
-  [
-    z.number(),
-    z.string('Should be the valid numberic string').refine((val) => {
-      try {
-        if (typeof parseInt(val) === 'number' && !isNaN(parseInt(val))) return true
-        else return false
-      } catch {
-        return false
-      }
-    }),
-  ],
-  'should be a number or numeric string'
+const zodDueDate = z
+  .string()
+  .refine((val) => {
+    return dayjs(val, 'YYYY-MM-DD', true).isValid()
+  })
+  .describe('Date in YYYY-MM-DD format.')
+
+const zodDueTime = z
+  .string()
+  .refine((val) => {
+    return dayjs(val, 'HH:mm', true).isValid()
+  })
+  .describe('Time in HH:mm format.')
+
+const zodObjectId = z
+  .string()
+  .refine((val) => /^[0-9a-fA-F]{24}$/.test(val), {
+    message: 'Invalid ObjectId format',
+  })
+  .describe('The unique 24-char hex ID')
+
+const zodConditionalValueRefinement = z.array(z.literal('Current schema')).refine((val) => {
+  if (typeof val !== 'object' || val === null) return false
+
+  const allowedKeys = Object.keys(taskFilterObject)
+
+  for (const key of Object.keys(val)) {
+    if (!allowedKeys.includes(key)) {
+      return false
+    }
+  }
+
+  return true
+})
+
+const andSchema = zodConditionalValueRefinement.describe(
+  'Use for logical AND conditions. An array of conditions to be ANDed together.'
 )
-const zodString = z.string('should be a string')
-const zodArrayOfStrings = z.array(zodString, 'should be an array of strings')
+const orSchema = zodConditionalValueRefinement.describe(
+  'Use for logical OR conditions. An array of conditions to be ORed together.'
+)
 
 const createTaskFieldsObject = {
-  name: zodName,
-  categoryId: zodCategoryId,
-  description: z.string().max(400, 'Description must be at most 400 characters long').optional(),
-  dueDate: z.iso.datetime('Due Date must be a valid ISO 8601 datetime string').optional(),
-  color: z.string().optional().describe('HEX color code'),
+  name: zodName.describe('Task name. Should be clear and concise.'),
+  categoryId: zodObjectId,
+  description: zodDescription.optional(),
+  dueDate: zodDueDate.optional(),
+  dueTime: zodDueTime.optional(),
+  color: zodColor.optional(),
   order: zodOrder.optional(),
-  tags: z
-    .array(z.union([z.string(), z.number()]), 'Tags must be an array of strings or numbers')
-    .optional(),
-  isCompleted: zodIsCompleted.optional(),
+  tags: zodTags.optional(),
+  isCompleted: z.boolean().optional(),
 }
 const TaskCreateSchema = z
   .object(
     {
       tasks: z.array(
-        z
-          .object(
-            createTaskFieldsObject,
-            'Available only task creation fields: ' + Object.keys(createTaskFieldsObject).join(', ')
-          )
-          .strict(),
+        z.object(
+          createTaskFieldsObject,
+          'Available only task creation fields: ' + Object.keys(createTaskFieldsObject).join(', ')
+        ),
         'Must be an array of tasks to create'
       ),
     },
     'Available only tasks field'
   )
   .strict()
+  .describe(
+    'If the user does not provide category then create the category with default category name but first try semantic search for some categories.'
+  )
 
 type TaskCreateDTO = z.infer<typeof TaskCreateSchema>
 
 const categoryFieldsObject = {
-  name: zodName,
-  boardId: zodBoardId,
+  name: zodName.describe('Category name. Should be clear and concise.'),
+  boardId: zodObjectId,
   order: zodOrder.optional(),
 }
 
@@ -82,37 +105,36 @@ const CategoryCreateSchema = z
   .object(
     {
       categories: z.array(
-        z
-          .object(
-            categoryFieldsObject,
-            'Available only category creation fields: ' +
-              Object.keys(categoryFieldsObject).join(', ')
-          )
-          .strict(),
+        z.object(
+          categoryFieldsObject,
+          'Available only category creation fields: ' + Object.keys(categoryFieldsObject).join(', ')
+        ),
         'Must be an array of categories to create'
       ),
     },
     'Available only categories field'
   )
   .strict()
+  .describe(
+    'If the user does not provide board then create the board with default board name but first try semantic search for some boards.'
+  )
 
 type CategoryCreateDTO = z.infer<typeof CategoryCreateSchema>
 
 const boardFieldsObject = {
-  name: zodName,
-  workspaceId: zodWorkspaceId,
+  name: zodName.describe('Board name. Should be clear and concise.'),
+  workspaceId: zodObjectId,
+  isFavorite: z.boolean().default(false),
   order: zodOrder.optional(),
 }
 const BoardCreateSchema = z
   .object(
     {
       boards: z.array(
-        z
-          .object(
-            boardFieldsObject,
-            'Available only board creation fields: ' + Object.keys(boardFieldsObject).join(', ')
-          )
-          .strict(),
+        z.object(
+          boardFieldsObject,
+          'Available only board creation fields: ' + Object.keys(boardFieldsObject).join(', ')
+        ),
         'Must be an array of boards to create'
       ),
     },
@@ -123,21 +145,20 @@ const BoardCreateSchema = z
 type BoardCreateDTO = z.infer<typeof BoardCreateSchema>
 
 const workspaceFieldsObject = {
-  name: zodName,
-  color: z.enum(BASE_COLORS).describe('HEX color code'),
+  name: zodName.describe('Workspace name. Should be clear and concise.'),
+  isFavorite: z.boolean().default(false),
+  color: zodWorkspaceColor,
   order: zodOrder.optional(),
 }
 const WorkspaceCreateSchema = z
   .object(
     {
       workspaces: z.array(
-        z
-          .object(
-            workspaceFieldsObject,
-            'Available only workspace creation fields: ' +
-              Object.keys(workspaceFieldsObject).join(', ')
-          )
-          .strict(),
+        z.object(
+          workspaceFieldsObject,
+          'Available only workspace creation fields: ' +
+            Object.keys(workspaceFieldsObject).join(', ')
+        ),
         'Must be an array of workspaces to create'
       ),
     },
@@ -147,93 +168,99 @@ const WorkspaceCreateSchema = z
 
 type WorkspaceCreateDTO = z.infer<typeof WorkspaceCreateSchema>
 
-const zodStringFilterObject = {
-  equal: z.string('equal should be a string').optional(),
-  not_equal: z.string('not_equal should be a string').optional(),
-  contains: z.string('contains should be a string').optional(),
-  starts_with: z.string('starts_with should be a string').optional(),
-  ends_with: z.string('ends_with should be a string').optional(),
-}
-
 const StringFilter = z
   .object(
-    zodStringFilterObject,
-    'Available only string filter fields: ' + Object.keys(zodStringFilterObject).join(', ')
+    {
+      value: z.coerce
+        .string()
+        .min(1, 'Value must be at least 1 character long')
+        .describe('The text to search for (e.g., "urgent", "report").'),
+
+      operator: z
+        .enum(
+          ['equal', 'contains', 'starts_with', 'ends_with'],
+          'Operator must be one of: equal, contains, starts_with, ends_with'
+        )
+        .describe('Comparison logic. Use "contains" for partial matches, "equal" for exact match'),
+
+      isNegated: zodIsNegated,
+    },
+    'Available only string filter fields: value, operator, isNegated'
   )
   .strict()
-  .describe('A filter for text-based fields.')
 
-const zodDateTimeFilterObject = {
-  equal: zodString.optional(),
-  greater_than: zodString.optional(),
-  greater_than_equal: zodString.optional(),
-  less_than: zodString.optional(),
-  less_than_equal: zodString.optional(),
-}
-
-const DateTimeFilter = z
+const BaseNumberFilter = z
   .object(
-    zodDateTimeFilterObject,
-    'Available only date-time filter fields: ' + Object.keys(zodDateTimeFilterObject).join(', ')
+    {
+      operator: z.enum(
+        ['eq', 'gt', 'gte', 'lt', 'lte'],
+        'Operator must be one of: eq, gt, gte, lt, lte'
+      ),
+      isNegated: zodIsNegated,
+    },
+    'Available only base number filter fields: operator, isNegated'
   )
   .strict()
-  .describe('A filter for date and time fields. Requires ISO 8601 format.')
 
-const zodNumberFilterObject = {
-  equal: zodNumber.optional(),
-  not_equal: zodNumber.optional(),
-  greater_than: zodNumber.optional(),
-  greater_than_equal: zodNumber.optional(),
-  less_than: zodNumber.optional(),
-  less_than_equal: zodNumber.optional(),
-}
+const DateFilter = BaseNumberFilter.extend({
+  value: zodDueDate,
+})
 
-const NumberFilter = z
+const TimeFilter = BaseNumberFilter.extend({
+  value: zodDueTime,
+})
+
+const NumberFilter = BaseNumberFilter.extend({
+  value: z.coerce.number().describe('The number to compare against.'),
+})
+
+const BaseArrayFilter = z
   .object(
-    zodNumberFilterObject,
-    'Available only number filter fields: ' + Object.keys(zodNumberFilterObject).join(', ')
+    {
+      operator: z
+        .enum(
+          ['equal', 'contains_all', 'contains_any'],
+          'Operator must be one of: equal, contains_all, contains_any'
+        )
+        .describe('contains_all (AND logic), contains_any (OR logic), equal (exact set match)'),
+      isNegated: z
+        .boolean()
+        .default(false)
+        .describe('Set to true to exclude entities with these strings.'),
+    },
+    'Available only base array filter fields: operator, isNegated'
   )
   .strict()
-  .describe('A filter for numeric fields.')
 
-const zodStringFilter = {
-  contains: zodArrayOfStrings.optional(),
-  contains_all: zodArrayOfStrings.optional(),
-  equals: zodArrayOfStrings.optional(),
-}
+const ArrayStringFilter = BaseArrayFilter.extend({
+  value: z
+    .array(z.string('Should be a string'), 'Should be an array of strings')
+    .describe('Array of strings to match against.'),
+})
 
-const ArrayFilter = z
-  .object(
-    zodStringFilter,
-    'Available only array filter fields: ' + Object.keys(zodStringFilter).join(', ')
-  )
-  .strict()
-  .describe('A filter for arrays, such as tags.')
+const ColorArrayFilter = BaseArrayFilter.extend({
+  value: z
+    .array(zodColor, 'Should be an array of HEX color strings')
+    .describe('Array of HEX color strings to match against.'),
+})
 
 const taskFilterObject = {
-  ids: zodTaskIds
-    .optional()
-    .describe(
-      'A definitive list of task IDs to find. If this is provided, all other filter fields MUST be ignored.'
-    ),
-
-  categoryIds: zodCategoryIds.optional(),
-  boardIds: zodBoardIds.optional(),
-  workspaceIds: zodWorkspaceIds.optional(),
-  isCompleted: zodIsCompleted.optional(),
-  isArchived: zodIsArchived.optional().describe('SET TO TRUE ONLY WHEN FINDING TASKS FOR RECOVERY'),
-
+  ids: z.array(zodObjectId, 'Should be an array of object IDs').optional(),
+  categoryIds: z.array(zodObjectId, 'Should be an array of object IDs').optional(),
+  boardIds: z.array(zodObjectId, 'Should be an array of object IDs').optional(),
+  workspaceIds: z.array(zodObjectId, 'Should be an array of object IDs').optional(),
+  isCompleted: z.boolean().optional(),
+  isArchived: z.boolean().optional(),
   name: StringFilter.optional(),
   description: StringFilter.optional(),
-
-  dueDate: DateTimeFilter.optional().describe('Filter by due date using ISO 8601 format.'),
-  dueTime: DateTimeFilter.optional(),
-  tags: ArrayFilter.optional(),
-
-  color: StringFilter.optional().describe(
-    "Filter by color using a standard 6-digit HEX format. The value MUST start with a '#'. Examples: '#FF5733' for orange, '#FFFFFF' for white, '#0000FF' for blue. Natural language color names like 'blue' are INVALID and will be rejected."
-  ),
+  dueDate: DateFilter.optional(),
+  dueTime: TimeFilter.optional(),
+  tags: ArrayStringFilter.optional(),
+  color: ColorArrayFilter.optional(),
   order: NumberFilter.optional(),
+
+  and: andSchema.optional(),
+  or: orSchema.optional(),
 }
 
 const TaskFilterSchema = z
@@ -242,49 +269,24 @@ const TaskFilterSchema = z
     'Available only task filter fields: ' + Object.keys(taskFilterObject).join(', ')
   )
   .strict()
+  .describe(
+    "Top-level fields are joined by logical AND. Use 'or'/'and' only for complex nested logic."
+  )
 
-const ConditionalTaskFilterSchema = TaskFilterSchema.extend({
-  AND: z
-    .lazy((): any =>
-      z.array(
-        ConditionalTaskFilterSchema,
-        'should be an array of task filters: ' +
-          Object.keys(ConditionalTaskFilterSchema.shape).join(', ')
-      )
-    )
-    .optional()
-    .describe('An array of filters. All conditions in this array must be met (logical AND).'),
-  OR: z
-    .lazy((): any =>
-      z.array(
-        ConditionalTaskFilterSchema,
-        'should be an array of task filters: ' +
-          Object.keys(ConditionalTaskFilterSchema.shape).join(', ')
-      )
-    )
-    .optional()
-    .describe(
-      'An array of filters. At least one condition in this array must be met (logical OR).'
-    ),
-})
-
-type ConditionalTaskFilterDTO = z.infer<typeof ConditionalTaskFilterSchema>
+type TaskFilterDTO = z.infer<typeof TaskFilterSchema>
 
 const categoryFilterObject = {
-  ids: zodCategoryIds
-    .optional()
-    .describe(
-      'A definitive list of task IDs to find. If this is provided, all other filter fields MUST be ignored.'
-    ),
+  ids: z.array(zodObjectId, 'Should be an array of object IDs').optional(),
 
-  boardIds: zodBoardIds.optional(),
-  workspaceIds: zodWorkspaceIds.optional(),
-  isArchived: zodIsArchived
-    .optional()
-    .describe('SET TO TRUE ONLY WHEN FINDING CATEGORIES FOR RECOVERY'),
+  boardIds: z.array(zodObjectId, 'Should be an array of object IDs').optional(),
+  workspaceIds: z.array(zodObjectId, 'Should be an array of object IDs').optional(),
+  isArchived: z.boolean().optional(),
 
   name: StringFilter.optional(),
   order: NumberFilter.optional(),
+
+  and: andSchema.optional(),
+  or: orSchema.optional(),
 }
 
 const CategoryFilterSchema = z
@@ -293,48 +295,23 @@ const CategoryFilterSchema = z
     'Available only category filter fields: ' + Object.keys(categoryFilterObject).join(', ')
   )
   .strict()
+  .describe(
+    "Top-level fields are joined by logical AND. Use 'or'/'and' only for complex nested logic."
+  )
 
-const ConditionalCategoryFilterSchema = CategoryFilterSchema.extend({
-  AND: z
-    .lazy((): any =>
-      z.array(
-        ConditionalCategoryFilterSchema,
-        'should be an array of category filters: ' +
-          Object.keys(ConditionalCategoryFilterSchema.shape).join(', ')
-      )
-    )
-    .optional()
-    .describe('An array of filters. All conditions in this array must be met (logical AND).'),
-  OR: z
-    .lazy((): any =>
-      z.array(
-        ConditionalCategoryFilterSchema,
-        'should be an array of category filters: ' +
-          Object.keys(ConditionalCategoryFilterSchema.shape).join(', ')
-      )
-    )
-    .optional()
-    .describe(
-      'An array of filters. At least one condition in this array must be met (logical OR).'
-    ),
-})
-
-type ConditionalCategoryFilterDTO = z.infer<typeof ConditionalCategoryFilterSchema>
+type CategoryFilterDTO = z.infer<typeof CategoryFilterSchema>
 
 const boardFilterObject = {
-  ids: zodBoardIds
-    .optional()
-    .describe(
-      'A definitive list of task IDs to find. If this is provided, all other filter fields MUST be ignored.'
-    ),
+  ids: z.array(zodObjectId, 'Should be an array of object IDs').optional(),
+  workspaceIds: z.array(zodObjectId, 'Should be an array of object IDs').optional(),
 
-  workspaceIds: zodWorkspaceIds.optional(),
-  isArchived: zodIsArchived
-    .optional()
-    .describe('SET TO TRUE ONLY WHEN FINDING BOARDS FOR RECOVERY'),
+  isArchived: z.boolean().optional(),
 
   name: StringFilter.optional(),
   order: NumberFilter.optional(),
+
+  and: andSchema.optional(),
+  or: orSchema.optional(),
 }
 
 const BoardFilterSchema = z
@@ -343,46 +320,22 @@ const BoardFilterSchema = z
     'Available only board filter fields: ' + Object.keys(boardFilterObject).join(', ')
   )
   .strict()
+  .describe(
+    "Top-level fields are joined by logical AND. Use 'or'/'and' only for complex nested logic."
+  )
 
-const ConditionalBoardFilterSchema = BoardFilterSchema.extend({
-  AND: z
-    .lazy((): any =>
-      z.array(
-        ConditionalBoardFilterSchema,
-        'should be an array of board filters: ' +
-          Object.keys(ConditionalBoardFilterSchema.shape).join(', ')
-      )
-    )
-    .optional()
-    .describe('An array of filters. All conditions in this array must be met (logical AND).'),
-  OR: z
-    .lazy((): any =>
-      z.array(
-        ConditionalBoardFilterSchema,
-        'should be an array of board filters: ' +
-          Object.keys(ConditionalBoardFilterSchema.shape).join(', ')
-      )
-    )
-    .optional()
-    .describe(
-      'An array of filters. At least one condition in this array must be met (logical OR).'
-    ),
-})
-
-type ConditionalBoardFilterDTO = z.infer<typeof ConditionalBoardFilterSchema>
+type BoardFilterDTO = z.infer<typeof BoardFilterSchema>
 
 const workspaceFilterObject = {
-  ids: zodWorkspaceIds
-    .optional()
-    .describe(
-      'A definitive list of task IDs to find. If this is provided, all other filter fields MUST be ignored.'
-    ),
+  ids: z.array(zodObjectId, 'Should be an array of object IDs').optional(),
 
-  isArchived: zodIsArchived
-    .optional()
-    .describe('SET TO TRUE ONLY WHEN FINDING WORKSPACES FOR RECOVERY'),
+  isArchived: z.boolean().optional(),
+
   name: StringFilter.optional(),
   order: NumberFilter.optional(),
+
+  and: andSchema.optional(),
+  or: orSchema.optional(),
 }
 const WorkspaceFilterSchema = z
   .object(
@@ -390,48 +343,30 @@ const WorkspaceFilterSchema = z
     'Available only workspace filter fields: ' + Object.keys(workspaceFilterObject).join(', ')
   )
   .strict()
+  .describe(
+    "Top-level fields are joined by logical AND. Use 'or'/'and' only for complex nested logic."
+  )
 
-const ConditionalWorkspaceFilterSchema = WorkspaceFilterSchema.extend({
-  AND: z
-    .lazy((): any =>
-      z.array(
-        ConditionalWorkspaceFilterSchema,
-        'should be an array of workspace filters: ' +
-          Object.keys(ConditionalWorkspaceFilterSchema.shape).join(', ')
-      )
-    )
-    .optional()
-    .describe('An array of filters. All conditions in this array must be met (logical AND).'),
-  OR: z
-    .lazy((): any =>
-      z.array(
-        ConditionalWorkspaceFilterSchema,
-        'should be an array of workspace filters: ' +
-          Object.keys(ConditionalWorkspaceFilterSchema.shape).join(', ')
-      )
-    )
-    .optional()
-    .describe(
-      'An array of filters. At least one condition in this array must be met (logical OR).'
-    ),
-})
-
-type ConditionalWorkspaceFilterDTO = z.infer<typeof ConditionalWorkspaceFilterSchema>
+type WorkspaceFilterDTO = z.infer<typeof WorkspaceFilterSchema>
 
 const stringModificationObject = {
-  set: zodString.optional().describe('Полностью заменить значение поля.'),
-  append: zodString.optional().describe('Добавить текст в конец текущего значения.'),
-  prepend: zodString.optional().describe('Добавить текст в начало текущего значения.'),
+  set: z.coerce.string().optional().describe('Replace the entire field value.'),
+  append: z.coerce.string().optional().describe('Append text to the end of the current value.'),
+  prepend: z.coerce
+    .string()
+    .optional()
+    .describe('Prepend text to the beginning of the current value.'),
   replace_part: z
     .object(
       {
-        find: zodString,
-        replace_with: zodString,
+        find: z.coerce.string().describe('Must be an exact substring from the current text.'),
+        replace_with: z.coerce.string().describe('String to replace the found substring with.'),
       },
       'should be an object with find and replace_with strings'
     )
+    .strict()
     .optional()
-    .describe('Найти и заменить часть строки.'),
+    .describe('Find and replace part of the string.'),
 }
 const StringModificationSchema = z
   .object(
@@ -439,44 +374,54 @@ const StringModificationSchema = z
     'Available only string modification fields: ' + Object.keys(stringModificationObject).join(', ')
   )
   .strict()
+  .describe('Instructions to modify a string field. Use only one property.')
 
 // Блок для операций над полем даты (dueDate)
 const dateModificationObject = {
-  set: zodDate
-    .optional()
-    .describe("Установить точную дату и время (ISO 8601). Например '2024-10-26T10:00:00Z'."),
-  shift_duration: zodString
-    .optional()
-    .describe(
-      "Сдвинуть дату/время. Формат ISO 8601 Duration, например 'P2D' (вперед на 2 дня), '-PT1H30M' (назад на 1 час 30 минут)."
-    ),
+  set: zodDueDate.optional().describe('Set an exact date. Format must be YYYY-MM-DD.'),
+  shift: z
+    .object({
+      value: z.number().describe('Amount to shift'),
+      unit: z.enum(['days', 'weeks', 'months', 'years']),
+    })
+    .optional(),
 }
 const DateModificationSchema = z
   .object(
     dateModificationObject,
     'Available only date modification fields: ' + Object.keys(dateModificationObject).join(', ')
   )
+  .refine((data) => Object.keys(data).length <= 1, 'Only one modification operation is allowed.')
   .strict()
+  .describe('Instructions to modify a date field. Use only one property.')
 
 // Блок для операций над полем даты (dueDate)
 const timeModificationObject = {
-  set: zodTime.optional().describe("Установить точное время. Например '10:00'."),
+  set: zodDueTime.optional(),
+  shift: z
+    .object({
+      value: z.number().describe('Amount to shift'),
+      unit: z.enum(['hours', 'minutes']),
+    })
+    .optional(),
 }
 const TimeModificationSchema = z
   .object(
     timeModificationObject,
     'Available only time modification fields: ' + Object.keys(timeModificationObject).join(', ')
   )
+  .refine((data) => Object.keys(data).length <= 1, 'Only one modification operation is allowed.')
   .strict()
+  .describe('Instructions to modify a time field. Use only one property.')
 
 // Блок для операций над массивом тегов (tags)
 const tagsModificationObject = {
-  set: zodArrayOfStrings.optional().describe('Полностью заменить список тегов на новый.'),
+  set: z.array(z.string()).optional().describe('Replace the entire tags array.'),
   add: z
-    .array(zodString)
+    .array(z.string())
     .optional()
-    .describe('Добавить теги в список (дубликаты будут проигнорированы).'),
-  remove: z.array(zodString).optional().describe('Удалить теги из списка.'),
+    .describe('Add tags to the list (duplicates will be ignored).'),
+  remove: z.array(z.string()).optional().describe('Remove tags from the list.'),
 }
 const TagsModificationSchema = z
   .object(
@@ -484,72 +429,30 @@ const TagsModificationSchema = z
     'Available only tags modification fields: ' + Object.keys(tagsModificationObject).join(', ')
   )
   .strict()
+  .describe('Instructions to modify the tags array.')
 
 const editTasksChangesObject = {
-  /**
-   * Операции для изменения названия задачи.
-   */
   name: StringModificationSchema.optional(),
-
-  /**
-   * Операции для изменения описания задачи.
-   */
   description: StringModificationSchema.nullable().optional(),
-
-  /**
-   * Операции для изменения даты выполнения.
-   */
-  dueDate: DateModificationSchema.nullable().optional().describe('Must be in ISO 8601 format.'),
-  dueTime: TimeModificationSchema.nullable().optional().describe('Must be in HH:mm format.'),
-
-  /**
-   * Операции для изменения тегов.
-   */
+  dueDate: DateModificationSchema.nullable().optional(),
+  dueTime: TimeModificationSchema.nullable().optional(),
   tags: TagsModificationSchema.nullable().optional(),
-
-  /**
-   * Установить новый ID категории.
-   */
-  categoryId: zodCategoryId.optional(),
-
-  /**
-   * Установить статус выполнения задачи.
-   */
-  isCompleted: zodIsCompleted.optional().describe('isCompleted must be always true or false.'),
-
-  /**
-   * Установить статус архивации задачи.
-   */
-  isArchived: zodIsArchived.optional().describe('isArchived must be always true or false.'),
-
-  /**
-   * Установить цвет в формате HEX, например '#FF5733'.
-   * Цвет будет автоматически приведен к ближайшему из стандартной палитры.
-   */
-  color: z
-    .string()
-    .nullable()
-    .optional()
-    .describe(
-      "Set a new color using a HEX value (e.g., '#FF5733'). To remove the color, pass null."
-    ),
-
-  /**
-   * Установить или удалить порядковый номер.
-   */
-  order: zodNumber.optional().describe('Установить новый порядковый номер.'),
+  categoryId: zodObjectId.optional(),
+  isCompleted: z.boolean().optional(),
+  color: zodColor.nullable().optional(),
+  order: zodOrder.nullable().optional(),
 }
 
 const editTasksObject = {
   filter: z
     .object(
       {
-        ids: zodTaskIds.describe('Массив ID задач для фильтрации.'),
+        ids: z.array(zodObjectId).describe('Array of task IDs to edit.'),
       },
       'Available only task filter fields: ids'
     )
     .strict()
-    .describe('Фильтр для выбора задач, которые нужно изменить.'),
+    .describe('Filter tasks to edit.'),
 
   changes: z
     .object(
@@ -557,7 +460,7 @@ const editTasksObject = {
       'Available only task changes fields: ' + Object.keys(editTasksChangesObject).join(', ')
     )
     .strict()
-    .describe('Объект с изменениями, которые нужно применить к найденным задачам.'),
+    .describe('Object with changes to apply to the found tasks.'),
 }
 const EditTasksSchema = z
   .object(
@@ -569,31 +472,20 @@ const EditTasksSchema = z
 type EditTasksDTO = z.infer<typeof EditTasksSchema>
 
 const editCategoriesChangesObject = {
-  /**
-   * Операции для изменения названия категории.
-   */
   name: StringModificationSchema.optional(),
-
-  /**
-   * Установить новый ID категории.
-   */
-  boardId: zodBoardId.optional(),
-
-  /**
-   * Установить или удалить порядковый номер.
-   */
-  order: zodNumber.optional().describe('Установить новый порядковый номер.'),
+  boardId: zodObjectId.optional(),
+  order: zodOrder.nullable().optional(),
 }
 const editCategoriesObject = {
   filter: z
     .object(
       {
-        ids: zodCategoryIds.describe('Массив ID категорий для фильтрации.'),
+        ids: z.array(zodObjectId).describe('Array of category IDs to edit.'),
       },
       'Available only category filter fields: ids'
     )
     .strict()
-    .describe('Фильтр для выбора категорий, которые нужно изменить.'),
+    .describe('Filter categories to edit.'),
 
   changes: z
     .object(
@@ -602,7 +494,7 @@ const editCategoriesObject = {
         Object.keys(editCategoriesChangesObject).join(', ')
     )
     .strict()
-    .describe('Объект с изменениями, которые нужно применить к найденным категориям.'),
+    .describe('Object with changes to apply to the found categories.'),
 }
 const EditCategoriesSchema = z
   .object(
@@ -614,31 +506,21 @@ const EditCategoriesSchema = z
 type EditCategoriesDTO = z.infer<typeof EditCategoriesSchema>
 
 const editBoardsChangesObject = {
-  /**
-   * Операции для изменения названия доски.
-   */
   name: StringModificationSchema.optional(),
-
-  /**
-   * Установить новый ID категории.
-   */
-  workspaceId: zodWorkspaceId.optional(),
-
-  /**
-   * Установить или удалить порядковый номер.
-   */
-  order: zodNumber.optional().describe('Установить новый порядковый номер.'),
+  isFavorite: z.boolean().optional(),
+  workspaceId: zodObjectId.optional(),
+  order: zodOrder.nullable().optional(),
 }
 const editBoardsObject = {
   filter: z
     .object(
       {
-        ids: zodBoardIds.describe('Массив ID досок для фильтрации.'),
+        ids: z.array(zodObjectId).describe('Array of board IDs to filter.'),
       },
       'Available only board filter fields: ids'
     )
     .strict()
-    .describe('Фильтр для выбора досок, которые нужно изменить.'),
+    .describe('Filter boards to edit.'),
 
   changes: z
     .object(
@@ -646,7 +528,7 @@ const editBoardsObject = {
       'Available only board changes fields: ' + Object.keys(editBoardsChangesObject).join(', ')
     )
     .strict()
-    .describe('Объект с изменениями, которые нужно применить к найденным доскам.'),
+    .describe('Object with changes to apply to the found boards.'),
 }
 const EditBoardsSchema = z
   .object(
@@ -658,22 +540,18 @@ const EditBoardsSchema = z
 type EditBoardsDTO = z.infer<typeof EditBoardsSchema>
 
 const editWorkspacesChangesObject = {
-  /**
-   * Операции для изменения названия доски.
-   */
   name: StringModificationSchema.optional(),
-
-  /**
-   * Установить или удалить порядковый номер.
-   */
-  order: zodNumber.optional().describe('Установить новый порядковый номер.'),
+  isFavorite: z.boolean().optional(),
+  color: zodWorkspaceColor.optional(),
+  order: zodOrder.nullable().optional(),
 }
 const editWorkspacesObject = {
   filter: z
     .object({
-      ids: zodWorkspaceIds.describe('Массив ID пространств для фильтрации.'),
+      ids: z.array(zodObjectId).describe('Array of workspace IDs to filter.'),
     })
-    .describe('Фильтр для выбора пространств, которые нужно изменить.'),
+    .strict()
+    .describe('Filter workspaces to edit.'),
 
   changes: z
     .object(
@@ -682,7 +560,7 @@ const editWorkspacesObject = {
         Object.keys(editWorkspacesChangesObject).join(', ')
     )
     .strict()
-    .describe('Объект с изменениями, которые нужно применить к найденным пространствам.'),
+    .describe('Object with changes to apply to the found workspaces.'),
 }
 
 const EditWorkspacesSchema = z
@@ -693,6 +571,13 @@ const EditWorkspacesSchema = z
   .strict()
 
 type EditWorkspacesDTO = z.infer<typeof EditWorkspacesSchema>
+
+const ShowEntitiesToUserSchema = z.object({
+  ids: z.array(zodObjectId).describe('Array of entity IDs to show to the user.'),
+  type: z.enum(['task', 'category', 'board', 'workspace']).describe('Type of entities to show.'),
+})
+
+type ShowEntitiesToUserDTO = z.infer<typeof ShowEntitiesToUserSchema>
 
 const GetChatHistorySchema = z.object({
   return_summary: z
@@ -754,42 +639,21 @@ const Plan = z.object({
     ),
 })
 
-const FinishStatusSchema = z.enum(['SUCCESS', 'AWAITING_USER_INPUT', 'ERROR'])
-const FinishResponseSchema = z.object({
-  status: FinishStatusSchema.describe(
-    "The final status of the operation. Use 'SUCCESS' for completed tasks, 'AWAITING_USER_INPUT' when you need to ask the user a question, and 'ERROR' for failures."
-  ),
-
-  summary: z
-    .string()
-    .describe(
-      "A concise, factual, machine-readable summary of the outcome in English. This is the primary instruction for the response synthesizer. Examples: 'Task 'Buy Milk' created.', 'Ask user to clarify which category to use.', 'Failed to find the specified task.'"
-    ),
-
-  output_data: z
-    .array(z.record(z.string(), z.any()))
-    .optional()
-    .describe(
-      'A list of data objects (e.g., created or found tasks/categories) to be presented to the user. All internal IDs MUST be redacted from these objects before passing them here.'
-    ),
-
-  error_details: z
-    .string()
-    .optional()
-    .describe(
-      "If the status is 'ERROR', provide a simple, non-technical explanation of the problem here. This will be used to formulate the final error message to the user."
-    ),
+const PlanToolSchema = z.object({
+  steps: z
+    .array(z.string())
+    .describe('List of atomic steps/intents. Empty if no actionable intent.'),
 })
 
 export {
-  ConditionalTaskFilterSchema,
-  ConditionalTaskFilterDTO,
-  ConditionalCategoryFilterSchema,
-  ConditionalCategoryFilterDTO,
-  ConditionalBoardFilterSchema,
-  ConditionalBoardFilterDTO,
-  ConditionalWorkspaceFilterSchema,
-  ConditionalWorkspaceFilterDTO,
+  TaskFilterSchema,
+  TaskFilterDTO,
+  CategoryFilterSchema,
+  CategoryFilterDTO,
+  BoardFilterSchema,
+  BoardFilterDTO,
+  WorkspaceFilterSchema,
+  WorkspaceFilterDTO,
   TaskCreateSchema,
   TaskCreateDTO,
   CategoryCreateSchema,
@@ -806,8 +670,10 @@ export {
   EditBoardsDTO,
   EditWorkspacesSchema,
   EditWorkspacesDTO,
+  ShowEntitiesToUserSchema,
+  ShowEntitiesToUserDTO,
   GetChatHistorySchema,
   Plan,
   Step,
-  FinishResponseSchema,
+  PlanToolSchema,
 }
