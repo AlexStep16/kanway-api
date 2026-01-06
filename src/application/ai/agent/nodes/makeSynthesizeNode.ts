@@ -2,19 +2,17 @@ import { AgentStateAnnotation } from '@/application/ai/agent/AgentStateAnnotatio
 import { dispatchCustomEvent } from '@langchain/core/callbacks/dispatch'
 import { AgentRoles } from '@/enums/AgentRoles.ts'
 import { getLastIterationHistory } from '@application/ai/helpers/getLastIterationHistory.ts'
-import { SynthesizeSystem } from '@/application/ai/systemMessages/Synthesize.ts'
+import { SynthesizePrompt } from '@/application/ai/prompts/SynthesizePrompt.ts'
 import { ChatPromptTemplate } from '@langchain/core/prompts'
 import { AgentDependencies } from '@application/ai/agent/types/AgentDependencies.ts'
-import { getLastAIToolCallsMessage } from '@application/ai/helpers/getLastAIToolCallsMessage.ts'
-import { AIMessage, BaseMessage, RemoveMessage } from '@langchain/core/messages'
+import { AIMessage, AIMessageChunk, BaseMessage, RemoveMessage } from '@langchain/core/messages'
 
 export const makeSynthesizeNode = (deps: AgentDependencies) => {
   return async (state: typeof AgentStateAnnotation.State) => {
     await dispatchCustomEvent(AgentRoles.SYNTHESIZE_START, null)
 
-    const lastMessage = getLastAIToolCallsMessage(state.messages)
-    const toolCalls = lastMessage?.tool_calls || []
-    const finishResponseCall = toolCalls.find((tc) => tc.name === 'finishResponse')
+    const lastMessage = state.messages.at(-1)
+
     const messages: BaseMessage[] = []
 
     const { synthesizerModel } = deps.models
@@ -28,25 +26,30 @@ export const makeSynthesizeNode = (deps: AgentDependencies) => {
 
     chatHistory = chatHistory.filter((m) => m.id !== lastMessage?.id)
 
-    if (finishResponseCall) {
-      const responseContent = finishResponseCall.args.response
+    if (lastMessage instanceof AIMessage || lastMessage instanceof AIMessageChunk) {
+      const toolCalls = lastMessage?.tool_calls || []
+      const finishResponseCall = toolCalls.find((tc) => tc.name === 'finishResponse')
 
-      if (responseContent) {
-        chatHistory.push(
-          new AIMessage({
-            content: responseContent,
-          })
-        )
+      if (finishResponseCall) {
+        const responseContent = finishResponseCall.args.response
+
+        if (responseContent) {
+          chatHistory.push(
+            new AIMessage({
+              content: responseContent,
+            })
+          )
+        }
+
+        const removedMessage = new RemoveMessage({
+          id: lastMessage?.id || '',
+        })
+
+        messages.push(removedMessage)
       }
-
-      const removedMessage = new RemoveMessage({
-        id: lastMessage?.id || '',
-      })
-
-      messages.push(removedMessage)
     }
 
-    const prompt = ChatPromptTemplate.fromMessages([['system', SynthesizeSystem], ...chatHistory])
+    const prompt = ChatPromptTemplate.fromMessages([['system', SynthesizePrompt], ...chatHistory])
 
     const chain = prompt.pipe(synthesizerModel)
 
@@ -56,13 +59,6 @@ export const makeSynthesizeNode = (deps: AgentDependencies) => {
 
     return {
       messages,
-      relevant_tools: [],
-      tools_confirmed: [],
-      tools_cancelled: [],
-      tools_validation_errors: [],
-      validation_failed: false,
-      planner_has_error: false,
-      plan: [],
     }
   }
 }

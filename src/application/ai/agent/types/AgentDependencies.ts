@@ -12,5 +12,6 @@ export interface AgentDependencies {
   models: {
     agentModel: BaseChatModel
     synthesizerModel: BaseChatModel
+    summarizerModel: BaseChatModel
   }
 }

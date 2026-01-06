@@ -31,17 +31,6 @@ export default class ChatController {
     }) => {
       if (userjobId !== args.jobId) return // Игнорируем события не для этого jobId
 
-      try {
-        const result =
-          typeof args.returnvalue === 'string' ? JSON.parse(args.returnvalue) : args.returnvalue
-
-        if (result?.status === 'interrupted') {
-          langgraphQueue.add('resume', { messages: result.messages, config: result.config })
-        }
-      } catch {
-        console.error(`API: Failed to parse return value for job ${userjobId}:`, args.returnvalue)
-      }
-
       res.write(`data: ${JSON.stringify({ status: 'completed', result: args.returnvalue })}\n\n`)
       res.end() // Закрываем соединение
     }
@@ -89,6 +78,18 @@ export default class ChatController {
       const result = await this.service.approveToolCall(req.body, req.user!)
 
       return res.status(200).json(new SuccessResponse(result))
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  public async stopAgent(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { jobId } = req.params
+
+      await this.service.stopAgent({ jobId, ...req.body }, req.user!)
+
+      return res.status(200).json(new SuccessResponse('Агент остановлен.'))
     } catch (error) {
       next(error)
     }

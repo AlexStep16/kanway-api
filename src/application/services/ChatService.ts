@@ -24,6 +24,9 @@ import { SettingService } from './SettingService.ts'
 import { ContextExternalFetchService } from '@application/ai/services/ContextExternalFetchService.ts'
 import { Configurable } from '../ai/interfaces/Configurable.ts'
 import { RetryAgentDTO } from '../dtos/RetryAgentDTO.ts'
+import { StopAgentDTO } from '../dtos/StopAgentDTO.ts'
+import { NotFoundError } from '@/domain/errors/NotFound.ts'
+import { IChatMessage } from '@/domain/entities/IChatMessage.ts'
 
 const MAX_RETRIES = 3
 
@@ -111,26 +114,25 @@ export class ChatService implements ICreateService<IChat, ChatDTO> {
     )
   }
 
-  public async send(data: ChatSendDTO, user: IUser) {
+  private async _executeSendTransaction(
+    data: ChatSendDTO,
+    user: IUser,
+    externalSession?: ClientSession
+  ) {
     let messages: BaseMessage[] = []
     let chat: IChat | null = null
+    let chatMessages: IChatMessage[] = []
     const threadId = data.threadId || new Types.ObjectId().toString()
 
     if (user.subscriptionId === SubscriptionPlanEnum.Basic && user.generationsCount === 0) {
-      return
+      throw new Error('Достигнут лимит генераций для вашего плана подписки.')
     }
 
     try {
-      if (!data.message) {
-        return
-      }
-
-      messages = [new HumanMessage(data.message)]
-
       if (!data.threadId) {
         const createResult = await this.create(
           {
-            name: data.message.slice(0, 500),
+            name: data.message?.slice(0, 500) || 'Новый чат',
             workspaceId: data.workspaceId,
             threadId: threadId,
           },
@@ -139,20 +141,35 @@ export class ChatService implements ICreateService<IChat, ChatDTO> {
 
         chat = createResult.data[0]
       } else {
-        const createChatResult = await this.getAll({ threadId: data.threadId }, user.id)
+        const getChatResult = await this.getAll({ threadId: data.threadId }, user.id)
 
-        chat = createChatResult[0]
+        chat = getChatResult[0]
       }
 
-      const userMessage = await this.chatMessageService.create(
-        {
-          role: 'user',
-          content: data.message,
-          chatId: chat.id,
-          threadId,
-        },
-        user
+      const lastChatMessage = await this.chatMessageService.getLastMessageInChat(
+        chat.id.toString(),
+        user.id,
+        externalSession
       )
+
+      if (data.message) {
+        const userMessage = await this.chatMessageService.create(
+          {
+            role: 'user',
+            content: data.message,
+            chatId: chat.id,
+            threadId,
+          },
+          user,
+          externalSession
+        )
+
+        chatMessages.push(...userMessage.data)
+
+        messages.push(new HumanMessage(data.message))
+      } else if (lastChatMessage && lastChatMessage.role !== 'user') {
+        throw new Error('Последнее сообщение в чате не является сообщением от пользователя.')
+      }
 
       const config = await this._getConfigurableFromUserSetting(user, {
         threadId: threadId,
@@ -162,14 +179,14 @@ export class ChatService implements ICreateService<IChat, ChatDTO> {
         timezone: data.timezone,
       })
 
-      const jobPayload = { payload: messages, config }
+      const jobPayload = { payload: { messages }, config }
 
       const job = await langgraphQueue.add('process_query', jobPayload)
 
       return {
         jobId: job.id,
         chat,
-        chatMessages: [userMessage.data[0]],
+        chatMessages,
         threadId: threadId,
       }
     } catch (error) {
@@ -177,7 +194,21 @@ export class ChatService implements ICreateService<IChat, ChatDTO> {
     }
   }
 
-  public async retry(data: RetryAgentDTO, user: IUser, externalSession?: ClientSession) {
+  public async send(data: ChatSendDTO, user: IUser, externalSession?: ClientSession) {
+    if (externalSession) {
+      return this._executeSendTransaction(data, user, externalSession)
+    } else {
+      return await this._retryExecutor((session: ClientSession) =>
+        this._executeSendTransaction(data, user, session)
+      )
+    }
+  }
+
+  private async _deleteLastIteration(
+    data: { chatId: string; threadId: string },
+    user: IUser,
+    externalSession?: ClientSession
+  ) {
     const chatMessages = await this.chatMessageService.getAll(
       { chatId: data.chatId, threadId: data.threadId },
       user.id
@@ -194,6 +225,14 @@ export class ChatService implements ICreateService<IChat, ChatDTO> {
       .map((msg) => msg.id.toString())
 
     await this.chatMessageService.delete({ ids: messageIdsAfterLastHuman }, user, externalSession)
+  }
+
+  private async _executeRetryTransaction(
+    data: RetryAgentDTO,
+    user: IUser,
+    externalSession?: ClientSession
+  ) {
+    await this._deleteLastIteration(data, user, externalSession)
 
     const config = await this._getConfigurableFromUserSetting(user, {
       threadId: data.threadId,
@@ -203,12 +242,51 @@ export class ChatService implements ICreateService<IChat, ChatDTO> {
       timezone: data.timezone,
     })
 
-    const jobPayload = { payload: [], config, isRetry: true }
+    const jobPayload = { payload: { messages: [] }, config, isRetry: true }
 
     const job = await langgraphQueue.add('process_query', jobPayload)
 
     return {
       jobId: job.id,
+    }
+  }
+
+  public async retry(data: RetryAgentDTO, user: IUser, externalSession?: ClientSession) {
+    if (externalSession) {
+      return this._executeRetryTransaction(data, user, externalSession)
+    } else {
+      return await this._retryExecutor((session: ClientSession) =>
+        this._executeRetryTransaction(data, user, session)
+      )
+    }
+  }
+
+  private async _executeStopAgentTransaction(
+    data: StopAgentDTO,
+    user: IUser,
+    externalSession?: ClientSession
+  ) {
+    await this._deleteLastIteration(data, user, externalSession)
+
+    const job = await langgraphQueue.getJob(data.jobId)
+
+    if (!job) {
+      throw new NotFoundError('Job not found.')
+    }
+
+    await job.updateData({
+      ...job.data,
+      __abortSignal: true,
+    })
+  }
+
+  public async stopAgent(data: StopAgentDTO, user: IUser, externalSession?: ClientSession) {
+    if (externalSession) {
+      return this._executeStopAgentTransaction(data, user, externalSession)
+    } else {
+      return await this._retryExecutor((session: ClientSession) =>
+        this._executeStopAgentTransaction(data, user, session)
+      )
     }
   }
 
@@ -258,7 +336,7 @@ export class ChatService implements ICreateService<IChat, ChatDTO> {
     }
   }
 
-  public async approveToolCall(
+  private async _executeApproveToolCallTransaction(
     data: ApproveToolCallDTO,
     user: IUser,
     externalSession?: ClientSession
@@ -282,7 +360,8 @@ export class ChatService implements ICreateService<IChat, ChatDTO> {
       if (item.callId === data.toolCallId) {
         return {
           ...item,
-          isConfirmed: true,
+          isConfirmed: data.isConfirmed,
+          isCancelled: data.isCancelled,
         }
       }
 
@@ -304,26 +383,14 @@ export class ChatService implements ICreateService<IChat, ChatDTO> {
       externalSession
     )
 
-    const userSetting = await this.settingService.getByUserId(user.id)
-
     if (toolsWithNoDecision === 0) {
-      const config: RunnableConfig<Configurable> = {
-        recursionLimit: 20,
-        configurable: {
-          thread_id: chatMessage.threadId,
-          user,
-          chatId: chatMessage.chatId.toString(),
-          activeBoardId: data.boardId,
-          activeWorkspaceId: data.workspaceId,
-          currentDate: dayjs.tz(dayjs(), data.timezone).toISOString(),
-          timezone: data.timezone,
-
-          aiConfirmationType: userSetting.aiConfirmationType,
-          aiName: userSetting.aiName || 'Kanbar',
-          defaultCategoryName: userSetting.aiDefaultCategory,
-          defaultBoardName: userSetting.aiDefaultBoard,
-        },
-      }
+      const config = await this._getConfigurableFromUserSetting(user, {
+        threadId: chatMessage.threadId,
+        chatId: chatMessage.chatId.toString(),
+        boardId: data.boardId || '',
+        workspaceId: data.workspaceId || '',
+        timezone: data.timezone || 'UTC',
+      })
 
       const toolsConfirmed = updatedContent
         .filter((item) => item.isConfirmed === true)
@@ -354,6 +421,20 @@ export class ChatService implements ICreateService<IChat, ChatDTO> {
         jobId: null,
         chatMessage,
       }
+    }
+  }
+
+  public async approveToolCall(
+    data: ApproveToolCallDTO,
+    user: IUser,
+    externalSession?: ClientSession
+  ) {
+    if (externalSession) {
+      return this._executeApproveToolCallTransaction(data, user, externalSession)
+    } else {
+      return await this._retryExecutor((session: ClientSession) =>
+        this._executeApproveToolCallTransaction(data, user, session)
+      )
     }
   }
 

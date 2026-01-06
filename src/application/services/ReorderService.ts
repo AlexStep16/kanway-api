@@ -49,7 +49,9 @@ export class ReorderService<TEntity extends IReordable> {
     const allUpdatedEntities: TEntity[] = []
     const groupedEntities = newEntities.reduce((map, entity) => {
       const parentId = entity[parentIdKey] as Types.ObjectId
+
       map.set(parentId.toString(), [...(map.get(parentId.toString()) || []), entity])
+
       return map
     }, new Map<string, TEntity[]>())
 
@@ -60,6 +62,8 @@ export class ReorderService<TEntity extends IReordable> {
         userId
       )
       const entitiesOld = entities.filter((e) => !newEntitiesIds.includes(e._id.toString()))
+
+      newItems.sort((a, b) => a.order - b.order)
 
       for (let newEntity of newItems) {
         const newIndex = newEntity.order - 1

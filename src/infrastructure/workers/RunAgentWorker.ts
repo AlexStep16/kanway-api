@@ -23,9 +23,10 @@ import { parseToolConfirmations } from '../helpers/parseToolConfirmations.ts'
 
 import * as Sentry from '@sentry/node'
 import { getFriendlyErrorMessage } from '@/utils/getFriendlyErrorMessage.ts'
-import { Command } from '@langchain/langgraph'
+import { Command, CompiledStateGraph } from '@langchain/langgraph'
 import getLastHumanMessage from '@application/ai/helpers/getLastHumanMessage.ts'
 import { IUser } from '@/domain/entities/IUser.ts'
+import { langgraphQueue } from '../queues/index.ts'
 
 const dependencies = initializeDependencies()
 
@@ -56,78 +57,103 @@ async function createChatMessage(dto: ChatMessageDTO, user: IUser, job: Job) {
   })
 }
 
+async function cleanupLastIteration(agent: CompiledStateGraph<any, any>, config: RunnableConfig) {
+  const currentState = await agent.getState(config)
+  const messages = currentState.values.messages || []
+
+  if (messages.length === 0) {
+    throw new Error('History is empty, cannot retry.')
+  }
+
+  // 4. Ищем последнее сообщение пользователя
+  const lastHumanMessage = getLastHumanMessage(messages)
+
+  if (!lastHumanMessage) {
+    throw new Error('No user message found to retry from.')
+  }
+
+  const lastHumanIndex = messages.findIndex((msg: any) => msg.id === lastHumanMessage.id)
+
+  // 5. Определяем "мусор", который нужно удалить
+  // Это всё, что идет ПОСЛЕ последнего сообщения юзера (ToolCalls, ToolMessages, Partial AI responses)
+  const messagesToDelete = messages.slice(lastHumanIndex + 1)
+
+  // 6. Удаляем мусор из стейта LangGraph
+  if (messagesToDelete.length > 0) {
+    const removeRequests = messagesToDelete.map((msg: any) => new RemoveMessage({ id: msg.id }))
+
+    // updateState применяет изменения к текущему треду
+    const updateData: typeof AgentStateAnnotation.State = {
+      messages: removeRequests,
+      relevant_tools: [],
+      tools_confirmed: [],
+      tools_cancelled: [],
+      tools_validation_errors: [],
+      validation_failed: false,
+      planner_has_error: false,
+      plan_hash: '',
+      rag_rules: [],
+      rag_tool_names: [],
+      summary: '',
+      plan: [],
+    }
+    await agent.updateState(config, updateData)
+  }
+}
+
 export const RunAgentWorker = new Worker(
   'langgraph-tasks',
   async (
-    job: Job<{ payload: BaseMessage[] | Command; config: RunnableConfig; isRetry: boolean }>
+    job: Job<{
+      payload: { messages: BaseMessage[] } | Command
+      config: RunnableConfig
+      isRetry: boolean
+    }>
   ) => {
     if (!job.data || !job.data.payload || !job.data.config) {
       throw new Error('Invalid job data')
     }
 
+    const controller = new AbortController()
+
     const { payload, config, isRetry } = job.data
+
+    if (config.configurable && typeof config.configurable.user.id === 'string') {
+      config.configurable.user.id = Types.ObjectId.createFromHexString(config.configurable.user.id)
+    }
+
+    const checkInterval = setInterval(async () => {
+      try {
+        // Получаем СВЕЖУЮ версию джобы из Redis
+        const freshJob = await langgraphQueue.getJob(job.id || '')
+
+        // Если в данных появился наш флаг — рубим процесс
+        if (freshJob && freshJob.data && freshJob.data.__abortSignal) {
+          controller.abort()
+          clearInterval(checkInterval)
+        }
+      } catch (err) {
+        Sentry.captureException(err, { extra: { jobId: job.id } })
+      }
+    }, 500)
+
     const configurable = config.configurable as Configurable
 
     try {
-      const streamObject =
-        payload instanceof Command
-          ? payload
-          : {
-              messages: payload,
-              relevant_tools: [],
-            }
-
       const bullMQHandler = new BullMQCallbackHandler(job)
 
       // Используем streamEvents v2
       const agent = await getAgent(dependencies)
 
       if (isRetry) {
-        const currentState = await agent.getState(config)
-        const messages = currentState.values.messages || []
-
-        if (messages.length === 0) {
-          throw new Error('History is empty, cannot retry.')
-        }
-
-        // 4. Ищем последнее сообщение пользователя
-        const lastHumanMessage = getLastHumanMessage(messages)
-
-        if (!lastHumanMessage) {
-          throw new Error('No user message found to retry from.')
-        }
-
-        const lastHumanIndex = messages.findIndex((msg: any) => msg.id === lastHumanMessage.id)
-
-        // 5. Определяем "мусор", который нужно удалить
-        // Это всё, что идет ПОСЛЕ последнего сообщения юзера (ToolCalls, ToolMessages, Partial AI responses)
-        const messagesToDelete = messages.slice(lastHumanIndex + 1)
-
-        // 6. Удаляем мусор из стейта LangGraph
-        if (messagesToDelete.length > 0) {
-          const removeRequests = messagesToDelete.map(
-            (msg: any) => new RemoveMessage({ id: msg.id })
-          )
-
-          // updateState применяет изменения к текущему треду
-          const updateData: typeof AgentStateAnnotation.State = {
-            messages: removeRequests,
-            relevant_tools: [],
-            tools_confirmed: [],
-            tools_cancelled: [],
-            tools_validation_errors: [],
-            validation_failed: false,
-            planner_has_error: false,
-            plan: [],
-          }
-          await agent.updateState(config, updateData)
-        }
+        await cleanupLastIteration(agent, config)
       }
 
-      const stream: any = agent.streamEvents(streamObject, {
+      const stream: any = agent.streamEvents(payload, {
         ...config,
         callbacks: [bullMQHandler],
         version: 'v2',
+        signal: controller.signal,
       })
 
       let interrupted = false
@@ -236,7 +262,15 @@ export const RunAgentWorker = new Worker(
       // Если не было interrupt, считаем выполнение завершённым
       // lastOutput уже обработан в on_chain_end; просто возвращаем completed
       return { status: 'completed', message: 'Агент завершил свою работу.' }
-    } catch (error) {
+    } catch (error: any) {
+      if (error.name === 'AbortError' || controller.signal.aborted) {
+        const agent = await getAgent(dependencies)
+
+        await cleanupLastIteration(agent, config)
+
+        throw error
+      }
+
       //Sentry.captureException(error, { extra: { jobId: job.id, chatId: configurable?.chatId } })
 
       const userFriendlyMessage = getFriendlyErrorMessage(error)
@@ -272,6 +306,8 @@ export const RunAgentWorker = new Worker(
       }
 
       throw error
+    } finally {
+      clearInterval(checkInterval)
     }
   },
   {

@@ -117,7 +117,8 @@ export class FilterToMongoQueryService {
   public async prepare(
     input: Filter,
     timezone: string,
-    userId: Types.ObjectId
+    userId: Types.ObjectId,
+    activeWorkspaceId?: string
   ): Promise<FilterQuery<any>> {
     const currentAndConditions: any[] = []
     const currentOrConditions: any[] = []
@@ -173,6 +174,10 @@ export class FilterToMongoQueryService {
           workspace_id: {
             $in: input.workspaceIds.map((id) => Types.ObjectId.createFromHexString(id)),
           },
+        })
+      } else if (activeWorkspaceId) {
+        currentAndConditions.push({
+          workspace_id: Types.ObjectId.createFromHexString(activeWorkspaceId),
         })
       }
 

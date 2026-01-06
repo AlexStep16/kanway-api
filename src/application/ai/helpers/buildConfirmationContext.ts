@@ -68,7 +68,7 @@ export async function buildConfirmationContext(
         confirmations.push({
           title: toolConfig.title,
           entityType: context.entityType,
-          data: data,
+          data,
           toolCall,
         })
       } catch (e: any) {

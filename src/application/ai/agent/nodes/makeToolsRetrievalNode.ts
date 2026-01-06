@@ -9,6 +9,7 @@ export const makeToolsRetrievalNode = (deps: AgentDependencies) => {
 
     const lastMessage: AIMessage | null = getLastAIToolCallsMessage(state.messages)
     const toolCalls: ToolCall[] = lastMessage?.tool_calls || []
+    const relevantToolNames = new Set<string>(state.relevant_tools || [])
 
     const toolCall = toolCalls.find((tc) => tc.name === 'getRelevantTools')
 
@@ -17,9 +18,7 @@ export const makeToolsRetrievalNode = (deps: AgentDependencies) => {
     const { relevantNames } = await toolExecutorService.getRelevantTools(toolCall.args.steps)
 
     for (const name of relevantNames) {
-      if (!state.relevant_tools.includes(name)) {
-        state.relevant_tools.push(name)
-      }
+      relevantToolNames.add(name)
     }
 
     return {
@@ -28,6 +27,7 @@ export const makeToolsRetrievalNode = (deps: AgentDependencies) => {
           id: lastMessage?.id || '',
         }),
       ],
+      relevant_tools: Array.from(relevantToolNames),
     }
   }
 }

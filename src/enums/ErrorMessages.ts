@@ -88,6 +88,8 @@ export enum ErrorMessages {
   MESSAGE_TOO_SHORT = 'Сообщение должно содержать не менее 1 символа.',
   MESSAGE_TOO_LONG = 'Сообщение не должно превышать 1000 символов.',
 
+  CHAT_ID_INVALID = 'Неверный идентификатор чата.',
+
   SUBSCRIPTION_PLAN_NOT_FOUND = 'План подписки не найден. Обратитесь в поддержку.',
   INVALID_ID_FORMAT = 'Неверный формат идентификатора.',
   WORKSPACE_ID_INVALID = 'Неверный идентификатор рабочего пространства.',

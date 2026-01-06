@@ -24,6 +24,8 @@ import { IOperationLog } from '@/domain/entities/IOperationLog.ts'
 import { IUndoResponse } from '../interfaces/IUndoResponse.ts'
 import { BASE_COLORS, BASE_COLORS_MAP } from '@/constants/BASE_COLORS.ts'
 import chroma from 'chroma-js'
+import { CategoryService } from './CategoryService.ts'
+import { TaskService } from './TaskService.ts'
 
 const MAX_RETRIES = 3
 
@@ -43,19 +45,25 @@ export class WorkspaceService
   protected operationLogService: OperationLogService
   protected reorderService: ReorderService<IWorkspaceRaw>
   protected boardService: BoardService
+  protected categoryService: CategoryService
+  protected taskService: TaskService
 
   constructor(
     workspaceRepository: WorkspaceRepository,
     embeddingService: EmbeddingService,
     operationLogService: OperationLogService,
     reorderService: ReorderService<IWorkspaceRaw>,
-    boardService: BoardService
+    boardService: BoardService,
+    categoryService: CategoryService,
+    taskService: TaskService
   ) {
     this.repository = workspaceRepository
     this.embeddingService = embeddingService
     this.operationLogService = operationLogService
     this.reorderService = reorderService
     this.boardService = boardService
+    this.categoryService = categoryService
+    this.taskService = taskService
   }
 
   private async _retryExecutor<T>(executor: (session: ClientSession) => Promise<T>): Promise<T> {
@@ -251,6 +259,48 @@ export class WorkspaceService
 
     /* UPDATE */
     const newEntities = await this.repository.updateByFilter(filter, workspacePayload, session)
+    const newEntity = newEntities[0]
+
+    if (!newEntity) {
+      return {
+        data: [],
+        logId: null,
+      }
+    }
+
+    newEntities.forEach((newWorkspace) => {
+      finalEntitiesMap.set(newWorkspace._id.toString(), newWorkspace)
+    })
+
+    // Update children parent references if name is changing
+    if (data.name && workspacesToUpdate.length > 0) {
+      const workspaceIdsToUpdate = workspacesToUpdate.map((b) => b._id)
+
+      for (const workspace of workspacesToUpdate) {
+        if (workspace.name !== data.name) {
+          await this.boardService.updateBoardsWorkspaceName(
+            workspaceIdsToUpdate,
+            data.name,
+            userId,
+            session
+          )
+
+          await this.categoryService.updateCategoriesWorkspaceName(
+            workspaceIdsToUpdate,
+            data.name,
+            userId,
+            session
+          )
+
+          await this.taskService.updateTasksWorkspaceName(
+            workspaceIdsToUpdate,
+            data.name,
+            userId,
+            session
+          )
+        }
+      }
+    }
 
     /* REORDER */
     const workspacesToReorder = workspacesToUpdate.filter(
@@ -259,11 +309,17 @@ export class WorkspaceService
     if (workspacesToReorder.length > 0) {
       reorderedWorkspaces = await this.reorderService.reorder(
         'user_id',
-        newEntities,
+        workspacesToReorder,
         userId,
         session
       )
+
+      reorderedWorkspaces.forEach((reorderedWorkspace) => {
+        finalEntitiesMap.set(reorderedWorkspace._id.toString(), reorderedWorkspace)
+      })
     }
+
+    const finalEntities = Array.from(finalEntitiesMap.values())
 
     /* LOG */
     const log = await this.operationLogService.create(
@@ -271,27 +327,15 @@ export class WorkspaceService
         operationType: OperationTypesEnum.UPDATE,
         collectionName: CollectionsEnum.WORKSPACES,
         entitiesBefore: workspacesBefore,
-        entitiesAfter: newEntities,
+        entitiesAfter: finalEntities,
         dependencies: [],
       },
       userId,
       session
     )
 
-    newEntities.forEach((newWorkspace) => {
-      finalEntitiesMap.set(newWorkspace._id.toString(), newWorkspace)
-    })
-
-    if (reorderedWorkspaces.length > 0) {
-      reorderedWorkspaces.forEach((reorderedWorkspace) => {
-        finalEntitiesMap.set(reorderedWorkspace._id.toString(), reorderedWorkspace)
-      })
-    }
-
     return {
-      data: Array.from(finalEntitiesMap.values()).map((workspace) =>
-        toServerCaseKeys<IWorkspace>(workspace)
-      ),
+      data: finalEntities.map(toServerCaseKeys<IWorkspace>),
       logId: log[0].id,
     }
   }
@@ -324,6 +368,13 @@ export class WorkspaceService
     const finalEntitiesMap = new Map<string, IWorkspaceRaw>()
     const workspacesToUpdate: SingleUpdateDTO<Partial<IWorkspaceRaw>>[] = []
     const workspacesBefore: Partial<IWorkspaceRaw>[] = []
+    const workspacesNameMap = new Map<
+      string,
+      {
+        id: Types.ObjectId
+        name: string
+      }
+    >()
 
     const workspaceIds = data.map((d) => d.id)
 
@@ -347,10 +398,29 @@ export class WorkspaceService
       if (dto.order != null && workspace.order !== dto.order) {
         workspaceIdsToReorder.push(workspacePayload._id.toString())
       }
+
+      // Update children parent references if name is changing
+      if (dto.name && workspace.name !== dto.name) {
+        workspacesNameMap.set(workspace._id.toString(), { id: workspace._id, name: dto.name })
+      }
     }
 
     /* BULK UPDATE */
     const updatedWorkspaces = await this.repository.bulkUpdate(workspacesToUpdate, userId, session)
+
+    updatedWorkspaces.forEach((updatedWorkspace) => {
+      finalEntitiesMap.set(updatedWorkspace._id.toString(), updatedWorkspace)
+    })
+
+    if (workspacesNameMap.size > 0) {
+      await this.boardService.bulkUpdateBoardsWorkspaceNameByMap(workspacesNameMap, userId, session)
+      await this.categoryService.bulkUpdateCategoriesWorkspaceNameByMap(
+        workspacesNameMap,
+        userId,
+        session
+      )
+      await this.taskService.bulkUpdateTasksWorkspaceNameByMap(workspacesNameMap, userId, session)
+    }
 
     /* REORDER */
     if (workspaceIdsToReorder.length > 0) {
@@ -365,8 +435,14 @@ export class WorkspaceService
           userId,
           session
         )
+
+        reorderedWorkspaces.forEach((reorderedWorkspace) => {
+          finalEntitiesMap.set(reorderedWorkspace._id.toString(), reorderedWorkspace)
+        })
       }
     }
+
+    const finalEntities = Array.from(finalEntitiesMap.values())
 
     /* LOG */
     const log = await this.operationLogService.create(
@@ -374,27 +450,15 @@ export class WorkspaceService
         operationType: OperationTypesEnum.UPDATE,
         collectionName: CollectionsEnum.WORKSPACES,
         entitiesBefore: workspacesBefore,
-        entitiesAfter: updatedWorkspaces,
+        entitiesAfter: finalEntities,
         dependencies: [],
       },
       userId,
       session
     )
 
-    updatedWorkspaces.forEach((updatedWorkspace) => {
-      finalEntitiesMap.set(updatedWorkspace._id.toString(), updatedWorkspace)
-    })
-
-    if (reorderedWorkspaces.length > 0) {
-      reorderedWorkspaces.forEach((reorderedWorkspace) => {
-        finalEntitiesMap.set(reorderedWorkspace._id.toString(), reorderedWorkspace)
-      })
-    }
-
     return {
-      data: Array.from(finalEntitiesMap.values()).map((workspace) =>
-        toServerCaseKeys<IWorkspace>(workspace)
-      ),
+      data: finalEntities.map(toServerCaseKeys<IWorkspace>),
       logId: log[0].id,
     }
   }
@@ -548,15 +612,18 @@ export class WorkspaceService
 
     const finalEntitiesMap = new Map<string, IWorkspaceRaw>()
     const filter = this.repository.buildFilter(criteria, userId)
+    filter.is_deleted = true
+
+    const workspacesToRecover = await this.repository.find(filter, session)
+
+    if (workspacesToRecover.length === 0)
+      throw new NotFoundError('Пространства для восстановления не найдены.')
 
     const updatedWorkspaces = await this.repository.updateByFilter(
       filter,
       { is_deleted: false, deleted_time: undefined },
       session
     )
-
-    if (updatedWorkspaces.length === 0)
-      throw new NotFoundError('Пространства для восстановления не найдены.')
 
     /* REORDER */
     reorderedWorkspaces = await this.reorderService.reorderByParentIds([userId], userId, session)

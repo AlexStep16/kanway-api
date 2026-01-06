@@ -3,6 +3,7 @@ import { EmbeddingService } from '@infrastructure/services/EmbeddingService.ts'
 import { toServerCaseKeys } from '@utils/objectTransformers.ts'
 import { ToolDTO } from '@dtos/ToolDTO.ts'
 import ToolRepository from '@repositories/ToolRepository.ts'
+import { TOOLS_CUSTOM_DESCRIPTIONS } from '@/constants/TOOLS_CUSTOM_DESCRIPTIONS.ts'
 
 export class ToolService {
   protected repository: ToolRepository
@@ -16,6 +17,12 @@ export class ToolService {
   public async save(dto: ToolDTO): Promise<ITool | null> {
     const existingTools = await this.repository.find({})
     const existingTool = existingTools.find((tool) => tool.name === dto.name)
+
+    const toolCustomDescription = TOOLS_CUSTOM_DESCRIPTIONS[dto.name]
+
+    if (toolCustomDescription) {
+      dto.description = toolCustomDescription
+    }
 
     if (existingTool) {
       if (existingTool.description !== dto.description) {

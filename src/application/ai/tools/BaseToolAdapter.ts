@@ -8,6 +8,7 @@ import { BaseService } from '@application/services/BaseService.ts'
 import { LangGraphRunnableConfig } from 'node_modules/@langchain/langgraph/dist/pregel/runnable_types.js'
 import { FailedToolResult } from '@application/ai/tools/FailedToolResult.ts'
 import { SuccessToolResult } from '@application/ai/tools/SuccessToolResult.ts'
+import { Configurable } from '../interfaces/Configurable.ts'
 
 export class BaseToolAdapter {
   protected baseService: BaseService
@@ -41,7 +42,8 @@ export class BaseToolAdapter {
     config: LangGraphRunnableConfig
   ) {
     const { ids, type } = dto
-    const userId = config.configurable?.user?.id
+    const configurable = config.configurable as Configurable
+    const userId = configurable.user.id
 
     if (!Array.isArray(ids) || ids.length === 0) {
       return 'Invalid IDs.'

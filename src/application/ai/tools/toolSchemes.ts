@@ -579,50 +579,6 @@ const ShowEntitiesToUserSchema = z.object({
 
 type ShowEntitiesToUserDTO = z.infer<typeof ShowEntitiesToUserSchema>
 
-const GetChatHistorySchema = z.object({
-  return_summary: z
-    .boolean()
-    .optional()
-    .default(false)
-    .describe(
-      'Set to true to receive a concise summary of the history instead of the full transcript. This is MUCH faster and cheaper for getting general context. Use this by default unless you need specific, verbatim details.'
-    ),
-
-  turns: z
-    .number()
-    .int()
-    .positive()
-    .optional()
-    .describe(
-      "Fetches the last N conversation turns. A 'turn' includes one user message and one assistant response. Ideal for understanding recent context."
-    ),
-
-  all: z
-    .boolean()
-    .optional()
-    .default(false)
-    .describe(
-      'Fetches the entire conversation history. Use this as a last resort if you need to find something from the very beginning and a summary is not enough.'
-    ),
-
-  message_number: z
-    .number()
-    .int()
-    .positive()
-    .optional()
-    .describe(
-      'Fetches a single, specific message by its absolute number in the conversation (e.g., 3 for the third message).'
-    ),
-
-  message_range: z
-    .object({
-      start: z.number().int().positive(),
-      end: z.number().int().positive(),
-    })
-    .optional()
-    .describe('Fetches a specific range of messages, e.g., from message 5 to 10.'),
-})
-
 const Step = z.object({
   description: z
     .string()
@@ -672,7 +628,6 @@ export {
   EditWorkspacesDTO,
   ShowEntitiesToUserSchema,
   ShowEntitiesToUserDTO,
-  GetChatHistorySchema,
   Plan,
   Step,
   PlanToolSchema,

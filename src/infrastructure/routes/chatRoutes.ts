@@ -14,6 +14,7 @@ export default (controller: ChatController): Router => {
   router.post('/retry', controller.retry.bind(controller))
   router.get('/stream/:jobId/status', controller.streamStatus.bind(controller))
   router.post('/tools/approve', controller.approveToolCall.bind(controller))
+  router.post('/:jobId/stop', controller.stopAgent.bind(controller))
 
   return router
 }

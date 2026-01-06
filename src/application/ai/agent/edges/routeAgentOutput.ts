@@ -1,25 +1,25 @@
 import { AgentStateAnnotation } from '@/application/ai/agent/AgentStateAnnotation.ts'
-import { getLastAIToolCallsMessage } from '../../helpers/getLastAIToolCallsMessage.ts'
+import { AIMessage, AIMessageChunk } from '@langchain/core/messages'
 
 export const routeAgentOutput = (state: typeof AgentStateAnnotation.State) => {
-  const lastMessage = getLastAIToolCallsMessage(state.messages)
+  const lastMessage = state.messages.at(-1)
 
-  if (!lastMessage) {
+  if (
+    !lastMessage ||
+    !(lastMessage instanceof AIMessage || lastMessage instanceof AIMessageChunk)
+  ) {
     return 'synthesize'
   }
 
   const toolCalls = lastMessage.tool_calls || []
 
-  // Если нет тулов или это спец-тул завершения -> СИНТЕЗ
-  if (toolCalls.length === 0 || toolCalls.some((tc) => tc.name === 'finishResponse')) {
-    return 'synthesize'
-  }
-
-  // Если агент хочет найти новые тулы -> ПОИСК
   if (toolCalls.some((tc) => tc.name === 'getRelevantTools')) {
     return 'retrieve'
   }
 
-  // В остальных случаях (обычные тулы) -> ПРОВЕРКА
-  return 'verify'
+  if (toolCalls.length > 0) {
+    return 'verify'
+  }
+
+  return 'synthesize'
 }

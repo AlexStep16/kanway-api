@@ -7,31 +7,11 @@ await connectToDatabase()
 const dependencies = initializeDependencies()
 
 async function test() {
-  /*console.log(
-    await dependencies.services.baseService.similaritySearchCategories(
-      'спорт',
-      Types.ObjectId.createFromHexString('67da84f0a2e3729760781559'),
-      2
-    )
-  )*/
-
-  const filter = await dependencies.services.filterToMongoQueryService.prepare(
-    {
-      name: {
-        equal: 'спорт',
-      },
-    },
-    'Europe/Moscow',
-    Types.ObjectId.createFromHexString('67da84f0a2e3729760781559')
-  )
-
-  const categories = await dependencies.services.categoryService.getByFilter(
-    filter,
+  await dependencies.services.baseService.similaritySearchBoards(
+    'работа',
     Types.ObjectId.createFromHexString('67da84f0a2e3729760781559'),
     30
   )
-
-  console.log(categories)
 }
 
 test()

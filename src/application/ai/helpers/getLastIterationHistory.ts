@@ -1,5 +1,4 @@
-import { BaseMessage } from '@langchain/core/messages'
-import { getLCMessageKind } from './getLCMessageKind.ts'
+import { BaseMessage, HumanMessage } from '@langchain/core/messages'
 
 export function getLastIterationHistory(messages: any[]): BaseMessage[] {
   if (messages.length === 0) return []
@@ -11,7 +10,7 @@ export function getLastIterationHistory(messages: any[]): BaseMessage[] {
 
     newMessages.unshift(m)
 
-    if (['human'].includes(getLCMessageKind(m))) {
+    if (m instanceof HumanMessage) {
       break
     }
   }

@@ -15,7 +15,6 @@ import { FailedToolResult } from './FailedToolResult.ts'
 import { SuccessToolResult } from './SuccessToolResult.ts'
 import { CategoryDTO } from '@/application/dtos/CategoryDTO.ts'
 import { Types } from 'mongoose'
-import { IUser } from '@/domain/entities/IUser.ts'
 import { CategoryCommandAdapterService } from '@/application/ai/services/CategoryCommandAdapterService.ts'
 import { FilterToMongoQueryService } from '@/application/ai/services/FilterToMongoQueryService.ts'
 import { BoardService } from '@/application/services/BoardService.ts'
@@ -23,6 +22,7 @@ import { IUndoResponse } from '@/application/interfaces/IUndoResponse.ts'
 import { ICategoriesWithChildrenResponse } from '@/application/interfaces/ICategoriesWithChildrenResponse.ts'
 import { ICategory } from '@/domain/entities/ICategory.ts'
 import * as Sentry from '@sentry/node'
+import { Configurable } from '@application/ai/interfaces/Configurable.ts'
 
 interface CompressedCategory {
   id: string
@@ -65,8 +65,9 @@ export class CategoryToolAdapter {
     dto: CategoryFilterDTO,
     config: LangGraphRunnableConfig
   ): Promise<string> {
-    const user = config.configurable?.user as IUser
-    const timezone = config.configurable?.timezone || 'Europe/Moscow'
+    const configurable = config.configurable as Configurable
+    const user = configurable.user
+    const timezone = configurable.timezone || 'Europe/Moscow'
 
     try {
       const errorMsgs = this.baseService.validateInputBySchema(dto, CategoryFilterSchema)
@@ -77,7 +78,12 @@ export class CategoryToolAdapter {
         )
       }
 
-      let mongoFilter = await this.filterToMongoQueryService.prepare(dto, timezone, user.id)
+      let mongoFilter = await this.filterToMongoQueryService.prepare(
+        dto,
+        timezone,
+        user.id,
+        configurable.activeWorkspaceId
+      )
 
       if (Object.keys(mongoFilter).length === 0) return JSON.stringify([])
 
@@ -88,7 +94,6 @@ export class CategoryToolAdapter {
 
         if (categoryName) {
           // If no categories found but filter includes 'name', try semantic search as fallback
-          console.log(user)
           const semanticSearchResults = await this.baseService.similaritySearchCategories(
             categoryName,
             user.id,
@@ -128,12 +133,13 @@ export class CategoryToolAdapter {
   ): Promise<string> {
     try {
       const { nameToFind } = findRelevantDto
+      const configurable = config.configurable as Configurable
 
       if (!nameToFind) {
         return 'Category name required to find relevant categories.'
       }
 
-      const userId = config.configurable?.user?.id
+      const userId = configurable.user.id
 
       const categories = await this.baseService.similaritySearchCategories(nameToFind, userId, 30)
 
@@ -157,8 +163,9 @@ export class CategoryToolAdapter {
     dto: CategoryCreateDTO,
     config: LangGraphRunnableConfig
   ): Promise<IToolResult> {
-    const user = config.configurable?.user as IUser
-    const threadId = config.configurable?.thread_id as string | undefined
+    const configurable = config.configurable as Configurable
+    const user = configurable.user
+    const threadId = configurable.thread_id
 
     try {
       const categories = dto.categories
@@ -228,8 +235,9 @@ export class CategoryToolAdapter {
     dto: EditCategoriesDTO,
     config: LangGraphRunnableConfig
   ): Promise<IToolResult> {
-    const user = config.configurable?.user as IUser
-    const threadId = config.configurable?.thread_id as string | undefined
+    const configurable = config.configurable as Configurable
+    const user = configurable.user
+    const threadId = configurable.thread_id
 
     try {
       const boardIdValidationMessage = dto.changes.boardId
@@ -303,7 +311,8 @@ export class CategoryToolAdapter {
     dto: { ids: string[] },
     config: LangGraphRunnableConfig
   ): Promise<IToolResult> {
-    const user = config.configurable?.user as IUser
+    const configurable = config.configurable as Configurable
+    const user = configurable.user
     const ids = dto.ids
 
     try {
@@ -368,7 +377,8 @@ export class CategoryToolAdapter {
     dto: { ids: string[] },
     config: LangGraphRunnableConfig
   ): Promise<IToolResult> {
-    const user = config.configurable?.user as IUser
+    const configurable = config.configurable as Configurable
+    const user = configurable.user
     const ids = dto.ids
 
     try {
@@ -428,7 +438,8 @@ export class CategoryToolAdapter {
     dto: { ids: string[] },
     config: LangGraphRunnableConfig
   ): Promise<IToolResult> {
-    const user = config.configurable?.user as IUser
+    const configurable = config.configurable as Configurable
+    const user = configurable.user
     const ids = dto.ids
 
     try {

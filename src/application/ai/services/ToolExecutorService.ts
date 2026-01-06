@@ -1,7 +1,5 @@
 import { BaseMessage, ToolCall, ToolMessage } from '@langchain/core/messages'
 import { DynamicStructuredTool } from '@langchain/core/tools'
-import { getChatHistorySummaryHelper } from '@application/ai/helpers/getChatHistorySummaryHelper.ts'
-import { getChatHistoryWrapper } from '@application/ai/helpers/getChatHistoryWrapper.ts'
 import { dispatchCustomEvent } from '@langchain/core/callbacks/dispatch'
 import { BaseService } from '@application/services/BaseService.ts'
 import { AgentRoles } from '@/enums/AgentRoles.ts'
@@ -15,6 +13,7 @@ import { IUser } from '@/domain/entities/IUser.ts'
 import z from 'zod'
 import { BaseToolAdapter } from '../tools/BaseToolAdapter.ts'
 import { ShowEntitiesToUserDTO } from '../tools/toolSchemes.ts'
+import * as Sentry from '@sentry/node'
 
 export class ToolExecutorService {
   protected baseService: BaseService
@@ -80,7 +79,7 @@ export class ToolExecutorService {
     }
   }
 
-  public async executeTool(toolCall: ToolCall, messages: BaseMessage[], user: IUser) {
+  public async executeTool(toolCall: ToolCall, _: BaseMessage[], user: IUser) {
     const functionName = toolCall.name
     const tool: DynamicStructuredTool = this.toolsByName[functionName]
 
@@ -96,19 +95,31 @@ export class ToolExecutorService {
 
     const data = functionSchema.parse(toolCall.args)
 
-    if (tool.name === 'getChatHistory') {
-      if (toolCall.args.return_summary === true)
-        return getChatHistorySummaryHelper(messages, toolCall.id)
-
-      return getChatHistoryWrapper(messages)
-    }
-
     const observation: any = await tool.invoke(data)
 
     if (tool.name === 'showEntitiesToUser') {
-      await dispatchCustomEvent(AgentRoles.LIST_ENTITIES, {
-        entities: typeof observation === 'string' ? JSON.parse(observation) : observation,
-        type: (data as ShowEntitiesToUserDTO).type,
+      let parsedObservation: any = {}
+
+      try {
+        parsedObservation = JSON.parse(observation)
+
+        await dispatchCustomEvent(AgentRoles.LIST_ENTITIES, {
+          entities: parsedObservation,
+          type: (data as ShowEntitiesToUserDTO).type,
+        })
+      } catch (error) {
+        Sentry.captureException(new Error('Failed to parse showEntitiesToUser: ' + observation), {
+          extra: {
+            observation,
+            error,
+          },
+        })
+      }
+
+      return new ToolMessage({
+        content: 'Entities have been presented to the user.',
+        tool_call_id: toolCall.id || '',
+        name: toolCall.name,
       })
     }
 

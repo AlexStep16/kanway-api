@@ -11,6 +11,8 @@ import { routeAgentOutput } from '@application/ai/agent/edges/routeAgentOutput.t
 import { routeHumanApprovalOutput } from '@application/ai/agent/edges/routeHumanApprovalOutput.ts'
 import { makePlannerNode } from '@application/ai/agent/nodes/makePlannerNode.ts'
 import { routePlannerOutput } from '@application/ai/agent/edges/routePlannerOutput.ts'
+import { makeSummaryHistoryNode } from '@application/ai/agent/nodes/makeSummaryHistoryNode.ts'
+import { makeChatbotNode } from '@application/ai/agent/nodes/makeChatbotNode.ts'
 
 export function createReActAgent(dependencies: AgentDependencies, checkpointer: MongoDBSaver) {
   const agentNode = makeAgentNode(dependencies)
@@ -19,15 +21,19 @@ export function createReActAgent(dependencies: AgentDependencies, checkpointer: 
   const toolsExecutorNode = makeToolsExecutorNode(dependencies)
   const synthesizeNode = makeSynthesizeNode(dependencies)
   const plannerNode = makePlannerNode(dependencies)
+  const summarizerNode = makeSummaryHistoryNode(dependencies)
+  const chatbotNode = makeChatbotNode(dependencies)
 
   const graphBuilder = new StateGraph(AgentStateAnnotation)
     // --- Добавляем узлы ---
     .addNode('Planner', plannerNode)
+    .addNode('Summarizer', summarizerNode)
     .addNode('Agent', agentNode)
     .addNode('ToolRetrieval', retrievalNode)
     .addNode('HumanApproval', humanApprovalNode)
     .addNode('ToolsExecutor', toolsExecutorNode)
     .addNode('Synthesize', synthesizeNode)
+    .addNode('Chatbot', chatbotNode)
 
     // --- Добавляем Ребра (Логику переходов) ---
 
@@ -35,10 +41,12 @@ export function createReActAgent(dependencies: AgentDependencies, checkpointer: 
     .addEdge(START, 'Planner')
 
     .addConditionalEdges('Planner', routePlannerOutput, {
-      agent: 'Agent',
-      synthesize: 'Synthesize',
+      summarizer: 'Summarizer',
       planner: 'Planner',
+      chatbot: 'Chatbot',
     })
+
+    .addEdge('Summarizer', 'Agent')
 
     // Агент решил -> Развилка (Retrieve / Synthesize / Verify)
     .addConditionalEdges('Agent', routeAgentOutput, {
@@ -61,6 +69,7 @@ export function createReActAgent(dependencies: AgentDependencies, checkpointer: 
 
     // Синтез -> Конец
     .addEdge('Synthesize', END)
+    .addEdge('Chatbot', END)
 
   // 5. Компилируем
   return graphBuilder.compile({ checkpointer })

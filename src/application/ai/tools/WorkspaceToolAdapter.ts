@@ -15,13 +15,13 @@ import { FailedToolResult } from './FailedToolResult.ts'
 import { SuccessToolResult } from './SuccessToolResult.ts'
 import { WorkspaceDTO } from '@/application/dtos/WorkspaceDTO.ts'
 import { Types } from 'mongoose'
-import { IUser } from '@/domain/entities/IUser.ts'
 import { WorkspaceCommandAdapterService } from '@/application/ai/services/WorkspaceCommandAdapterService.ts'
 import { FilterToMongoQueryService } from '@/application/ai/services/FilterToMongoQueryService.ts'
 import { IUndoResponse } from '@/application/interfaces/IUndoResponse.ts'
 import { IWorkspacesWithChildrenResponse } from '@/application/interfaces/IWorkspacesWithChildrenResponse.ts'
 import { IWorkspace } from '@/domain/entities/IWorkspace.ts'
 import * as Sentry from '@sentry/node'
+import { Configurable } from '@application/ai/interfaces/Configurable.ts'
 
 interface CompressedWorkspace {
   id: string
@@ -58,8 +58,9 @@ export class WorkspaceToolAdapter {
     dto: WorkspaceFilterDTO,
     config: LangGraphRunnableConfig
   ): Promise<string> {
-    const user = config.configurable?.user as IUser
-    const timezone = config.configurable?.timezone || 'Europe/Moscow'
+    const configurable = config.configurable as Configurable
+    const user = configurable.user
+    const timezone = configurable.timezone || 'Europe/Moscow'
 
     try {
       const errorMsgs = this.baseService.validateInputBySchema(dto, WorkspaceFilterSchema)
@@ -120,12 +121,13 @@ export class WorkspaceToolAdapter {
   ): Promise<string> {
     try {
       const { nameToFind } = findRelevantDto
+      const configurable = config.configurable as Configurable
 
       if (!nameToFind) {
         return 'Workspace name required to find relevant workspaces.'
       }
 
-      const userId = config.configurable?.user?.id
+      const userId = configurable.user.id
 
       const workspaces = await this.baseService.similaritySearchWorkspaces(nameToFind, userId, 30)
 
@@ -149,8 +151,9 @@ export class WorkspaceToolAdapter {
     dto: WorkspaceCreateDTO,
     config: LangGraphRunnableConfig
   ): Promise<IToolResult> {
-    const user = config.configurable?.user as IUser
-    const threadId = config.configurable?.thread_id as string | undefined
+    const configurable = config.configurable as Configurable
+    const user = configurable.user
+    const threadId = configurable.thread_id
 
     try {
       const workspaces = dto.workspaces
@@ -223,8 +226,9 @@ export class WorkspaceToolAdapter {
     dto: EditWorkspacesDTO,
     config: LangGraphRunnableConfig
   ): Promise<IToolResult> {
-    const user = config.configurable?.user as IUser
-    const threadId = config.configurable?.thread_id as string | undefined
+    const configurable = config.configurable as Configurable
+    const user = configurable.user
+    const threadId = configurable.thread_id
 
     try {
       const errors: string[] = []
@@ -292,7 +296,8 @@ export class WorkspaceToolAdapter {
     dto: { ids: string[] },
     config: LangGraphRunnableConfig
   ): Promise<IToolResult> {
-    const user = config.configurable?.user as IUser
+    const configurable = config.configurable as Configurable
+    const user = configurable.user
     const ids = dto.ids
 
     try {
@@ -359,7 +364,8 @@ export class WorkspaceToolAdapter {
     dto: { ids: string[] },
     config: LangGraphRunnableConfig
   ): Promise<IToolResult> {
-    const user = config.configurable?.user as IUser
+    const configurable = config.configurable as Configurable
+    const user = configurable.user
     const ids = dto.ids
 
     try {
@@ -423,7 +429,8 @@ export class WorkspaceToolAdapter {
     dto: { ids: string[] },
     config: LangGraphRunnableConfig
   ): Promise<IToolResult> {
-    const user = config.configurable?.user as IUser
+    const configurable = config.configurable as Configurable
+    const user = configurable.user
     const ids = dto.ids
 
     try {

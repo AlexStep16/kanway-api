@@ -168,6 +168,18 @@ export class ChatMessageService implements ICreateService<IChatMessage, ChatMess
     }
   }
 
+  public async getLastMessageInChat(
+    chatId: string,
+    userId: Types.ObjectId,
+    session?: ClientSession
+  ): Promise<IChatMessage | null> {
+    const filter = this.repository.buildFilter({ chatId }, userId)
+
+    const chatMessage = await this.repository.find(filter, session, { created_at: -1 })
+
+    return chatMessage.length > 0 ? toServerCaseKeys<IChatMessage>(chatMessage[0]) : null
+  }
+
   public async getById(
     id: string,
     userId: Types.ObjectId,

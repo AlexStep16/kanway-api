@@ -1,4 +1,4 @@
-export const SummarySystem = `
+export const SummaryPrompt = `
   You are a high-precision AI dialogue analyst. Your task is to analyze the provided conversation history and create the most useful and concise summary for another AI agent.
   
   **Your strategy must be adaptive:**

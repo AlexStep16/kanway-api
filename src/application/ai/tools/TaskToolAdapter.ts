@@ -16,7 +16,6 @@ import { SuccessToolResult } from './SuccessToolResult.ts'
 import { CategoryService } from '@application/services/CategoryService.ts'
 import { TaskDTO } from '@/application/dtos/TaskDTO.ts'
 import { Types } from 'mongoose'
-import { IUser } from '@/domain/entities/IUser.ts'
 import { TaskCommandAdapterService } from '@/application/ai/services/TaskCommandAdapterService.ts'
 import { FilterToMongoQueryService } from '@/application/ai/services/FilterToMongoQueryService.ts'
 import { IUndoResponse } from '@/application/interfaces/IUndoResponse.ts'
@@ -24,6 +23,7 @@ import { ITasksResponse } from '@/application/interfaces/ITasksResponse.ts'
 import { ITask } from '@/domain/entities/ITask.ts'
 import dayjs from 'dayjs'
 import * as Sentry from '@sentry/node'
+import { Configurable } from '@application/ai/interfaces/Configurable.ts'
 
 interface CompressedTask {
   id: string
@@ -112,8 +112,9 @@ export class TaskToolAdapter {
     dto: TaskFilterDTO,
     config: LangGraphRunnableConfig
   ): Promise<string> {
-    const user = config.configurable?.user as IUser
-    const timezone = config.configurable?.timezone || 'Europe/Moscow'
+    const configurable = config.configurable as Configurable
+    const user = configurable.user
+    const timezone = configurable.timezone || 'Europe/Moscow'
 
     try {
       const errorMsgs = this.baseService.validateInputBySchema(dto, TaskFilterSchema)
@@ -124,7 +125,12 @@ export class TaskToolAdapter {
         )
       }
 
-      let mongoFilter = await this.filterToMongoQueryService.prepare(dto, timezone, user.id)
+      let mongoFilter = await this.filterToMongoQueryService.prepare(
+        dto,
+        timezone,
+        user.id,
+        configurable.activeWorkspaceId
+      )
 
       if (Object.keys(mongoFilter).length === 0) return JSON.stringify([])
 
@@ -174,12 +180,13 @@ export class TaskToolAdapter {
   ): Promise<string> {
     try {
       const { nameToFind } = findRelevantDto
+      const configurable = config.configurable as Configurable
 
       if (!nameToFind) {
         return 'Task name required to find relevant tasks.'
       }
 
-      const userId = config.configurable?.user?.id
+      const userId = configurable.user.id
 
       const tasks = await this.baseService.similaritySearchTasks(nameToFind, userId, 30)
 
@@ -203,8 +210,9 @@ export class TaskToolAdapter {
     dto: TaskCreateDTO,
     config: LangGraphRunnableConfig
   ): Promise<IToolResult> {
-    const user = config.configurable?.user as IUser
-    const threadId = config.configurable?.thread_id as string | undefined
+    const configurable = config.configurable as Configurable
+    const user = configurable.user
+    const threadId = configurable.thread_id
 
     try {
       const tasks = dto.tasks
@@ -219,7 +227,7 @@ export class TaskToolAdapter {
         tasks,
         errors,
         user.id,
-        config.configurable?.timezone || 'Europe/Moscow',
+        configurable.timezone || 'Europe/Moscow',
         threadId
       )
 
@@ -268,9 +276,10 @@ export class TaskToolAdapter {
   }
 
   public async editTasks(dto: EditTasksDTO, config: LangGraphRunnableConfig): Promise<IToolResult> {
-    const user = config.configurable?.user as IUser
-    const threadId = config.configurable?.thread_id as string | undefined
-    const timezone = config.configurable?.timezone || 'Europe/Moscow'
+    const configurable = config.configurable as Configurable
+    const user = configurable.user
+    const threadId = configurable.thread_id
+    const timezone = configurable.timezone || 'Europe/Moscow'
 
     try {
       const categoryIdValidationMessage = dto.changes.categoryId
@@ -352,7 +361,8 @@ export class TaskToolAdapter {
     dto: { ids: string[] },
     config: LangGraphRunnableConfig
   ): Promise<IToolResult> {
-    const user = config.configurable?.user as IUser
+    const configurable = config.configurable as Configurable
+    const user = configurable.user
     const ids = dto.ids
 
     try {
@@ -412,7 +422,8 @@ export class TaskToolAdapter {
     dto: { ids: string[] },
     config: LangGraphRunnableConfig
   ): Promise<IToolResult> {
-    const user = config.configurable?.user as IUser
+    const configurable = config.configurable as Configurable
+    const user = configurable.user
     const ids = dto.ids
 
     try {
@@ -470,7 +481,8 @@ export class TaskToolAdapter {
     dto: { ids: string[] },
     config: LangGraphRunnableConfig
   ): Promise<IToolResult> {
-    const user = config.configurable?.user as IUser
+    const configurable = config.configurable as Configurable
+    const user = configurable.user
     const ids = dto.ids
 
     try {

@@ -1,4 +1,4 @@
-import { BaseMessage } from '@langchain/core/messages'
+import { BaseMessage, ToolMessage } from '@langchain/core/messages'
 
 export function getLastChatHistory(messages: BaseMessage[], count: number = 10): BaseMessage[] {
   if (messages.length === 0) return []
@@ -12,7 +12,7 @@ export function getLastChatHistory(messages: BaseMessage[], count: number = 10):
     newMessages.unshift(m)
     counter++
 
-    if (counter >= count) {
+    if (counter >= count && !(m instanceof ToolMessage)) {
       break
     }
   }

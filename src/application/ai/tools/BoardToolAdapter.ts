@@ -15,7 +15,6 @@ import { FailedToolResult } from '@application/ai/tools/FailedToolResult.ts'
 import { SuccessToolResult } from '@application/ai/tools/SuccessToolResult.ts'
 import { BoardDTO } from '@application/dtos/BoardDTO.ts'
 import { Types } from 'mongoose'
-import { IUser } from '@entities/IUser.ts'
 import { BoardCommandAdapterService } from '@application/ai/services/BoardCommandAdapterService.ts'
 import { FilterToMongoQueryService } from '@application/ai/services/FilterToMongoQueryService.ts'
 import { WorkspaceService } from '@application/services/WorkspaceService.ts'
@@ -23,6 +22,7 @@ import { IUndoResponse } from '@/application/interfaces/IUndoResponse.ts'
 import { IBoardsWithChildrenResponse } from '@/application/interfaces/IBoardsWithChildrenResponse.ts'
 import { IBoard } from '@/domain/entities/IBoard.ts'
 import * as Sentry from '@sentry/node'
+import { Configurable } from '@application/ai/interfaces/Configurable.ts'
 
 interface CompressedBoard {
   id: string
@@ -65,8 +65,9 @@ export class BoardToolAdapter {
     dto: BoardFilterDTO,
     config: LangGraphRunnableConfig
   ): Promise<string> {
-    const user = config.configurable?.user as IUser
-    const timezone = config.configurable?.timezone || 'Europe/Moscow'
+    const configurable = config.configurable as Configurable
+    const user = configurable.user
+    const timezone = configurable.timezone || 'Europe/Moscow'
 
     try {
       const errorMsgs = this.baseService.validateInputBySchema(dto, BoardFilterSchema)
@@ -77,7 +78,12 @@ export class BoardToolAdapter {
         )
       }
 
-      let mongoFilter = await this.filterToMongoQueryService.prepare(dto, timezone, user.id)
+      let mongoFilter = await this.filterToMongoQueryService.prepare(
+        dto,
+        timezone,
+        user.id,
+        configurable.activeWorkspaceId
+      )
 
       if (Object.keys(mongoFilter).length === 0) return JSON.stringify([])
 
@@ -127,12 +133,13 @@ export class BoardToolAdapter {
   ): Promise<string> {
     try {
       const { nameToFind } = findRelevantDto
+      const configurable = config.configurable as Configurable
 
       if (!nameToFind) {
         return 'Board name required to find relevant boards.'
       }
 
-      const userId = config.configurable?.user?.id
+      const userId = configurable.user.id
 
       const boards = await this.baseService.similaritySearchBoards(nameToFind, userId, 30)
 
@@ -156,8 +163,9 @@ export class BoardToolAdapter {
     dto: BoardCreateDTO,
     config: LangGraphRunnableConfig
   ): Promise<IToolResult> {
-    const user = config.configurable?.user as IUser
-    const threadId = config.configurable?.thread_id as string | undefined
+    const configurable = config.configurable as Configurable
+    const user = configurable.user
+    const threadId = configurable.thread_id
 
     try {
       const boards = dto.boards
@@ -228,8 +236,9 @@ export class BoardToolAdapter {
     dto: EditBoardsDTO,
     config: LangGraphRunnableConfig
   ): Promise<IToolResult> {
-    const user = config.configurable?.user as IUser
-    const threadId = config.configurable?.thread_id as string | undefined
+    const configurable = config.configurable as Configurable
+    const user = configurable.user
+    const threadId = configurable.thread_id
 
     try {
       const workspaceIdValidationMessage = dto.changes.workspaceId
@@ -301,7 +310,8 @@ export class BoardToolAdapter {
     dto: { ids: string[] },
     config: LangGraphRunnableConfig
   ): Promise<IToolResult> {
-    const user = config.configurable?.user as IUser
+    const configurable = config.configurable as Configurable
+    const user = configurable.user
     const ids = dto.ids
 
     try {
@@ -367,7 +377,8 @@ export class BoardToolAdapter {
     dto: { ids: string[] },
     config: LangGraphRunnableConfig
   ): Promise<IToolResult> {
-    const user = config.configurable?.user as IUser
+    const configurable = config.configurable as Configurable
+    const user = configurable.user
     const ids = dto.ids
 
     try {
@@ -429,7 +440,8 @@ export class BoardToolAdapter {
     dto: { ids: string[] },
     config: LangGraphRunnableConfig
   ): Promise<IToolResult> {
-    const user = config.configurable?.user as IUser
+    const configurable = config.configurable as Configurable
+    const user = configurable.user
     const ids = dto.ids
 
     try {

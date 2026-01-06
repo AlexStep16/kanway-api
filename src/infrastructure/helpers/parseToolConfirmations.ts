@@ -8,9 +8,9 @@ export function parseToolConfirmations(interruptPayload: any) {
       let context = {}
 
       try {
-        context = JSON.parse(confirmationData.context)
+        context = JSON.parse(confirmationData.data)
       } catch {
-        context = confirmationData.context || {}
+        context = confirmationData.data || {}
       }
 
       toolConfirmations.push({

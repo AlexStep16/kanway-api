@@ -1,11 +1,12 @@
 import { AgentDependencies } from '@/application/ai/agent/types/AgentDependencies.ts'
 import { AgentStateAnnotation } from '@/application/ai/agent/AgentStateAnnotation.ts'
-import { HumanMessage, ToolMessage } from '@langchain/core/messages'
+import { RemoveMessage, SystemMessage } from '@langchain/core/messages'
 import { RunnableConfig } from '@langchain/core/runnables'
 import { ChatPromptTemplate } from '@langchain/core/prompts'
-import { PlannerSystem } from '../../systemMessages/Planner.ts'
+import { PlannerPrompt } from '@application/ai/prompts/PlannerPrompt.ts'
 import { getLastChatHistory } from '../../helpers/getLastChatHistory.ts'
 import * as Sentry from '@sentry/node'
+import getLastHumanMessage from '../../helpers/getLastHumanMessage.ts'
 
 export const makePlannerNode = (deps: AgentDependencies) => {
   return async (state: typeof AgentStateAnnotation.State, _: RunnableConfig) => {
@@ -13,10 +14,10 @@ export const makePlannerNode = (deps: AgentDependencies) => {
     // Planner не требует огромного контекста, glm-4p5 отлично справится
     const { agentModel } = deps.models
 
-    const lastMessage = state.messages.at(-1)
+    const lastHumanMessage = getLastHumanMessage(state.messages)
 
-    if (!lastMessage || !(lastMessage instanceof HumanMessage)) {
-      return { plan: [] }
+    if (!lastHumanMessage) {
+      return { plan: [], planner_has_error: false }
     }
 
     // Создаем определение инструмента
@@ -30,7 +31,7 @@ export const makePlannerNode = (deps: AgentDependencies) => {
     // Создаем системный промпт для планировщика
     const chatHistory = getLastChatHistory(state.messages)
 
-    const prompt = ChatPromptTemplate.fromMessages([['system', PlannerSystem], ...chatHistory])
+    const prompt = ChatPromptTemplate.fromMessages([['system', PlannerPrompt], ...chatHistory])
 
     // Принудительно заставляем модель вызвать этот инструмент
     const modelWithTool = agentModel.bindTools(tools, {
@@ -42,17 +43,24 @@ export const makePlannerNode = (deps: AgentDependencies) => {
 
     const response = await chain.invoke({})
 
+    const messages = state.messages
+      .filter((msg) => msg.additional_kwargs?.error && msg.additional_kwargs?.isPlanner)
+      .map(
+        (m) =>
+          new RemoveMessage({
+            id: m.id!,
+          })
+      )
+
     // Парсим результат
     const toolCall = response.tool_calls?.[0]
 
     if (!toolCall || toolCall.name !== 'submitPlan') {
       Sentry.captureException(new Error('Planner did not return a valid tool call for submitPlan.'))
 
-      const errorMessage = new ToolMessage({
+      const errorMessage = new SystemMessage({
         content: 'You MUST submit a plan using the submitPlan tool.',
-        name: toolCall?.name,
-        tool_call_id: toolCall?.id || '',
-        additional_kwargs: { error: true },
+        additional_kwargs: { error: true, isPlanner: true },
       })
 
       return {
@@ -66,6 +74,7 @@ export const makePlannerNode = (deps: AgentDependencies) => {
 
     return {
       plan: plan,
+      messages,
       planner_has_error: false,
     }
   }

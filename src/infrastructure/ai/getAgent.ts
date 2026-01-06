@@ -44,6 +44,11 @@ export async function getAgent(dependencies: any) {
     temperature: 0,
   })
 
+  const summarizerModel = new ChatFireworks({
+    model: 'accounts/fireworks/models/gpt-oss-20b',
+    temperature: 0,
+  })
+
   // 6. Собираем агента через нашу фабрику
   agentInstance = createReActAgent(
     {
@@ -55,6 +60,7 @@ export async function getAgent(dependencies: any) {
       models: {
         agentModel,
         synthesizerModel,
+        summarizerModel,
       },
     },
     checkpointer

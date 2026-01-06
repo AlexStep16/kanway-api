@@ -2,15 +2,54 @@ import { AgentInstruction } from '../interfaces/AgentInstruction.ts'
 
 export const AgentInstructions: AgentInstruction[] = [
   {
+    topic: 'Task Completion',
+    examples: [
+      'Заверши задачу',
+      'Отметь задачу как выполненную',
+      'Сделай задачу сделанной',
+      'Поставь галочку на задаче',
+      'Сними отметку выполнения',
+      'Верни задачу в работу',
+      'Перенеси задачу в сделанные',
+      'Поменяй статус на выполнено',
+      'Выполни задачу',
+
+      'Mark task as completed',
+      'Set task status to done',
+      'Unmark task as completed',
+      'Change task status to not completed',
+      'Update task completion status',
+      'Move task to completed state',
+    ],
+    rule: `*** RULE: TASK COMPLETION ***
+    Goal: Change the completion status of a task (Done / Not Done).
+
+    Mapping:
+    - "Complete", "Mark as done", "Move to done" -> Set 'isCompleted' to true.
+    - "Uncomplete", "Reopen", "Move to todo" -> Set 'isCompleted' to false.
+
+    Procedure:
+    1. Identify the task ID.
+    2. Call 'editTasks' to update the isCompleted field.
+    `,
+    suggestedTools: ['editTasks', 'findTasksByFilter'],
+  },
+  {
     topic: 'Move Tasks',
     examples: [
+      "Move task 'X' to category 'Y'",
+      "Move task to column 'Done'",
+      "Change task category to 'In Progress'",
+      "Set task 'X' category to 'Backlog'",
+      "Transfer task to board 'Marketing'",
+      'Move task to another board',
+
       'Перенеси задачу в другую колонку',
-      'Перенеси задачу в категорию в работе',
-      'Задачу сделать отчет в бэклог',
-      'Перемести задачу в категорию',
-      'Найди другое место для задачи',
-      'Измени категорию задачи на',
-      'Поменяй колонку задачи на',
+      'Перемести задачу в категорию в работе',
+      'Закинь задачу в бэклог',
+      "Поменяй статус задачи на 'Выполнено'",
+      'Перенеси задачу на доску Маркетинг',
+      'Измени колонку задачи',
     ],
     rule: `*** RULE: MOVING TASKS ***
     User wants to move a task. It could be to another column OR another board.
@@ -42,14 +81,16 @@ export const AgentInstructions: AgentInstruction[] = [
   {
     topic: 'Move Categories',
     examples: [
+      "Move category 'X' to board 'Y'",
+      'Move column to another board',
+      'Change category board',
+      "Relocate list to project 'Marketing'",
+      "Transfer column to workspace 'Alpha'",
+
       'Перенеси категорию на другую доску',
-      'Перенеси категорию на доску в работе',
-      'Категорию сделать отчет в личное',
-      'Move category to another board',
-      'Перемести категорию на доску',
-      'Найди другое место для категории',
-      'Измени доску категории на',
-      'Поменяй доску категории на',
+      'Перемести колонку в проект Дизайн',
+      'Перекинь столбец на другой борд',
+      'Закинь категорию в другой воркспейс',
     ],
     rule: `*** RULE: MOVING CATEGORIES ***
     User wants to move a category. It could be to another board OR another workspace.
@@ -81,14 +122,16 @@ export const AgentInstructions: AgentInstruction[] = [
   {
     topic: 'Move Boards',
     examples: [
-      'Перенеси доску в другое пространство',
-      'Перенеси доску в проект Работа',
-      'Доску сделать отчет в личное',
-      'Move board to another workspace',
-      'Перемести доску в пространство',
-      'Найди другое место для доски',
-      'Измени пространство доски на',
-      'Поменяй пространство доски на',
+      "Move board 'Project X' to workspace 'Team Y'",
+      "Change board's parent workspace",
+      'Transfer project to another workspace',
+      "Set board 'Alpha's workspace to 'Marketing'",
+      'Relocate board',
+
+      'Перенеси эту доску в другое рабочее пространство',
+      "Перемести проект в воркспейс 'Продажи'",
+      "Эта доска должна быть в пространстве 'Дизайн'",
+      'Смени воркспейс для этой доски',
     ],
     rule: `*** RULE: MOVING BOARDS ***
     1. Find the target 'workspaceId' using 'findWorkspacesByFilter'.
@@ -101,15 +144,26 @@ export const AgentInstructions: AgentInstruction[] = [
   {
     topic: 'Create Tasks',
     examples: [
-      'Создай задачу в категорию',
-      'Добавь задачу в колонку',
-      'Create task in category',
-      'Запланируй',
-      'Новая задача',
-      'Добавь задачу',
-      'Создай таск для колонки',
-      'Сделай карточку',
-      'Создай карточку',
+      "Create task 'Buy milk'",
+      "Create task 'New feature'",
+      "Create task 'выполнить план'",
+      "Create task 'удалить старые файлы'",
+      "Create task 'перенести данные'",
+      "Create task 'закрыть сделку'",
+      "Create task 'Fix login bug'",
+
+      "Add new task 'Buy milk'",
+      "Create ticket in 'Backlog' column",
+      "Add issue to 'Bugs' category",
+      "Create task 'Meeting' on board 'Marketing'",
+      "New task for user 'John'",
+
+      "Создай задачу 'Проверить отчет'",
+      "Запиши баг 'Кнопка не работает'",
+      'Новая задача в колонку Готово',
+      'Добавь тикет на доску Разработка',
+      "Сделай таск 'Позвонить клиенту'",
+      'Создай задачу для Пети',
     ],
     rule: `*** RULE: CREATING TASKS ***
     Goal: Create a new task. You must decide the best Category (Column) based on user input.
@@ -143,11 +197,21 @@ export const AgentInstructions: AgentInstruction[] = [
   {
     topic: 'Create Categories',
     examples: [
-      'Создай категорию "Архив"',
-      'Добавь колонку "На проверке"',
-      'Сделай новый список "Ideas"',
-      'Создай столбец "Done" на доске Маркетинг',
-      'Добавь колонку "В работе"',
+      "Create category 'Done'",
+      "Create category 'выполнить план'",
+      "Create category 'удалить старые файлы'",
+      "Create category 'перенести данные'",
+      "Create category 'закрыть сделку'",
+      "Create category 'Fix login bug'",
+
+      "Add new column 'Review'",
+      "Create list 'Backlog' on board 'Dev'",
+      'Add status column',
+
+      "Создай категорию 'Архив'",
+      "Добавь колонку 'На проверке'",
+      'Сделай новый список',
+      "Создай столбец 'Done' на доске Маркетинг",
     ],
     rule: `*** RULE: CREATING CATEGORIES (COLUMNS) ***
     Goal: Create a new vertical categories/lists on a board.
@@ -171,11 +235,21 @@ export const AgentInstructions: AgentInstruction[] = [
   {
     topic: 'Create Boards',
     examples: [
-      'Создай доску "Маркетинг"',
-      'Сделай борд "Личное"',
-      'Добавь новую доску',
-      'Create board "Development"',
-      'Новая доска',
+      "Create board 'Project Alpha'",
+      "Create board 'выполнить план'",
+      "Create board 'удалить старые файлы'",
+      "Create board 'перенести данные'",
+      "Create board 'закрыть сделку'",
+      "Create board 'Fix login bug'",
+
+      "Add new project 'Website Redesign'",
+      "Create space 'Personal'",
+      'Initialize new board',
+
+      "Создай доску 'Маркетинг'",
+      "Новый проект 'Запуск сайта'",
+      "Сделай борд 'Личное'",
+      'Создай доску',
     ],
     rule: `*** RULE: CREATING BOARDS ***
     Goal: Create a new Boards.
@@ -199,8 +273,18 @@ export const AgentInstructions: AgentInstruction[] = [
   {
     topic: 'Create Workspaces',
     examples: [
-      'Создай воркспейс "Моя Компания"',
-      'Новое рабочее пространство "Team Alpha"',
+      "Create workspace 'My Company'",
+      "Create workspace 'выполнить план'",
+      "Create workspace 'удалить старые файлы'",
+      "Create workspace 'перенести данные'",
+      "Create workspace 'закрыть сделку'",
+      "Create workspace 'Fix login bug'",
+
+      "Add organization 'Sales Team'",
+      'Initialize new workspace',
+
+      "Создай воркспейс 'Моя Компания'",
+      "Новое рабочее пространство 'Team Alpha'",
       'Сделай спейс для отдела продаж',
       'Создай пространство',
     ],
@@ -221,16 +305,23 @@ export const AgentInstructions: AgentInstruction[] = [
   {
     topic: 'Edit Tasks',
     examples: [
+      "Update task 'X' details",
+      'Change task description',
+      'Set task priority to high',
+      'Mark task as complete',
+      'Remove task due date',
+      'Clear task tags',
+      'Edit task color',
+      'Uncheck task',
+      'Set task status to active',
+
+      // --- Natural User Language (Russian) ---
       'Обнови задачу с новыми деталями',
       'Измени задачу на новое описание',
       'Редактируй задачу',
-      'Обнови таск',
-      'Измени детали задачи',
       'Поменяй дату задачи',
       'Измени цвет задачи',
       'Убери описание у задачи',
-      'Добавь новый цвет для задачи',
-      'Обнови приоритет задачи',
       'Сделай задачу срочной',
       'Пометь задачу как важную',
       'Отметь задачу как выполненную',
@@ -238,7 +329,6 @@ export const AgentInstructions: AgentInstruction[] = [
       'Убери теги у задачи',
       'Убери статус у задачи',
       'Сними отметку с задачи',
-      'Поставь новый статус задаче',
       'Удали дату у задачи',
     ],
     rule: `*** RULE: EDITING TASKS ***
@@ -258,21 +348,23 @@ export const AgentInstructions: AgentInstruction[] = [
   {
     topic: 'Edit Categories',
     examples: [
+      "Rename category 'X' to 'Y'",
+      'Update column color',
+      'Change category description',
+      "Set category type to 'Done'",
+      'Edit list details',
+      'Clear category color',
+      'Update category properties',
+
       'Обнови категорию с новыми деталями',
-      'Измени категорию на новое описание',
+      'Переименуй категорию',
+      'Измени название колонки',
       'Редактируй категорию',
-      'Обнови категорию',
-      'Измени детали категории',
-      'Поменяй дату категории',
       'Измени цвет категории',
       'Убери описание у категории',
-      'Добавь новый цвет для категории',
-      'Обнови приоритет категории',
-      'Сделай категорию срочной',
-      'Пометь категорию как важную',
-      'Отметь категорию как выполненную',
-      'Добавь тег к категории',
-      'Убери теги у категории',
+      'Поставь новый цвет для списка',
+      'Сделай категорию завершающей',
+      'Отметь колонку как выполненную',
     ],
     rule: `*** RULE: EDITING CATEGORIES ***
     Goal: Modify properties of an existing categories.
@@ -285,20 +377,23 @@ export const AgentInstructions: AgentInstruction[] = [
   {
     topic: 'Edit Boards',
     examples: [
+      "Rename board 'X'",
+      'Update project description',
+      'Change board background color',
+      'Mark board as favorite',
+      'Pin this board',
+      'Unpin board',
+      'Edit board details',
+
       'Обнови доску с новыми деталями',
-      'Измени доску на новое описание',
+      'Переименуй проект',
       'Редактируй доску',
-      'Обнови доску',
-      'Измени детали доски',
-      'Поменяй дату доски',
-      'Измени цвет доски',
+      'Измени описание доски',
+      'Поменяй цвет доски',
       'Убери описание у доски',
-      'Добавь новый цвет для доски',
-      'Обнови приоритет доски',
-      'Сделай доску срочной',
-      'Пометь доску как важную',
-      'Отметь доску как выполненную',
       'Добавь доску в избранное',
+      'Закрепи проект',
+      'Убери из избранного',
     ],
     rule: `*** RULE: EDITING BOARDS ***
     Goal: Modify properties of an existing boards.
@@ -314,20 +409,17 @@ export const AgentInstructions: AgentInstruction[] = [
   {
     topic: 'Edit Workspaces',
     examples: [
-      'Обнови пространство с новыми деталями',
-      'Измени пространство на новое описание',
-      'Редактируй пространство',
+      "Rename workspace 'X'",
+      'Update organization details',
+      'Change workspace description',
+      'Edit team space name',
+
       'Обнови пространство',
+      'Переименуй воркспейс',
+      'Измени название организации',
+      'Редактируй пространство',
       'Измени детали пространства',
-      'Поменяй дату пространства',
-      'Измени цвет пространства',
-      'Убери описание у пространства',
-      'Добавь новый цвет для пространства',
-      'Обнови приоритет пространства',
-      'Сделай пространство срочным',
-      'Пометь пространство как важное',
-      'Отметь пространство как выполненное',
-      'Добавь пространство в избранное',
+      'Убери описание у воркспейса',
     ],
     rule: `*** RULE: EDITING WORKSPACES ***
     Goal: Modify properties of an existing workspaces.
@@ -341,274 +433,195 @@ export const AgentInstructions: AgentInstruction[] = [
     suggestedTools: ['editWorkspaces', 'findWorkspacesByFilter'],
   },
   {
-    topic: 'Delete Tasks',
+    topic: 'Task Lifecycle',
     examples: [
-      'Удалить задачу',
-      'Убери задачу',
-      'Избавься от задачи',
-      'Навсегда удали задачу',
-      'Delete task',
-      'Remove task',
-    ],
-    rule: `*** RULE: DELETING TASKS ***
-    Goal: Delete an existing tasks.
-    
-    Procedure:
-    1. Identify the target Task ID explicitly via 'findTasksByFilter' or context.
-    2. Prefer 'archiveTasks' unless the user explicitly says "delete", "remove forever", or "destroy".
-    3. If permanent deletion is requested, call 'deleteTasks' with 'taskId'.
-    
-    Note: Don't ask user for confirmation. Assume they understand the consequences of permanent deletion.`,
-    suggestedTools: ['deleteTasks', 'findTasksByFilter'],
-  },
-  {
-    topic: 'Delete Categories',
-    examples: [
-      'Удалить категорию',
-      'Убери категорию',
-      'Избавься от категории',
-      'Навсегда удали категорию',
-      'Delete category',
-      'Remove category',
-    ],
-    rule: `*** RULE: DELETING CATEGORIES ***
-    Goal: Delete an existing categories.
-    
-    Procedure:
-    1. Identify the target Category ID explicitly via 'findCategoriesByFilter' or context.
-    2. Prefer 'archiveCategories' unless the user explicitly says "delete", "remove forever", or "destroy".
-    3. If permanent deletion is requested, call 'deleteCategories' with 'categoryId'.
-    
-    Note: Don't ask user for confirmation. Assume they understand the consequences of permanent deletion.`,
-    suggestedTools: ['deleteCategories', 'findCategoriesByFilter'],
-  },
-  {
-    topic: 'Delete Boards',
-    examples: [
-      'Удалить доску',
-      'Убери доску',
-      'Избавься от доски',
-      'Навсегда удали доску',
-      'Delete board',
-      'Remove board',
-    ],
-    rule: `*** RULE: DELETING BOARDS ***
-    Goal: Delete an existing boards.
-    
-    Procedure:
-    1. Identify the target Board ID explicitly via 'findBoardsByFilter' or context.
-    2. Prefer 'archiveBoards' unless the user explicitly says "delete", "remove forever", or "destroy".
-    3. If permanent deletion is requested, call 'deleteBoards' with 'boardId'.
-    
-    Note: Don't ask user for confirmation. Assume they understand the consequences of permanent deletion.`,
-    suggestedTools: ['deleteBoards', 'findBoardsByFilter'],
-  },
-  {
-    topic: 'Delete Workspaces',
-    examples: [
-      'Удалить пространство',
-      'Убери пространство',
-      'Избавься от пространства',
-      'Навсегда удали пространство',
-      'Delete workspace',
-      'Remove workspace',
-    ],
-    rule: `*** RULE: DELETING WORKSPACES ***
-    Goal: Delete an existing workspaces.
-    
-    Procedure:
-    1. Identify the target Workspace ID explicitly via 'findWorkspacesByFilter' or context.
-    2. Prefer 'archiveWorkspaces' unless the user explicitly says "delete", "remove forever", or "destroy".
-    3. If permanent deletion is requested, call 'deleteWorkspaces' with 'workspaceId'.
-    
-    Note: Don't ask user for confirmation. Assume they understand the consequences of permanent deletion.`,
-    suggestedTools: ['deleteWorkspaces', 'findWorkspacesByFilter'],
-  },
-  {
-    topic: 'Archive tasks',
-    examples: [
-      'Архивируй задачу',
-      'Помести задачу в архив',
-      'Спрячь задачу',
-      'Добавь задачу в корзину',
-      'Законсервируй задачу',
-      'Archive task',
-    ],
-    rule: `*** RULE: ARCHIVING TASKS ***
-    Goal: Move an active task to the Archive (soft delete).
-    
-    Procedure:
-    1. Identify the target Task ID. Use 'findTasksByFilter' to resolve the ID.
-    2. Call 'archiveTasks' with the resolved 'taskId'.
+      // --- Planner / Technical ---
+      "Archive task 'X'",
+      'Delete task permanently',
+      'Recover ticket from archive',
+      'Remove issue',
+      'Permanently destroy task',
+      'Soft delete task',
+      'Unarchive task',
+      'Reopen task',
+      'Restore task',
 
-    Constraint: This action usually hides the task from the main list but preserves data.`,
-    suggestedTools: ['archiveTasks', 'findTasksByFilter'],
-  },
-  {
-    topic: 'Archive categories',
-    examples: [
-      'Архивируй категорию',
-      'Помести категорию в архив',
-      'Спрячь категорию',
-      'Добавь категорию в корзину',
-      'Законсервируй категорию',
-      'Archive category',
-    ],
-    rule: `*** RULE: ARCHIVING CATEGORIES ***
-    Goal: Move an active category to the Archive (soft delete).
-    
-    Procedure:
-    1. Identify the target Category ID. Use 'findCategoriesByFilter' to resolve the ID.
-    2. Call 'archiveCategories' with the resolved 'categoryId'.
-
-    Constraint: This action usually hides the category from the main list but preserves data.`,
-    suggestedTools: ['archiveCategories', 'findCategoriesByFilter'],
-  },
-  {
-    topic: 'Archive boards',
-    examples: [
-      'Архивируй доску',
-      'Помести доску в архив',
-      'Спрячь доску',
-      'Добавь доску в корзину',
-      'Законсервируй доску',
-      'Archive board',
-    ],
-    rule: `*** RULE: ARCHIVING BOARDS ***
-    Goal: Move an active board to the Archive (soft delete).
-    
-    Procedure:
-    1. Identify the target Board ID.
-      - If the user says "this board" or "current board", use the active context ID.
-      - If the user gives a name, use 'findBoardsByFilter' to resolve the ID.
-
-    2. Call 'archiveBoards' with the resolved 'boardId'.
-
-    Constraint: This action usually hides the board from the main list but preserves data.`,
-    suggestedTools: ['archiveBoards', 'findBoardsByFilter'],
-  },
-  {
-    topic: 'Archive workspaces',
-    examples: [
-      'Архивируй пространство',
-      'Помести пространство в архив',
-      'Спрячь пространство',
-      'Добавь пространство в корзину',
-      'Законсервируй пространство',
-      'Archive workspace',
-    ],
-    rule: `*** RULE: ARCHIVING WORKSPACES ***
-    Goal: Move an active workspace to the Archive (soft delete).
-    
-    Procedure:
-    1. Identify the target Workspace ID.
-      - If the user says "this workspace" or "current space", use the active context ID.
-      - If the user gives a name, use 'findWorkspacesByFilter' to resolve the ID.
-
-    2. Call 'archiveWorkspaces' with the resolved 'workspaceId'.
-
-    Constraint: This action usually hides the workspace from the main list but preserves data.`,
-    suggestedTools: ['archiveWorkspaces', 'findWorkspacesByFilter'],
-  },
-  {
-    topic: 'Recover tasks',
-    examples: [
-      'Восстанови задачу из архива',
-      'Верни задачу из корзины',
-      'Разархивируй задачу',
+      // --- Natural Language ---
+      'Удали задачу',
+      'Снеси тикет',
+      'Открой задачу',
+      'Закрой задачу',
       'Восстанови задачу',
-      'Recover task',
+      'Снеси задачу',
+      'Мягко удали задачу',
+      'Жестко удали задачу',
+      'Архивируй задачу',
+      'Восстанови задачу из архива',
+      'Верни таск обратно',
+      'Убери эту задачу',
     ],
-    rule: `*** RULE: RECOVERING TASKS ***
-    Goal: Recover an archived tasks.
-    
+    rule: `*** RULE: TASK LIFECYCLE (ARCHIVE / DELETE / RECOVER) ***
+    Goal: Change the existence state of a Task.
+
+    1. ARCHIVE (Soft Delete):
+      - Action: User says "remove", "hide", "close", "archive".
+      - Tool: 'archiveTasks'.
+      - Logic: This is the PREFERRED default for removal.
+
+    2. RECOVER (Restore):
+      - Action: User says "restore", "bring back", "unarchive", "recover".
+      - Tool: 'recoverTasks'.
+
+    3. DELETE (Permanent):
+      - Action: User explicitly says "destroy", "delete forever", "hard delete".
+      - Tool: 'deleteTasks'.
+
     Procedure:
-    1. Identify the target Task.
-      - If the user provides a name, use 'findTasksByFilter' to search.
-      - IMPORTANT: When searching, ensure you are searching for ARCHIVED tasks (if the filter tool supports an 'isArchived' or 'status' flag). Otherwise, you might not find it.
-
-    2. Once the 'taskId' is found, call 'recoverTasks' with that ID.
-
-    Note: You cannot recover a task that has been permanently deleted, only archived ones.`,
-    suggestedTools: ['recoverTasks', 'findTasksByFilter'],
+    1. Identify Task IDs using 'findTasksByFilter' with isArchived flag or context.
+    2. Call the appropriate tool with an ARRAY of IDs: {{ ids: ["..."] }}.`,
+    suggestedTools: ['archiveTasks', 'recoverTasks', 'deleteTasks', 'findTasksByFilter'],
   },
   {
-    topic: 'Recover categories',
+    topic: 'Category Lifecycle',
     examples: [
-      'Восстанови категорию из архива',
-      'Верни категорию из корзины',
-      'Разархивируй категорию',
-      'Восстанови категорию',
-      'Recover category',
+      // --- Planner / Technical ---
+      "Restore category 'X'",
+      "Archive category 'Done'",
+      "Delete column 'X'",
+      "Recover list 'Backlog'",
+      'Permanently remove category',
+      'Destroy column',
+      'Open category from archive',
+      'Remove status column',
+
+      // --- Natural Language ---
+      'Удали категорию',
+      'Снеси колонку',
+      'Открой категорию',
+      'Закрой категорию',
+      'Архивируй список',
+      'Восстанови колонку',
+      'Верни категорию из архива',
     ],
-    rule: `*** RULE: RECOVERING CATEGORIES ***
-    Goal: Recover an archived categories.
-    
+    rule: `*** RULE: CATEGORY LIFECYCLE (ARCHIVE / DELETE / RECOVER) ***
+    Goal: Change the existence state of a Category (Column).
+
+    1. ARCHIVE (Soft Delete):
+      - Tool: 'archiveCategories'.
+      - Use for "remove", "hide", "archive".
+
+    2. RECOVER (Restore):
+      - Tool: 'recoverCategories'.
+
+    3. DELETE (Permanent):
+      - Tool: 'deleteCategories'.
+      - WARNING: Deleting a category usually deletes/archives all tasks inside it.
+
     Procedure:
-    1. Identify the target Category.
-      - If the user provides a name, use 'findCategoriesByFilter' to search.
-      - IMPORTANT: When searching, ensure you are searching for ARCHIVED categories (if the filter tool supports an 'isArchived' or 'status' flag). Otherwise, you might not find it.
-
-    2. Once the 'categoryId' is found, call 'recoverCategories' with that ID.
-
-    Note: You cannot recover a category that has been permanently deleted, only archived ones.`,
-    suggestedTools: ['recoverCategories', 'findCategoriesByFilter'],
+    1. Identify Category IDs using 'findCategoriesByFilter' with isArchived flag or context.
+    2. Call tool with {{ ids: ["..."] }}.`,
+    suggestedTools: [
+      'archiveCategories',
+      'recoverCategories',
+      'deleteCategories',
+      'findCategoriesByFilter',
+    ],
   },
   {
-    topic: 'Recover boards',
+    topic: 'Board Lifecycle',
     examples: [
-      'Восстанови доску из архива',
-      'Верни доску из корзины',
-      'Разархивируй доску',
+      // --- Planner / Technical ---
+      "Archive board 'Project X'",
+      "Restore board 'Project X'",
+      'Delete project',
+      'Remove board permanently',
+      'Open board',
+      'Recover board from trash',
+      'Close board',
+
+      // --- Natural Language ---
+      'Удали доску',
+      'Снеси проект',
+      'Открой доску',
+      'Архивируй проект',
+      'Закрой доску',
       'Восстанови доску',
-      'Recover board',
+      'Верни проект из корзины',
     ],
-    rule: `*** RULE: RECOVERING BOARDS ***
-    Goal: Recover an archived boards.
-    
+    rule: `*** RULE: BOARD LIFECYCLE (ARCHIVE / DELETE / RECOVER) ***
+    Goal: Change the existence state of a Board.
+
+    1. ARCHIVE (Close/Soft Delete):
+      - Tool: 'archiveBoards'.
+      - Use for "close project", "archive board", "remove".
+
+    2. RECOVER (Reopen):
+      - Tool: 'recoverBoards'.
+      - Use for "reopen", "restore".
+
+    3. DELETE (Permanent):
+      - Tool: 'deleteBoards'.
+      - WARNING: Destroys all categories and tasks inside. Use ONLY for explicit "delete forever" requests.
+
     Procedure:
-    1. Identify the target Board.
-      - If the user provides a name, use 'findBoardsByFilter' to search.
-      - IMPORTANT: When searching, ensure you are searching for ARCHIVED boards (if the filter tool supports an 'isArchived' or 'status' flag). Otherwise, you might not find it.
-
-    2. Once the 'boardId' is found, call 'recoverBoards' with that ID.
-
-    Note: You cannot recover a board that has been permanently deleted, only archived ones.`,
-    suggestedTools: ['recoverBoards', 'findBoardsByFilter'],
+    1. Identify Board IDs using 'findBoardsByFilter' with isArchived flag or context.
+    2. Call tool with {{ ids: ["..."] }}.`,
+    suggestedTools: ['archiveBoards', 'recoverBoards', 'deleteBoards', 'findBoardsByFilter'],
   },
   {
-    topic: 'Recover workspaces',
+    topic: 'Workspace Lifecycle',
     examples: [
-      'Восстанови пространство из архива',
-      'Верни пространство из корзины',
-      'Разархивируй пространство',
-      'Восстанови пространство',
+      // --- Planner / Technical ---
+      "Archive workspace 'Team A'",
+      "Restore workspace 'Team A'",
+      "Reopen organization 'My Company'",
+      'Delete organization',
       'Recover workspace',
+
+      // --- Natural Language ---
+      'Удали пространство',
+      'Архивируй воркспейс',
+      'Закрой организацию',
+      'Закрой воркспейс',
+      'Открой пространство',
+      'Удали организацию',
+      'Восстанови пространство',
+      'Верни воркспейс',
     ],
-    rule: `*** RULE: RECOVERING WORKSPACES ***
-    Goal: Recover an archived workspaces.
-    
+    rule: `*** RULE: WORKSPACE LIFECYCLE ***
+    Goal: Manage Workspace existence.
+
+    1. ARCHIVE: 'archiveWorkspaces'.
+    2. RECOVER: 'recoverWorkspaces'.
+    3. DELETE: 'deleteWorkspaces'.
+
     Procedure:
-    1. Identify the target Workspace.
-      - If the user provides a name, use 'findWorkspacesByFilter' to search.
-      - IMPORTANT: When searching, ensure you are searching for ARCHIVED workspaces (if the filter tool supports an 'isArchived' or 'status' flag). Otherwise, you might not find it.
-
-    2. Once the 'workspaceId' is found, call 'recoverWorkspaces' with that ID.
-
-    Note: You cannot recover a workspace that has been permanently deleted, only archived ones.`,
-    suggestedTools: ['recoverWorkspaces', 'findWorkspacesByFilter'],
+    1. Identify Workspace IDs using 'findWorkspacesByFilter' with isArchived flag or context.
+    2. Call tool with {{ ids: ["..."] }}.`,
+    suggestedTools: [
+      'archiveWorkspaces',
+      'recoverWorkspaces',
+      'deleteWorkspaces',
+      'findWorkspacesByFilter',
+    ],
   },
   {
     topic: 'Find tasks',
     examples: [
+      "Find task by title 'X'",
+      "List tasks in category 'Done'",
+      "Search tasks assigned to 'User'",
+      'Get tasks with due date today',
+      "Filter tasks by priority 'High'",
+      'Find all tasks on board',
+      "Show tasks with tag 'Bug'",
+
       'Найди задачу по имени',
       'Покажи задачу с таким названием',
       'Ищи задачу',
       'Все задачи на сегодня с цветом',
       'Выбери задачи с тегом',
       'Найди задачи начинающиеся на',
-      'Find task by name',
-      'Найди задачи у которых есть описание',
       'Покажи задачи с дедлайном завтра',
       'Ищи задачи в категории',
       'Все задачи в колонке',
@@ -626,7 +639,7 @@ export const AgentInstructions: AgentInstruction[] = [
       - "Tomorrow" -> calculate date for 'dueDate'.
       - "In Backlog" -> first find categoryId with findCategoriesByFilter for 'Backlog', then filter tasks by 'categoryId'.
     3. Call 'findTasksByFilter' with the constructed filter object.
-    4. [OPTIONAL] Present results to the user using 'showEntitiesToUser'.
+    4. Present results to the user using 'showEntitiesToUser'.
 
     Advanced Logic (AND/OR):
     - If user says "A OR B" (e.g. "High priority OR Urgent"), use the 'OR' array field in the filter tool if supported.
@@ -642,21 +655,20 @@ export const AgentInstructions: AgentInstruction[] = [
   {
     topic: 'Find Categories',
     examples: [
+      'List all categories on board',
+      "Find category by name 'Done'",
+      "Get columns for board 'X'",
+      'Search categories in workspace',
+      'Show board structure',
+      "Check if category 'Backlog' exists",
+
       'Найди категорию по имени',
-      'Покажи категорию с таким названием',
-      'Ищи категорию',
-      'Все категории на сегодня с цветом',
-      'Выбери категории с тегом',
-      'Найди категории начинающиеся на',
-      'Find category by name',
-      'Найди категории у которых есть описание',
-      'Покажи категории с дедлайном завтра',
-      'Ищи категории в категории',
-      'Все категории в колонке',
-      'Давай покажи все категории на доске',
-      'Сколько у меня категорий в пространстве',
-      'Сколько у меня категорий в категории',
-      'На кого назначена категория',
+      'Покажи список колонок',
+      'Какие категории есть на доске',
+      'Есть ли колонка Done?',
+      "Найди список с названием 'Бэклог'",
+      'Покажи структуру доски',
+      'Выведи все столбцы',
     ],
     rule: `*** RULE: FINDING (READING) CATEGORIES ***
     Goal: Search and Retrieve categories based on filters.
@@ -666,7 +678,7 @@ export const AgentInstructions: AgentInstruction[] = [
     2. Map human concepts to filter fields:
       - "In Personal" -> first find boardId with findBoardsByFilter for 'Personal', then filter categories by 'boardId'.
     3. Call 'findCategoriesByFilter' with the constructed filter object.
-    4. [OPTIONAL] Present results to the user using 'showEntitiesToUser'.
+    4. Present results to the user using 'showEntitiesToUser'.
 
     Advanced Logic (AND/OR):
     - If user says "A OR B", use the 'OR' array field in the filter tool if supported.
@@ -682,21 +694,18 @@ export const AgentInstructions: AgentInstruction[] = [
   {
     topic: 'Find Boards',
     examples: [
+      'List all boards',
+      "Find board by name 'Alpha'",
+      'Search projects in workspace',
+      'Get boards created by me',
+      'Show available boards',
+
       'Найди доску по имени',
-      'Покажи доску с таким названием',
-      'Ищи доску',
-      'Все доски на сегодня с цветом',
-      'Выбери доски с тегом',
-      'Найди доски начинающиеся на',
-      'Find board by name',
-      'Найди доски у которых есть описание',
-      'Покажи доски с дедлайном завтра',
-      'Ищи доски в категории',
-      'Все доски в колонке',
-      'Давай покажи все доски на доске',
-      'Сколько у меня досок в пространстве',
-      'Сколько у меня досок в категории',
-      'На кого назначена доска',
+      'Покажи все мои проекты',
+      'Список досок',
+      "Есть ли доска 'Маркетинг'?",
+      'Покажи проекты в этом пространстве',
+      'Какие доски мне доступны',
     ],
     rule: `*** RULE: FINDING (READING) BOARDS ***
     Goal: Search and Retrieve boards based on filters.
@@ -706,7 +715,7 @@ export const AgentInstructions: AgentInstruction[] = [
     2. Map human concepts to filter fields:
       - "In Personal" -> first find workspaceId with findWorkspacesByFilter for 'Personal', then filter boards by 'workspaceId'.
     3. Call 'findBoardsByFilter' with the constructed filter object.
-    4. [OPTIONAL] Present results to the user using 'showEntitiesToUser'.
+    4. Present results to the user using 'showEntitiesToUser'.
 
     Advanced Logic (AND/OR):
     - If user says "A OR B", use the 'OR' array field in the filter tool if supported.
@@ -717,21 +726,16 @@ export const AgentInstructions: AgentInstruction[] = [
   {
     topic: 'Find Workspaces',
     examples: [
+      'List all workspaces',
+      "Find workspace 'Company A'",
+      'Search organizations',
+      'Show my teams',
+
       'Найди пространство по имени',
-      'Покажи пространство с таким названием',
-      'Ищи пространство',
-      'Все пространства на сегодня с цветом',
-      'Выбери пространства с тегом',
-      'Найди пространства начинающиеся на',
-      'Find workspace by name',
-      'Найди пространства у которых есть описание',
-      'Покажи пространства с дедлайном завтра',
-      'Ищи пространства в категории',
-      'Все пространства в колонке',
-      'Давай покажи все пространства на пространстве',
-      'Сколько у меня пространств в пространстве',
-      'Сколько у меня пространств в категории',
-      'На кого назначено пространство',
+      'Покажи все воркспейсы',
+      'Список организаций',
+      'В каких я командах',
+      "Есть ли спейс 'Продажи'?",
     ],
     rule: `*** RULE: FINDING (READING) WORKSPACES ***
     Goal: Search and Retrieve workspaces based on filters.
@@ -739,7 +743,7 @@ export const AgentInstructions: AgentInstruction[] = [
     Procedure:
     1. Analyze the user request to extract search criteria.
     2. Call 'findWorkspacesByFilter' with the constructed filter object.
-    3. [OPTIONAL] Present results to the user using 'showEntitiesToUser'.
+    3. Present results to the user using 'showEntitiesToUser'.
 
     Advanced Logic (AND/OR):
     - If user says "A OR B", use the 'OR' array field in the filter tool if supported.

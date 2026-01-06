@@ -39,8 +39,6 @@ export const TOOLS_TIPS_MAP = new Map<string, string>([
   ['deleteWorkspaces', 'Удаляю пространства'],
 
   // --- Общие/Вспомогательные операции (General/Utility Operations) ---
-  ['getChatHistorySummary', 'Получаю сводку истории чата'],
-  ['getChatHistory', 'Получаю историю чата'],
   ['getRelevantTools', 'Ищу подходящие инструменты'],
   ['undoOperations', 'Отменяю операции'],
 ])

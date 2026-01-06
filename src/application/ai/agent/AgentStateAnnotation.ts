@@ -30,8 +30,24 @@ export const AgentStateAnnotation = Annotation.Root({
     reducer: (_, y) => y,
     default: () => [],
   }),
+  plan_hash: Annotation<string>({
+    reducer: (x, y) => y ?? x,
+    default: () => '',
+  }),
+  rag_rules: Annotation<string[]>({
+    reducer: (x, y) => y ?? x,
+    default: () => [],
+  }),
+  rag_tool_names: Annotation<string[]>({
+    reducer: (x, y) => y ?? x,
+    default: () => [],
+  }),
   planner_has_error: Annotation<boolean>({
     reducer: (_, y) => y,
     default: () => false,
+  }),
+  summary: Annotation<string>({
+    reducer: (x, y) => y ?? x,
+    default: () => '',
   }),
 })

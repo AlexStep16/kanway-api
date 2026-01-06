@@ -270,12 +270,32 @@ export class CategoryService
 
     if (!newEntity) return { data: [], logId: null }
 
+    newEntities.forEach((ne) => {
+      finalEntitiesMap.set(ne._id.toString(), ne)
+    })
+
+    // Update children parent references if name is changing
+    if (data.name && categoriesToUpdate.length > 0) {
+      const categoryIdsToUpdate = categoriesToUpdate.map((c) => c._id)
+
+      for (const category of categoriesToUpdate) {
+        if (category.name !== data.name) {
+          await this.taskService.updateTasksCategoryName(
+            categoryIdsToUpdate,
+            data.name,
+            userId,
+            session
+          )
+        }
+      }
+    }
+
     /* MOVE */
     const categoriesToMove = categoriesToUpdate.filter(
       (b) => data.boardId !== undefined && b.board_id.toString() !== data.boardId
     )
     if (categoriesToMove.length > 0) {
-      await this.moveCategoriesToBoard(
+      const movedCategories = await this.moveCategoriesToBoard(
         categoriesToMove.map((c) => c._id),
         {
           boardId: newEntity.board_id,
@@ -286,20 +306,39 @@ export class CategoryService
         userId,
         session
       )
+
+      movedCategories.forEach((movedCategory) => {
+        finalEntitiesMap.set(movedCategory._id.toString(), movedCategory)
+      })
     }
 
     /* REORDER */
     const categoriesToReorder = categoriesToUpdate.filter(
-      (ws) => data.order !== undefined && ws.order !== data.order
+      (c) => data.order !== undefined && c.order !== data.order
     )
+
+    const categoriesToMoveToEnd = categoriesToUpdate.filter(
+      (c) => data.order == null && categoriesToMove.includes(c)
+    )
+
+    for (const categoryToMoveToEnd of categoriesToMoveToEnd) {
+      categoryToMoveToEnd.order += 99999 // Move to end before reordering
+    }
+
     if (categoriesToReorder.length > 0) {
       reorderedCategories = await this.reorderService.reorder(
         'board_id',
-        newEntities,
+        [...categoriesToReorder, ...categoriesToMoveToEnd],
         userId,
         session
       )
+
+      reorderedCategories.forEach((reorderedCategory) => {
+        finalEntitiesMap.set(reorderedCategory._id.toString(), reorderedCategory)
+      })
     }
+
+    const finalEntities = Array.from(finalEntitiesMap.values())
 
     /* LOG */
     const log = await this.operationLogService.create(
@@ -307,29 +346,15 @@ export class CategoryService
         operationType: OperationTypesEnum.UPDATE,
         collectionName: CollectionsEnum.CATEGORIES,
         entitiesBefore: categoriesBefore,
-        entitiesAfter: newEntities,
+        entitiesAfter: finalEntities,
         dependencies: [],
       },
       userId,
       session
     )
 
-    newEntities.forEach((ne) => {
-      finalEntitiesMap.set(ne._id.toString(), ne)
-    })
-
-    if (reorderedCategories.length > 0) {
-      reorderedCategories.forEach((reorderedCategory) => {
-        finalEntitiesMap.set(reorderedCategory._id.toString(), reorderedCategory)
-      })
-    }
-
-    const finalObj = Array.from(finalEntitiesMap.values()).map((category) =>
-      toServerCaseKeys<ICategory>(category)
-    )
-
     return {
-      data: finalObj,
+      data: finalEntities.map(toServerCaseKeys<ICategory>),
       logId: log[0].id,
     }
   }
@@ -356,13 +381,21 @@ export class CategoryService
     userId: Types.ObjectId,
     session: ClientSession
   ): Promise<IResponseWithLog<ICategory[]>> {
-    let categoryIdsToReorder: string[] = []
+    const categoryIdsToReorder: Set<string> = new Set()
+    const categoryIdsToMoveToEnd: Set<string> = new Set()
+    const categoriesPayloadToMove: SingleUpdateDTO<Partial<ICategoryRaw>>[] = []
     let reorderedCategories: ICategoryRaw[] = []
-    let categoriesPayloadToMove: SingleUpdateDTO<Partial<ICategoryRaw>>[] = []
 
     const finalEntitiesMap = new Map<string, ICategoryRaw>()
     const categoriesToUpdate: SingleUpdateDTO<Partial<ICategoryRaw>>[] = []
     const categoriesBefore: Partial<ICategoryRaw>[] = []
+    const categoriesNameMap = new Map<
+      string,
+      {
+        id: Types.ObjectId
+        name: string
+      }
+    >()
 
     const categoryIds = data.map((d) => d.id)
 
@@ -388,16 +421,30 @@ export class CategoryService
       }
 
       if (dto.order != null && category.order !== dto.order) {
-        categoryIdsToReorder.push(categoryPayload._id.toString())
+        categoryIdsToReorder.add(categoryPayload._id.toString())
+      } else if (dto.order == null && categoriesPayloadToMove.includes(categoryPayload)) {
+        categoryIdsToReorder.add(dto.id)
+        categoryIdsToMoveToEnd.add(dto.id)
+      }
+
+      // Update children parent references if name is changing
+      if (dto.name && category.name !== dto.name) {
+        categoriesNameMap.set(category._id.toString(), { id: category._id, name: dto.name })
       }
     }
 
     /* BULK UPDATE */
     const updatedCategories = await this.repository.bulkUpdate(categoriesToUpdate, userId, session)
 
+    updatedCategories.forEach((uc) => {
+      finalEntitiesMap.set(uc._id.toString(), uc)
+    })
+
+    await this.taskService.bulkUpdateTasksCategoryNameByMap(categoriesNameMap, userId, session)
+
     /* MOVE */
     if (categoriesPayloadToMove.length > 0) {
-      await this.moveCategoriesToBoardBulk(
+      const movedCategories = await this.moveCategoriesToBoardBulk(
         categoriesPayloadToMove as (SingleUpdateDTO<Partial<ICategoryRaw>> & {
           board_id: Types.ObjectId
           board_name: string
@@ -405,12 +452,24 @@ export class CategoryService
         userId,
         session
       )
+
+      movedCategories.forEach((movedCategory) => {
+        finalEntitiesMap.set(movedCategory._id.toString(), movedCategory)
+      })
     }
 
     /* REORDER */
-    if (categoryIdsToReorder.length > 0) {
+    if (categoryIdsToReorder.size > 0) {
+      for (const categoryId of categoryIdsToMoveToEnd) {
+        const categoryToMoveToEnd = updatedCategories.find((c) => c._id.toString() === categoryId)
+
+        if (categoryToMoveToEnd) {
+          categoryToMoveToEnd.order += 99999 // Move to end before reordering
+        }
+      }
+
       const updatedCategoriesToReorder = updatedCategories.filter((uc) =>
-        categoryIdsToReorder.includes(uc._id.toString())
+        categoryIdsToReorder.has(uc._id.toString())
       )
 
       if (updatedCategoriesToReorder.length > 0) {
@@ -420,8 +479,14 @@ export class CategoryService
           userId,
           session
         )
+
+        reorderedCategories.forEach((reorderedCategory) => {
+          finalEntitiesMap.set(reorderedCategory._id.toString(), reorderedCategory)
+        })
       }
     }
+
+    const finalEntities = Array.from(finalEntitiesMap.values())
 
     /* LOG */
     const log = await this.operationLogService.create(
@@ -429,29 +494,15 @@ export class CategoryService
         operationType: OperationTypesEnum.UPDATE,
         collectionName: CollectionsEnum.CATEGORIES,
         entitiesBefore: categoriesBefore,
-        entitiesAfter: updatedCategories,
+        entitiesAfter: finalEntities,
         dependencies: [],
       },
       userId,
       session
     )
 
-    updatedCategories.forEach((uc) => {
-      finalEntitiesMap.set(uc._id.toString(), uc)
-    })
-
-    if (reorderedCategories.length > 0) {
-      reorderedCategories.forEach((reorderedCategory) => {
-        finalEntitiesMap.set(reorderedCategory._id.toString(), reorderedCategory)
-      })
-    }
-
-    const finalObj = Array.from(finalEntitiesMap.values()).map((category) =>
-      toServerCaseKeys<ICategory>(category)
-    )
-
     return {
-      data: finalObj,
+      data: finalEntities.map(toServerCaseKeys<ICategory>),
       logId: log[0].id,
     }
   }
@@ -502,7 +553,6 @@ export class CategoryService
         board_name: board.name,
         workspace_id: board.workspaceId,
         workspace_name: board.workspaceName,
-        order: 9999, // Reset order to allow proper reordering later
       })
     }
 
@@ -559,7 +609,6 @@ export class CategoryService
         workspace_name: targets.workspaceName,
         board_id: targets.boardId,
         board_name: targets.boardName,
-        order: 9999, // Reset order to allow proper reordering later
       },
       session
     )
@@ -779,6 +828,7 @@ export class CategoryService
 
     const finalEntitiesMap = new Map<string, ICategoryRaw>()
     const filter = this.repository.buildFilter(criteria, userId)
+    filter.is_deleted = true
 
     const categoriesToRecover = await this.repository.find(filter, session)
 
@@ -787,7 +837,7 @@ export class CategoryService
 
     const updatedCategories = await this.repository.updateByFilter(
       filter,
-      { is_deleted: false, deleted_time: undefined },
+      { is_deleted: false, is_deleted_external: false, deleted_time: undefined },
       session
     )
 
@@ -1169,6 +1219,118 @@ export class CategoryService
       categories: clonedCategoriesTransformed,
       tasks: tasksCloneResult,
     }
+  }
+
+  public async updateCategoriesBoardName(
+    boardIds: Types.ObjectId[],
+    newName: string,
+    userId: Types.ObjectId,
+    session?: ClientSession
+  ): Promise<ICategory[]> {
+    const filter = this.repository.buildFilter(
+      { boardIds: boardIds.map((id) => id.toString()) },
+      userId
+    )
+
+    const updatedCategories = await this.repository.updateByFilter(
+      filter,
+      { board_name: newName },
+      session
+    )
+
+    return updatedCategories.map((c) => toServerCaseKeys<ICategory>(c))
+  }
+
+  public async updateCategoriesWorkspaceName(
+    workspaceIds: Types.ObjectId[],
+    newName: string,
+    userId: Types.ObjectId,
+    session?: ClientSession
+  ): Promise<ICategory[]> {
+    const filter = this.repository.buildFilter(
+      { workspaceIds: workspaceIds.map((id) => id.toString()) },
+      userId
+    )
+
+    const updatedCategories = await this.repository.updateByFilter(
+      filter,
+      { workspace_name: newName },
+      session
+    )
+
+    return updatedCategories.map((c) => toServerCaseKeys<ICategory>(c))
+  }
+
+  public async bulkUpdateCategoriesBoardNameByMap(
+    boardMap: Map<
+      string,
+      {
+        id: Types.ObjectId
+        name: string
+      }
+    >,
+    userId: Types.ObjectId,
+    session?: ClientSession
+  ): Promise<ICategory[]> {
+    const filter = this.repository.buildFilter(
+      { boardIds: Array.from(boardMap.keys()).map((id) => id.toString()) },
+      userId
+    )
+
+    const categories = await this.repository.find(filter, session)
+
+    const updates: SingleUpdateDTO<Partial<ICategoryRaw>>[] = []
+
+    for (const category of categories) {
+      const board = boardMap.get(category.board_id.toString())
+
+      if (!board) continue
+
+      updates.push({
+        _id: category._id,
+        board_name: board.name,
+      })
+    }
+
+    const updatedCategories = await this.repository.bulkUpdate(updates, userId, session)
+
+    return updatedCategories.map((c) => toServerCaseKeys<ICategory>(c))
+  }
+
+  public async bulkUpdateCategoriesWorkspaceNameByMap(
+    workspaceMap: Map<
+      string,
+      {
+        id: Types.ObjectId
+        name: string
+      }
+    >,
+    userId: Types.ObjectId,
+    session?: ClientSession
+  ): Promise<ICategory[]> {
+    const filter = this.repository.buildFilter(
+      { workspaceIds: Array.from(workspaceMap.keys()).map((id) => id.toString()) },
+      userId
+    )
+
+    const categories = await this.repository.find(filter, session)
+
+    const updates: SingleUpdateDTO<Partial<ICategoryRaw>>[] = []
+
+    for (const category of categories) {
+      const workspace = workspaceMap.get(category.workspace_id.toString())
+
+      if (!workspace) continue
+
+      updates.push({
+        _id: category._id,
+        workspace_name: workspace.name,
+      })
+    }
+
+    const updatedCategories = await this.repository.bulkUpdate(updates, userId, session)
+
+    return updatedCategories.map((c) => toServerCaseKeys<ICategory>(c))
   }
 
   private async prepareCategoryCreationPayload(

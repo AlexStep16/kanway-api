@@ -8,10 +8,8 @@ export const ChatSendDTOSchema = z.object({
     .string(ErrorMessages.INVALID_ID_FORMAT)
     .regex(objectIdRegex, ErrorMessages.INVALID_ID_FORMAT)
     .optional(),
-  message: z
-    .string(ErrorMessages.MESSAGE_TYPE_INVALID)
-    .min(1, ErrorMessages.MESSAGE_TOO_SHORT)
-    .max(1000, ErrorMessages.MESSAGE_TOO_LONG),
+  message: z.string(ErrorMessages.MESSAGE_TYPE_INVALID).optional(),
+  chatId: z.string(ErrorMessages.CHAT_ID_INVALID).optional(),
   threadId: z.string(ErrorMessages.THREAD_ID_INVALID).optional(),
   boardId: z
     .string({

@@ -167,7 +167,9 @@ export function initializeDependencies() {
     embeddingService,
     operationLogService,
     workspaceReorderService,
-    boardService
+    boardService,
+    categoryService,
+    taskService
   )
   /* WORKSPACE SERVICES END */
 

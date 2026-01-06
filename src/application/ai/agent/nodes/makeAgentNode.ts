@@ -3,7 +3,7 @@ import { AgentDependencies } from '@/application/ai/agent/types/AgentDependencie
 import { AgentStateAnnotation } from '@/application/ai/agent/AgentStateAnnotation.ts'
 import { getLastChatHistory } from '@application/ai/helpers/getLastChatHistory.ts'
 import { ChatPromptTemplate } from '@langchain/core/prompts'
-import { ReActSystem } from '@/application/ai/systemMessages/ReAct.ts'
+import { AgentPrompt } from '@/application/ai/prompts/AgentPrompt.ts'
 import { Configurable } from '@application/ai/interfaces/Configurable.ts'
 import { getLastHumanContent } from '../../helpers/getLastHumanContent.ts'
 
@@ -21,13 +21,15 @@ export const makeAgentNode = (deps: AgentDependencies) => {
     const activeWorkspaceId = configurable?.activeWorkspaceId
     const currentDate = configurable?.currentDate
 
-    const chatHistory = getLastChatHistory(state.messages)
+    const lastChatHistory = getLastChatHistory(state.messages)
+    const summaryHistory = state.summary
 
-    if (!chatHistory) {
+    if (!lastChatHistory) {
       throw new Error('Chat history is empty.')
     }
 
     const plan = state.plan || []
+    const currentPlanHash = plan.join('||')
 
     const rawUserMsg = getLastHumanContent(state.messages)
 
@@ -35,19 +37,29 @@ export const makeAgentNode = (deps: AgentDependencies) => {
       throw new Error('No user message or plan provided.')
     }
 
-    let rules: string[] = []
-    let suggestedToolsNames: string[] = []
+    let rules = state.rag_rules || []
+    let suggestedToolsNames = state.rag_tool_names || []
+    let hasNewCache = false
 
-    for (const step of plan) {
-      const instructions = await baseService.similaritySearchAgentInstructions(step)
+    if (plan.length > 0 && state.plan_hash !== currentPlanHash) {
+      const newRules = new Set<string>()
+      const newTools = new Set<string>()
 
-      for (const instruction of instructions) {
-        if (instruction.rule && !rules.includes(instruction.rule)) {
-          rules.push(instruction.rule)
+      for (const step of plan) {
+        const instructions = await baseService.similaritySearchAgentInstructions(step)
+        for (const instruction of instructions) {
+          if (instruction.rule) newRules.add(instruction.rule)
+          if (instruction.suggestedTools) {
+            instruction.suggestedTools.forEach((t) => newTools.add(t))
+          }
         }
-
-        suggestedToolsNames.push(...(instruction.suggestedTools || []))
       }
+
+      rules = Array.from(newRules)
+      suggestedToolsNames = Array.from(newTools)
+      hasNewCache = true // Пометим, что надо обновить стейт
+
+      hasNewCache = true
     }
 
     const finalToolsNames = new Set(hotTools.map((t) => t.name))
@@ -66,7 +78,7 @@ export const makeAgentNode = (deps: AgentDependencies) => {
       .filter(Boolean)
 
     // Формируем контекст для Агента
-    let dynamicSystemPrompt = `${ReActSystem}\n\n### RELEVANT RULES:\n${rules.join('\n')}`
+    let dynamicSystemPrompt = `${AgentPrompt}\n\n### RELEVANT RULES:\n${rules.join('\n')}`
 
     if (plan.length > 0) {
       dynamicSystemPrompt += `\n\n### USER INTENT (PLAN):\nThe user wants to perform these actions:\n${plan
@@ -81,9 +93,14 @@ export const makeAgentNode = (deps: AgentDependencies) => {
     - Default category for new tasks is "{defaultCategoryName}"
     - Default board for new categories is "{defaultBoardName}"`
 
+    if (summaryHistory) {
+      dynamicSystemPrompt += `\n\n### CHAT SUMMARY:
+      ${summaryHistory}`
+    }
+
     const prompt = ChatPromptTemplate.fromMessages([
       ['system', dynamicSystemPrompt],
-      ...chatHistory,
+      ...lastChatHistory,
     ])
 
     if (!agentModel.bindTools) {
@@ -101,8 +118,16 @@ export const makeAgentNode = (deps: AgentDependencies) => {
       defaultBoardName: configurable?.defaultBoardName || '',
     })
 
-    return {
+    const updates: any = {
       messages: [response],
     }
+
+    if (hasNewCache) {
+      updates.rag_rules = rules
+      updates.rag_tool_names = suggestedToolsNames
+      updates.plan_hash = currentPlanHash
+    }
+
+    return updates
   }
 }
