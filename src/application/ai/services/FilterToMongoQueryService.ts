@@ -43,6 +43,9 @@ interface Filter {
   categoryIds?: string[]
   boardIds?: string[]
   workspaceIds?: string[]
+  tasksCount?: NumberFilter
+  categoriesCount?: NumberFilter
+  boardsCount?: NumberFilter
   tags?: ArrayFilter
   color?: ArrayFilter
   order?: NumberFilter
@@ -149,26 +152,31 @@ export class FilterToMongoQueryService {
           _id: { $in: input.ids.map((id) => Types.ObjectId.createFromHexString(id)) },
         })
       }
+
       if (input.isCompleted !== undefined) {
         currentAndConditions.push({ is_completed: input.isCompleted })
       }
+
       if (input.isArchived === true) {
         currentAndConditions.push({ is_deleted: true, is_deleted_external: false })
       } else {
         currentAndConditions.push({ is_deleted: false })
       }
+
       if (input.categoryIds !== undefined && input.categoryIds.length > 0) {
         currentAndConditions.push({
-          category_id: {
+          category: {
             $in: input.categoryIds.map((id) => Types.ObjectId.createFromHexString(id)),
           },
         })
       }
+
       if (input.boardIds !== undefined && input.boardIds.length > 0) {
         currentAndConditions.push({
-          board_id: { $in: input.boardIds.map((id) => Types.ObjectId.createFromHexString(id)) },
+          board: { $in: input.boardIds.map((id) => Types.ObjectId.createFromHexString(id)) },
         })
       }
+
       if (input.workspaceIds !== undefined && input.workspaceIds.length > 0) {
         currentAndConditions.push({
           workspace_id: {
@@ -190,7 +198,7 @@ export class FilterToMongoQueryService {
       }
 
       if (input.description !== undefined) {
-        const { operator, value, isNegated } = input.name as StringFilter
+        const { operator, value, isNegated } = input.description as StringFilter
 
         currentAndConditions.push({
           description: this._getStringProcessedValue(operator, value, isNegated),

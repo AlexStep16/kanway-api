@@ -1,5 +1,4 @@
 import ChatRepository from '@repositories/ChatRepository.ts'
-import { ICreateService } from '../interfaces/traits/ICreateService.ts'
 import { ChatDTO } from '@dtos/ChatDTO.ts'
 import { IUser } from '@/domain/entities/IUser.ts'
 import { OperationLogService } from './OperationLogService.ts'
@@ -8,8 +7,7 @@ import { CollectionsEnum } from '@/domain/enums/CollectionsEnum.ts'
 import mongoose, { ClientSession, Types } from 'mongoose'
 import { IResponseWithLog } from '@interfaces/IResponseWithLog.ts'
 import { IChat } from '@domain/entities/IChat.ts'
-import { toServerCaseKeys } from '@/utils/objectTransformers.ts'
-import { ChatCriteria } from '@interfaces/criterias/ChatCriteria.ts'
+import { IChatCriteria } from '@interfaces/criterias/IChatCriteria.ts'
 import { ChatSendDTO } from '@dtos/ChatSendDTO.ts'
 import { BaseMessage, HumanMessage } from '@langchain/core/messages'
 import { SubscriptionPlanEnum } from '@/domain/enums/SubscriptionPlanEnum.ts'
@@ -20,17 +18,20 @@ import { langgraphQueue } from '@/infrastructure/queues/index.ts'
 import { ApproveToolCallDTO } from '@dtos/ApproveToolCallDTO.ts'
 import { Command } from '@langchain/langgraph'
 import { ChatMessageContent } from '@/application/ai/interfaces/ChatMessageContent.ts'
-import { SettingService } from './SettingService.ts'
+import { SettingService } from '@application/services/SettingService.ts'
 import { ContextExternalFetchService } from '@application/ai/services/ContextExternalFetchService.ts'
-import { Configurable } from '../ai/interfaces/Configurable.ts'
-import { RetryAgentDTO } from '../dtos/RetryAgentDTO.ts'
-import { StopAgentDTO } from '../dtos/StopAgentDTO.ts'
-import { NotFoundError } from '@/domain/errors/NotFound.ts'
+import { Configurable } from '@application/ai/interfaces/Configurable.ts'
+import { RetryAgentDTO } from '@dtos/RetryAgentDTO.ts'
+import { StopAgentDTO } from '@dtos/StopAgentDTO.ts'
+import { NotFoundError } from '@errors/NotFound.ts'
+import { AppError } from '@errors/AppError.ts'
+import { BaseService } from '@application/services/BaseService.ts'
+import { IChatRaw } from '@entities/IChatRaw.ts'
 import { IChatMessage } from '@/domain/entities/IChatMessage.ts'
 
 const MAX_RETRIES = 3
 
-export class ChatService implements ICreateService<IChat, ChatDTO> {
+export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
   protected repository: ChatRepository
   protected operationLogService: OperationLogService
   protected chatMessageService: ChatMessageService
@@ -44,6 +45,8 @@ export class ChatService implements ICreateService<IChat, ChatDTO> {
     settingService: SettingService,
     contextExternalFetchService: ContextExternalFetchService
   ) {
+    super(ChatRepository)
+
     this.repository = ChatRepository
     this.operationLogService = operationLogService
     this.chatMessageService = chatMessageService
@@ -61,7 +64,8 @@ export class ChatService implements ICreateService<IChat, ChatDTO> {
       timezone: string
     }
   ): Promise<RunnableConfig<Configurable>> {
-    const userSetting = await this.settingService.getByUserId(user.id)
+    const userSettings = await this.settingService.getByCriteria({}, user.id)
+    const userSetting = userSettings[0]
 
     const config: RunnableConfig<Configurable> = {
       recursionLimit: 25,
@@ -109,8 +113,9 @@ export class ChatService implements ICreateService<IChat, ChatDTO> {
         session.endSession()
       }
     }
-    throw new Error(
-      'Произошла ошибка при выполнении операции после максимального количества попыток.'
+    throw new AppError(
+      'Произошла ошибка при выполнении операции после максимального количества попыток.',
+      500
     )
   }
 
@@ -121,11 +126,12 @@ export class ChatService implements ICreateService<IChat, ChatDTO> {
   ) {
     let messages: BaseMessage[] = []
     let chat: IChat | null = null
-    let chatMessages: IChatMessage[] = []
+    let newChatMessages: IChatMessage[] = []
+    let toolsWithNoDecision = 0
     const threadId = data.threadId || new Types.ObjectId().toString()
 
     if (user.subscriptionId === SubscriptionPlanEnum.Basic && user.generationsCount === 0) {
-      throw new Error('Достигнут лимит генераций для вашего плана подписки.')
+      throw new AppError('Достигнут лимит генераций для вашего плана подписки.', 403)
     }
 
     try {
@@ -141,16 +147,38 @@ export class ChatService implements ICreateService<IChat, ChatDTO> {
 
         chat = createResult.data[0]
       } else {
-        const getChatResult = await this.getAll({ threadId: data.threadId }, user.id)
+        const getChatResult = await this.getByCriteria(
+          { threadId: data.threadId },
+          user.id,
+          externalSession
+        )
 
         chat = getChatResult[0]
       }
 
-      const lastChatMessage = await this.chatMessageService.getLastMessageInChat(
-        chat.id.toString(),
+      const chatMessages = await this.chatMessageService.getByCriteria(
+        { chatId: chat.id.toString() },
         user.id,
         externalSession
       )
+
+      for (const chatMessage of chatMessages) {
+        if (chatMessage.role === 'preview') {
+          const content: ChatMessageContent[] = chatMessage.content
+
+          if (!content) continue
+
+          for (const item of content) {
+            if (!item.isConfirmed && !item.isCancelled) {
+              toolsWithNoDecision += 1
+            }
+          }
+        }
+      }
+
+      if (toolsWithNoDecision > 0) {
+        throw new AppError('Не все действия подтверждены или отменены.', 400)
+      }
 
       if (data.message) {
         const userMessage = await this.chatMessageService.create(
@@ -164,11 +192,14 @@ export class ChatService implements ICreateService<IChat, ChatDTO> {
           externalSession
         )
 
-        chatMessages.push(...userMessage.data)
+        newChatMessages.push(...userMessage.data)
 
         messages.push(new HumanMessage(data.message))
-      } else if (lastChatMessage && lastChatMessage.role !== 'user') {
-        throw new Error('Последнее сообщение в чате не является сообщением от пользователя.')
+      } else if (chatMessages.length > 0 && chatMessages[chatMessages.length - 1].role !== 'user') {
+        throw new AppError(
+          'Последнее сообщение в чате не является сообщением от пользователя.',
+          400
+        )
       }
 
       const config = await this._getConfigurableFromUserSetting(user, {
@@ -186,7 +217,7 @@ export class ChatService implements ICreateService<IChat, ChatDTO> {
       return {
         jobId: job.id,
         chat,
-        chatMessages,
+        chatMessages: newChatMessages,
         threadId: threadId,
       }
     } catch (error) {
@@ -209,15 +240,16 @@ export class ChatService implements ICreateService<IChat, ChatDTO> {
     user: IUser,
     externalSession?: ClientSession
   ) {
-    const chatMessages = await this.chatMessageService.getAll(
+    const chatMessages = await this.chatMessageService.getByCriteria(
       { chatId: data.chatId, threadId: data.threadId },
-      user.id
+      user.id,
+      externalSession
     )
 
     const lastHumanMessage = [...chatMessages].reverse().find((msg) => msg.role === 'user')
 
     if (!lastHumanMessage) {
-      throw new Error('Не найдено сообщение для повторной попытки.')
+      throw new AppError('Не найдено сообщение для повторной попытки.', 400)
     }
 
     const messageIdsAfterLastHuman = chatMessages
@@ -295,12 +327,12 @@ export class ChatService implements ICreateService<IChat, ChatDTO> {
     user: IUser,
     session: ClientSession
   ): Promise<IResponseWithLog<IChat[]>> {
-    const Chat = await this.repository.create(
+    const chat = await this.repository.create(
       {
         name: data.name,
-        workspace_id: Types.ObjectId.createFromHexString(data.workspaceId),
-        user_id: user.id,
-        thread_id: data.threadId,
+        workspaceId: Types.ObjectId.createFromHexString(data.workspaceId),
+        userId: user.id,
+        threadId: data.threadId,
       },
       session
     )
@@ -309,7 +341,7 @@ export class ChatService implements ICreateService<IChat, ChatDTO> {
       {
         operationType: OperationTypesEnum.CREATE,
         collectionName: CollectionsEnum.CHAT_HISTORIES,
-        entitiesAfter: [Chat],
+        entitiesAfter: [chat],
         dependencies: [],
       },
       user.id,
@@ -317,8 +349,8 @@ export class ChatService implements ICreateService<IChat, ChatDTO> {
     )
 
     return {
-      data: [toServerCaseKeys<IChat>(Chat)],
-      logId: log[0].id,
+      data: [chat],
+      logId: log.id,
     }
   }
 
@@ -341,20 +373,22 @@ export class ChatService implements ICreateService<IChat, ChatDTO> {
     user: IUser,
     externalSession?: ClientSession
   ) {
-    const chatMessage = await this.chatMessageService.getById(
-      data.chatMessageId,
+    const chatMessages = await this.chatMessageService.getByCriteria(
+      { id: data.chatMessageId },
       user.id,
       externalSession
     )
     let toolsWithNoDecision = 0
 
-    if (!chatMessage) {
-      throw new Error('Сообщение чата не найдено.')
+    if (!chatMessages || chatMessages.length === 0) {
+      throw new AppError('Сообщение чата не найдено.', 400)
     }
 
-    const content: Array<ChatMessageContent> = chatMessage.content
+    const chatMessage = chatMessages[0]
 
-    if (!content) throw new Error('Содержимое сообщения отсутствует.')
+    const content: ChatMessageContent[] = chatMessage.content
+
+    if (!content) throw new AppError('Содержимое сообщения отсутствует.', 400)
 
     const updatedContent = content.map((item) => {
       if (item.callId === data.toolCallId) {
@@ -436,16 +470,5 @@ export class ChatService implements ICreateService<IChat, ChatDTO> {
         this._executeApproveToolCallTransaction(data, user, session)
       )
     }
-  }
-
-  public async getAll(
-    criteria: ChatCriteria,
-    userId: Types.ObjectId,
-    session?: ClientSession
-  ): Promise<IChat[]> {
-    const filter = this.repository.buildFilter(criteria, userId)
-    const chats = await this.repository.find(filter, session)
-
-    return chats.map((ws) => toServerCaseKeys(ws))
   }
 }

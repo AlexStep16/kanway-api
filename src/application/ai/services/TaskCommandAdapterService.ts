@@ -5,7 +5,7 @@ import { IResponseWithLog } from '@interfaces/IResponseWithLog.ts'
 import { ITask } from '@entities/ITask.ts'
 import { TaskEditDTO } from '@dtos/TaskEditDTO.ts'
 import dayjs from 'dayjs'
-import { BaseService } from '@application/services/BaseService.ts'
+import { VectorSearchService } from '@/application/services/VectorSearchService.ts'
 import { AISemanticService } from '@application/services/AISemanticService.ts'
 import { IUser } from '@domain/entities/IUser.ts'
 import { CategoryService } from '@application/services/CategoryService.ts'
@@ -14,18 +14,18 @@ import { NotFoundError } from '@/domain/errors/NotFound.ts'
 export class TaskCommandAdapterService {
   protected taskService: TaskService
   protected categoryService: CategoryService
-  protected baseService: BaseService
+  protected vectorSearchService: VectorSearchService
   protected aiSemanticService: AISemanticService
 
   constructor(
     taskService: TaskService,
     categoryService: CategoryService,
-    baseService: BaseService,
+    vectorSearchService: VectorSearchService,
     aiSemanticService: AISemanticService
   ) {
     this.taskService = taskService
     this.categoryService = categoryService
-    this.baseService = baseService
+    this.vectorSearchService = vectorSearchService
     this.aiSemanticService = aiSemanticService
   }
 
@@ -66,8 +66,6 @@ export class TaskCommandAdapterService {
         if (!category) {
           throw new NotFoundError(`Category with id ${changes.categoryId} not found`)
         }
-
-        updatedTask.categoryName = category.name
       }
 
       if (typeof changes.order !== 'undefined') {

@@ -1,31 +1,18 @@
 import { IUser } from '@entities/IUser.ts'
 import SuccessResponse from '@application/services/SuccessResponse.ts'
-import { IBaseService } from '@interfaces/IBaseService.ts'
 import { Request, Response, NextFunction } from 'express'
+import { IControllerService } from '@interfaces/traits/IControllerService.ts'
+import { IBaseCriteria } from '@/application/interfaces/IBaseCriteria.ts'
 
 export abstract class BaseController<
   TEntity,
+  TService extends IControllerService<TEntity, TCriteria, TCreateDTO, TEditDTO, TResult>,
+  TCriteria extends IBaseCriteria,
   TCreateDTO,
-  TCriteria,
-  TService extends IBaseService<
-    TEntity,
-    TCriteria,
-    TCreateDTO,
-    TEditDTO,
-    TClonedResult,
-    TArchiveResult,
-    TCreateResult
-  >,
   TEditDTO,
-  TClonedResult,
-  TArchiveResult,
-  TCreateResult = TEntity
+  TResult = Record<string, any>
 > {
-  protected service: TService
-
-  constructor(serviceInstance: TService) {
-    this.service = serviceInstance
-  }
+  constructor(protected service: TService) {}
 
   public create = async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -49,7 +36,9 @@ export abstract class BaseController<
 
   public getById = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const entity = await this.service.getById(req.params.id, req.user!.id)
+      const criteria = { id: req.params.id } as unknown as TCriteria
+
+      const entity = await this.service.getByCriteria(criteria, req.user!.id)
 
       res.status(200).json(new SuccessResponse(entity))
     } catch (error) {
@@ -59,10 +48,8 @@ export abstract class BaseController<
 
   public getAll = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const entities = await this.service.getAll(
-        { ...req.query, isDeleted: false } as TCriteria,
-        req.user!.id
-      )
+      const criteria = { ...req.query, isDeleted: false } as unknown as TCriteria
+      const entities = await this.service.getByCriteria(criteria, req.user!.id)
 
       res.status(200).json(new SuccessResponse(entities))
     } catch (error) {
@@ -72,10 +59,8 @@ export abstract class BaseController<
 
   public getCount = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const count = await this.service.getCount(
-        { ...req.query, isDeleted: false } as TCriteria,
-        req.user!.id
-      )
+      const criteria = { ...req.query, isDeleted: false } as unknown as TCriteria
+      const count = await this.service.getCount(criteria, req.user!.id)
 
       res.status(200).json(new SuccessResponse(count))
     } catch (error) {
@@ -123,7 +108,7 @@ export abstract class BaseController<
 
   public archive = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const criteria = { id: req.params.id, isDeleted: false } as TCriteria
+      const criteria = { id: req.params.id, isDeleted: false } as unknown as TCriteria
       const result = await this.service.archive(criteria, req.user as IUser)
 
       res.status(200).json(new SuccessResponse(result))
@@ -134,7 +119,7 @@ export abstract class BaseController<
 
   public recover = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const criteria = { id: req.params.id, isDeleted: true } as TCriteria
+      const criteria = { id: req.params.id, isDeleted: true } as unknown as TCriteria
       const result = await this.service.recover(criteria, req.user as IUser)
 
       res.status(200).json(new SuccessResponse(result))

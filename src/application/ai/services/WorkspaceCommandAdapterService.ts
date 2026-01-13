@@ -1,7 +1,7 @@
 import { EditWorkspacesDTO } from '@application/ai/tools/toolSchemes.ts'
 import { ClientSession, Types } from 'mongoose'
 import { IResponseWithLog } from '@interfaces/IResponseWithLog.ts'
-import { BaseService } from '@application/services/BaseService.ts'
+import { VectorSearchService } from '@/application/services/VectorSearchService.ts'
 import { AISemanticService } from '@application/services/AISemanticService.ts'
 import { IUser } from '@domain/entities/IUser.ts'
 import { WorkspaceEditDTO } from '@dtos/WorkspaceEditDTO.ts'
@@ -10,16 +10,16 @@ import { IWorkspace } from '@/domain/entities/IWorkspace.ts'
 
 export class WorkspaceCommandAdapterService {
   protected workspaceService: WorkspaceService
-  protected baseService: BaseService
+  protected vectorSearchService: VectorSearchService
   protected aiSemanticService: AISemanticService
 
   constructor(
     workspaceService: WorkspaceService,
-    baseService: BaseService,
+    vectorSearchService: VectorSearchService,
     aiSemanticService: AISemanticService
   ) {
     this.workspaceService = workspaceService
-    this.baseService = baseService
+    this.vectorSearchService = vectorSearchService
     this.aiSemanticService = aiSemanticService
   }
 

@@ -2,22 +2,19 @@ import { TaskService } from '@application/services/TaskService.ts'
 import { ITask } from '@entities/ITask.ts'
 import { TaskDTO } from '@application/dtos/TaskDTO.ts'
 import { BaseController } from '@controllers/BaseController.ts'
-import { TaskCriteria } from '@interfaces/criterias/TaskCriteria.ts'
+import { ITaskCriteria } from '@interfaces/criterias/ITaskCriteria.ts'
 import { Request, Response, NextFunction } from 'express'
 import SuccessResponse from '@application/services/SuccessResponse.ts'
 import { TaskEditDTO } from '@dtos/TaskEditDTO.ts'
-import { ITasksResponse } from '@/application/interfaces/ITasksResponse.ts'
-import { ITaskWithTempClientId } from '@/application/interfaces/ITaskWithTempClientId.ts'
+import { ITaskPopulated } from '@/application/interfaces/ITaskPopulated.ts'
 
 export default class TaskController extends BaseController<
   ITask,
-  TaskDTO,
-  TaskCriteria,
   TaskService,
+  ITaskCriteria,
+  TaskDTO,
   TaskEditDTO,
-  ITask[],
-  ITasksResponse,
-  ITaskWithTempClientId
+  ITaskPopulated
 > {
   constructor(serviceInstance: TaskService) {
     super(serviceInstance)
@@ -25,8 +22,12 @@ export default class TaskController extends BaseController<
 
   public override getAll = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const criteria: TaskCriteria = { boardId: req.params.boardId, ...req.query, isDeleted: false }
-      const entities = await this.service.getAll(criteria, req.user!.id)
+      const criteria: ITaskCriteria = {
+        boardId: req.params.boardId,
+        ...req.query,
+        isDeleted: false,
+      }
+      const entities = await this.service.getByCriteria(criteria, req.user!.id)
 
       res.status(200).json(new SuccessResponse(entities))
     } catch (error) {

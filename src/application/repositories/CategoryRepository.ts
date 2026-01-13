@@ -1,20 +1,23 @@
 import { ICategoryRaw } from '@entities/ICategoryRaw.ts'
 import CategoryModel from '@models/CategoryModel.ts'
-import { CategoryCriteria } from '@criterias/CategoryCriteria.ts'
-import { ClientSession, FilterQuery, Types } from 'mongoose'
+import { ICategoryCriteria } from '@criterias/ICategoryCriteria.ts'
+import { FilterQuery, Types } from 'mongoose'
 import { BaseRepository } from '@repositories/BaseRepository.ts'
-import { IReorderRepository } from '@traits/IReorderRepository.ts'
+import { ICategory } from '@entities/ICategory.ts'
+import { ICategoryCreatePayload } from '@interfaces/ICategoryCreatePayload.ts'
 
-export default class CategoryRepository
-  extends BaseRepository<ICategoryRaw, typeof CategoryModel>
-  implements IReorderRepository<ICategoryRaw>
-{
+export default class CategoryRepository extends BaseRepository<
+  ICategoryRaw,
+  ICategory,
+  ICategoryCriteria,
+  ICategoryCreatePayload
+> {
   constructor() {
     super(CategoryModel)
   }
 
   public buildFilter(
-    criteria: CategoryCriteria,
+    criteria: ICategoryCriteria,
     userId: Types.ObjectId
   ): FilterQuery<ICategoryRaw> {
     const filter: FilterQuery<ICategoryRaw> = { user_id: userId }
@@ -38,61 +41,21 @@ export default class CategoryRepository
     }
 
     if (criteria.boardId) {
-      filter.board_id = criteria.boardId
+      filter.board = criteria.boardId
     }
 
     if (criteria.boardIds) {
-      filter.board_id = { $in: criteria.boardIds }
+      filter.board = { $in: criteria.boardIds }
     }
 
     if (criteria.workspaceId) {
-      filter.workspace_id = criteria.workspaceId
+      filter.workspace = criteria.workspaceId
     }
 
     if (criteria.workspaceIds) {
-      filter.workspace_id = { $in: criteria.workspaceIds }
+      filter.workspace = { $in: criteria.workspaceIds }
     }
 
     return filter
-  }
-
-  public async getAllToOrder(
-    boardId: Types.ObjectId,
-    userId: Types.ObjectId,
-    session?: ClientSession
-  ): Promise<ICategoryRaw[]> {
-    return await this.model
-      .find({ board_id: boardId, user_id: userId, is_deleted: false })
-      .session(session || null)
-      .select('_id order')
-      .sort({ order: 1 })
-      .lean()
-  }
-
-  public async findByIds(
-    ids: Types.ObjectId[],
-    userId: Types.ObjectId,
-    session?: ClientSession
-  ): Promise<ICategoryRaw[]> {
-    return await this.model
-      .find({ _id: { $in: ids }, user_id: userId })
-      .session(session || null)
-      .lean()
-  }
-
-  public async getCountGrouppedByBoards(
-    boardIds: Types.ObjectId[],
-    userId: Types.ObjectId,
-    session?: ClientSession
-  ): Promise<{ board_id: Types.ObjectId; count: number }[]> {
-    const result = await this.model.aggregate(
-      [
-        { $match: { is_deleted: false, board_id: { $in: boardIds }, user_id: userId } },
-        { $group: { _id: '$board_id', count: { $sum: 1 } } },
-      ],
-      { session }
-    )
-
-    return result
   }
 }

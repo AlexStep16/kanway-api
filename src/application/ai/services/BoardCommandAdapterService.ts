@@ -1,7 +1,7 @@
 import { EditBoardsDTO } from '@application/ai/tools/toolSchemes.ts'
 import { ClientSession, Types } from 'mongoose'
 import { IResponseWithLog } from '@interfaces/IResponseWithLog.ts'
-import { BaseService } from '@application/services/BaseService.ts'
+import { VectorSearchService } from '@/application/services/VectorSearchService.ts'
 import { AISemanticService } from '@application/services/AISemanticService.ts'
 import { IUser } from '@domain/entities/IUser.ts'
 import { BoardEditDTO } from '@dtos/BoardEditDTO.ts'
@@ -13,18 +13,18 @@ import { NotFoundError } from '@/domain/errors/NotFound.ts'
 export class BoardCommandAdapterService {
   protected boardService: BoardService
   protected workspaceService: WorkspaceService
-  protected baseService: BaseService
+  protected vectorSearchService: VectorSearchService
   protected aiSemanticService: AISemanticService
 
   constructor(
     boardService: BoardService,
     workspaceService: WorkspaceService,
-    baseService: BaseService,
+    vectorSearchService: VectorSearchService,
     aiSemanticService: AISemanticService
   ) {
     this.boardService = boardService
     this.workspaceService = workspaceService
-    this.baseService = baseService
+    this.vectorSearchService = vectorSearchService
     this.aiSemanticService = aiSemanticService
   }
 
@@ -53,8 +53,6 @@ export class BoardCommandAdapterService {
         if (!workspace) {
           throw new NotFoundError(`Workspace with id ${changes.workspaceId} not found`)
         }
-
-        updatedBoard.workspaceName = workspace.name
       }
 
       if (typeof changes.order !== 'undefined') {

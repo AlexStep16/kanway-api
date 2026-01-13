@@ -3,12 +3,9 @@ import { Types } from 'mongoose'
 export interface ITaskRaw {
   _id: Types.ObjectId
   name: string
-  workspace_id: Types.ObjectId
-  workspace_name: string
-  board_id: Types.ObjectId
-  board_name: string
-  category_id: Types.ObjectId
-  category_name: string
+  workspace: Types.ObjectId
+  board: Types.ObjectId
+  category: Types.ObjectId
   is_deleted: boolean
   is_deleted_external: boolean
   order: number
@@ -16,7 +13,7 @@ export interface ITaskRaw {
   tags: Array<string>
   user_id: Types.ObjectId
   embeddings: Array<Number>
-  deleted_time?: Date
+  deleted_time?: Date | null
   description?: string
   due_date?: string
   due_hours?: number

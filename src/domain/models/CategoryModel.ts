@@ -7,28 +7,24 @@ export const CategorySchema = new Schema<ICategoryRaw>(
       type: String,
       required: true,
     },
-    workspace_id: {
+    workspace: {
       type: Schema.Types.ObjectId,
       ref: 'Workspace',
       required: true,
     },
-    workspace_name: {
-      type: String,
-      required: true,
-    },
-    board_id: {
+    board: {
       type: Schema.Types.ObjectId,
       ref: 'Board',
-      required: true,
-    },
-    board_name: {
-      type: String,
       required: true,
     },
     user_id: {
       type: Schema.Types.ObjectId,
       ref: 'User',
       required: true,
+    },
+    tasks_count: {
+      type: Number,
+      default: 0,
     },
     is_deleted: {
       type: Boolean,

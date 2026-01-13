@@ -2,195 +2,300 @@ import { IReordable } from '@/domain/entities/IReordable.ts'
 import {
   ClientSession,
   CreateOptions,
+  DeleteResult,
   FilterQuery,
   Model,
+  MongooseBulkWriteResult,
+  PopulateOptions,
   ProjectionType,
   Types,
+  UpdateQuery,
   UpdateWriteOpResult,
 } from 'mongoose'
 import { SingleUpdateDTO } from '../dtos/SingleUpdateDTO.ts'
 import { SystemFields } from '@/infrastructure/types/SystemFields.ts'
+import { toMongoCaseKeys, toServerCaseKeys } from '@/utils/objectTransformers.ts'
+import { SafeUpdateData } from '@/infrastructure/types/SafeUpdateData.ts'
 
-export abstract class BaseRepository<TEntity, TModel extends Model<TEntity>> {
-  protected model: TModel
+export abstract class BaseRepository<
+  TRawEntity,
+  TEntity,
+  TCriteria = Record<string, any>,
+  TCreatePayload = Omit<TEntity, SystemFields>
+> {
+  protected model: Model<TRawEntity>
 
-  constructor(model: TModel) {
+  constructor(model: Model<TRawEntity>) {
     this.model = model
   }
 
-  public async findByIdAndUser(
-    id: string,
-    userId: Types.ObjectId,
-    session?: ClientSession
-  ): Promise<TEntity | null> {
-    const doc = await this.model.findOne({ _id: id, user_id: userId }, null, { session }).lean()
-    return doc as TEntity
-  }
+  public buildFilter(criteria: TCriteria, userId?: Types.ObjectId): FilterQuery<TRawEntity> {
+    const transformedCriteria = toMongoCaseKeys<TRawEntity>(criteria)
+    const filter: FilterQuery<TRawEntity> = transformedCriteria as any
 
-  public async findById(id: string, session?: ClientSession): Promise<TEntity | null> {
-    const doc = await this.model.findById(id, null, { session }).lean()
+    if (userId) {
+      ;(filter as any).user_id = userId
+    }
 
-    return doc as TEntity
+    return filter
   }
 
   public async create(
-    data: Omit<TEntity, SystemFields>,
+    data: TCreatePayload,
     session: ClientSession | null = null
   ): Promise<TEntity> {
-    const [newDoc] = await this.model.create([data], { session })
-    const newDocObj = newDoc.toObject() as TEntity
+    const mongoData = toMongoCaseKeys<Partial<TRawEntity>>(data)
+
+    const [newDoc] = await this.model.create([mongoData], { session })
+    const newDocObj = newDoc.toObject() as TRawEntity
     delete (newDocObj as any).embeddings
 
-    return newDocObj
+    return toServerCaseKeys<TEntity>(newDocObj)
   }
 
   public async createMany(
-    data: Omit<TEntity, SystemFields>[],
+    data: TCreatePayload[],
     session: ClientSession | null = null
   ): Promise<TEntity[]> {
+    const mongoData = data.map((item) => toMongoCaseKeys<Partial<TRawEntity>>(item))
     const options: CreateOptions = { session }
 
     if (session) {
       options.ordered = true
     }
 
-    const docs = await this.model.create(data, options)
+    const docs = await this.model.create(mongoData, options)
 
     return docs.map((doc) => {
-      const docObj = doc.toObject() as TEntity
+      const docObj = doc.toObject() as TRawEntity
       delete (docObj as any).embeddings
 
-      return docObj
+      return toServerCaseKeys<TEntity>(docObj)
     })
   }
 
   private async _updateMany(
-    filter: FilterQuery<TEntity>,
-    data: Partial<TEntity>,
+    filter: FilterQuery<TRawEntity>,
+    data: Partial<TRawEntity>,
     session?: ClientSession,
     unset?: Record<string, true>
   ): Promise<UpdateWriteOpResult> {
     return this.model.updateMany(filter, { $set: data, $unset: unset }, { session })
   }
 
-  public async updateByFilter(
-    filter: FilterQuery<TEntity>,
-    data: Partial<TEntity>,
+  public async updateMany(
+    filter: FilterQuery<TRawEntity>,
+    data: SafeUpdateData<TEntity>,
     session?: ClientSession
-  ): Promise<TEntity[]> {
-    const docsToUpdate = await this.model
-      .find(filter)
-      .session(session || null)
-      .select('_id')
-      .lean()
-
-    const idsToUpdate = docsToUpdate.map((doc) => doc._id)
-
-    if (idsToUpdate.length === 0) return []
+  ): Promise<UpdateWriteOpResult> {
+    const mongoData = toMongoCaseKeys<Partial<TRawEntity>>(data)
 
     const unset: Record<string, true> = {}
 
-    Object.entries(data).forEach(([key, value]) => {
+    Object.entries(mongoData).forEach(([key, value]) => {
       if (value === null || value === undefined) {
         unset[key] = true
-        delete data[key as keyof typeof data]
+        delete mongoData[key as keyof typeof mongoData]
       }
     })
 
-    const updateResult = await this._updateMany(
-      { _id: { $in: idsToUpdate } } as FilterQuery<TEntity>,
-      data,
-      session,
-      unset
-    )
+    const updateResult = await this._updateMany(filter, mongoData, session, unset)
 
-    if (updateResult.modifiedCount === 0) return []
-
-    const updatedEntities = (await this.model
-      .find({ _id: { $in: idsToUpdate } })
-      .session(session || null)
-      .lean()) as TEntity[]
-
-    return updatedEntities
+    return updateResult
   }
 
-  public async updateById(
-    id: string,
-    userId: Types.ObjectId,
-    data: Partial<TEntity>,
+  public async updateManyByCriteria(
+    criteria: TCriteria,
+    data: SafeUpdateData<TEntity>,
+    session?: ClientSession,
+    userId?: Types.ObjectId
+  ): Promise<UpdateWriteOpResult> {
+    const filter = this.buildFilter(criteria, userId)
+
+    return this.updateMany(filter, data, session)
+  }
+
+  public async updateManyByFilter(
+    filter: FilterQuery<TRawEntity>,
+    data: SafeUpdateData<TEntity>,
     session?: ClientSession
-  ): Promise<TEntity | null> {
-    const filter = { _id: id, user_id: userId } as FilterQuery<TEntity>
-
-    const results = await this.updateByFilter(filter, data, session)
-
-    return results[0] || null
+  ): Promise<UpdateWriteOpResult> {
+    return this.updateMany(filter, data, session)
   }
 
   public async bulkUpdate(
-    updates: SingleUpdateDTO<Partial<TEntity>>[],
+    updates: SingleUpdateDTO<SafeUpdateData<TEntity>>[],
     userId: Types.ObjectId,
     session?: ClientSession
-  ): Promise<TEntity[]> {
-    if (updates.length === 0) return []
+  ): Promise<MongooseBulkWriteResult | null> {
+    if (updates.length === 0) return null
 
-    const bulkOperations = updates.map((item) => ({
-      updateOne: {
-        filter: { _id: item._id, user_id: userId },
-        update: { $set: item },
-        options: { runValidators: true },
-      },
-    }))
+    const bulkOperations = updates.map((updateDto) => {
+      const { id, ...dataToUpdate } = updateDto
 
-    const bulkUpdateResult = await this.model.bulkWrite(bulkOperations, { session })
+      const mongoData = toMongoCaseKeys<any>(dataToUpdate)
 
-    if (bulkUpdateResult.modifiedCount === 0) return []
+      const setOp: Record<string, any> = {}
+      const unsetOp: Record<string, true> = {}
 
-    const updatedEntities = (await this.model
-      .find({ _id: { $in: updates.map((u) => u._id) }, user_id: userId })
-      .session(session || null)
-      .lean()) as TEntity[]
+      Object.entries(mongoData).forEach(([key, value]) => {
+        if (value === null) {
+          unsetOp[key] = true
+        } else if (value !== undefined) {
+          setOp[key] = value
+        }
+      })
 
-    return updatedEntities
+      const updateDoc: any = {}
+      if (Object.keys(setOp).length > 0) updateDoc.$set = setOp
+      if (Object.keys(unsetOp).length > 0) updateDoc.$unset = unsetOp
+
+      return {
+        updateOne: {
+          filter: { _id: new Types.ObjectId(id.toString()), owner_id: userId },
+          update: updateDoc,
+        },
+      }
+    })
+
+    const validOps = bulkOperations.filter(
+      (op) => op.updateOne.update.$set || op.updateOne.update.$unset
+    )
+
+    if (validOps.length === 0) return null
+
+    return this.model.bulkWrite(validOps, { session })
   }
 
   public async bulkUpdateOrders(
     updates: IReordable[],
     userId: Types.ObjectId,
     session?: ClientSession
-  ): Promise<void> {
-    if (updates.length === 0) return
+  ): Promise<MongooseBulkWriteResult | null> {
+    if (updates.length === 0) return null
 
     const bulkOperations = updates.map((item) => ({
       updateOne: {
-        filter: { _id: item._id, user_id: userId },
+        filter: { _id: item.id, user_id: userId },
         update: { $set: { order: item.order } },
         options: { runValidators: false },
       },
     }))
 
-    await this.model.bulkWrite(bulkOperations, { session })
+    return await this.model.bulkWrite(bulkOperations, { session })
   }
 
-  public async deleteMany(filter: FilterQuery<TEntity>, session?: ClientSession): Promise<void> {
-    await this.model.deleteMany(filter).session(session || null)
+  public async deleteMany(
+    criteria: TCriteria,
+    userId?: Types.ObjectId,
+    session?: ClientSession
+  ): Promise<DeleteResult> {
+    const filter = this.buildFilter(criteria, userId)
+
+    return await this.model.deleteMany(filter).session(session || null)
   }
 
-  public async find(
-    filter: FilterQuery<TEntity>,
+  public async find<TFindResult = TEntity>(
+    filter: FilterQuery<TRawEntity>,
     session: ClientSession | null = null,
-    projection: ProjectionType<TEntity> | null = null,
-    limit: number = 1000
-  ): Promise<TEntity[]> {
-    return this.model.find(filter, projection).session(session).limit(limit).lean() as Promise<
-      TEntity[]
-    >
+    options: {
+      projection?: ProjectionType<TRawEntity> | null
+      limit?: number
+      populate?: PopulateOptions | (string | PopulateOptions)[]
+      sort?: Record<string, 1 | -1>
+    } = {}
+  ): Promise<TFindResult[]> {
+    const { projection = null, limit = 1000, populate, sort = { created_at: -1 } } = options
+
+    let query = this.model.find(filter, projection).session(session).limit(limit).sort(sort)
+
+    if (populate) {
+      query = query.populate(populate) as any
+    }
+
+    const result = await query.lean()
+
+    return result.map(toServerCaseKeys<TFindResult>)
+  }
+
+  public async findByCriteria<TFindResult = TEntity>(
+    criteria: TCriteria,
+    session: ClientSession | null = null,
+    options: {
+      projection?: ProjectionType<TRawEntity> | null
+      limit?: number
+      populate?: PopulateOptions | (string | PopulateOptions)[]
+      sort?: Record<string, 1 | -1>
+    } = {},
+    userId?: Types.ObjectId
+  ): Promise<TFindResult[]> {
+    const filter = this.buildFilter(criteria, userId)
+
+    return this.find<TFindResult>(filter, session, options)
+  }
+
+  public async findByFilter<TFindResult = TEntity>(
+    filter: FilterQuery<TRawEntity>,
+    session: ClientSession | null = null,
+    options: {
+      projection?: ProjectionType<TRawEntity> | null
+      limit?: number
+      populate?: PopulateOptions | (string | PopulateOptions)[]
+      sort?: Record<string, 1 | -1>
+    } = {}
+  ): Promise<TFindResult[]> {
+    return this.find<TFindResult>(filter, session, options)
   }
 
   public async getCount(
-    filter: FilterQuery<TEntity>,
-    session: ClientSession | null = null
+    criteria: TCriteria,
+    session: ClientSession | null = null,
+    userId?: Types.ObjectId
   ): Promise<number> {
+    const filter = this.buildFilter(criteria, userId)
+
     return await this.model.countDocuments(filter).session(session)
+  }
+
+  public async getLastOrderGroupedByParents(
+    parentIds: Types.ObjectId[],
+    parentField: keyof TRawEntity,
+    userId: Types.ObjectId,
+    session?: ClientSession
+  ): Promise<{ _id: Types.ObjectId; lastOrder: number }[]> {
+    return await this.model
+      .aggregate([
+        {
+          $match: {
+            [parentField]: { $in: parentIds },
+            user_id: userId,
+            is_deleted: { $ne: true },
+          },
+        },
+
+        {
+          $group: {
+            _id: `$${String(parentField)}`,
+            lastOrder: { $max: '$order' },
+          },
+        },
+      ])
+      .session(session || null)
+  }
+
+  public async getAllToOrder(
+    parentId: Types.ObjectId,
+    parentField: string,
+    userId?: Types.ObjectId,
+    session?: ClientSession
+  ): Promise<TEntity[]> {
+    const result = await this.model
+      .find({ [parentField]: parentId, user_id: userId, is_deleted: false })
+      .session(session || null)
+      .select('_id order')
+      .sort({ order: 1 })
+      .lean()
+
+    return result.map(toServerCaseKeys<TEntity>)
   }
 }

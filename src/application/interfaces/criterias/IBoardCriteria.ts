@@ -1,14 +1,12 @@
-export interface TaskCriteria {
+import { IBaseCriteria } from '../IBaseCriteria.ts'
+
+export interface IBoardCriteria extends IBaseCriteria {
   id?: string
   ids?: string[]
 
   isDeleted?: boolean
   isDeletedExternal?: boolean
-  boardId?: string
-  boardIds?: string[]
   workspaceId?: string
   workspaceIds?: string[]
-  categoryId?: string
-  categoryIds?: string[]
   name?: string
 }

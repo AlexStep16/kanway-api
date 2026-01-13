@@ -1,19 +1,16 @@
 import { IBoardRaw } from '@entities/IBoardRaw.ts'
 import BoardModel from '@models/BoardModel.ts'
-import { BoardCriteria } from '@criterias/BoardCriteria.ts'
-import { ClientSession, FilterQuery, Types } from 'mongoose'
+import { IBoardCriteria } from '@criterias/IBoardCriteria.ts'
+import { FilterQuery, Types } from 'mongoose'
 import { BaseRepository } from '@repositories/BaseRepository.ts'
-import { IReorderRepository } from '@traits/IReorderRepository.ts'
+import { IBoard } from '@entities/IBoard.ts'
 
-export default class BoardRepository
-  extends BaseRepository<IBoardRaw, typeof BoardModel>
-  implements IReorderRepository<IBoardRaw>
-{
+export default class BoardRepository extends BaseRepository<IBoardRaw, IBoard, IBoardCriteria> {
   constructor() {
     super(BoardModel)
   }
 
-  public buildFilter(criteria: BoardCriteria, userId: Types.ObjectId): FilterQuery<IBoardRaw> {
+  public buildFilter(criteria: IBoardCriteria, userId: Types.ObjectId): FilterQuery<IBoardRaw> {
     const filter: FilterQuery<IBoardRaw> = { user_id: userId }
 
     if (criteria.id) {
@@ -43,45 +40,5 @@ export default class BoardRepository
     }
 
     return filter
-  }
-
-  public async getAllToOrder(
-    workspaceId: Types.ObjectId,
-    userId: Types.ObjectId,
-    session?: ClientSession
-  ): Promise<IBoardRaw[]> {
-    return await this.model
-      .find({ workspace_id: workspaceId, user_id: userId, is_deleted: false })
-      .session(session || null)
-      .select('_id order')
-      .sort({ order: 1 })
-      .lean()
-  }
-
-  public async findByIds(
-    ids: Types.ObjectId[],
-    userId: Types.ObjectId,
-    session?: ClientSession
-  ): Promise<IBoardRaw[]> {
-    return await this.model
-      .find({ _id: { $in: ids }, user_id: userId })
-      .session(session || null)
-      .lean()
-  }
-
-  public async getCountGrouppedByWorkspaces(
-    workspaceIds: Types.ObjectId[],
-    userId: Types.ObjectId,
-    session?: ClientSession
-  ): Promise<{ workspace_id: Types.ObjectId; count: number }[]> {
-    const result = await this.model.aggregate(
-      [
-        { $match: { is_deleted: false, workspace_id: { $in: workspaceIds }, user_id: userId } },
-        { $group: { _id: '$workspace_id', count: { $sum: 1 } } },
-      ],
-      { session }
-    )
-
-    return result
   }
 }

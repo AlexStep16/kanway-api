@@ -7,31 +7,19 @@ export const TaskSchema = new Schema<ITaskRaw>(
       type: String,
       required: true,
     },
-    workspace_id: {
+    workspace: {
       type: Schema.Types.ObjectId,
       ref: 'Workspace',
       required: true,
     },
-    workspace_name: {
-      type: String,
-      required: true,
-    },
-    board_id: {
+    board: {
       type: Schema.Types.ObjectId,
       ref: 'Board',
       required: true,
     },
-    board_name: {
-      type: String,
-      required: true,
-    },
-    category_id: {
+    category: {
       type: Schema.Types.ObjectId,
       ref: 'Category',
-      required: true,
-    },
-    category_name: {
-      type: String,
       required: true,
     },
     embeddings: {

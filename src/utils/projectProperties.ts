@@ -1,6 +1,6 @@
 export function projectProperties<T extends Record<string, any>>(
   sourceArray: T[],
-  targetObject: Partial<T>
+  targetObject: Record<string, any>
 ): Partial<T>[] {
   const keysToKeep = Object.keys(targetObject)
 

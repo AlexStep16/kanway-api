@@ -11,7 +11,7 @@ export class PaymentController {
 
   public getAll = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const entity = await this.service.getAllByUserId(req.user!.id)
+      const entity = await this.service.getByCriteria({ id: req.user!.id.toString() })
 
       res.status(200).json(new SuccessResponse(entity))
     } catch (error) {

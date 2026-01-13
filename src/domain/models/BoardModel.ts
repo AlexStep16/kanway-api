@@ -7,19 +7,23 @@ export const BoardSchema = new Schema<IBoardRaw>(
       type: String,
       required: true,
     },
-    workspace_id: {
+    workspace: {
       type: Schema.Types.ObjectId,
       ref: 'Workspace',
-      required: true,
-    },
-    workspace_name: {
-      type: String,
       required: true,
     },
     user_id: {
       type: Schema.Types.ObjectId,
       ref: 'User',
       required: true,
+    },
+    tasks_count: {
+      type: Number,
+      default: 0,
+    },
+    categories_count: {
+      type: Number,
+      default: 0,
     },
     is_deleted: {
       type: Boolean,

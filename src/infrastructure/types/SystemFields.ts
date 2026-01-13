@@ -1,1 +1,1 @@
-export type SystemFields = '_id' | 'createdAt' | 'updatedAt' | '__v'
+export type SystemFields = 'id' | '_id' | 'createdAt' | 'updatedAt'

@@ -11,7 +11,7 @@ export class SubscriptionController {
 
   public getAll = async (_: Request, res: Response, next: NextFunction) => {
     try {
-      const entity = await this.service.getAll()
+      const entity = await this.service.getByCriteria({})
 
       res.status(200).json(new SuccessResponse(entity))
     } catch (error) {

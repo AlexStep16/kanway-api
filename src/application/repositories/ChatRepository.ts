@@ -1,15 +1,16 @@
 import Chat from '@models/Chat.ts'
 import { IChatRaw } from '@entities/IChatRaw.ts'
 import { BaseRepository } from '@repositories/BaseRepository.ts'
-import { ChatCriteria } from '@interfaces/criterias/ChatCriteria.ts'
+import { IChatCriteria } from '@interfaces/criterias/IChatCriteria.ts'
 import { FilterQuery, Types } from 'mongoose'
+import { IChat } from '@entities/IChat.ts'
 
-export default class ChatRepository extends BaseRepository<IChatRaw, typeof Chat> {
+export default class ChatRepository extends BaseRepository<IChatRaw, IChat, IChatCriteria> {
   constructor() {
     super(Chat)
   }
 
-  public buildFilter(criteria: ChatCriteria, userId: Types.ObjectId): FilterQuery<IChatRaw> {
+  public buildFilter(criteria: IChatCriteria, userId: Types.ObjectId): FilterQuery<IChatRaw> {
     const filter: FilterQuery<IChatRaw> = { user_id: userId }
 
     if (criteria.id) {

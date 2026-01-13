@@ -3,8 +3,9 @@ import TokenModel from '@models/TokenModel.ts'
 import { TokenTypesEnum } from '@/domain/enums/TokenTypesEnum.ts'
 import { Types } from 'mongoose'
 import { BaseRepository } from '@repositories/BaseRepository.ts'
+import { IToken } from '@entities/IToken.ts'
 
-export default class TokenRepository extends BaseRepository<ITokenRaw, typeof TokenModel> {
+export default class TokenRepository extends BaseRepository<ITokenRaw, IToken> {
   constructor() {
     super(TokenModel)
   }

@@ -6,22 +6,20 @@ import { IPaymentMethodRaw } from '@/domain/entities/IPaymentMethodRaw.ts'
 import { PaymentMethodDTO } from '@dtos/PaymentMethodDTO.ts'
 import { ClientSession, Types } from 'mongoose'
 import { UserService } from '@application/services/UserService.ts'
-import { ICreateWithUserIdService } from '../interfaces/traits/ICreateWithUserIdService.ts'
-import { IGetAllByUserIdService } from '../interfaces/traits/IGetAllByUserIdService.ts'
-import { IGetByIdService } from '../interfaces/traits/IGetByIdService.ts'
-import { IDeleteByIdService } from '../interfaces/traits/IDeleteByIdService.ts'
+import { BaseService } from './BaseService.ts'
+import { IPaymentCriteria } from '../interfaces/criterias/IPaymentCriteria.ts'
 
-export class PaymentMethodService
-  implements
-    ICreateWithUserIdService<IPaymentMethod, PaymentMethodDTO>,
-    IGetAllByUserIdService<IPaymentMethod>,
-    IGetByIdService<IPaymentMethod>,
-    IDeleteByIdService
-{
+export class PaymentMethodService extends BaseService<
+  IPaymentMethodRaw,
+  IPaymentMethod,
+  IPaymentCriteria
+> {
   protected repository: PaymentMethodRepository
   protected userService: UserService
 
   constructor(paymentRepository: PaymentMethodRepository, userService: UserService) {
+    super(paymentRepository)
+
     this.repository = paymentRepository
     this.userService = userService
   }
@@ -31,15 +29,15 @@ export class PaymentMethodService
     userId: Types.ObjectId,
     session?: ClientSession
   ): Promise<IPaymentMethod[]> {
-    const paymentMethod: Omit<IPaymentMethodRaw, SystemFields> = {
-      service_id: data.serviceId,
+    const paymentMethod: Omit<IPaymentMethod, SystemFields> = {
+      serviceId: data.serviceId,
       type: data.type,
-      card_first_6: data.cardFirst6,
-      card_last_4: data.cardLast4,
-      card_type: data.cardType,
-      expiry_month: data.expiryMonth,
-      expiry_year: data.expiryYear,
-      user_id: userId,
+      cardFirst6: data.cardFirst6,
+      cardLast4: data.cardLast4,
+      cardType: data.cardType,
+      expiryMonth: data.expiryMonth,
+      expiryYear: data.expiryYear,
+      userId: userId,
     }
 
     const newPaymentMethod = await this.repository.create(paymentMethod, session)
@@ -52,36 +50,17 @@ export class PaymentMethodService
     userId: Types.ObjectId,
     session?: ClientSession
   ): Promise<void> {
-    await this.repository.deleteById(id, userId, session)
+    await this.repository.deleteMany({ id }, userId, session)
     // If the deleted payment method was the user's selected payment method, unset it
     const user = await this.userService.getById(userId.toString())
     if (user && user.paymentMethodId === id) {
-      const paymentMethods = await this.repository.getByUserId(userId)
+      const paymentMethods = await this.repository.findByCriteria({}, session, undefined, userId)
 
       await this.userService.edit(
-        { paymentMethodId: paymentMethods[0]?._id.toString() ?? null },
+        { paymentMethodId: paymentMethods[0]?.id.toString() ?? null },
         {},
         user
       )
     }
-  }
-
-  public async getAllByUserId(
-    userId: Types.ObjectId,
-    session?: ClientSession
-  ): Promise<IPaymentMethod[]> {
-    const payments = await this.repository.getByUserId(userId, session)
-
-    return payments.map(toServerCaseKeys<IPaymentMethod>)
-  }
-
-  public async getById(
-    id: string,
-    userId: Types.ObjectId,
-    session?: ClientSession
-  ): Promise<IPaymentMethod | null> {
-    const payment = await this.repository.getById(id, userId, session)
-
-    return toServerCaseKeys<IPaymentMethod>(payment)
   }
 }

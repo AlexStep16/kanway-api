@@ -1,5 +1,5 @@
-import { ITask } from '@entities/ITask.ts'
+import { ITaskPopulated } from '@interfaces/ITaskPopulated.ts'
 
 export interface ITasksResponse {
-  tasks: ITask[]
+  tasks: ITaskPopulated[]
 }

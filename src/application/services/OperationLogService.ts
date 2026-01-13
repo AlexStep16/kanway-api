@@ -1,22 +1,24 @@
 import OperationLogRepository from '@repositories/OperationLogRepository.ts'
-import { ICreateOperationLogService } from '@traits/ICreateOperationLogService.ts'
 import { IOperationLog } from '@entities/IOperationLog.ts'
 import { OperationLogCreationDTO } from '@dtos/OperationLogCreationDTO.ts'
 import mongoose, { ClientSession, Types } from 'mongoose'
-import { toMongoCaseKeys, toServerCaseKeys } from '@utils/objectTransformers.ts'
 import { IOperationLogRaw } from '@entities/IOperationLogRaw.ts'
 import { SystemFields } from '@/infrastructure/types/SystemFields.ts'
 import { ErrorMessages } from '@/enums/ErrorMessages.ts'
 import { IUser } from '@/domain/entities/IUser.ts'
 import { IRevertableService } from '@traits/IRevertableService.ts'
 import { IUndoResponse } from '../interfaces/IUndoResponse.ts'
-import { OperationLogCriteria } from '../interfaces/criterias/OperationLogCriteria.ts'
+import { IOperationLogCriteria } from '../interfaces/criterias/IOperationLogCriteria.ts'
+import { AppError } from '@/domain/errors/AppError.ts'
+import { BaseService } from './BaseService.ts'
 
 const MAX_RETRIES = 3
 
-export class OperationLogService
-  implements ICreateOperationLogService<IOperationLog, OperationLogCreationDTO>
-{
+export class OperationLogService extends BaseService<
+  IOperationLogRaw,
+  IOperationLog,
+  IOperationLogCriteria
+> {
   protected repository: OperationLogRepository
   private revertAdapters: Map<string, IRevertableService<any>>
 
@@ -24,6 +26,8 @@ export class OperationLogService
     operationLogRepository: OperationLogRepository,
     revertServices: Map<string, IRevertableService<any>>
   ) {
+    super(operationLogRepository)
+
     this.repository = operationLogRepository
     this.revertAdapters = revertServices
   }
@@ -53,8 +57,9 @@ export class OperationLogService
         session.endSession()
       }
     }
-    throw new Error(
-      'Произошла ошибка при выполнении операции после максимального количества попыток.'
+    throw new AppError(
+      'Произошла ошибка при выполнении операции после максимального количества попыток.',
+      500
     )
   }
 
@@ -62,41 +67,72 @@ export class OperationLogService
     data: OperationLogCreationDTO,
     userId: Types.ObjectId,
     session: ClientSession | null = null
-  ): Promise<IOperationLog[]> {
-    const operationLogPayload: Omit<IOperationLogRaw, SystemFields> = {
-      ...toMongoCaseKeys(data),
-      user_id: userId,
+  ): Promise<IOperationLog> {
+    const operationLogPayload: Omit<IOperationLog, SystemFields> = {
+      ...data,
+      isUndone: false,
+      userId,
     }
 
-    const newOperationLog = await this.repository.create(operationLogPayload, session)
+    return await this.repository.create(operationLogPayload, session)
+  }
 
-    return [toServerCaseKeys(newOperationLog)]
+  private async _recursiveRevert(
+    log: IOperationLog,
+    user: IUser,
+    session: ClientSession
+  ): Promise<IUndoResponse<any>[]> {
+    const service = this.revertAdapters.get(log.collectionName)
+    const dependencies: IOperationLog[] = []
+    const results: IUndoResponse<any>[] = []
+
+    if (log.dependencies && log.dependencies.length > 0) {
+      const depLogs = await this.repository.findByCriteria(
+        { ids: log.dependencies.map((id) => id.toString()) },
+        session,
+        undefined,
+        user.id
+      )
+
+      dependencies.push(...depLogs)
+    }
+
+    if (!service) {
+      throw new AppError(`Нет адаптера для сущности: ${log.collectionName}`, 400)
+    }
+
+    results.push(await service.revert(log, user, session))
+
+    if (dependencies.length > 0) {
+      for (const depLog of dependencies) {
+        const depResult = await this._recursiveRevert(depLog, user, session)
+
+        results.push(...depResult)
+      }
+    }
+
+    return results
   }
 
   private async _executeUndoOperations(
     logIds: string[],
     user: IUser,
     session: ClientSession
-  ): Promise<IUndoResponse<any>[]> {
-    const filter = this.repository.buildFilter({ ids: logIds }, user.id)
-    const logs = await this.repository.find(filter, session)
+  ): Promise<IUndoResponse<any>> {
+    const logs = await this.repository.findByCriteria({ ids: logIds }, session, undefined, user.id)
     const results: IUndoResponse<any>[] = []
 
     if (!logs) {
-      throw new Error(ErrorMessages.OPERATION_LOGS_NOT_FOUND)
+      throw new AppError(ErrorMessages.OPERATION_LOGS_NOT_FOUND, 404)
     }
 
     for (const log of logs) {
-      const service = this.revertAdapters.get(log.collection_name)
+      const result = await this._recursiveRevert(log, user, session)
 
-      if (!service) {
-        throw new Error(`Нет адаптера для сущности: ${log.collection_name}`)
-      }
-
-      results.push(await service.revert(toServerCaseKeys<IOperationLog>(log), user, session))
+      results.push(...result)
     }
 
-    return results
+    return this.combineUndoResult(results)
   }
 
   public async combineUndoResult(result: IUndoResponse<any>[]): Promise<IUndoResponse<any>> {
@@ -121,7 +157,7 @@ export class OperationLogService
     logIds: string[],
     user: IUser,
     externalSession: ClientSession | null = null
-  ): Promise<IUndoResponse<any>[]> {
+  ): Promise<IUndoResponse<any>> {
     if (externalSession) {
       return this._executeUndoOperations(logIds, user, externalSession)
     } else {
@@ -129,16 +165,5 @@ export class OperationLogService
         this._executeUndoOperations(logIds, user, session)
       )
     }
-  }
-
-  public async getAll(
-    criteria: OperationLogCriteria,
-    userId: Types.ObjectId,
-    session?: ClientSession
-  ): Promise<IOperationLog[]> {
-    const filter = this.repository.buildFilter(criteria, userId)
-    const logs = await this.repository.find(filter, session)
-
-    return logs.map((log) => toServerCaseKeys(log))
   }
 }

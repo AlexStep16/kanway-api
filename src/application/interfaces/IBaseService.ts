@@ -1,5 +1,4 @@
 import { ICreateService } from '@traits/ICreateService.ts'
-import { IGetByIdService } from '@traits/IGetByIdService.ts'
 import { IGetAllService } from '@traits/IGetAllService.ts'
 import { IEditService } from '@traits/IEditService.ts'
 import { IDeleteService } from '@traits/IDeleteService.ts'
@@ -22,7 +21,6 @@ export interface IBaseService<
   TCreateResult = Record<string, any>
 > extends ICreateService<TCreateResult, TCreateDTO>,
     ICreateManyService<TCreateDTO, TEntity>,
-    IGetByIdService<TEntity>,
     IGetCountService<TCriteria>,
     IGetLastOrderService,
     IGetAllService<TCriteria, TEntity>,

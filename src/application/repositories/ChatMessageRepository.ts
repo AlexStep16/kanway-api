@@ -1,19 +1,21 @@
 import ChatMessage from '@models/ChatMessage.ts'
 import { IChatMessageRaw } from '@/domain/entities/IChatMessageRaw.ts'
 import { BaseRepository } from '@repositories/BaseRepository.ts'
-import { ChatMessageCriteria } from '../interfaces/criterias/ChatMessageCriteria.ts'
+import { IChatMessageCriteria } from '../interfaces/criterias/IChatMessageCriteria.ts'
 import { FilterQuery, Types } from 'mongoose'
+import { IChatMessage } from '@entities/IChatMessage.ts'
 
 export default class ChatMessageRepository extends BaseRepository<
   IChatMessageRaw,
-  typeof ChatMessage
+  IChatMessage,
+  IChatMessageCriteria
 > {
   constructor() {
     super(ChatMessage)
   }
 
   public buildFilter(
-    criteria: ChatMessageCriteria,
+    criteria: IChatMessageCriteria,
     userId: Types.ObjectId
   ): FilterQuery<IChatMessageRaw> {
     const filter: FilterQuery<IChatMessageRaw> = { user_id: userId }

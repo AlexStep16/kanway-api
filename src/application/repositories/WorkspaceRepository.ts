@@ -1,20 +1,21 @@
 import { IWorkspaceRaw } from '@entities/IWorkspaceRaw.ts'
 import WorkspaceModel from '@models/WorkspaceModel.ts'
-import { WorkspaceCriteria } from '@criterias/WorkspaceCriteria.ts'
-import { ClientSession, FilterQuery, Types } from 'mongoose'
+import { IWorkspaceCriteria } from '@criterias/IWorkspaceCriteria.ts'
+import { FilterQuery, Types } from 'mongoose'
 import { BaseRepository } from '@repositories/BaseRepository.ts'
-import { IReorderRepository } from '@traits/IReorderRepository.ts'
+import { IWorkspace } from '@entities/IWorkspace.ts'
 
-export default class WorkspaceRepository
-  extends BaseRepository<IWorkspaceRaw, typeof WorkspaceModel>
-  implements IReorderRepository<IWorkspaceRaw>
-{
+export default class WorkspaceRepository extends BaseRepository<
+  IWorkspaceRaw,
+  IWorkspace,
+  IWorkspaceCriteria
+> {
   constructor() {
     super(WorkspaceModel)
   }
 
   public buildFilter(
-    criteria: WorkspaceCriteria,
+    criteria: IWorkspaceCriteria,
     userId: Types.ObjectId
   ): FilterQuery<IWorkspaceRaw> {
     const filter: FilterQuery<IWorkspaceRaw> = { user_id: userId }
@@ -34,29 +35,5 @@ export default class WorkspaceRepository
     }
 
     return filter
-  }
-
-  public async getAllToOrder(
-    _: Types.ObjectId,
-    userId: Types.ObjectId,
-    session?: ClientSession
-  ): Promise<IWorkspaceRaw[]> {
-    return await this.model
-      .find({ user_id: userId, is_deleted: false })
-      .session(session || null)
-      .select('_id order')
-      .sort({ order: 1 })
-      .lean()
-  }
-
-  public async findByIds(
-    ids: Types.ObjectId[],
-    userId: Types.ObjectId,
-    session?: ClientSession
-  ): Promise<IWorkspaceRaw[]> {
-    return await this.model
-      .find({ _id: { $in: ids }, user_id: userId })
-      .session(session || null)
-      .lean()
   }
 }

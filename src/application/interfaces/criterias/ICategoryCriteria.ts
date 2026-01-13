@@ -1,4 +1,6 @@
-export interface CategoryCriteria {
+import { IBaseCriteria } from '../IBaseCriteria.ts'
+
+export interface ICategoryCriteria extends IBaseCriteria {
   id?: string
   ids?: string[]
 

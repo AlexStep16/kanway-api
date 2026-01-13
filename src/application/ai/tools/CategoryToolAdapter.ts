@@ -1,5 +1,5 @@
 import { CategoryService } from '@application/services/CategoryService.ts'
-import { BaseService } from '@application/services/BaseService.ts'
+import { VectorSearchService } from '@/application/services/VectorSearchService.ts'
 import {
   CategoryFilterDTO,
   CategoryFilterSchema,
@@ -31,20 +31,20 @@ interface CompressedCategory {
 }
 
 export class CategoryToolAdapter {
-  private baseService: BaseService
+  private vectorSearchService: VectorSearchService
   private categoryService: CategoryService
   private categoryCommandAdapterService: CategoryCommandAdapterService
   private filterToMongoQueryService: FilterToMongoQueryService
   private boardService: BoardService
 
   constructor(
-    baseService: BaseService,
+    vectorSearchService: VectorSearchService,
     categoryService: CategoryService,
     categoryCommandAdapterService: CategoryCommandAdapterService,
     filterToMongoQueryService: FilterToMongoQueryService,
     boardService: BoardService
   ) {
-    this.baseService = baseService
+    this.vectorSearchService = vectorSearchService
     this.categoryService = categoryService
     this.categoryCommandAdapterService = categoryCommandAdapterService
     this.categoryService = categoryService

@@ -15,7 +15,7 @@ export class ToolService {
   }
 
   public async save(dto: ToolDTO): Promise<ITool | null> {
-    const existingTools = await this.repository.find({})
+    const existingTools = await this.repository.findByCriteria({})
     const existingTool = existingTools.find((tool) => tool.name === dto.name)
 
     const toolCustomDescription = TOOLS_CUSTOM_DESCRIPTIONS[dto.name]
@@ -28,8 +28,8 @@ export class ToolService {
       if (existingTool.description !== dto.description) {
         const descriptionEmbedding = await this.embeddingService.getEmbeddings(dto.description)
 
-        const updateResult = await this.repository.updateByFilter(
-          { _id: existingTool._id },
+        const updateResult = await this.repository.updateManyByCriteria(
+          { id: existingTool.id },
           { ...existingTool, ...dto, embeddings: descriptionEmbedding }
         )
 

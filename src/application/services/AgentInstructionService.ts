@@ -2,27 +2,22 @@ import { EmbeddingService } from '@infrastructure/services/EmbeddingService.ts'
 import { toServerCaseKeys } from '@utils/objectTransformers.ts'
 import AgentInstructionRepository from '@repositories/AgentInstructionRepository.ts'
 import { AgentInstructionDTO } from '@dtos/AgentInstructionDTO.ts'
-import { IAgentInstructionRaw } from '@/domain/entities/IAgentInstructionRaw.ts'
 import { IAgentInstruction } from '@/domain/entities/IAgentInstruction.ts'
-import { BaseService } from '@application/services/BaseService.ts'
 
 export class AgentInstructionService {
   protected repository: AgentInstructionRepository
   protected embeddingService: EmbeddingService
-  protected baseService: BaseService
 
   constructor(
     agentInstructionRepository: AgentInstructionRepository,
-    embeddingService: EmbeddingService,
-    baseService: BaseService
+    embeddingService: EmbeddingService
   ) {
     this.repository = agentInstructionRepository
     this.embeddingService = embeddingService
-    this.baseService = baseService
   }
 
   private async _embedAndCreateExamples(dto: AgentInstructionDTO): Promise<IAgentInstruction[]> {
-    const results: IAgentInstructionRaw[] = []
+    const results: IAgentInstruction[] = []
 
     const examplesEmbeddings = await this.embeddingService.getEmbeddingsForMultipleTexts(
       dto.examples
@@ -34,7 +29,7 @@ export class AgentInstructionService {
         rule: dto.rule,
         embeddings: examplesEmbeddings[i],
         example: dto.examples[i],
-        suggested_tools: dto.suggestedTools,
+        suggestedTools: dto.suggestedTools,
       })
 
       results.push(result)
@@ -44,7 +39,7 @@ export class AgentInstructionService {
   }
 
   public async save(dto: AgentInstructionDTO): Promise<IAgentInstruction[] | null> {
-    const existingAgentInstructions = await this.repository.find({})
+    const existingAgentInstructions = await this.repository.findByCriteria({})
     const existingAgentInstruction = existingAgentInstructions.find(
       (instruction) => instruction.topic === dto.topic
     )

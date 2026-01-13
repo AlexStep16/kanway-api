@@ -1,7 +1,7 @@
 import { EditCategoriesDTO } from '@application/ai/tools/toolSchemes.ts'
 import { ClientSession, Types } from 'mongoose'
 import { IResponseWithLog } from '@interfaces/IResponseWithLog.ts'
-import { BaseService } from '@application/services/BaseService.ts'
+import { VectorSearchService } from '@/application/services/VectorSearchService.ts'
 import { AISemanticService } from '@application/services/AISemanticService.ts'
 import { IUser } from '@domain/entities/IUser.ts'
 import { CategoryService } from '../../services/CategoryService.ts'
@@ -13,18 +13,18 @@ import { NotFoundError } from '@/domain/errors/NotFound.ts'
 export class CategoryCommandAdapterService {
   protected categoryService: CategoryService
   protected boardService: BoardService
-  protected baseService: BaseService
+  protected vectorSearchService: VectorSearchService
   protected aiSemanticService: AISemanticService
 
   constructor(
     categoryService: CategoryService,
     boardService: BoardService,
-    baseService: BaseService,
+    vectorSearchService: VectorSearchService,
     aiSemanticService: AISemanticService
   ) {
     this.categoryService = categoryService
     this.boardService = boardService
-    this.baseService = baseService
+    this.vectorSearchService = vectorSearchService
     this.aiSemanticService = aiSemanticService
   }
 
@@ -57,8 +57,6 @@ export class CategoryCommandAdapterService {
         if (!board) {
           throw new NotFoundError(`Board with id ${changes.boardId} not found`)
         }
-
-        updatedCategory.boardName = board.name
       }
 
       if (typeof changes.order !== 'undefined') {

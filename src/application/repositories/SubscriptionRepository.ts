@@ -1,24 +1,31 @@
 import SubscriptionModel from '@/domain/models/SubscriptionModel.ts'
 import { ISubscriptionRaw } from '@/domain/entities/ISubscriptionRaw.ts'
-import { SubscriptionPlanEnum } from '@/domain/enums/SubscriptionPlanEnum.ts'
-import { SystemFields } from '@infrastructure/types/SystemFields.ts'
+import { BaseRepository } from './BaseRepository.ts'
+import { ISubscription } from '@/domain/entities/ISubscription.ts'
+import { ISubscriptionCriteria } from '../interfaces/criterias/ISubscriptionCriteria.ts'
+import { FilterQuery, Types } from 'mongoose'
 
-export default class SubscriptionRepository {
-  public async create(data: Omit<ISubscriptionRaw, SystemFields>): Promise<ISubscriptionRaw> {
-    const [newDoc] = await SubscriptionModel.create([data])
-
-    return newDoc
+export default class SubscriptionRepository extends BaseRepository<
+  ISubscriptionRaw,
+  ISubscription,
+  ISubscriptionCriteria
+> {
+  constructor() {
+    super(SubscriptionModel)
   }
 
-  public async findAll(): Promise<ISubscriptionRaw[]> {
-    return await SubscriptionModel.find().lean()
-  }
+  public buildFilter(
+    criteria: ISubscriptionCriteria,
+    userId: Types.ObjectId
+  ): FilterQuery<ISubscriptionRaw> {
+    const filter: FilterQuery<ISubscriptionRaw> = { user_id: userId }
 
-  public async findById(id: string): Promise<ISubscriptionRaw | null> {
-    return await SubscriptionModel.findById(id).lean()
-  }
+    if (criteria.id) {
+      filter._id = criteria.id
+    } else if (criteria.ids) {
+      filter._id = { $in: criteria.ids }
+    }
 
-  public async findByCustomId(id: SubscriptionPlanEnum): Promise<ISubscriptionRaw | null> {
-    return await SubscriptionModel.findOne({ id }).lean()
+    return filter
   }
 }

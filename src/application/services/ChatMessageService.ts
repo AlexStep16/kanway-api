@@ -1,5 +1,4 @@
 import ChatMessageRepository from '@repositories/ChatMessageRepository.ts'
-import { ICreateService } from '@interfaces/traits/ICreateService.ts'
 import { ChatMessageDTO } from '@dtos/ChatMessageDTO.ts'
 import { IUser } from '@/domain/entities/IUser.ts'
 import { OperationLogService } from './OperationLogService.ts'
@@ -8,22 +7,29 @@ import { CollectionsEnum } from '@/domain/enums/CollectionsEnum.ts'
 import mongoose, { ClientSession, Types } from 'mongoose'
 import { IResponseWithLog } from '@interfaces/IResponseWithLog.ts'
 import { IChatMessage } from '@/domain/entities/IChatMessage.ts'
-import { toServerCaseKeys } from '@/utils/objectTransformers.ts'
-import { ChatMessageCriteria } from '@interfaces/criterias/ChatMessageCriteria.ts'
+import { IChatMessageCriteria } from '@interfaces/criterias/IChatMessageCriteria.ts'
 import { NotFoundError } from '@/domain/errors/NotFound.ts'
-import { IChatMessageRaw } from '@entities/IChatMessageRaw.ts'
+import { AppError } from '@/domain/errors/AppError.ts'
+import { BaseService } from './BaseService.ts'
+import { IChatMessageRaw } from '@/domain/entities/IChatMessageRaw.ts'
 
 const MAX_RETRIES = 3
 
-export class ChatMessageService implements ICreateService<IChatMessage, ChatMessageDTO> {
+export class ChatMessageService extends BaseService<
+  IChatMessageRaw,
+  IChatMessage,
+  IChatMessageCriteria
+> {
   protected repository: ChatMessageRepository
   protected operationLogService: OperationLogService
 
   constructor(
-    ChatMessageRepository: ChatMessageRepository,
+    chatMessageRepository: ChatMessageRepository,
     operationLogService: OperationLogService
   ) {
-    this.repository = ChatMessageRepository
+    super(chatMessageRepository)
+
+    this.repository = chatMessageRepository
     this.operationLogService = operationLogService
   }
 
@@ -52,29 +58,28 @@ export class ChatMessageService implements ICreateService<IChatMessage, ChatMess
         session.endSession()
       }
     }
-    throw new Error(
-      'Произошла ошибка при выполнении операции после максимального количества попыток.'
+    throw new AppError(
+      'Произошла ошибка при выполнении операции после максимального количества попыток.',
+      500
     )
   }
 
   private async _executeEditTransaction(
     data: Partial<ChatMessageDTO>,
-    criteria: ChatMessageCriteria,
+    criteria: IChatMessageCriteria,
     userId: Types.ObjectId,
     session: ClientSession
   ): Promise<IChatMessage> {
-    const filter = this.repository.buildFilter(criteria, userId)
-
-    const chatMessagesCount = await this.repository.getCount(filter, session)
+    const chatMessagesCount = await this.repository.getCount(criteria, session, userId)
 
     if (chatMessagesCount === 0) throw new NotFoundError('Сообщения для редактирования не найдены.')
 
-    const newEntities = await this.repository.updateByFilter(filter, data, session)
-    const chatMessage = newEntities[0] as IChatMessageRaw
+    const chatMessages = await this.repository.updateManyByCriteria(criteria, data, session, userId)
+    const chatMessage = chatMessages[0]
 
     if (!chatMessage) throw new NotFoundError('Сообщение не было обновлено.')
 
-    return toServerCaseKeys<IChatMessage>(chatMessage)
+    return chatMessage
   }
 
   private async _executeCreateTransaction(
@@ -82,14 +87,14 @@ export class ChatMessageService implements ICreateService<IChatMessage, ChatMess
     user: IUser,
     session: ClientSession
   ): Promise<IResponseWithLog<IChatMessage[]>> {
-    const ChatMessage = await this.repository.create(
+    const chatMessage = await this.repository.create(
       {
         role: data.role,
         content: data.content,
-        list_type: data.listType,
-        user_id: user.id,
-        chat_id: data.chatId,
-        thread_id: data.threadId,
+        listType: data.listType,
+        userId: user.id,
+        chatId: data.chatId,
+        threadId: data.threadId,
       },
       session
     )
@@ -98,7 +103,7 @@ export class ChatMessageService implements ICreateService<IChatMessage, ChatMess
       {
         operationType: OperationTypesEnum.CREATE,
         collectionName: CollectionsEnum.CHAT_HISTORIES,
-        entitiesAfter: [ChatMessage],
+        entitiesAfter: [chatMessage],
         dependencies: [],
       },
       user.id,
@@ -106,8 +111,8 @@ export class ChatMessageService implements ICreateService<IChatMessage, ChatMess
     )
 
     return {
-      data: [toServerCaseKeys<IChatMessage>(ChatMessage)],
-      logId: log[0].id,
+      data: [chatMessage],
+      logId: log.id,
     }
   }
 
@@ -127,7 +132,7 @@ export class ChatMessageService implements ICreateService<IChatMessage, ChatMess
 
   public async edit(
     data: Partial<ChatMessageDTO>,
-    criteria: ChatMessageCriteria,
+    criteria: IChatMessageCriteria,
     user: IUser,
     externalSession?: ClientSession
   ): Promise<IChatMessage> {
@@ -143,17 +148,15 @@ export class ChatMessageService implements ICreateService<IChatMessage, ChatMess
   }
 
   private async _executeDeleteTransaction(
-    criteria: ChatMessageCriteria,
+    criteria: IChatMessageCriteria,
     userId: Types.ObjectId,
     session: ClientSession
   ): Promise<void> {
-    const filter = this.repository.buildFilter(criteria, userId)
-
-    await this.repository.deleteMany(filter, session)
+    await this.repository.deleteMany(criteria, userId, session)
   }
 
   public async delete(
-    criteria: ChatMessageCriteria,
+    criteria: IChatMessageCriteria,
     user: IUser,
     externalSession?: ClientSession
   ): Promise<void> {
@@ -166,38 +169,5 @@ export class ChatMessageService implements ICreateService<IChatMessage, ChatMess
         this._executeDeleteTransaction(criteria, userId, session)
       )
     }
-  }
-
-  public async getLastMessageInChat(
-    chatId: string,
-    userId: Types.ObjectId,
-    session?: ClientSession
-  ): Promise<IChatMessage | null> {
-    const filter = this.repository.buildFilter({ chatId }, userId)
-
-    const chatMessage = await this.repository.find(filter, session, { created_at: -1 })
-
-    return chatMessage.length > 0 ? toServerCaseKeys<IChatMessage>(chatMessage[0]) : null
-  }
-
-  public async getById(
-    id: string,
-    userId: Types.ObjectId,
-    session?: ClientSession
-  ): Promise<IChatMessage | null> {
-    const chatMessage = await this.repository.findByIdAndUser(id, userId, session)
-
-    return chatMessage ? toServerCaseKeys<IChatMessage>(chatMessage) : null
-  }
-
-  public async getAll(
-    criteria: ChatMessageCriteria,
-    userId: Types.ObjectId,
-    session?: ClientSession
-  ): Promise<IChatMessage[]> {
-    const filter = this.repository.buildFilter(criteria, userId)
-    const chats = await this.repository.find(filter, session)
-
-    return chats.map((ws) => toServerCaseKeys(ws))
   }
 }

@@ -1,4 +1,6 @@
-export interface ChatCriteria {
+import { IBaseCriteria } from '../IBaseCriteria.ts'
+
+export interface IChatCriteria extends IBaseCriteria {
   id?: string
   ids?: string[]
 

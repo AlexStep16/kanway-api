@@ -1,8 +1,8 @@
 import SuccessResponse from '@/application/services/SuccessResponse.ts'
 import { NextFunction, Request, Response } from 'express'
 import { ChatService } from '@/application/services/ChatService.ts'
-import { ChatCriteria } from '@/application/interfaces/criterias/ChatCriteria.ts'
-import { langgraphQueue, langgraphQueueEvents } from '@/infrastructure/queues/index.ts'
+import { IChatCriteria } from '@/application/interfaces/criterias/IChatCriteria.ts'
+import { langgraphQueueEvents } from '@/infrastructure/queues/index.ts'
 
 export default class ChatController {
   protected service: ChatService
@@ -97,8 +97,8 @@ export default class ChatController {
 
   public getAll = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const filter: ChatCriteria = { ...req.query, workspaceId: req.params.workspaceId }
-      const entities = await this.service.getAll(filter, req.user!.id)
+      const criteria: IChatCriteria = { ...req.query, workspaceId: req.params.workspaceId }
+      const entities = await this.service.getByCriteria(criteria, req.user!.id)
 
       res.status(200).json(new SuccessResponse(entities))
     } catch (error) {

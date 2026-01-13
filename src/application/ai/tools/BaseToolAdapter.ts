@@ -4,14 +4,14 @@ import { CategoryService } from '@/application/services/CategoryService.ts'
 import { OperationLogService } from '@/application/services/OperationLogService.ts'
 import { TaskService } from '@/application/services/TaskService.ts'
 import { WorkspaceService } from '@/application/services/WorkspaceService.ts'
-import { BaseService } from '@application/services/BaseService.ts'
+import { VectorSearchService } from '@/application/services/VectorSearchService.ts'
 import { LangGraphRunnableConfig } from 'node_modules/@langchain/langgraph/dist/pregel/runnable_types.js'
 import { FailedToolResult } from '@application/ai/tools/FailedToolResult.ts'
 import { SuccessToolResult } from '@application/ai/tools/SuccessToolResult.ts'
 import { Configurable } from '../interfaces/Configurable.ts'
 
 export class BaseToolAdapter {
-  protected baseService: BaseService
+  protected vectorSearchService: VectorSearchService
   protected operationLogService: OperationLogService
   protected taskService: TaskService
   protected categoryService: CategoryService
@@ -19,14 +19,14 @@ export class BaseToolAdapter {
   protected workspaceService: WorkspaceService
 
   constructor(
-    baseService: BaseService,
+    vectorSearchService: VectorSearchService,
     operationLogService: OperationLogService,
     taskService: TaskService,
     categoryService: CategoryService,
     boardService: BoardService,
     workspaceService: WorkspaceService
   ) {
-    this.baseService = baseService
+    this.vectorSearchService = vectorSearchService
     this.operationLogService = operationLogService
     this.taskService = taskService
     this.categoryService = categoryService
@@ -84,11 +84,10 @@ export class BaseToolAdapter {
     }
 
     const result = await this.operationLogService.undoOperations(operationIds, user)
-    const combinedResult = await this.operationLogService.combineUndoResult(result)
 
     const dataWithIntegration = {
       data: 'Operations undone successfully.',
-      integration: combinedResult,
+      integration: result,
     }
 
     return new SuccessToolResult(dataWithIntegration)

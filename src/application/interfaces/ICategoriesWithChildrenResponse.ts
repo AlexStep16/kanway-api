@@ -1,7 +1,7 @@
-import { ITask } from '@entities/ITask.ts'
-import { ICategory } from '@entities/ICategory.ts'
+import { ICategoryPopulated } from './ICategoryPopulated.ts'
+import { ITaskPopulated } from './ITaskPopulated.ts'
 
 export interface ICategoriesWithChildrenResponse {
-  categories: ICategory[]
-  tasks: ITask[]
+  categories: ICategoryPopulated[]
+  tasks: ITaskPopulated[]
 }

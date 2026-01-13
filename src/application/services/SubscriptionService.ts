@@ -1,40 +1,34 @@
-import { toServerCaseKeys } from '@utils/objectTransformers.ts'
 import SubscriptionRepository from '@repositories/SubscriptionRepository.ts'
-import { ISubscriptionRaw } from '@entities/ISubscriptionRaw.ts'
 import { ISubscription } from '@entities/ISubscription.ts'
 import { SystemFields } from '@infrastructure/types/SystemFields.ts'
+import { BaseService } from './BaseService.ts'
+import { ISubscriptionRaw } from '@/domain/entities/ISubscriptionRaw.ts'
+import { ISubscriptionCriteria } from '../interfaces/criterias/ISubscriptionCriteria.ts'
 
-export class SubscriptionService {
+export class SubscriptionService extends BaseService<
+  ISubscriptionRaw,
+  ISubscription,
+  ISubscriptionCriteria
+> {
   protected repository: SubscriptionRepository
 
   constructor(subscriptionRepository: SubscriptionRepository) {
+    super(subscriptionRepository)
+
     this.repository = subscriptionRepository
   }
 
   public async create(data: ISubscription): Promise<void> {
-    const subscription: Omit<ISubscriptionRaw, SystemFields> = {
-      id: data.id,
+    const subscription: Omit<ISubscription, SystemFields> = {
       name: data.name,
       price: data.price,
       currency: data.currency,
       interval: data.interval,
-      limit_workspaces: data.limitWorkspaces,
-      limit_boards: data.limitBoards,
-      limit_ai_messages_per_month: data.limitAiMessagesPerMonth,
+      limitWorkspaces: data.limitWorkspaces,
+      limitBoards: data.limitBoards,
+      limitAiMessagesPerMonth: data.limitAiMessagesPerMonth,
     }
 
     await this.repository.create(subscription)
-  }
-
-  public async getAll(): Promise<ISubscription[]> {
-    const subscriptions = await this.repository.findAll()
-
-    return subscriptions.map(toServerCaseKeys<ISubscription>)
-  }
-
-  public async getById(id: string): Promise<ISubscription | null> {
-    const subscription = await this.repository.findById(id)
-
-    return toServerCaseKeys<ISubscription>(subscription)
   }
 }

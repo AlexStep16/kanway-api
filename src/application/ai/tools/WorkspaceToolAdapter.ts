@@ -1,5 +1,5 @@
 import { WorkspaceService } from '@application/services/WorkspaceService.ts'
-import { BaseService } from '@application/services/BaseService.ts'
+import { VectorSearchService } from '@/application/services/VectorSearchService.ts'
 import {
   WorkspaceFilterDTO,
   WorkspaceFilterSchema,
@@ -29,18 +29,18 @@ interface CompressedWorkspace {
 }
 
 export class WorkspaceToolAdapter {
-  private baseService: BaseService
+  private vectorSearchService: VectorSearchService
   private workspaceService: WorkspaceService
   private workspaceCommandAdapterService: WorkspaceCommandAdapterService
   private filterToMongoQueryService: FilterToMongoQueryService
 
   constructor(
-    baseService: BaseService,
+    vectorSearchService: VectorSearchService,
     workspaceService: WorkspaceService,
     workspaceCommandAdapterService: WorkspaceCommandAdapterService,
     filterToMongoQueryService: FilterToMongoQueryService
   ) {
-    this.baseService = baseService
+    this.vectorSearchService = vectorSearchService
     this.workspaceService = workspaceService
     this.workspaceCommandAdapterService = workspaceCommandAdapterService
     this.filterToMongoQueryService = filterToMongoQueryService

@@ -17,9 +17,4 @@ export interface IReorderRepository<TEntity> {
     userId: Types.ObjectId,
     session?: ClientSession
   ): Promise<void>
-  findByIds(
-    ids: Types.ObjectId[],
-    userId: Types.ObjectId,
-    session?: ClientSession
-  ): Promise<TEntity[]>
 }

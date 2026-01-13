@@ -1,10 +1,11 @@
 import AgentInstructionModel from '@models/AgentInstructionModel.ts'
 import { IAgentInstructionRaw } from '@entities/IAgentInstructionRaw.ts'
 import { BaseRepository } from '@repositories/BaseRepository.ts'
+import { IAgentInstruction } from '@entities/IAgentInstruction.ts'
 
 export default class AgentInstructionRepository extends BaseRepository<
   IAgentInstructionRaw,
-  typeof AgentInstructionModel
+  IAgentInstruction
 > {
   constructor() {
     super(AgentInstructionModel)

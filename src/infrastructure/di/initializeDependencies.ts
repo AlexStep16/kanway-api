@@ -43,7 +43,7 @@ import { PaymentMethodController } from '@controllers/PaymentMethodController.ts
 import { IRevertableService } from '@interfaces/traits/IRevertableService.ts'
 import { OperationLogController } from '@controllers/OperationLogController.ts'
 import { TaskToolAdapter } from '@application/ai/tools/TaskToolAdapter.ts'
-import { BaseService } from '@application/services/BaseService.ts'
+import { VectorSearchService } from '@/application/services/VectorSearchService.ts'
 import { MongoClient } from 'mongodb'
 import { TaskCommandAdapterService } from '@/application/ai/services/TaskCommandAdapterService.ts'
 import { AISemanticService } from '@application/services/AISemanticService.ts'
@@ -66,6 +66,10 @@ import ToolRepository from '@repositories/ToolRepository.ts'
 import AgentInstructionRepository from '@repositories/AgentInstructionRepository.ts'
 import { AgentInstructionService } from '@application/services/AgentInstructionService.ts'
 import { BaseToolAdapter } from '@/application/ai/tools/BaseToolAdapter.ts'
+import { ITask } from '@/domain/entities/ITask.ts'
+import { ICategory } from '@/domain/entities/ICategory.ts'
+import { IBoard } from '@/domain/entities/IBoard.ts'
+import { IWorkspace } from '@/domain/entities/IWorkspace.ts'
 
 export function initializeDependencies() {
   const mongoClient = new MongoClient(process.env.MONGODB_URI || '')
@@ -103,7 +107,7 @@ export function initializeDependencies() {
       ['workspaces', mockWorkspaceService],
     ])
   )
-  const baseService = new BaseService(embeddingService, mongoClient)
+  const vectorSearchService = new VectorSearchService(embeddingService, mongoClient)
 
   /* SETTING SERVICES START */
   const settingService = new SettingService(settingRepository)
@@ -126,42 +130,46 @@ export function initializeDependencies() {
   /* PAYMENT SERVICES END */
 
   /* TASK SERVICES START */
-  const taskReorderService = new ReorderService<ITaskRaw>(taskRepository)
+  const taskReorderService = new ReorderService<ITask, ITaskRaw>(taskRepository)
   const taskService = new TaskService(
     taskRepository,
     embeddingService,
     operationLogService,
     taskReorderService,
-    mockCategoryService
+    mockCategoryService,
+    mockBoardService,
+    mockWorkspaceService
   )
   /* TASK SERVICES END */
 
   /* CATEGORY SERVICES START */
-  const categoryReorderService = new ReorderService<ICategoryRaw>(categoryRepository)
+  const categoryReorderService = new ReorderService<ICategory, ICategoryRaw>(categoryRepository)
   const categoryService = new CategoryService(
     categoryRepository,
     embeddingService,
     operationLogService,
     categoryReorderService,
+    mockWorkspaceService,
     mockBoardService,
     taskService
   )
   /* CATEGORY SERVICES END */
 
   /* BOARD SERVICES START */
-  const boardReorderService = new ReorderService<IBoardRaw>(boardRepository)
+  const boardReorderService = new ReorderService<IBoard, IBoardRaw>(boardRepository)
   const boardService = new BoardService(
     boardRepository,
     embeddingService,
     operationLogService,
     boardReorderService,
+    mockWorkspaceService,
     categoryService,
     taskService
   )
   /* BOARD SERVICES END */
 
   /* WORKSPACE SERVICES START */
-  const workspaceReorderService = new ReorderService<IWorkspaceRaw>(workspaceRepository)
+  const workspaceReorderService = new ReorderService<IWorkspace, IWorkspaceRaw>(workspaceRepository)
   const workspaceService = new WorkspaceService(
     workspaceRepository,
     embeddingService,
@@ -249,8 +257,7 @@ export function initializeDependencies() {
   const toolService = new ToolService(toolRepository, embeddingService)
   const agentInstructionService = new AgentInstructionService(
     agentInstructionRepository,
-    embeddingService,
-    baseService
+    embeddingService
   )
   /** AI SERVICES END */
 
@@ -258,11 +265,11 @@ export function initializeDependencies() {
   const taskCommandAdapter = new TaskCommandAdapterService(
     taskService,
     categoryService,
-    baseService,
+    vectorSearchService,
     aiSemanticService
   )
   const baseToolAdapter = new BaseToolAdapter(
-    baseService,
+    vectorSearchService,
     operationLogService,
     taskService,
     categoryService,
@@ -271,7 +278,7 @@ export function initializeDependencies() {
   )
 
   const taskToolAdapter = new TaskToolAdapter(
-    baseService,
+    vectorSearchService,
     taskService,
     taskCommandAdapter,
     categoryService,
@@ -281,11 +288,11 @@ export function initializeDependencies() {
   const categoryCommandAdapter = new CategoryCommandAdapterService(
     categoryService,
     boardService,
-    baseService,
+    vectorSearchService,
     aiSemanticService
   )
   const categoryToolAdapter = new CategoryToolAdapter(
-    baseService,
+    vectorSearchService,
     categoryService,
     categoryCommandAdapter,
     filterToMongoQueryService,
@@ -295,11 +302,11 @@ export function initializeDependencies() {
   const boardCommandAdapter = new BoardCommandAdapterService(
     boardService,
     workspaceService,
-    baseService,
+    vectorSearchService,
     aiSemanticService
   )
   const boardToolAdapter = new BoardToolAdapter(
-    baseService,
+    vectorSearchService,
     boardService,
     boardCommandAdapter,
     filterToMongoQueryService,
@@ -308,11 +315,11 @@ export function initializeDependencies() {
 
   const workspaceCommandAdapter = new WorkspaceCommandAdapterService(
     workspaceService,
-    baseService,
+    vectorSearchService,
     aiSemanticService
   )
   const workspaceToolAdapter = new WorkspaceToolAdapter(
-    baseService,
+    vectorSearchService,
     workspaceService,
     workspaceCommandAdapter,
     filterToMongoQueryService
@@ -320,7 +327,7 @@ export function initializeDependencies() {
   /** TOOLS ADAPTERS END */
 
   const toolExecutorService = new ToolExecutorService(
-    baseService,
+    vectorSearchService,
     operationLogService,
     baseToolAdapter,
     taskToolAdapter,
@@ -351,7 +358,7 @@ export function initializeDependencies() {
 
   return {
     services: {
-      baseService,
+      vectorSearchService,
       authService,
       userService,
       emailService,

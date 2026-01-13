@@ -1,15 +1,16 @@
 import { IUserRaw } from '@entities/IUserRaw.ts'
 import { UserModel } from '@models/UserModel.ts' // Mongoose Model
 import { BaseRepository } from '@repositories/BaseRepository.ts'
-import { UserCriteria } from '../interfaces/criterias/UserCriteria.ts'
+import { IUserCriteria } from '../interfaces/criterias/IUserCriteria.ts'
 import { FilterQuery, Types } from 'mongoose'
+import { IUser } from '@/domain/entities/IUser.ts'
 
-export default class UserRepository extends BaseRepository<IUserRaw, typeof UserModel> {
+export default class UserRepository extends BaseRepository<IUserRaw, IUser, IUserCriteria> {
   constructor() {
     super(UserModel)
   }
 
-  public buildFilter(criteria: UserCriteria): FilterQuery<IUserRaw> {
+  public buildFilter(criteria: IUserCriteria): FilterQuery<IUserRaw> {
     const filter: FilterQuery<IUserRaw> = {}
 
     if (criteria.id) {

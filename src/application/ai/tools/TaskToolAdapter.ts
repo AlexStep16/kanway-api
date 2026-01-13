@@ -1,5 +1,5 @@
 import { TaskService } from '@application/services/TaskService.ts'
-import { BaseService } from '@application/services/BaseService.ts'
+import { VectorSearchService } from '@/application/services/VectorSearchService.ts'
 import {
   TaskFilterDTO,
   TaskFilterSchema,
@@ -35,20 +35,20 @@ interface CompressedTask {
 }
 
 export class TaskToolAdapter {
-  private baseService: BaseService
+  private vectorSearchService: VectorSearchService
   private taskService: TaskService
   private taskCommandAdapterService: TaskCommandAdapterService
   private categoryService: CategoryService
   private filterToMongoQueryService: FilterToMongoQueryService
 
   constructor(
-    baseService: BaseService,
+    vectorSearchService: VectorSearchService,
     taskService: TaskService,
     taskCommandAdapterService: TaskCommandAdapterService,
     categoryService: CategoryService,
     filterToMongoQueryService: FilterToMongoQueryService
   ) {
-    this.baseService = baseService
+    this.vectorSearchService = vectorSearchService
     this.taskService = taskService
     this.taskCommandAdapterService = taskCommandAdapterService
     this.categoryService = categoryService

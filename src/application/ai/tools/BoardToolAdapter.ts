@@ -1,5 +1,5 @@
 import { BoardService } from '@application/services/BoardService.ts'
-import { BaseService } from '@application/services/BaseService.ts'
+import { VectorSearchService } from '@/application/services/VectorSearchService.ts'
 import {
   BoardFilterDTO,
   BoardFilterSchema,
@@ -31,20 +31,20 @@ interface CompressedBoard {
 }
 
 export class BoardToolAdapter {
-  private baseService: BaseService
+  private vectorSearchService: VectorSearchService
   private boardService: BoardService
   private boardCommandAdapterService: BoardCommandAdapterService
   private filterToMongoQueryService: FilterToMongoQueryService
   private workspaceService: WorkspaceService
 
   constructor(
-    baseService: BaseService,
+    vectorSearchService: VectorSearchService,
     boardService: BoardService,
     boardCommandAdapterService: BoardCommandAdapterService,
     filterToMongoQueryService: FilterToMongoQueryService,
     workspaceService: WorkspaceService
   ) {
-    this.baseService = baseService
+    this.vectorSearchService = vectorSearchService
     this.boardService = boardService
     this.boardCommandAdapterService = boardCommandAdapterService
     this.boardService = boardService

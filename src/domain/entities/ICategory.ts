@@ -1,18 +1,18 @@
 import { Types } from 'mongoose'
 
-export interface ICategory {
+export interface ICategory<TBoard = Types.ObjectId, TWorkspace = Types.ObjectId> {
   id: Types.ObjectId
   name: string
-  workspaceId: Types.ObjectId
-  workspaceName: string
-  boardId: Types.ObjectId
-  boardName: string
+  workspace: TWorkspace
+  board: TBoard
   userId: Types.ObjectId
+  tasksCount: number
   order: number
-  embeddings: Array<Number>
+  embeddings: Array<number>
   isDeleted: boolean
   isDeletedExternal: boolean
   deletedTime?: Date
+  tempClientId?: string
   createdAt: Date
   updatedAt: Date
 }

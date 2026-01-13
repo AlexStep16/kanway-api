@@ -1,19 +1,21 @@
 import OperationLogModel from '@models/OperationLogModel.ts'
 import { IOperationLogRaw } from '@entities/IOperationLogRaw.ts'
 import { BaseRepository } from '@repositories/BaseRepository.ts'
-import { OperationLogCriteria } from '@interfaces/criterias/OperationLogCriteria.ts'
+import { IOperationLogCriteria } from '@interfaces/criterias/IOperationLogCriteria.ts'
 import { FilterQuery, Types } from 'mongoose'
+import { IOperationLog } from '@entities/IOperationLog.ts'
 
 export default class OperationLogRepository extends BaseRepository<
   IOperationLogRaw,
-  typeof OperationLogModel
+  IOperationLog,
+  IOperationLogCriteria
 > {
   constructor() {
     super(OperationLogModel)
   }
 
   public buildFilter(
-    criteria: OperationLogCriteria,
+    criteria: IOperationLogCriteria,
     userId: Types.ObjectId
   ): FilterQuery<IOperationLogRaw> {
     const filter: FilterQuery<IOperationLogRaw> = { user_id: userId }

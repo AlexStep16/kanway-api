@@ -1,14 +1,16 @@
 import { Types } from 'mongoose'
+import { TASK_COLORS } from '@constants/TASK_COLORS.ts'
 
-export interface ITask {
+export interface ITask<
+  TBoard = Types.ObjectId,
+  TCategory = Types.ObjectId,
+  TWorkspace = Types.ObjectId
+> {
   id: Types.ObjectId
   name: string
-  workspaceId: Types.ObjectId
-  workspaceName: string
-  boardId: Types.ObjectId
-  boardName: string
-  categoryId: Types.ObjectId
-  categoryName: string
+  workspace: TWorkspace
+  board: TBoard
+  category: TCategory
   isDeleted: boolean
   isDeletedExternal: boolean
   order: number
@@ -20,48 +22,10 @@ export interface ITask {
   dueDate?: string
   dueHours?: number
   dueMinutes?: number
-  color?: [
-    '#ffa2a2',
-    '#ff6467',
-    '#e7000b',
-
-    '#8ec5ff',
-    '#3b82f6',
-    '#155dfc',
-
-    '#ffdf20',
-    '#f0b100',
-    '#d08700',
-
-    '#dab2ff',
-    '#ad46ff',
-    '#9810fa',
-
-    '#ffb86a',
-    '#ff6900',
-    '#f54a00',
-
-    '#7bf1a8',
-    '#00c951',
-    '#00a63e',
-
-    '#bbf451',
-    '#7ccf00',
-    '#5ea500',
-
-    '#fda5d6',
-    '#f6339a',
-    '#e60076',
-
-    '#d4d4d4',
-    '#737373',
-    '#525252',
-
-    '#d1d5dc',
-    '#6a7282',
-    '#4a5565'
-  ][number]
+  color?: (typeof TASK_COLORS)[number]
   colorName?: string
+  embeddings?: number[]
+  tempClientId?: string
   createdAt: Date
   updatedAt: Date
 }

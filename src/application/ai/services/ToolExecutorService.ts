@@ -1,7 +1,7 @@
 import { BaseMessage, ToolCall, ToolMessage } from '@langchain/core/messages'
 import { DynamicStructuredTool } from '@langchain/core/tools'
 import { dispatchCustomEvent } from '@langchain/core/callbacks/dispatch'
-import { BaseService } from '@application/services/BaseService.ts'
+import { VectorSearchService } from '@/application/services/VectorSearchService.ts'
 import { AgentRoles } from '@/enums/AgentRoles.ts'
 import { createTools } from '../helpers/toolsHelper.ts'
 import { TaskToolAdapter } from '../tools/TaskToolAdapter.ts'
@@ -16,7 +16,7 @@ import { ShowEntitiesToUserDTO } from '../tools/toolSchemes.ts'
 import * as Sentry from '@sentry/node'
 
 export class ToolExecutorService {
-  protected baseService: BaseService
+  protected vectorSearchService: VectorSearchService
   protected taskToolAdapter: TaskToolAdapter
   protected categoryToolAdapter: CategoryToolAdapter
   protected boardToolAdapter: BoardToolAdapter
@@ -29,7 +29,7 @@ export class ToolExecutorService {
   public plannerTools: DynamicStructuredTool[]
 
   constructor(
-    baseService: BaseService,
+    vectorSearchService: VectorSearchService,
     operationLogService: OperationLogService,
     baseToolAdapter: BaseToolAdapter,
     taskToolAdapter: TaskToolAdapter,
@@ -37,7 +37,7 @@ export class ToolExecutorService {
     boardToolAdapter: BoardToolAdapter,
     workspaceToolAdapter: WorkspaceToolAdapter
   ) {
-    this.baseService = baseService
+    this.vectorSearchService = vectorSearchService
     this.taskToolAdapter = taskToolAdapter
     this.categoryToolAdapter = categoryToolAdapter
     this.boardToolAdapter = boardToolAdapter

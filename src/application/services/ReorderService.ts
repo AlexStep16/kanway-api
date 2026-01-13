@@ -1,11 +1,18 @@
 import { IReordable } from '@entities/IReordable.ts'
-import { IReorderRepository } from '@traits/IReorderRepository.ts'
 import { ClientSession, Types } from 'mongoose'
+import { BaseRepository } from '../repositories/BaseRepository.ts'
+import { BaseService } from './BaseService.ts'
 
-export class ReorderService<TEntity extends IReordable> {
-  protected repository: IReorderRepository<TEntity>
+export class ReorderService<TEntity extends IReordable, TRawEntity, TCriteria> extends BaseService<
+  TRawEntity,
+  TEntity,
+  TCriteria
+> {
+  protected repository: BaseRepository<TRawEntity, TEntity, TCriteria>
 
-  constructor(repository: IReorderRepository<TEntity>) {
+  constructor(repository: BaseRepository<TRawEntity, TEntity, TCriteria>) {
+    super(repository)
+
     this.repository = repository
   }
 
@@ -28,8 +35,8 @@ export class ReorderService<TEntity extends IReordable> {
     if (entitiesToUpdate.length > 0) {
       await this.repository.bulkUpdateOrders(entitiesToUpdate, userId, session)
 
-      const updatedEntities = await this.repository.findByIds(
-        entitiesToUpdate.map((e) => e._id),
+      const updatedEntities = await this.getByCriteria(
+        { ids: entitiesToUpdate.map((e) => e.id) } as TCriteria,
         userId,
         session
       )
@@ -56,12 +63,14 @@ export class ReorderService<TEntity extends IReordable> {
     }, new Map<string, TEntity[]>())
 
     for (let [parentId, newItems] of groupedEntities.entries()) {
-      const newEntitiesIds = newItems.map((e) => e._id.toString())
+      const newEntitiesIds = newItems.map((e) => e.id.toString())
       const entities: IReordable[] = await this.repository.getAllToOrder(
         new Types.ObjectId(parentId),
-        userId
+        parentIdKey as string,
+        userId,
+        session
       )
-      const entitiesOld = entities.filter((e) => !newEntitiesIds.includes(e._id.toString()))
+      const entitiesOld = entities.filter((e) => !newEntitiesIds.includes(e.id.toString()))
 
       newItems.sort((a, b) => a.order - b.order)
 
@@ -80,6 +89,7 @@ export class ReorderService<TEntity extends IReordable> {
 
   public async reorderByParentIds(
     parentIds: Types.ObjectId[],
+    parentField: keyof TEntity,
     userId: Types.ObjectId,
     session?: ClientSession
   ): Promise<TEntity[]> {
@@ -89,7 +99,12 @@ export class ReorderService<TEntity extends IReordable> {
     const allUpdatedEntities: TEntity[] = []
 
     for (let parentId of uniqueParentIds) {
-      const entities: IReordable[] = await this.repository.getAllToOrder(parentId, userId, session)
+      const entities: IReordable[] = await this.repository.getAllToOrder(
+        parentId,
+        parentField as string,
+        userId,
+        session
+      )
 
       const updatedEntities = await this._baseReorderLogic(entities, userId, session)
       allUpdatedEntities.push(...updatedEntities)

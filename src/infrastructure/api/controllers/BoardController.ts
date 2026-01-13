@@ -1,22 +1,20 @@
 import { BoardService } from '@application/services/BoardService.ts'
 import { IBoard } from '@entities/IBoard.ts'
-import { BoardDTO } from '@application/dtos/BoardDTO.ts'
 import { BaseController } from '@controllers/BaseController.ts'
-import { BoardCriteria } from '@interfaces/criterias/BoardCriteria.ts'
+import { IBoardCriteria } from '@interfaces/criterias/IBoardCriteria.ts'
 import { Request, Response, NextFunction } from 'express'
 import SuccessResponse from '@application/services/SuccessResponse.ts'
 import { BoardEditDTO } from '@dtos/BoardEditDTO.ts'
-import { ClonedBoardsResult } from '@dtos/ClonedBoardsResult.ts'
-import { IBoardsWithChildrenResponse } from '@/application/interfaces/IBoardsWithChildrenResponse.ts'
+import { BoardDTO } from '@dtos/BoardDTO.ts'
+import { IBoardPopulated } from '@interfaces/IBoardPopulated.ts'
 
 export default class BoardController extends BaseController<
   IBoard,
-  BoardDTO,
-  BoardCriteria,
   BoardService,
+  IBoardCriteria,
+  BoardDTO,
   BoardEditDTO,
-  ClonedBoardsResult,
-  IBoardsWithChildrenResponse
+  IBoardPopulated
 > {
   constructor(serviceInstance: BoardService) {
     super(serviceInstance)
@@ -24,12 +22,12 @@ export default class BoardController extends BaseController<
 
   public override getAll = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const criteria: BoardCriteria = {
+      const criteria: IBoardCriteria = {
         workspaceId: req.params.workspaceId,
         ...req.query,
         isDeleted: false,
       }
-      const entities = await this.service.getAll(criteria, req.user!.id)
+      const entities = await this.service.getByCriteria(criteria, req.user!.id)
 
       res.status(200).json(new SuccessResponse(entities))
     } catch (error) {

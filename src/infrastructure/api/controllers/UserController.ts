@@ -1,4 +1,4 @@
-import { UserCriteria } from '@criterias/UserCriteria.ts'
+import { IUserCriteria } from '@criterias/IUserCriteria.ts'
 import SuccessResponse from '@application/services/SuccessResponse.ts'
 import { UserService } from '@application/services/UserService.ts'
 import { Request, Response, NextFunction } from 'express'
@@ -14,7 +14,7 @@ export class UserController {
 
   public update = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const criteria = { id: req.user!.id.toHexString() } as UserCriteria
+      const criteria = { id: req.user!.id.toHexString() } as IUserCriteria
       const result = await this.service.edit(req.body, criteria, req.user as IUser)
 
       res.status(200).json(new SuccessResponse(result))
@@ -25,7 +25,7 @@ export class UserController {
 
   public delete = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const criteria = { id: req.user!.id.toHexString() } as UserCriteria
+      const criteria = { id: req.user!.id.toHexString() } as IUserCriteria
       await this.service.delete(criteria)
 
       res.status(200).json(new SuccessResponse(null))

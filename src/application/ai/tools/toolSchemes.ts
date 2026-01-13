@@ -284,6 +284,7 @@ const categoryFilterObject = {
 
   name: StringFilter.optional(),
   order: NumberFilter.optional(),
+  tasksCount: NumberFilter.optional(),
 
   and: andSchema.optional(),
   or: orSchema.optional(),
@@ -310,6 +311,9 @@ const boardFilterObject = {
   name: StringFilter.optional(),
   order: NumberFilter.optional(),
 
+  tasksCount: NumberFilter.optional(),
+  categoriesCount: NumberFilter.optional(),
+
   and: andSchema.optional(),
   or: orSchema.optional(),
 }
@@ -333,6 +337,10 @@ const workspaceFilterObject = {
 
   name: StringFilter.optional(),
   order: NumberFilter.optional(),
+
+  tasksCount: NumberFilter.optional(),
+  categoriesCount: NumberFilter.optional(),
+  boardsCount: NumberFilter.optional(),
 
   and: andSchema.optional(),
   or: orSchema.optional(),

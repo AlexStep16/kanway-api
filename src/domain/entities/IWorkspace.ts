@@ -6,12 +6,15 @@ export interface IWorkspace {
   name: string
   userId: Types.ObjectId
   isFavorite: boolean
+  tasksCount: number
+  categoriesCount: number
+  boardsCount: number
   order: number
   color: (typeof BASE_COLORS)[number]
   colorName: string
   embeddings: Array<Number>
   isDeleted: boolean
-  deletedTime?: Date
+  deletedTime?: Date | null
   createdAt: Date
   updatedAt: Date
 }

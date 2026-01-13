@@ -1,6 +1,6 @@
 import SuccessResponse from '@/application/services/SuccessResponse.ts'
 import { NextFunction, Request, Response } from 'express'
-import { ChatMessageCriteria } from '@/application/interfaces/criterias/ChatMessageCriteria.ts'
+import { IChatMessageCriteria } from '@/application/interfaces/criterias/IChatMessageCriteria.ts'
 import { ChatMessageService } from '@/application/services/ChatMessageService.ts'
 
 export default class ChatMessageController {
@@ -12,8 +12,8 @@ export default class ChatMessageController {
 
   public getAll = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const entities = await this.service.getAll(
-        { ...req.query, chatId: req.params.chatId } as ChatMessageCriteria,
+      const entities = await this.service.getByCriteria(
+        { ...req.query, chatId: req.params.chatId } as IChatMessageCriteria,
         req.user!.id
       )
 
