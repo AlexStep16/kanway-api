@@ -7,7 +7,7 @@ import { globalErrorHandler } from '@middlewares/globalErrorHandler.ts'
 import dayjs from 'dayjs'
 import utc from 'dayjs/plugin/utc.js'
 import timezone from 'dayjs/plugin/timezone.js'
-import { initSubscriptions } from './initSubscriptions.ts'
+//import { initSubscriptions } from './initSubscriptions.ts'
 import { initializeTools } from './infrastructure/ai/initializeTools.ts'
 import * as Sentry from '@sentry/node'
 import { initializeAgentInstructions } from '@infrastructure/ai/initializeAgentInstructions.ts'
@@ -44,6 +44,6 @@ startOpenAIProxy(8080)
 
 app.use(globalErrorHandler)
 
-initSubscriptions() //mock
+//initSubscriptions() //mock
 initializeTools()
 initializeAgentInstructions()

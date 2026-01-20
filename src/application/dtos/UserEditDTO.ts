@@ -5,7 +5,7 @@ import { ErrorMessages } from '@/enums/ErrorMessages.ts'
 export const UserEditSchemaDTO = UserDTOSchema.partial()
   .omit({ email: true })
   .extend({
-    oldPassword: z.string(ErrorMessages.INVALID_PASSWORD_FORMAT).optional(),
+    currentPassword: z.string(ErrorMessages.INVALID_PASSWORD_FORMAT).optional(),
   })
 
 export type UserEditDTO = z.infer<typeof UserEditSchemaDTO>

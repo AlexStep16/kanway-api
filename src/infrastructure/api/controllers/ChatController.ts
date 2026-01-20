@@ -11,6 +11,18 @@ export default class ChatController {
     this.service = serviceInstance
   }
 
+  public getById = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const criteria = { id: req.params.id }
+
+      const entity = await this.service.getByCriteria(criteria, req.user!.id)
+
+      res.status(200).json(new SuccessResponse(entity))
+    } catch (error) {
+      next(error)
+    }
+  }
+
   public async streamStatus(req: Request, res: Response) {
     res.setHeader('Content-Type', 'text/event-stream')
     res.setHeader('Cache-Control', 'no-cache')
@@ -97,7 +109,7 @@ export default class ChatController {
 
   public getAll = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const criteria: IChatCriteria = { ...req.query, workspaceId: req.params.workspaceId }
+      const criteria: IChatCriteria = { ...req.query }
       const entities = await this.service.getByCriteria(criteria, req.user!.id)
 
       res.status(200).json(new SuccessResponse(entities))

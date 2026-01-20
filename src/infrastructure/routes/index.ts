@@ -41,34 +41,16 @@ export function attachRoutes(app: Application) {
 
   app.use('/auth', authRoutes(dependencies.controllers.authController))
   app.use('/workspaces', workspaceRoutes(dependencies.controllers.workspaceController))
-  app.use('/workspaces/:workspaceId/boards', boardRoutes(dependencies.controllers.boardController))
-  app.use(
-    '/workspaces/:workspaceId/boards/:boardId/categories',
-    categoryRoutes(dependencies.controllers.categoryController)
-  )
-  app.use(
-    '/workspaces/:workspaceId/boards/:boardId/tasks',
-    taskRoutes(dependencies.controllers.taskController)
-  )
-
-  app.use('/workspaces/:workspaceId/chats', chatRoutes(dependencies.controllers.chatController))
-
-  app.use(
-    '/workspaces/:workspaceId/chat-messages',
-    chatMessageRoutes(dependencies.controllers.chatMessageController)
-  )
-
+  app.use('/boards', boardRoutes(dependencies.controllers.boardController))
+  app.use('/categories', categoryRoutes(dependencies.controllers.categoryController))
+  app.use('/tasks', taskRoutes(dependencies.controllers.taskController))
+  app.use('/chats', chatRoutes(dependencies.controllers.chatController))
+  app.use('/chat-messages', chatMessageRoutes(dependencies.controllers.chatMessageController))
   app.use('/archive', archiveRoutes(dependencies.controllers.archiveController))
-
   app.use('/settings', settingRoutes(dependencies.controllers.settingController))
-
   app.use('/subscriptions', subscriptionRoutes(dependencies.controllers.subscriptionController))
-
   app.use('/payments', paymentRoutes(dependencies.controllers.paymentController))
-
   app.use('/payment-methods', paymentMethodRoutes(dependencies.controllers.paymentMethodController))
-
   app.use('/operation-logs', operationLogRoutes(dependencies.controllers.operationLogController))
-
   app.use('/me', userRoutes(dependencies.controllers.userController))
 }

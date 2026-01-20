@@ -23,7 +23,6 @@ export default class BoardController extends BaseController<
   public override getAll = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const criteria: IBoardCriteria = {
-        workspaceId: req.params.workspaceId,
         ...req.query,
         isDeleted: false,
       }

@@ -3,14 +3,16 @@ import { ClientSession, Types } from 'mongoose'
 import { BaseRepository } from '../repositories/BaseRepository.ts'
 import { BaseService } from './BaseService.ts'
 
-export class ReorderService<TEntity extends IReordable, TRawEntity, TCriteria> extends BaseService<
+export class ReorderService<
+  TEntity extends IReordable,
   TRawEntity,
-  TEntity,
-  TCriteria
-> {
-  protected repository: BaseRepository<TRawEntity, TEntity, TCriteria>
+  TCriteria,
+  TResult = TEntity,
+  TCreatePayload = Partial<TEntity>
+> extends BaseService<TRawEntity, TEntity, TCriteria, TResult, TCreatePayload> {
+  protected repository: BaseRepository<TRawEntity, TEntity, TCriteria, TCreatePayload>
 
-  constructor(repository: BaseRepository<TRawEntity, TEntity, TCriteria>) {
+  constructor(repository: BaseRepository<TRawEntity, TEntity, TCriteria, TCreatePayload>) {
     super(repository)
 
     this.repository = repository
@@ -20,7 +22,7 @@ export class ReorderService<TEntity extends IReordable, TRawEntity, TCriteria> e
     entities: IReordable[],
     userId: Types.ObjectId,
     session?: ClientSession
-  ): Promise<TEntity[]> {
+  ): Promise<TResult[]> {
     const entitiesToUpdate: IReordable[] = []
 
     for (let i = 0; i < entities.length; i++) {
@@ -52,8 +54,8 @@ export class ReorderService<TEntity extends IReordable, TRawEntity, TCriteria> e
     newEntities: TEntity[],
     userId: Types.ObjectId,
     session?: ClientSession
-  ): Promise<TEntity[]> {
-    const allUpdatedEntities: TEntity[] = []
+  ): Promise<TResult[]> {
+    const allUpdatedEntities: TResult[] = []
     const groupedEntities = newEntities.reduce((map, entity) => {
       const parentId = entity[parentIdKey] as Types.ObjectId
 
@@ -92,11 +94,11 @@ export class ReorderService<TEntity extends IReordable, TRawEntity, TCriteria> e
     parentField: keyof TEntity,
     userId: Types.ObjectId,
     session?: ClientSession
-  ): Promise<TEntity[]> {
+  ): Promise<TResult[]> {
     const uniqueParentIds = Array.from(new Set(parentIds.map((id) => id.toHexString()))).map(
       (id) => new Types.ObjectId(id)
     )
-    const allUpdatedEntities: TEntity[] = []
+    const allUpdatedEntities: TResult[] = []
 
     for (let parentId of uniqueParentIds) {
       const entities: IReordable[] = await this.repository.getAllToOrder(

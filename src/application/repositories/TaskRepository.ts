@@ -54,11 +54,11 @@ export default class TaskRepository extends BaseRepository<
     }
 
     if (criteria.workspaceId) {
-      filter.workspace_id = criteria.workspaceId
+      filter.workspace = criteria.workspaceId
     }
 
     if (criteria.workspaceIds) {
-      filter.workspace_id = { $in: criteria.workspaceIds }
+      filter.workspace = { $in: criteria.workspaceIds }
     }
 
     return filter

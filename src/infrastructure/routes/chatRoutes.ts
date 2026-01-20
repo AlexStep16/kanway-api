@@ -10,6 +10,7 @@ export default (controller: ChatController): Router => {
   router.use(jwtAuthMiddleware)
 
   router.get('/', controller.getAll)
+  router.get('/:id', controller.getById)
   router.post('/send', validationMiddleware(ChatSendDTOSchema), controller.send.bind(controller))
   router.post('/retry', controller.retry.bind(controller))
   router.get('/stream/:jobId/status', controller.streamStatus.bind(controller))

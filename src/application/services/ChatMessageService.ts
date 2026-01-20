@@ -74,7 +74,19 @@ export class ChatMessageService extends BaseService<
 
     if (chatMessagesCount === 0) throw new NotFoundError('Сообщения для редактирования не найдены.')
 
-    const chatMessages = await this.repository.updateManyByCriteria(criteria, data, session, userId)
+    const updateChatMessagesResult = await this.repository.updateManyByCriteria(
+      criteria,
+      data,
+      session,
+      userId
+    )
+
+    if (updateChatMessagesResult.modifiedCount === 0) {
+      throw new NotFoundError('Сообщения не были обновлены.')
+    }
+
+    const chatMessages = await this.repository.findByCriteria(criteria, session, undefined, userId)
+
     const chatMessage = chatMessages[0]
 
     if (!chatMessage) throw new NotFoundError('Сообщение не было обновлено.')

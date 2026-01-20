@@ -23,7 +23,6 @@ export default class CategoryController extends BaseController<
   public override getAll = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const criteria: ICategoryCriteria = {
-        boardId: req.params.boardId,
         ...req.query,
         isDeleted: false,
       }

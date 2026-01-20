@@ -119,7 +119,7 @@ export const RunAgentWorker = new Worker(
     const { payload, config, isRetry } = job.data
 
     if (config.configurable && typeof config.configurable.user.id === 'string') {
-      config.configurable.user.id = Types.ObjectId.createFromHexString(config.configurable.user.id)
+      config.configurable.user.id = new Types.ObjectId(config.configurable.user.id)
     }
 
     const checkInterval = setInterval(async () => {
@@ -177,7 +177,7 @@ export const RunAgentWorker = new Worker(
               content: data.entities,
               listType: data.type,
               threadId: configurable.thread_id,
-              chatId: Types.ObjectId.createFromHexString(configurable.chatId),
+              chatId: new Types.ObjectId(configurable.chatId),
             },
             configurable.user,
             job
@@ -200,7 +200,7 @@ export const RunAgentWorker = new Worker(
                       role: AgentRoles.PREVIEW,
                       content: toolConfirmations,
                       threadId: configurable.thread_id,
-                      chatId: Types.ObjectId.createFromHexString(configurable.chatId),
+                      chatId: new Types.ObjectId(configurable.chatId),
                     },
                     configurable.user,
                     job
@@ -243,7 +243,7 @@ export const RunAgentWorker = new Worker(
               role: AgentRoles.ASSISTANT_FINAL,
               content: finalText,
               threadId: configurable?.thread_id,
-              chatId: Types.ObjectId.createFromHexString(configurable?.chatId),
+              chatId: new Types.ObjectId(configurable?.chatId),
             },
             configurable?.user,
             job
@@ -283,7 +283,7 @@ export const RunAgentWorker = new Worker(
           // Добавляем иконку, чтобы визуально отличить от нормального ответа
           content: `😔 ${userFriendlyMessage}`,
           threadId: configurable?.thread_id,
-          chatId: Types.ObjectId.createFromHexString(configurable?.chatId),
+          chatId: new Types.ObjectId(configurable?.chatId),
         }
 
         const savedMsg = await dependencies.services.chatMessageService.create(

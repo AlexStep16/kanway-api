@@ -9,7 +9,6 @@ import {
   PopulateOptions,
   ProjectionType,
   Types,
-  UpdateQuery,
   UpdateWriteOpResult,
 } from 'mongoose'
 import { SingleUpdateDTO } from '../dtos/SingleUpdateDTO.ts'
@@ -152,7 +151,7 @@ export abstract class BaseRepository<
 
       return {
         updateOne: {
-          filter: { _id: new Types.ObjectId(id.toString()), owner_id: userId },
+          filter: { _id: new Types.ObjectId(id.toString()), user_id: userId },
           update: updateDoc,
         },
       }

@@ -1,5 +1,6 @@
-export interface IUndoResponse<TResponse> {
-  delete?: TResponse
-  create?: TResponse
-  update?: TResponse
+export interface IUndoResponse {
+  affectedWorkspaceIds?: string[]
+  affectedBoardIds?: string[]
+  affectedCategoryIds?: string[]
+  affectedTaskIds?: string[]
 }

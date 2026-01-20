@@ -4,11 +4,13 @@ import { IWorkspaceCriteria } from '@criterias/IWorkspaceCriteria.ts'
 import { FilterQuery, Types } from 'mongoose'
 import { BaseRepository } from '@repositories/BaseRepository.ts'
 import { IWorkspace } from '@entities/IWorkspace.ts'
+import { IWorkspaceCreatePayload } from '@interfaces/IWorkspaceCreatePayload.ts'
 
 export default class WorkspaceRepository extends BaseRepository<
   IWorkspaceRaw,
   IWorkspace,
-  IWorkspaceCriteria
+  IWorkspaceCriteria,
+  IWorkspaceCreatePayload
 > {
   constructor() {
     super(WorkspaceModel)

@@ -43,7 +43,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     operationLogService: OperationLogService,
     chatMessageService: ChatMessageService,
     settingService: SettingService,
-    contextExternalFetchService: ContextExternalFetchService
+    contextExternalFetchService: ContextExternalFetchService,
   ) {
     super(ChatRepository)
 
@@ -59,10 +59,10 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     data: {
       threadId: string
       chatId: string
-      boardId: string
+      boardId?: string
       workspaceId: string
       timezone: string
-    }
+    },
   ): Promise<RunnableConfig<Configurable>> {
     const userSettings = await this.settingService.getByCriteria({}, user.id)
     const userSetting = userSettings[0]
@@ -115,14 +115,14 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     }
     throw new AppError(
       'Произошла ошибка при выполнении операции после максимального количества попыток.',
-      500
+      500,
     )
   }
 
   private async _executeSendTransaction(
     data: ChatSendDTO,
     user: IUser,
-    externalSession?: ClientSession
+    externalSession?: ClientSession,
   ) {
     let messages: BaseMessage[] = []
     let chat: IChat | null = null
@@ -142,7 +142,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
             workspaceId: data.workspaceId,
             threadId: threadId,
           },
-          user
+          user,
         )
 
         chat = createResult.data[0]
@@ -150,7 +150,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
         const getChatResult = await this.getByCriteria(
           { threadId: data.threadId },
           user.id,
-          externalSession
+          externalSession,
         )
 
         chat = getChatResult[0]
@@ -159,7 +159,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       const chatMessages = await this.chatMessageService.getByCriteria(
         { chatId: chat.id.toString() },
         user.id,
-        externalSession
+        externalSession,
       )
 
       for (const chatMessage of chatMessages) {
@@ -189,7 +189,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
             threadId,
           },
           user,
-          externalSession
+          externalSession,
         )
 
         newChatMessages.push(...userMessage.data)
@@ -198,7 +198,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       } else if (chatMessages.length > 0 && chatMessages[chatMessages.length - 1].role !== 'user') {
         throw new AppError(
           'Последнее сообщение в чате не является сообщением от пользователя.',
-          400
+          400,
         )
       }
 
@@ -230,7 +230,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       return this._executeSendTransaction(data, user, externalSession)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeSendTransaction(data, user, session)
+        this._executeSendTransaction(data, user, session),
       )
     }
   }
@@ -238,12 +238,12 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
   private async _deleteLastIteration(
     data: { chatId: string; threadId: string },
     user: IUser,
-    externalSession?: ClientSession
+    externalSession?: ClientSession,
   ) {
     const chatMessages = await this.chatMessageService.getByCriteria(
       { chatId: data.chatId, threadId: data.threadId },
       user.id,
-      externalSession
+      externalSession,
     )
 
     const lastHumanMessage = [...chatMessages].reverse().find((msg) => msg.role === 'user')
@@ -262,7 +262,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
   private async _executeRetryTransaction(
     data: RetryAgentDTO,
     user: IUser,
-    externalSession?: ClientSession
+    externalSession?: ClientSession,
   ) {
     await this._deleteLastIteration(data, user, externalSession)
 
@@ -288,7 +288,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       return this._executeRetryTransaction(data, user, externalSession)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeRetryTransaction(data, user, session)
+        this._executeRetryTransaction(data, user, session),
       )
     }
   }
@@ -296,7 +296,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
   private async _executeStopAgentTransaction(
     data: StopAgentDTO,
     user: IUser,
-    externalSession?: ClientSession
+    externalSession?: ClientSession,
   ) {
     await this._deleteLastIteration(data, user, externalSession)
 
@@ -317,7 +317,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       return this._executeStopAgentTransaction(data, user, externalSession)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeStopAgentTransaction(data, user, session)
+        this._executeStopAgentTransaction(data, user, session),
       )
     }
   }
@@ -325,7 +325,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
   private async _executeCreateTransaction(
     data: ChatDTO,
     user: IUser,
-    session: ClientSession
+    session: ClientSession,
   ): Promise<IResponseWithLog<IChat[]>> {
     const chat = await this.repository.create(
       {
@@ -334,7 +334,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
         userId: user.id,
         threadId: data.threadId,
       },
-      session
+      session,
     )
 
     const log = await this.operationLogService.create(
@@ -345,7 +345,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
         dependencies: [],
       },
       user.id,
-      session
+      session,
     )
 
     return {
@@ -357,13 +357,13 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
   public async create(
     data: ChatDTO,
     user: IUser,
-    externalSession?: ClientSession
+    externalSession?: ClientSession,
   ): Promise<IResponseWithLog<IChat[]>> {
     if (externalSession) {
       return this._executeCreateTransaction(data, user, externalSession)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeCreateTransaction(data, user, session)
+        this._executeCreateTransaction(data, user, session),
       )
     }
   }
@@ -371,12 +371,12 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
   private async _executeApproveToolCallTransaction(
     data: ApproveToolCallDTO,
     user: IUser,
-    externalSession?: ClientSession
+    externalSession?: ClientSession,
   ) {
     const chatMessages = await this.chatMessageService.getByCriteria(
       { id: data.chatMessageId },
       user.id,
-      externalSession
+      externalSession,
     )
     let toolsWithNoDecision = 0
 
@@ -414,7 +414,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
         id: data.chatMessageId,
       },
       user,
-      externalSession
+      externalSession,
     )
 
     if (toolsWithNoDecision === 0) {
@@ -438,7 +438,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
           id: data.chatMessageId,
         },
         user,
-        externalSession
+        externalSession,
       )
 
       const job = await langgraphQueue.add('review', {
@@ -461,13 +461,13 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
   public async approveToolCall(
     data: ApproveToolCallDTO,
     user: IUser,
-    externalSession?: ClientSession
+    externalSession?: ClientSession,
   ) {
     if (externalSession) {
       return this._executeApproveToolCallTransaction(data, user, externalSession)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeApproveToolCallTransaction(data, user, session)
+        this._executeApproveToolCallTransaction(data, user, session),
       )
     }
   }

@@ -42,12 +42,18 @@ export class SettingService extends BaseService<ISettingRaw, ISetting, ISettingC
   ): Promise<ISetting[]> {
     const payload = toMongoCaseKeys<ISetting>(data)
 
-    const updatedSetting = await this.repository.updateManyByCriteria(
+    const updateSettingResult = await this.repository.updateManyByCriteria(
       criteria,
       payload,
       undefined,
       user.id
     )
+
+    if (updateSettingResult.modifiedCount === 0) {
+      throw new Error('Настройки пользователя не найдены')
+    }
+
+    const updatedSetting = await this.repository.findByCriteria(criteria)
 
     return updatedSetting.map(toServerCaseKeys<ISetting>)
   }

@@ -14,7 +14,6 @@ import { TaskEditDTO } from '@dtos/TaskEditDTO.ts'
 import { NotFoundError } from '@errors/NotFound.ts'
 import { TASK_COLORS, TASK_COLORS_MAP } from '@/constants/TASK_COLORS.ts'
 import { CategoryService } from '@application/services/CategoryService.ts'
-import { ITasksResponse } from '@/application/interfaces/ITasksResponse.ts'
 
 import dayjs from 'dayjs'
 import { SingleUpdateDTO } from '../dtos/SingleUpdateDTO.ts'
@@ -36,6 +35,14 @@ import { ITaskCreatePayload } from '../interfaces/ITaskCreatePayload.ts'
 
 const MAX_RETRIES = 3
 
+type ReorderServiceType = ReorderService<
+  ITask,
+  ITaskRaw,
+  ITaskCriteria,
+  ITaskPopulated,
+  ITaskCreatePayload
+>
+
 export class TaskService extends BaseService<
   ITaskRaw,
   ITask,
@@ -46,7 +53,7 @@ export class TaskService extends BaseService<
   protected repository: TaskRepository
   protected embeddingService: EmbeddingService
   protected operationLogService: OperationLogService
-  protected reorderService: ReorderService<ITask, ITaskRaw, ITaskCriteria>
+  protected reorderService: ReorderServiceType
   protected categoryService: CategoryService
   protected boardService: BoardService
   protected workspaceService: WorkspaceService
@@ -55,7 +62,7 @@ export class TaskService extends BaseService<
     taskRepository: TaskRepository,
     embeddingService: EmbeddingService,
     operationLogService: OperationLogService,
-    reorderService: ReorderService<ITask, ITaskRaw, ITaskCriteria>,
+    reorderService: ReorderServiceType,
     categoryService: CategoryService,
     boardService: BoardService,
     workspaceService: WorkspaceService
@@ -116,9 +123,6 @@ export class TaskService extends BaseService<
     session: ClientSession,
     timezone: string
   ): Promise<IResponseWithLog<ITaskPopulated[]>> {
-    let reorderedTasks: ITask[] = []
-
-    const finalEntitiesMap = new Map<string, ITask>()
     const tempClientId = data.id
 
     delete data.id // Remove temp client ID before creation
@@ -130,23 +134,16 @@ export class TaskService extends BaseService<
 
     /* REORDER */
     if (data.order !== undefined) {
-      reorderedTasks = await this.reorderService.reorder('category', [newTask], userId, session)
-
-      reorderedTasks.forEach((reorderedTask) => {
-        finalEntitiesMap.set(reorderedTask.id.toString(), reorderedTask)
-      })
+      await this.reorderService.reorder('category', [newTask], userId, session)
     }
 
-    newTask.tempClientId = tempClientId // Attach temp client ID back to the response to connect with client-side entity
-
-    finalEntitiesMap.set(newTask.id.toString(), newTask)
-
-    const finalEntities = Array.from(finalEntitiesMap.values())
-    const finalEntitiesPopulated = await this.getByCriteria(
-      { ids: finalEntities.map((t) => t.id.toString()) },
+    const newTaskPopulated = await this.getByCriteria(
+      { id: newTask.id.toString() },
       userId,
       session
     )
+
+    newTaskPopulated[0].tempClientId = tempClientId // Attach temp client ID back to the response to connect with client-side entity
 
     /* LOG */
     const log = await this.operationLogService.create(
@@ -161,7 +158,7 @@ export class TaskService extends BaseService<
     )
 
     return {
-      data: finalEntitiesPopulated,
+      data: newTaskPopulated,
       logId: log.id,
     }
   }
@@ -188,39 +185,26 @@ export class TaskService extends BaseService<
     session: ClientSession,
     timezone: string
   ): Promise<IResponseWithLog<ITaskPopulated[]>> {
-    let reorderedTasks: ITask[] = []
-
-    const finalEntitiesMap = new Map<string, ITask>()
-
     const tasksPayload = await this.prepareTasksCreationPayload(data, userId, timezone, session)
 
     /* CREATE */
     const newTasks = await this.repository.createMany(tasksPayload, session)
 
-    newTasks.forEach((nt, index) => {
-      nt.tempClientId = data[index].id // Attach temp client ID back to the response to connect with client-side entity
-
-      finalEntitiesMap.set(nt.id.toString(), nt)
-    })
-
     /* REORDER */
     const isReorderNeeded = data.some((ws) => ws.order !== undefined)
     if (isReorderNeeded) {
-      reorderedTasks = await this.reorderService.reorder('category', newTasks, userId, session)
+      await this.reorderService.reorder('category', newTasks, userId, session)
     }
 
-    if (reorderedTasks.length > 0) {
-      reorderedTasks.forEach((reorderedTask) => {
-        finalEntitiesMap.set(reorderedTask.id.toString(), reorderedTask)
-      })
-    }
-
-    const finalEntities = Array.from(finalEntitiesMap.values())
-    const finalEntitiesPopulated = await this.getByCriteria(
-      { ids: finalEntities.map((t) => t.id.toString()) },
+    const newTasksPopulated = await this.getByCriteria(
+      { ids: newTasks.map((t) => t.id.toString()) },
       userId,
       session
     )
+
+    newTasksPopulated.forEach((nt, index) => {
+      nt.tempClientId = data[index].id // Attach temp client ID back to the response to connect with client-side entity
+    })
 
     /* LOG */
     const log = await this.operationLogService.create(
@@ -235,7 +219,7 @@ export class TaskService extends BaseService<
     )
 
     return {
-      data: finalEntitiesPopulated,
+      data: newTasksPopulated,
       logId: log.id,
     }
   }
@@ -263,10 +247,7 @@ export class TaskService extends BaseService<
     session: ClientSession,
     timezone: string
   ): Promise<IResponseWithLog<ITaskPopulated[]>> {
-    let reorderedTasks: ITask[] = []
-
-    const finalEntitiesMap = new Map<string, ITask>()
-    const tasksToUpdate = await this.repository.findByCriteria(criteria, session)
+    const tasksToUpdate = await this.repository.findByCriteria(criteria, session, undefined, userId)
 
     if (tasksToUpdate.length === 0) throw new NotFoundError('Задачи для обновления не найдены.')
 
@@ -280,13 +261,15 @@ export class TaskService extends BaseService<
       session,
       userId
     )
-    const updatedEntities = await this.repository.findByCriteria<ITask>(criteria, session)
 
     if (updateManyResult.modifiedCount === 0) throw new AppError('Не удалось обновить задачи.', 500)
 
-    updatedEntities.forEach((task) => {
-      finalEntitiesMap.set(task.id.toString(), task)
-    })
+    const updatedTasks = await this.repository.findByCriteria<ITask>(
+      criteria,
+      session,
+      undefined,
+      userId
+    )
 
     /* MOVE */
     const tasksToMove = tasksToUpdate.filter(
@@ -308,19 +291,13 @@ export class TaskService extends BaseService<
     }
 
     if (tasksToReorder.length > 0) {
-      reorderedTasks = await this.reorderService.reorder(
+      await this.reorderService.reorder(
         'category',
         [...tasksToReorder, ...tasksToMoveToEnd],
         userId,
         session
       )
-
-      reorderedTasks.forEach((reorderedTask) => {
-        finalEntitiesMap.set(reorderedTask.id.toString(), reorderedTask)
-      })
     }
-
-    const finalEntities = Array.from(finalEntitiesMap.values())
 
     /* LOG */
     const log = await this.operationLogService.create(
@@ -328,21 +305,21 @@ export class TaskService extends BaseService<
         operationType: OperationTypesEnum.UPDATE,
         collectionName: CollectionsEnum.TASKS,
         entitiesBefore: tasksBefore,
-        entitiesAfter: updatedEntities,
+        entitiesAfter: updatedTasks,
         dependencies: [],
       },
       userId,
       session
     )
 
-    const finalEntitiesPopulated = await this.getByCriteria(
-      { ids: finalEntities.map((t) => t.id.toString()) },
+    const updatedTasksPopulated = await this.getByCriteria(
+      { ids: updatedTasks.map((t) => t.id.toString()) },
       userId,
       session
     )
 
     return {
-      data: finalEntitiesPopulated,
+      data: updatedTasksPopulated,
       logId: log.id,
     }
   }
@@ -375,9 +352,6 @@ export class TaskService extends BaseService<
     const tasksPayload: SingleUpdateDTO<SafeUpdateData<ITask>>[] = []
     const tasksPayloadToMove: SingleUpdateDTO<SafeUpdateData<ITask>>[] = []
 
-    let reorderedTasks: ITask[] = []
-
-    const finalEntitiesMap = new Map<string, ITask>()
     const tasksBefore: Partial<ITask>[] = []
 
     const taskIds = data.map((d) => d.id)
@@ -426,10 +400,6 @@ export class TaskService extends BaseService<
       userId
     )
 
-    updatedTasks.forEach((task) => {
-      finalEntitiesMap.set(task.id.toString(), task)
-    })
-
     /* MOVE */
     if (tasksPayloadToMove.length > 0) {
     }
@@ -447,20 +417,9 @@ export class TaskService extends BaseService<
       const tasksToReorder = updatedTasks.filter((ut) => taskIdsToReorder.has(ut.id.toString()))
 
       if (tasksToReorder.length > 0) {
-        reorderedTasks = await this.reorderService.reorder(
-          'category',
-          tasksToReorder,
-          userId,
-          session
-        )
-
-        reorderedTasks.forEach((reorderedTask) => {
-          finalEntitiesMap.set(reorderedTask.id.toString(), reorderedTask)
-        })
+        await this.reorderService.reorder('category', tasksToReorder, userId, session)
       }
     }
-
-    const finalEntities = Array.from(finalEntitiesMap.values())
 
     /* LOG */
     const log = await this.operationLogService.create(
@@ -475,14 +434,14 @@ export class TaskService extends BaseService<
       session
     )
 
-    const finalEntitiesPopulated = await this.getByCriteria(
-      { ids: finalEntities.map((t) => t.id.toString()) },
+    const updatedEntitiesPopulated = await this.getByCriteria(
+      { ids: updatedTasks.map((t) => t.id.toString()) },
       userId,
       session
     )
 
     return {
-      data: finalEntitiesPopulated,
+      data: updatedEntitiesPopulated,
       logId: log.id,
     }
   }
@@ -507,10 +466,8 @@ export class TaskService extends BaseService<
     criteria: ITaskCriteria,
     userId: Types.ObjectId,
     session: ClientSession
-  ): Promise<ITaskPopulated[]> {
-    let reorderedTasks: ITask[] = []
-
-    const tasksToDelete = await this.repository.findByCriteria(criteria, session)
+  ): Promise<void> {
+    const tasksToDelete = await this.repository.findByCriteria(criteria, session, undefined, userId)
     if (tasksToDelete.length === 0) throw new NotFoundError('Задачи для удаления не найдены.')
 
     await this.repository.deleteMany(criteria, userId, session)
@@ -518,7 +475,7 @@ export class TaskService extends BaseService<
     // TODO: Update counters
 
     /* REORDER */
-    reorderedTasks = await this.reorderService.reorderByParentIds(
+    await this.reorderService.reorderByParentIds(
       tasksToDelete.map((t) => t.category),
       'category',
       userId,
@@ -526,21 +483,13 @@ export class TaskService extends BaseService<
     )
 
     await session.commitTransaction()
-
-    const populatedDeletedTasks = await this.getByCriteria(
-      { ids: tasksToDelete.map((t) => t.id.toString()) },
-      userId,
-      session
-    )
-
-    return [...populatedDeletedTasks]
   }
 
   public async delete(
     criteria: ITaskCriteria,
     user: IUser,
     externalSession?: ClientSession
-  ): Promise<ITaskPopulated[]> {
+  ): Promise<void> {
     const userId = user.id
 
     if (externalSession) {
@@ -557,12 +506,13 @@ export class TaskService extends BaseService<
     isRecover: boolean,
     userId: Types.ObjectId,
     session: ClientSession
-  ): Promise<IResponseWithLog<ITasksResponse>> {
-    let reorderedTasks: ITask[] = []
-
-    const finalEntitiesMap = new Map<string, ITask>()
-
-    const tasksToProcess = await this.repository.findByCriteria(criteria, session)
+  ): Promise<IResponseWithLog<ITaskPopulated[]>> {
+    const tasksToProcess = await this.repository.findByCriteria(
+      criteria,
+      session,
+      undefined,
+      userId
+    )
 
     // TODO: Update Counters
 
@@ -592,25 +542,10 @@ export class TaskService extends BaseService<
       userId
     )
 
-    updatedTasks.forEach((task) => {
-      finalEntitiesMap.set(task.id.toString(), task)
-    })
-
     /* REORDER */
-    reorderedTasks = await this.reorderService.reorderByParentIds(
+    await this.reorderService.reorderByParentIds(
       tasksToProcess.map((c) => c.board),
       'category',
-      userId,
-      session
-    )
-
-    reorderedTasks.forEach((reorderedTask) => {
-      finalEntitiesMap.set(reorderedTask.id.toString(), reorderedTask)
-    })
-
-    const finalEntities = Array.from(finalEntitiesMap.values())
-    const finalEntitiesPopulated = await this.getByCriteria(
-      { ids: finalEntities.map((t) => t.id.toString()) },
       userId,
       session
     )
@@ -628,10 +563,14 @@ export class TaskService extends BaseService<
       session
     )
 
+    const updatedTasksPopulated = await this.getByCriteria(
+      { ids: updatedTasks.map((t) => t.id.toString()) },
+      userId,
+      session
+    )
+
     return {
-      data: {
-        tasks: finalEntitiesPopulated,
-      },
+      data: updatedTasksPopulated,
       logId: log.id,
     }
   }
@@ -640,7 +579,7 @@ export class TaskService extends BaseService<
     criteria: ITaskCriteria,
     user: IUser,
     externalSession?: ClientSession
-  ): Promise<IResponseWithLog<ITasksResponse>> {
+  ): Promise<IResponseWithLog<ITaskPopulated[]>> {
     const userId = user.id
 
     if (externalSession) {
@@ -656,7 +595,7 @@ export class TaskService extends BaseService<
     criteria: ITaskCriteria,
     user: IUser,
     externalSession?: ClientSession
-  ): Promise<IResponseWithLog<ITasksResponse>> {
+  ): Promise<IResponseWithLog<ITaskPopulated[]>> {
     const userId = user.id
 
     if (externalSession) {
@@ -754,59 +693,64 @@ export class TaskService extends BaseService<
     log: IOperationLog,
     user: IUser,
     session: ClientSession
-  ): Promise<IUndoResponse<ITasksResponse>> {
-    const entitiesBefore = log.entitiesBefore as (Partial<ITask> & { id: Types.ObjectId })[]
-    const entitiesAfter = log.entitiesAfter as ITask[]
+  ): Promise<IUndoResponse> {
+    const { operationType } = log
 
-    const taskBeforeIds = entitiesBefore.map((e) => e.id.toString())
-    const taskAfterIds = entitiesAfter.map((e) => e.id.toString())
-    const operationType = log.operationType
+    const before = log.entitiesBefore as (Partial<ITask> & { id: Types.ObjectId })[]
+    const after = log.entitiesAfter as (Partial<ITask> & { id: Types.ObjectId })[]
 
-    if (operationType === OperationTypesEnum.CREATE) {
-      const deleteResult = await this.delete({ ids: taskAfterIds }, user, session)
-      const deletedIds = deleteResult.map((t) => t.id.toString())
+    const idsBefore = before?.map((e) => e.id?.toString()) || []
+    const idsAfter = after?.map((e) => e.id?.toString()) || []
 
-      const populatedTasks = await this.getByCriteria(
-        { ids: [...deleteResult, ...entitiesAfter].map((t) => t.id.toString()) },
-        user.id,
-        session
-      )
+    const boardIdsSet = new Set<string>()
 
-      return {
-        delete: { tasks: populatedTasks.filter((t) => taskAfterIds.includes(t.id.toString())) },
-        update: {
-          tasks: populatedTasks.filter((t) => deletedIds.includes(t.id.toString())),
-        },
-      }
-    } else if (operationType === OperationTypesEnum.UPDATE) {
-      const entitiesBeforeToEditSchema = entitiesBefore.map((e) => {
-        return {
-          ...e,
-          id: e.id.toString(),
-          category: e.category?.toString(),
-          board: e.board?.toString(),
-          workspace: e.workspace?.toString(),
-        }
+    const collectBoardIds = (items: ITaskPopulated[]) => {
+      items.forEach((t) => {
+        const bId = (t.board as any)?._id || (t.board as any)?.id || t.board
+        if (bId) boardIdsSet.add(bId.toString())
       })
+    }
 
-      const editResult = await this.editMany(entitiesBeforeToEditSchema, user, session)
+    switch (operationType) {
+      case OperationTypesEnum.CREATE: {
+        await this.delete({ ids: idsAfter }, user, session)
 
-      return {
-        update: { tasks: editResult.data },
+        after.forEach((t) => {
+          if (t.board) boardIdsSet.add(t.board.toString())
+        })
+        break
       }
-    } else if (operationType === OperationTypesEnum.ARCHIVE) {
-      const recoverResult = await this.recover({ ids: taskBeforeIds }, user, session)
 
-      return {
-        update: { tasks: recoverResult.data.tasks },
-      }
-    } else if (operationType === OperationTypesEnum.RECOVER) {
-      const archiveResult = await this.archive({ ids: taskBeforeIds }, user, session)
+      case OperationTypesEnum.UPDATE: {
+        const payload = before.map((e) => ({
+          ...e,
+          id: e.id?.toString(),
+        }))
 
-      return {
-        update: archiveResult.data,
+        const result = await this.editMany(payload, user, session)
+        collectBoardIds(result.data)
+        break
       }
-    } else throw new AppError(`Операция ${operationType} не поддерживается для отката.`, 400)
+
+      case OperationTypesEnum.ARCHIVE: {
+        const result = await this.recover({ ids: idsBefore }, user, session)
+        collectBoardIds(result.data)
+        break
+      }
+
+      case OperationTypesEnum.RECOVER: {
+        const result = await this.archive({ ids: idsBefore }, user, session)
+        collectBoardIds(result.data)
+        break
+      }
+
+      default:
+        throw new AppError(`Операция ${operationType} не поддерживается для отката.`, 400)
+    }
+
+    return {
+      affectedBoardIds: Array.from(boardIdsSet),
+    }
   }
 
   public async cloneTasksByCategories(
@@ -879,24 +823,13 @@ export class TaskService extends BaseService<
     // TODO: Update counters
   }
 
-  public async updateTasksByFilter(
-    criteria: ITaskCriteria,
-    data: Partial<ITask>,
-    userId: Types.ObjectId,
-    session?: ClientSession
-  ): Promise<UpdateWriteOpResult> {
-    return await this.repository.updateManyByCriteria(criteria, data, session, userId)
-  }
-
   public async updateLifecycleTasksByFilter(
     criteria: ITaskCriteria,
     data: SafeUpdateData<ITask>,
     userId: Types.ObjectId,
     session?: ClientSession
   ): Promise<UpdateWriteOpResult> {
-    const tasksToProcess = await this.repository.findByCriteria(criteria, session)
-
-    if (tasksToProcess.length === 0) throw new NotFoundError('Задачи не найдены.')
+    await this.repository.findByCriteria(criteria, session, undefined, userId)
 
     // TODO: Update Counters
 
@@ -914,7 +847,13 @@ export class TaskService extends BaseService<
     const embeddings = await this.embeddingService.getEmbeddings(taskName)
 
     const taskPayload: ITaskCreatePayload = {
-      ...data,
+      name: taskName,
+      description: data.description || '',
+      dueDate: data.dueDate || '',
+      dueHours: data.dueHours,
+      dueMinutes: data.dueMinutes,
+      color: data.color,
+      isCompleted: data.isCompleted,
       workspace: Types.ObjectId.createFromHexString(data.workspaceId),
       board: Types.ObjectId.createFromHexString(data.boardId),
       category: Types.ObjectId.createFromHexString(data.categoryId),
@@ -972,27 +911,34 @@ export class TaskService extends BaseService<
       embeddingsMap[name] = embeddingsArray[index]
     })
 
-    for (const [categoryId, tasks] of Object.entries(tasksGroupedByCategory)) {
-      const existingCountEntry = grouppedTasksCount.find(
-        (entry) => entry._id.toString() === categoryId
-      )
-      let newOrder = existingCountEntry ? existingCountEntry.lastOrder : 0
+    const countMap = new Map(
+      grouppedTasksCount.map((entry) => [entry._id.toString(), entry.lastOrder])
+    )
 
-      tasks.forEach((task) => {
-        if (task.order === undefined) {
-          task.order = ++newOrder
-        }
-      })
+    for (const [categoryId, tasks] of Object.entries(tasksGroupedByCategory)) {
+      let currentOrder = countMap.get(categoryId) || 1
 
       for (const task of tasks) {
         const taskName = task.name.trim()
+
+        const orderToSave = task.order ?? ++currentOrder
+
         const taskPayload: ITaskCreatePayload = {
-          ...task,
-          workspace: Types.ObjectId.createFromHexString(task.workspaceId),
-          board: Types.ObjectId.createFromHexString(task.boardId),
-          category: Types.ObjectId.createFromHexString(task.categoryId),
-          tags: task.tags ? task.tags.map((tag) => tag.toString()) : [],
-          order: task.order || 1,
+          name: taskName,
+          description: task.description ?? '',
+          dueDate: task.dueDate ?? '',
+          dueHours: task.dueHours,
+          dueMinutes: task.dueMinutes,
+          color: task.color,
+          isCompleted: task.isCompleted,
+
+          workspace: new Types.ObjectId(task.workspaceId),
+          board: new Types.ObjectId(task.boardId),
+          category: new Types.ObjectId(task.categoryId),
+
+          tags: task.tags?.map((tag) => tag.toString()) ?? [],
+
+          order: orderToSave,
           embeddings: embeddingsMap[taskName],
           userId,
         }
@@ -1030,9 +976,15 @@ export class TaskService extends BaseService<
     tasksToUpdate: ITask[],
     timezone: string
   ): Promise<SingleUpdateDTO<SafeUpdateData<ITask>>> {
+    const { id, categoryId, boardId, workspaceId, ...rest } = data
+
     const taskPayload: SingleUpdateDTO<SafeUpdateData<ITask>> = {
-      ...data,
-      id: Types.ObjectId.createFromHexString(data.id),
+      ...rest,
+
+      id: new Types.ObjectId(id),
+      category: categoryId ? new Types.ObjectId(categoryId) : undefined,
+      board: boardId ? new Types.ObjectId(boardId) : undefined,
+      workspace: workspaceId ? new Types.ObjectId(workspaceId) : undefined,
     }
 
     if (data.tags) taskPayload.tags = data.tags.map((tag) => tag.toString())

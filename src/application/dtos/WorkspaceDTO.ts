@@ -19,7 +19,7 @@ export const WorkspaceDTOSchema = z.object({
         : 'Неверное значение для цвета. Допустимы: ' + BASE_COLORS.join(', '),
   }),
   order: z
-    .union([z.string(), z.number()], {
+    .number({
       error: (iss) =>
         iss.input === undefined
           ? ErrorMessages.WORKSPACE_ORDER_TYPE_INVALID

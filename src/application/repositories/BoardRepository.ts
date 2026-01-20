@@ -4,8 +4,14 @@ import { IBoardCriteria } from '@criterias/IBoardCriteria.ts'
 import { FilterQuery, Types } from 'mongoose'
 import { BaseRepository } from '@repositories/BaseRepository.ts'
 import { IBoard } from '@entities/IBoard.ts'
+import { IBoardCreatePayload } from '@interfaces/IBoardCreatePayload.ts'
 
-export default class BoardRepository extends BaseRepository<IBoardRaw, IBoard, IBoardCriteria> {
+export default class BoardRepository extends BaseRepository<
+  IBoardRaw,
+  IBoard,
+  IBoardCriteria,
+  IBoardCreatePayload
+> {
   constructor() {
     super(BoardModel)
   }
@@ -32,11 +38,11 @@ export default class BoardRepository extends BaseRepository<IBoardRaw, IBoard, I
     }
 
     if (criteria.workspaceId) {
-      filter.workspace_id = criteria.workspaceId
+      filter.workspace = criteria.workspaceId
     }
 
     if (criteria.workspaceIds) {
-      filter.workspace_id = { $in: criteria.workspaceIds }
+      filter.workspace = { $in: criteria.workspaceIds }
     }
 
     return filter

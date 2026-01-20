@@ -16,7 +16,8 @@ export const ChatSendDTOSchema = z.object({
       error: (iss) =>
         iss.input === undefined ? ErrorMessages.BOARD_ID_REQUIRED : ErrorMessages.BOARD_ID_INVALID,
     })
-    .regex(objectIdRegex, ErrorMessages.BOARD_ID_INVALID),
+    .regex(objectIdRegex, ErrorMessages.BOARD_ID_INVALID)
+    .optional(),
   workspaceId: z
     .string({
       error: (iss) =>

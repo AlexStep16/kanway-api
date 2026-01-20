@@ -5,7 +5,7 @@ export interface Configurable {
   thread_id: string
   user: IUser
   chatId: string
-  activeBoardId: string
+  activeBoardId?: string
   activeWorkspaceId: string
   currentDate: string
   timezone: string

@@ -9,10 +9,10 @@ export interface IBoard<TWorkspace = Types.ObjectId> {
   tasksCount: number
   categoriesCount: number
   order: number
-  embeddings: Array<Number>
+  embeddings: number[]
   isDeleted: boolean
   isDeletedExternal: boolean
-  deletedTime?: Date | null
+  deletedTime?: Date
   createdAt: Date
   updatedAt: Date
 }

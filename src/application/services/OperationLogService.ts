@@ -81,10 +81,10 @@ export class OperationLogService extends BaseService<
     log: IOperationLog,
     user: IUser,
     session: ClientSession
-  ): Promise<IUndoResponse<any>[]> {
+  ): Promise<IUndoResponse[]> {
     const service = this.revertAdapters.get(log.collectionName)
     const dependencies: IOperationLog[] = []
-    const results: IUndoResponse<any>[] = []
+    const results: IUndoResponse[] = []
 
     if (log.dependencies && log.dependencies.length > 0) {
       const depLogs = await this.repository.findByCriteria(
@@ -118,9 +118,9 @@ export class OperationLogService extends BaseService<
     logIds: string[],
     user: IUser,
     session: ClientSession
-  ): Promise<IUndoResponse<any>> {
+  ): Promise<IUndoResponse> {
     const logs = await this.repository.findByCriteria({ ids: logIds }, session, undefined, user.id)
-    const results: IUndoResponse<any>[] = []
+    const results: IUndoResponse[] = []
 
     if (!logs) {
       throw new AppError(ErrorMessages.OPERATION_LOGS_NOT_FOUND, 404)
@@ -135,17 +135,17 @@ export class OperationLogService extends BaseService<
     return this.combineUndoResult(results)
   }
 
-  public async combineUndoResult(result: IUndoResponse<any>[]): Promise<IUndoResponse<any>> {
-    const combinedResult: IUndoResponse<any> = {}
+  public async combineUndoResult(result: IUndoResponse[]): Promise<IUndoResponse> {
+    const combinedResult: IUndoResponse = {}
 
     for (const res of result) {
       for (const key in res) {
-        if (!combinedResult[key as keyof IUndoResponse<any>]) {
-          combinedResult[key as keyof IUndoResponse<any>] = res[key as keyof IUndoResponse<any>]
+        if (!combinedResult[key as keyof IUndoResponse]) {
+          combinedResult[key as keyof IUndoResponse] = res[key as keyof IUndoResponse]
         } else {
-          const existingArray = combinedResult[key as keyof IUndoResponse<any>] as any[]
-          const newArray = res[key as keyof IUndoResponse<any>] as any[]
-          combinedResult[key as keyof IUndoResponse<any>] = existingArray.concat(newArray)
+          const existingArray = combinedResult[key as keyof IUndoResponse] as any[]
+          const newArray = res[key as keyof IUndoResponse] as any[]
+          combinedResult[key as keyof IUndoResponse] = existingArray.concat(newArray)
         }
       }
     }
@@ -157,7 +157,7 @@ export class OperationLogService extends BaseService<
     logIds: string[],
     user: IUser,
     externalSession: ClientSession | null = null
-  ): Promise<IUndoResponse<any>> {
+  ): Promise<IUndoResponse> {
     if (externalSession) {
       return this._executeUndoOperations(logIds, user, externalSession)
     } else {

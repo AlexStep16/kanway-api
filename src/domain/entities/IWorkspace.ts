@@ -14,7 +14,7 @@ export interface IWorkspace {
   colorName: string
   embeddings: Array<Number>
   isDeleted: boolean
-  deletedTime?: Date | null
+  deletedTime?: Date
   createdAt: Date
   updatedAt: Date
 }

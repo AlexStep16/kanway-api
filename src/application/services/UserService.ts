@@ -47,9 +47,9 @@ export class UserService implements ICreateUserService<IUser, RegisterCredential
   public async edit(data: UserEditDTO, criteria: IUserCriteria, user: IUser) {
     const payload = toMongoCaseKeys<IUserRaw>(data)
 
-    if (data.password && data.oldPassword) {
+    if (data.password && data.currentPassword) {
       const oldPasswordHash = await this._comparePasswords(
-        data.oldPassword,
+        data.currentPassword,
         new Types.ObjectId(user.id)
       )
 
@@ -62,9 +62,15 @@ export class UserService implements ICreateUserService<IUser, RegisterCredential
       payload.password_hash = await bcrypt.hash(data.password, SALT_ROUNDS)
     }
 
-    const updatedUser = await this.repository.updateManyByCriteria(criteria, payload)
+    const updateUserResult = await this.repository.updateManyByCriteria(criteria, payload)
 
-    return toServerCaseKeys<IUser>(updatedUser[0])
+    if (updateUserResult.modifiedCount === 0) {
+      throw new AppError(ErrorMessages.USER_NOT_FOUND, 404)
+    }
+
+    const updatedUsers = await this.repository.findByCriteria(criteria)
+
+    return toServerCaseKeys<IUser>(updatedUsers[0])
   }
 
   private async _comparePasswords(oldPassword: string, userId: Types.ObjectId): Promise<string> {
@@ -88,9 +94,9 @@ export class UserService implements ICreateUserService<IUser, RegisterCredential
   }
 
   public async getById(id: string): Promise<IUser | null> {
-    const user = await this.repository.findByCriteria({ id })
+    const users = await this.repository.findByCriteria({ id })
 
-    return toServerCaseKeys(user)
+    return toServerCaseKeys(users[0])
   }
 
   public async validateCredentials(email: string, passwordPlain: string): Promise<IUser> {
@@ -110,7 +116,7 @@ export class UserService implements ICreateUserService<IUser, RegisterCredential
   }
 
   public async me(id: Types.ObjectId): Promise<IUser | null> {
-    const user = await this.getById(id.toHexString())
+    const user = await this.getById(id.toString())
 
     if (user) {
       return user
@@ -120,7 +126,7 @@ export class UserService implements ICreateUserService<IUser, RegisterCredential
   }
 
   public async updateAvatar(id: Types.ObjectId, file: Express.Multer.File): Promise<string> {
-    const filePath = `uploads/avatar_${id.toHexString()}_${Date.now()}.png`
+    const filePath = `uploads/avatar_${id.toString()}_${Date.now()}.png`
 
     await sharp(file.path).resize(300, 300).toFormat('png').toFile(filePath)
 

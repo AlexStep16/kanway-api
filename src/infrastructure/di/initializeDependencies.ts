@@ -70,6 +70,17 @@ import { ITask } from '@/domain/entities/ITask.ts'
 import { ICategory } from '@/domain/entities/ICategory.ts'
 import { IBoard } from '@/domain/entities/IBoard.ts'
 import { IWorkspace } from '@/domain/entities/IWorkspace.ts'
+import { ITaskCriteria } from '@/application/interfaces/criterias/ITaskCriteria.ts'
+import { ICategoryCriteria } from '@/application/interfaces/criterias/ICategoryCriteria.ts'
+import { IBoardCriteria } from '@/application/interfaces/criterias/IBoardCriteria.ts'
+import { IWorkspaceCriteria } from '@/application/interfaces/criterias/IWorkspaceCriteria.ts'
+import { ITaskPopulated } from '@/application/interfaces/ITaskPopulated.ts'
+import { ITaskCreatePayload } from '@/application/interfaces/ITaskCreatePayload.ts'
+import { ICategoryPopulated } from '@/application/interfaces/ICategoryPopulated.ts'
+import { ICategoryCreatePayload } from '@/application/interfaces/ICategoryCreatePayload.ts'
+import { IBoardPopulated } from '@/application/interfaces/IBoardPopulated.ts'
+import { IBoardCreatePayload } from '@/application/interfaces/IBoardCreatePayload.ts'
+import { IWorkspaceCreatePayload } from '@/application/interfaces/IWorkspaceCreatePayload.ts'
 
 export function initializeDependencies() {
   const mongoClient = new MongoClient(process.env.MONGODB_URI || '')
@@ -130,7 +141,13 @@ export function initializeDependencies() {
   /* PAYMENT SERVICES END */
 
   /* TASK SERVICES START */
-  const taskReorderService = new ReorderService<ITask, ITaskRaw>(taskRepository)
+  const taskReorderService = new ReorderService<
+    ITask,
+    ITaskRaw,
+    ITaskCriteria,
+    ITaskPopulated,
+    ITaskCreatePayload
+  >(taskRepository)
   const taskService = new TaskService(
     taskRepository,
     embeddingService,
@@ -143,7 +160,13 @@ export function initializeDependencies() {
   /* TASK SERVICES END */
 
   /* CATEGORY SERVICES START */
-  const categoryReorderService = new ReorderService<ICategory, ICategoryRaw>(categoryRepository)
+  const categoryReorderService = new ReorderService<
+    ICategory,
+    ICategoryRaw,
+    ICategoryCriteria,
+    ICategoryPopulated,
+    ICategoryCreatePayload
+  >(categoryRepository)
   const categoryService = new CategoryService(
     categoryRepository,
     embeddingService,
@@ -156,7 +179,13 @@ export function initializeDependencies() {
   /* CATEGORY SERVICES END */
 
   /* BOARD SERVICES START */
-  const boardReorderService = new ReorderService<IBoard, IBoardRaw>(boardRepository)
+  const boardReorderService = new ReorderService<
+    IBoard,
+    IBoardRaw,
+    IBoardCriteria,
+    IBoardPopulated,
+    IBoardCreatePayload
+  >(boardRepository)
   const boardService = new BoardService(
     boardRepository,
     embeddingService,
@@ -169,7 +198,13 @@ export function initializeDependencies() {
   /* BOARD SERVICES END */
 
   /* WORKSPACE SERVICES START */
-  const workspaceReorderService = new ReorderService<IWorkspace, IWorkspaceRaw>(workspaceRepository)
+  const workspaceReorderService = new ReorderService<
+    IWorkspace,
+    IWorkspaceRaw,
+    IWorkspaceCriteria,
+    IWorkspace,
+    IWorkspaceCreatePayload
+  >(workspaceRepository)
   const workspaceService = new WorkspaceService(
     workspaceRepository,
     embeddingService,
