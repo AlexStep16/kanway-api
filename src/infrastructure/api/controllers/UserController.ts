@@ -57,4 +57,14 @@ export class UserController {
       next(error)
     }
   }
+
+  public resetAvatar = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      await this.service.resetAvatar(req.user!.id)
+
+      return res.status(200).json(new SuccessResponse(null))
+    } catch (error) {
+      next(error)
+    }
+  }
 }

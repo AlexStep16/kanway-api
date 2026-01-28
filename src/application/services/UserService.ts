@@ -27,7 +27,7 @@ export class UserService implements ICreateUserService<IUser, RegisterCredential
 
   public async create(
     credentials: RegisterCredentialsDTO,
-    session?: ClientSession
+    session?: ClientSession,
   ): Promise<IUser[]> {
     const user: Omit<IUser, SystemFields> = {
       email: credentials.email.toLowerCase(),
@@ -50,7 +50,7 @@ export class UserService implements ICreateUserService<IUser, RegisterCredential
     if (data.password && data.currentPassword) {
       const oldPasswordHash = await this._comparePasswords(
         data.currentPassword,
-        new Types.ObjectId(user.id)
+        new Types.ObjectId(user.id),
       )
 
       const isOldPasswordSameAsNew = await bcrypt.compare(data.password, oldPasswordHash)
@@ -135,5 +135,9 @@ export class UserService implements ICreateUserService<IUser, RegisterCredential
     await this.repository.updateManyByCriteria({ id: id.toString() }, { avatarUrl: filePath })
 
     return filePath
+  }
+
+  public async resetAvatar(id: Types.ObjectId): Promise<void> {
+    await this.repository.updateManyByCriteria({ id: id.toString() }, { avatarUrl: null })
   }
 }
