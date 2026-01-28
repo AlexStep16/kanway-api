@@ -8,16 +8,18 @@ import { makeSynthesizeNode } from '@application/ai/agent/nodes/makeSynthesizeNo
 import { END, START, StateGraph } from '@langchain/langgraph'
 import { AgentStateAnnotation } from '@application/ai/agent/AgentStateAnnotation.ts'
 import { routeAgentOutput } from '@application/ai/agent/edges/routeAgentOutput.ts'
-import { routeHumanApprovalOutput } from '@application/ai/agent/edges/routeHumanApprovalOutput.ts'
+import { routePrepareToolCallsOutput } from '@/application/ai/agent/edges/routePrepareToolCallsOutput.ts'
 import { makePlannerNode } from '@application/ai/agent/nodes/makePlannerNode.ts'
 import { routePlannerOutput } from '@application/ai/agent/edges/routePlannerOutput.ts'
 import { makeSummaryHistoryNode } from '@application/ai/agent/nodes/makeSummaryHistoryNode.ts'
 import { makeChatbotNode } from '@application/ai/agent/nodes/makeChatbotNode.ts'
+import { makePrepareToolCallsNode } from './nodes/makePrepareToolCallsNode.ts'
 
 export function createReActAgent(dependencies: AgentDependencies, checkpointer: MongoDBSaver) {
   const agentNode = makeAgentNode(dependencies)
   const retrievalNode = makeToolsRetrievalNode(dependencies)
-  const humanApprovalNode = makeHumanApprovalNode(dependencies)
+  const humanApprovalNode = makeHumanApprovalNode()
+  const prepareToolCallsNode = makePrepareToolCallsNode(dependencies)
   const toolsExecutorNode = makeToolsExecutorNode(dependencies)
   const synthesizeNode = makeSynthesizeNode(dependencies)
   const plannerNode = makePlannerNode(dependencies)
@@ -25,19 +27,16 @@ export function createReActAgent(dependencies: AgentDependencies, checkpointer: 
   const chatbotNode = makeChatbotNode(dependencies)
 
   const graphBuilder = new StateGraph(AgentStateAnnotation)
-    // --- Добавляем узлы ---
     .addNode('Planner', plannerNode)
     .addNode('Summarizer', summarizerNode)
     .addNode('Agent', agentNode)
     .addNode('ToolRetrieval', retrievalNode)
+    .addNode('PrepareToolCalls', prepareToolCallsNode)
     .addNode('HumanApproval', humanApprovalNode)
     .addNode('ToolsExecutor', toolsExecutorNode)
     .addNode('Synthesize', synthesizeNode)
     .addNode('Chatbot', chatbotNode)
 
-    // --- Добавляем Ребра (Логику переходов) ---
-
-    // Старт -> Агент думает
     .addEdge(START, 'Planner')
 
     .addConditionalEdges('Planner', routePlannerOutput, {
@@ -48,29 +47,25 @@ export function createReActAgent(dependencies: AgentDependencies, checkpointer: 
 
     .addEdge('Summarizer', 'Agent')
 
-    // Агент решил -> Развилка (Retrieve / Synthesize / Verify)
     .addConditionalEdges('Agent', routeAgentOutput, {
       retrieve: 'ToolRetrieval',
       synthesize: 'Synthesize',
-      verify: 'HumanApproval',
+      verify: 'PrepareToolCalls',
     })
 
-    // После поиска новых инструментов -> Снова думать
     .addEdge('ToolRetrieval', 'Agent')
 
-    // После проверки -> Развилка (Retry / Execute)
-    .addConditionalEdges('HumanApproval', routeHumanApprovalOutput, {
-      retry: 'Agent', // Ошибка валидации -> Агент исправляет аргументы
-      execute: 'ToolsExecutor', // Успех/Подтверждение -> Выполнение
+    .addConditionalEdges('PrepareToolCalls', routePrepareToolCallsOutput, {
+      retry: 'Agent',
+      approve: 'HumanApproval',
+      execute: 'ToolsExecutor',
     })
+    .addEdge('HumanApproval', 'ToolsExecutor')
 
-    // После выполнения инструментов -> Снова думать (с результатами)
     .addEdge('ToolsExecutor', 'Agent')
 
-    // Синтез -> Конец
     .addEdge('Synthesize', END)
     .addEdge('Chatbot', END)
 
-  // 5. Компилируем
   return graphBuilder.compile({ checkpointer })
 }

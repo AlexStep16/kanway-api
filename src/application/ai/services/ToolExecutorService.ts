@@ -1,4 +1,4 @@
-import { BaseMessage, ToolCall, ToolMessage } from '@langchain/core/messages'
+import { ToolCall, ToolMessage } from '@langchain/core/messages'
 import { DynamicStructuredTool } from '@langchain/core/tools'
 import { dispatchCustomEvent } from '@langchain/core/callbacks/dispatch'
 import { VectorSearchService } from '@/application/services/VectorSearchService.ts'
@@ -9,11 +9,10 @@ import { CategoryToolAdapter } from '../tools/CategoryToolAdapter.ts'
 import { BoardToolAdapter } from '../tools/BoardToolAdapter.ts'
 import { WorkspaceToolAdapter } from '../tools/WorkspaceToolAdapter.ts'
 import { OperationLogService } from '@/application/services/OperationLogService.ts'
-import { IUser } from '@/domain/entities/IUser.ts'
 import z from 'zod'
 import { BaseToolAdapter } from '../tools/BaseToolAdapter.ts'
-import { ShowEntitiesToUserDTO } from '../tools/toolSchemes.ts'
-import * as Sentry from '@sentry/node'
+import { IActionResponse } from '../interfaces/IActionsResponse.ts'
+import { cleanArgsByCancelled } from '../helpers/cleanArgsByCancelled.ts'
 
 export class ToolExecutorService {
   protected vectorSearchService: VectorSearchService
@@ -22,9 +21,12 @@ export class ToolExecutorService {
   protected boardToolAdapter: BoardToolAdapter
   protected workspaceToolAdapter: WorkspaceToolAdapter
   protected operationLogService: OperationLogService
+
   public tools: DynamicStructuredTool[]
   public toolsByName: Record<string, DynamicStructuredTool>
-  public toolsWithIntegrationByName: Record<string, DynamicStructuredTool>
+  public toolsWithOperationLogByName: Record<string, DynamicStructuredTool>
+  public toolsWithUpdatedArgsByName: Record<string, DynamicStructuredTool>
+  public toolsWithActionsByName: Record<string, DynamicStructuredTool>
   public hotTools: DynamicStructuredTool[]
   public plannerTools: DynamicStructuredTool[]
 
@@ -35,7 +37,7 @@ export class ToolExecutorService {
     taskToolAdapter: TaskToolAdapter,
     categoryToolAdapter: CategoryToolAdapter,
     boardToolAdapter: BoardToolAdapter,
-    workspaceToolAdapter: WorkspaceToolAdapter
+    workspaceToolAdapter: WorkspaceToolAdapter,
   ) {
     this.vectorSearchService = vectorSearchService
     this.taskToolAdapter = taskToolAdapter
@@ -49,12 +51,14 @@ export class ToolExecutorService {
       this.taskToolAdapter,
       this.boardToolAdapter,
       this.categoryToolAdapter,
-      this.workspaceToolAdapter
+      this.workspaceToolAdapter,
     )
 
     this.tools = tools.entityTools
     this.toolsByName = tools.toolsByName
-    this.toolsWithIntegrationByName = tools.toolsWithIntegrationByName
+    this.toolsWithOperationLogByName = tools.toolsWithOperationLogByName
+    this.toolsWithUpdatedArgsByName = tools.toolsWithUpdatedArgsByName
+    this.toolsWithActionsByName = tools.toolsWithActionsByName
     this.hotTools = tools.hotTools
     this.plannerTools = tools.plannerTools
   }
@@ -62,7 +66,7 @@ export class ToolExecutorService {
   public async getRelevantTools(steps: Array<{ description: string }>) {
     await dispatchCustomEvent(AgentRoles.TOOLS_RETRIEVING, null)
 
-    const toolsFound = await this.baseService.similaritySearchTools(steps)
+    const toolsFound = await this.vectorSearchService.similaritySearchTools(steps)
     const finalNames = toolsFound.map((tool) => tool.name)
 
     // Фильтруем только реально существующие
@@ -79,7 +83,10 @@ export class ToolExecutorService {
     }
   }
 
-  public async executeTool(toolCall: ToolCall, _: BaseMessage[], user: IUser) {
+  public async executeTool(
+    toolCall: ToolCall,
+    cancelledEntityIds: string[] = [],
+  ): Promise<ToolMessage> {
     const functionName = toolCall.name
     const tool: DynamicStructuredTool = this.toolsByName[functionName]
 
@@ -93,28 +100,37 @@ export class ToolExecutorService {
 
     const functionSchema = tool.schema as z.ZodType
 
-    const data = functionSchema.parse(toolCall.args)
+    const cleanedArgs = cleanArgsByCancelled(toolCall, cancelledEntityIds)
 
-    const observation: any = await tool.invoke(data)
+    functionSchema.parse(cleanedArgs) as Record<string, any>
+
+    const observation: any = await tool.invoke(cleanedArgs, { context: { cancelledEntityIds } })
 
     if (tool.name === 'showEntitiesToUser') {
-      let parsedObservation: any = {}
+      let parsedObservation: any = observation
+      const actions: IActionResponse = {}
 
-      try {
-        parsedObservation = JSON.parse(observation)
-
-        await dispatchCustomEvent(AgentRoles.LIST_ENTITIES, {
-          entities: parsedObservation,
-          type: (data as ShowEntitiesToUserDTO).type,
-        })
-      } catch (error) {
-        Sentry.captureException(new Error('Failed to parse showEntitiesToUser: ' + observation), {
-          extra: {
-            observation,
-            error,
-          },
-        })
+      if (toolCall.args.type === 'task') {
+        actions.list = {
+          tasks: parsedObservation,
+        }
+      } else if (toolCall.args.type === 'category') {
+        actions.list = {
+          categories: parsedObservation,
+        }
+      } else if (toolCall.args.type === 'board') {
+        actions.list = {
+          boards: parsedObservation,
+        }
+      } else if (toolCall.args.type === 'workspace') {
+        actions.list = {
+          workspaces: parsedObservation,
+        }
       }
+
+      await dispatchCustomEvent(AgentRoles.ACTIONS, {
+        actions,
+      })
 
       return new ToolMessage({
         content: 'Entities have been presented to the user.',
@@ -123,24 +139,31 @@ export class ToolExecutorService {
       })
     }
 
-    if (this.toolsWithIntegrationByName[functionName]) {
-      const result = observation.result
+    const result = observation?.result
 
-      if (!result) {
-        return new ToolMessage({
-          content: typeof observation === 'string' ? observation : JSON.stringify(observation),
-          tool_call_id: toolCall.id || '',
-          name: toolCall.name,
-        })
-      }
+    if (!result) {
+      return new ToolMessage({
+        content: typeof observation === 'string' ? observation : JSON.stringify(observation),
+        tool_call_id: toolCall.id || '',
+        name: toolCall.name,
+      })
+    }
 
-      if (result.integration) {
-        await dispatchCustomEvent(AgentRoles.INTEGRATION, {
-          integration: result.integration,
-          user,
-        })
-      }
+    if (tool.name === 'undoOperations') {
+      await dispatchCustomEvent(AgentRoles.UNDO, result)
 
+      return new ToolMessage({
+        content: 'Operations undone successfully.',
+        tool_call_id: toolCall.id || '',
+        name: toolCall.name,
+      })
+    }
+
+    if (this.toolsWithActionsByName[functionName]) {
+      await dispatchCustomEvent(AgentRoles.ACTIONS, result)
+    }
+
+    if (this.toolsWithOperationLogByName[functionName]) {
       if (result.data !== undefined) {
         const content = JSON.stringify({
           result: result.data,

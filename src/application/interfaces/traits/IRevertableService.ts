@@ -3,6 +3,6 @@ import { IOperationLog } from '@domain/entities/IOperationLog.ts'
 import { ClientSession } from 'mongoose'
 import { IUndoResponse } from '@interfaces/IUndoResponse.ts'
 
-export interface IRevertableService<TEntity> {
-  revert(log: IOperationLog, user: IUser, session: ClientSession): Promise<IUndoResponse<TEntity>>
+export interface IRevertableService {
+  revert(log: IOperationLog, user: IUser, session: ClientSession): Promise<IUndoResponse>
 }

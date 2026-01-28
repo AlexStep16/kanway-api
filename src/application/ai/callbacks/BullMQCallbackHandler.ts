@@ -20,7 +20,7 @@ export class BullMQCallbackHandler extends BaseCallbackHandler {
     _a?: string | undefined,
     _b?: string[] | undefined,
     _c?: Record<string, unknown> | undefined,
-    runName?: string | undefined
+    runName?: string | undefined,
   ) {
     const toolTip = TOOLS_TIPS_MAP.get(runName || '')
 
@@ -32,7 +32,6 @@ export class BullMQCallbackHandler extends BaseCallbackHandler {
     })
   }
 
-  // Ловит кастомные события, которые вы диспатчите
   async handleCustomEvent(event: string, data: any) {
     if (event === AgentRoles.TOOLS_EXECUTION) {
       await this.job.updateProgress({ role: AgentRoles.TOOLS_EXECUTION })
@@ -44,6 +43,10 @@ export class BullMQCallbackHandler extends BaseCallbackHandler {
 
     if (event === AgentRoles.HISTORY_RETRIEVING) {
       await this.job.updateProgress({ role: AgentRoles.HISTORY_RETRIEVING })
+    }
+
+    if (event === AgentRoles.UNDO) {
+      await this.job.updateProgress({ role: AgentRoles.UNDO, undo: data })
     }
 
     if (event === AgentRoles.INTEGRATION) {

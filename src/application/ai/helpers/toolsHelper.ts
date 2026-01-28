@@ -16,7 +16,7 @@ export function createTools(
   taskToolAdapter: TaskToolAdapter,
   boardToolAdapter: BoardToolAdapter,
   categoryToolAdapter: CategoryToolAdapter,
-  workspaceToolAdapter: WorkspaceToolAdapter
+  workspaceToolAdapter: WorkspaceToolAdapter,
 ) {
   const entityTools = [
     ...createTaskTools(taskToolAdapter),
@@ -30,13 +30,29 @@ export function createTools(
   const hotTools = [...baseTools.filter((t) => t.name !== 'submitPlan')]
   const plannerTools = [...baseTools.filter((t) => t.name === 'submitPlan')]
   const allTools = [...entityTools, ...hotTools]
-  const toolsWithIntegration = [...entityTools, baseTools.find((t) => t.name === 'undoOperations')!]
+  const toolsWithOperationLog = [
+    ...entityTools,
+    baseTools.find((t) => t.name === 'undoOperations')!,
+  ]
+  const toolsWithUpdatedArgs = [
+    entityTools.find((t) =>
+      ['createTasks', 'createCategories', 'createBoards', 'createWorkspaces'].includes(t.name),
+    ),
+  ]
 
   const toolsByName = Object.fromEntries(
-    [...entityTools, ...hotTools].map((tool) => [tool.name, tool])
+    [...entityTools, ...hotTools].map((tool) => [tool.name, tool]),
   )
-  const toolsWithIntegrationByName = Object.fromEntries(
-    [...toolsWithIntegration].map((tool) => [tool.name, tool])
+  const toolsWithOperationLogByName = Object.fromEntries(
+    [...toolsWithOperationLog].map((tool) => [tool.name, tool]),
+  )
+
+  const toolsWithActionsByName = Object.fromEntries(
+    [...entityTools].map((tool) => [tool.name, tool]),
+  )
+
+  const toolsWithUpdatedArgsByName = Object.fromEntries(
+    [...toolsWithUpdatedArgs].map((tool) => [tool!.name, tool!]),
   )
 
   return {
@@ -45,7 +61,9 @@ export function createTools(
     plannerTools,
     allTools,
     toolsByName,
-    toolsWithIntegration,
-    toolsWithIntegrationByName,
+    toolsWithOperationLogByName,
+    toolsWithOperationLog,
+    toolsWithActionsByName,
+    toolsWithUpdatedArgsByName,
   }
 }

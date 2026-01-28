@@ -1,7 +1,13 @@
 import { ICategoryRaw } from '@entities/ICategoryRaw.ts'
 import CategoryRepository from '@repositories/CategoryRepository.ts'
 import { CategoryDTO } from '@application/dtos/CategoryDTO.ts'
-import mongoose, { ClientSession, DeleteResult, Types, UpdateWriteOpResult } from 'mongoose'
+import mongoose, {
+  ClientSession,
+  DeleteResult,
+  MongooseBulkWriteResult,
+  Types,
+  UpdateWriteOpResult,
+} from 'mongoose'
 import { EmbeddingService } from '@infrastructure/services/EmbeddingService.ts'
 import { ICategoryCriteria } from '@criterias/ICategoryCriteria.ts'
 import { OperationLogService } from '@application/services/OperationLogService.ts'
@@ -29,6 +35,14 @@ import { SafeUpdateData } from '@/infrastructure/types/SafeUpdateData.ts'
 
 const MAX_RETRIES = 3
 
+type ReorderServiceType = ReorderService<
+  ICategory,
+  ICategoryRaw,
+  ICategoryCriteria,
+  ICategoryPopulated,
+  ICategoryCreatePayload
+>
+
 export class CategoryService extends BaseService<
   ICategoryRaw,
   ICategory,
@@ -39,13 +53,7 @@ export class CategoryService extends BaseService<
   protected repository: CategoryRepository
   protected embeddingService: EmbeddingService
   protected operationLogService: OperationLogService
-  protected reorderService: ReorderService<
-    ICategory,
-    ICategoryRaw,
-    ICategoryCriteria,
-    ICategoryPopulated,
-    ICategoryCreatePayload
-  >
+  protected reorderService: ReorderServiceType
   protected workspaceService: WorkspaceService
   protected boardService: BoardService
   protected taskService: TaskService
@@ -54,16 +62,10 @@ export class CategoryService extends BaseService<
     categoryRepository: CategoryRepository,
     embeddingService: EmbeddingService,
     operationLogService: OperationLogService,
-    reorderService: ReorderService<
-      ICategory,
-      ICategoryRaw,
-      ICategoryCriteria,
-      ICategoryPopulated,
-      ICategoryCreatePayload
-    >,
+    reorderService: ReorderServiceType,
     workspaceService: WorkspaceService,
     boardService: BoardService,
-    taskService: TaskService
+    taskService: TaskService,
   ) {
     super(categoryRepository)
 
@@ -110,14 +112,14 @@ export class CategoryService extends BaseService<
     }
     throw new AppError(
       'Произошла ошибка при выполнении операции после максимального количества попыток.',
-      500
+      500,
     )
   }
 
   private async _executeCreateTransaction(
     data: CategoryDTO,
     userId: Types.ObjectId,
-    session: ClientSession
+    session: ClientSession,
   ): Promise<IResponseWithLog<ICategoryPopulated[]>> {
     const tempClientId = data.id
 
@@ -125,16 +127,31 @@ export class CategoryService extends BaseService<
 
     const categoryPayload = await this.prepareCategoryCreationPayload(data, userId, session)
 
+    const sideEffects: Promise<any>[] = []
+
     /* CREATE */
     const newCategory = await this.repository.create(categoryPayload, session)
 
     /* REORDER */
     if (data.order !== undefined) {
-      await this.reorderService.reorder('board', [newCategory], userId, session)
+      sideEffects.push(this.reorderService.reorder('board', [newCategory], userId, session))
     }
 
+    sideEffects.push(
+      this.boardService.updateCategoriesCount(
+        [new Types.ObjectId(newCategory.board.id)],
+        userId,
+        session,
+      ),
+      this.workspaceService.updateCategoriesCount(
+        [new Types.ObjectId(newCategory.workspace.id)],
+        userId,
+        session,
+      ),
+    )
+
     /* LOG */
-    const log = await this.operationLogService.create(
+    const logPromise = this.operationLogService.create(
       {
         operationType: OperationTypesEnum.CREATE,
         collectionName: CollectionsEnum.CATEGORIES,
@@ -142,13 +159,19 @@ export class CategoryService extends BaseService<
         dependencies: [],
       },
       userId,
-      session
+      session,
     )
+
+    sideEffects.push(logPromise)
+
+    await Promise.all(sideEffects)
+
+    const log = await logPromise
 
     const newCategoriesPopulated = await this.getByCriteria(
       { id: newCategory.id.toString() },
       userId,
-      session
+      session,
     )
 
     newCategoriesPopulated[0].tempClientId = tempClientId // Attach temp client ID back to the response to connect with client-side entity
@@ -162,7 +185,7 @@ export class CategoryService extends BaseService<
   public async create(
     data: CategoryDTO,
     user: IUser,
-    externalSession?: ClientSession
+    externalSession?: ClientSession,
   ): Promise<IResponseWithLog<ICategoryPopulated[]>> {
     const userId = user.id
 
@@ -170,7 +193,7 @@ export class CategoryService extends BaseService<
       return this._executeCreateTransaction(data, userId, externalSession)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeCreateTransaction(data, userId, session)
+        this._executeCreateTransaction(data, userId, session),
       )
     }
   }
@@ -178,31 +201,53 @@ export class CategoryService extends BaseService<
   private async _executeCreateManyTransaction(
     data: CategoryDTO[],
     userId: Types.ObjectId,
-    session: ClientSession
+    session: ClientSession,
   ): Promise<IResponseWithLog<ICategoryPopulated[]>> {
     const categoriesPayload = await this.prepareCategoriesCreationPayload(data, userId, session)
 
     /* CREATE */
     const newCategories = await this.repository.createMany(categoriesPayload, session)
 
+    const sideEffects: Promise<any>[] = []
+
     /* REORDER */
     const isReorderNeeded = data.some((ws) => ws.order !== undefined)
     if (isReorderNeeded) {
-      await this.reorderService.reorder('board', newCategories, userId, session)
+      sideEffects.push(this.reorderService.reorder('board', newCategories, userId, session))
     }
 
     const newCategoriesPopulated = await this.getByCriteria(
       { ids: newCategories.map((t) => t.id.toString()) },
       userId,
-      session
+      session,
     )
 
     newCategoriesPopulated.forEach((nc, index) => {
       nc.tempClientId = data[index].id // Attach temp client ID back to the response to connect with client-side entity
     })
 
+    const uniqueBoardIds = [
+      ...new Set(newCategories.map((category) => category.board.toHexString())),
+    ]
+    const uniqueWorkspaceIds = [
+      ...new Set(newCategories.map((category) => category.workspace.toHexString())),
+    ]
+
+    sideEffects.push(
+      this.boardService.updateCategoriesCount(
+        uniqueBoardIds.map((id) => new Types.ObjectId(id)),
+        userId,
+        session,
+      ),
+      this.workspaceService.updateCategoriesCount(
+        uniqueWorkspaceIds.map((id) => new Types.ObjectId(id)),
+        userId,
+        session,
+      ),
+    )
+
     /* LOG */
-    const log = await this.operationLogService.create(
+    const logPromise = this.operationLogService.create(
       {
         operationType: OperationTypesEnum.CREATE,
         collectionName: CollectionsEnum.CATEGORIES,
@@ -210,8 +255,14 @@ export class CategoryService extends BaseService<
         dependencies: [],
       },
       userId,
-      session
+      session,
     )
+
+    sideEffects.push(logPromise)
+
+    await Promise.all(sideEffects)
+
+    const log = await logPromise
 
     return {
       data: newCategoriesPopulated,
@@ -222,7 +273,7 @@ export class CategoryService extends BaseService<
   public async createMany(
     data: CategoryDTO[],
     user: IUser,
-    externalSession?: ClientSession
+    externalSession?: ClientSession,
   ): Promise<IResponseWithLog<ICategoryPopulated[]>> {
     const userId = user.id
 
@@ -230,7 +281,7 @@ export class CategoryService extends BaseService<
       return this._executeCreateManyTransaction(data, userId, externalSession)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeCreateManyTransaction(data, userId, session)
+        this._executeCreateManyTransaction(data, userId, session),
       )
     }
   }
@@ -239,13 +290,13 @@ export class CategoryService extends BaseService<
     data: CategoryEditDTO,
     criteria: ICategoryCriteria,
     userId: Types.ObjectId,
-    session: ClientSession
+    session: ClientSession,
   ): Promise<IResponseWithLog<ICategoryPopulated[]>> {
     const categoriesToUpdate: ICategory[] = await this.repository.findByCriteria(
       criteria,
       session,
       undefined,
-      userId
+      userId,
     )
 
     if (categoriesToUpdate.length === 0)
@@ -259,7 +310,7 @@ export class CategoryService extends BaseService<
       criteria,
       categoryPayload,
       session,
-      userId
+      userId,
     )
 
     if (updateManyResult.modifiedCount === 0)
@@ -269,40 +320,83 @@ export class CategoryService extends BaseService<
       criteria,
       session,
       undefined,
-      userId
+      userId,
     )
+
+    const sideEffects: Promise<any>[] = []
 
     /* MOVE */
     const categoriesToMove = categoriesToUpdate.filter(
-      (b) => data.boardId !== undefined && b.board.toString() !== data.boardId
+      (b) => data.boardId !== undefined && b.board.toString() !== data.boardId,
     )
+
     if (categoriesToMove.length > 0) {
+      await this.regenerateReferencesByBoards(
+        categoriesToMove.map((category) => category.id.toString()),
+        userId,
+        session,
+      )
+
+      const affectedTasks = await this.taskService.getByCriteria(
+        {
+          categoryIds: categoriesToMove.map((c) => c.id.toString()),
+        },
+        userId,
+        session,
+        { projection: { _id: 1 } },
+      )
+
+      sideEffects.push(
+        this.taskService.regenerateReferencesByCategories(
+          affectedTasks.map((t) => t.id.toString()),
+          userId,
+          session,
+        ),
+      )
+
+      const movedIds = categoriesToMove.map((c) => c.id.toString())
+      const categoriesAfterMove = updatedCategories.filter((c) =>
+        movedIds.includes(c.id.toString()),
+      )
+
+      sideEffects.push(
+        ...this._updateCategoriesParentCountersWithOld(
+          categoriesToMove,
+          categoriesAfterMove,
+          userId,
+          session,
+        ),
+      )
     }
 
     /* REORDER */
     const categoriesToReorder = categoriesToUpdate.filter(
-      (c) => data.order !== undefined && c.order !== data.order
+      (c) => data.order !== undefined && c.order !== data.order,
     )
 
     const categoriesToMoveToEnd = categoriesToUpdate.filter(
-      (c) => data.order == null && categoriesToMove.includes(c)
+      (c) => data.order == null && categoriesToMove.includes(c),
     )
 
-    for (const categoryToMoveToEnd of categoriesToMoveToEnd) {
-      categoryToMoveToEnd.order += 99999 // Move to end before reordering
-    }
-
-    if (categoriesToReorder.length > 0) {
-      await this.reorderService.reorder(
-        'board',
-        [...categoriesToReorder, ...categoriesToMoveToEnd],
-        userId,
-        session
+    if (categoriesToReorder.length > 0 || categoriesToMoveToEnd.length > 0) {
+      sideEffects.push(
+        this.reorderService.reorder(
+          'board',
+          [
+            ...categoriesToReorder,
+            ...categoriesToMoveToEnd.map((c) => ({
+              ...c,
+              order: c.order + 99999,
+            })),
+          ],
+          userId,
+          session,
+        ),
       )
     }
 
     /* LOG */
-    const log = await this.operationLogService.create(
+    const logPromise = this.operationLogService.create(
       {
         operationType: OperationTypesEnum.UPDATE,
         collectionName: CollectionsEnum.CATEGORIES,
@@ -311,8 +405,14 @@ export class CategoryService extends BaseService<
         dependencies: [],
       },
       userId,
-      session
+      session,
     )
+
+    sideEffects.push(logPromise)
+
+    await Promise.all(sideEffects)
+
+    const log = await logPromise
 
     const updatedCategoriesPopulated = await this.getByCriteria(criteria, userId, session)
 
@@ -326,7 +426,7 @@ export class CategoryService extends BaseService<
     data: CategoryEditDTO,
     criteria: ICategoryCriteria,
     user: IUser,
-    externalSession?: ClientSession
+    externalSession?: ClientSession,
   ): Promise<IResponseWithLog<ICategoryPopulated[]>> {
     const userId = user.id
 
@@ -334,7 +434,7 @@ export class CategoryService extends BaseService<
       return this._executeEditTransaction(data, criteria, userId, externalSession)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeEditTransaction(data, criteria, userId, session)
+        this._executeEditTransaction(data, criteria, userId, session),
       )
     }
   }
@@ -342,90 +442,124 @@ export class CategoryService extends BaseService<
   private async _executeEditManyTransaction(
     data: CategoryEditDTO[],
     userId: Types.ObjectId,
-    session: ClientSession
+    session: ClientSession,
   ): Promise<IResponseWithLog<ICategoryPopulated[]>> {
-    const categoryIdsToReorder: Set<string> = new Set()
-    const categoryIdsToMoveToEnd: Set<string> = new Set()
-    const categoryPayloads: SingleUpdateDTO<SafeUpdateData<ICategory>>[] = []
-    const categoryPayloadsToMove: SingleUpdateDTO<SafeUpdateData<ICategory>>[] = []
-    const categoriesBefore: Partial<ICategory>[] = []
-
     const categoryIds = data.map((d) => d.id)
 
-    const existingCategories: ICategory[] = await this.repository.findByCriteria(
+    const existingCategories = await this.repository.findByCriteria(
       { ids: categoryIds },
       session,
       undefined,
-      userId
+      userId,
     )
 
-    if (existingCategories.length === 0)
+    if (existingCategories.length === 0) {
       throw new NotFoundError('Категории для обновления не найдены.')
+    }
+
+    const existingMap = new Map(existingCategories.map((c) => [c.id.toString(), c]))
+
+    const categoryPayloads: SingleUpdateDTO<SafeUpdateData<ICategory>>[] = []
+    const categoriesBefore: Partial<ICategory>[] = []
+    const movedCategoryIds: string[] = []
+    const reorderCategoryIds = new Set<string>()
+    const moveToEndIds = new Set<string>()
 
     for (const dto of data) {
-      const category = existingCategories.find((c) => c.id.toString() === dto.id)
-
+      const category = existingMap.get(dto.id)
       if (!category) continue
 
       const categoryPayload = await this.prepareCategoryEditPayload(dto, [category])
-      categoriesBefore.push(projectProperties<ICategory>([category], categoryPayload)[0])
 
+      categoriesBefore.push(projectProperties<ICategory>([category], categoryPayload)[0])
       categoryPayloads.push(categoryPayload)
 
-      if (dto.boardId && category.board.toString() !== dto.boardId) {
-        categoryPayloadsToMove.push(categoryPayload)
+      const isMoving = dto.boardId !== undefined && category.board.toString() !== dto.boardId
+      if (isMoving) {
+        movedCategoryIds.push(dto.id)
       }
 
-      if (dto.order != null && category.order !== dto.order) {
-        categoryIdsToReorder.add(categoryPayload.id.toString())
-      } else if (dto.order == null && categoryPayloadsToMove.includes(categoryPayload)) {
-        categoryIdsToReorder.add(dto.id)
-        categoryIdsToMoveToEnd.add(dto.id)
+      if (dto.order !== undefined && category.order !== dto.order) {
+        reorderCategoryIds.add(dto.id)
+      } else if (dto.order == null && isMoving) {
+        reorderCategoryIds.add(dto.id)
+        moveToEndIds.add(dto.id)
       }
     }
 
-    /* BULK UPDATE */
     const updatedCategoriesResult = await this.repository.bulkUpdate(
       categoryPayloads,
       userId,
-      session
+      session,
     )
 
-    if (!updatedCategoriesResult || updatedCategoriesResult.modifiedCount === 0)
+    if (!updatedCategoriesResult || updatedCategoriesResult.modifiedCount === 0) {
       throw new AppError('Не удалось обновить категории.', 500)
+    }
 
     const updatedCategories = await this.repository.findByCriteria(
-      { ids: categoryPayloads.map((t) => t.id.toString()) },
+      { ids: categoryPayloads.map((p) => p.id.toString()) },
       session,
       undefined,
-      userId
+      userId,
     )
 
-    /* MOVE */
-    if (categoryPayloadsToMove.length > 0) {
-    }
+    const sideEffects: Promise<any>[] = []
 
-    /* REORDER */
-    if (categoryIdsToReorder.size > 0) {
-      for (const categoryId of categoryIdsToMoveToEnd) {
-        const categoryToMoveToEnd = updatedCategories.find((c) => c.id.toString() === categoryId)
+    /** MOVE */
+    if (movedCategoryIds.length > 0) {
+      await this.regenerateReferencesByBoards(movedCategoryIds, userId, session)
 
-        if (categoryToMoveToEnd) {
-          categoryToMoveToEnd.order += 99999 // Move to end before reordering
-        }
-      }
-
-      const updatedCategoriesToReorder = updatedCategories.filter((uc) =>
-        categoryIdsToReorder.has(uc.id.toString())
+      const affectedTasks = await this.taskService.getByCriteria(
+        { categoryIds: movedCategoryIds },
+        userId,
+        session,
+        { projection: { _id: 1 } },
       )
 
-      if (updatedCategoriesToReorder.length > 0) {
-        await this.reorderService.reorder('board', updatedCategoriesToReorder, userId, session)
+      if (affectedTasks.length > 0) {
+        sideEffects.push(
+          this.taskService.regenerateReferencesByCategories(
+            affectedTasks.map((t) => t.id.toString()),
+            userId,
+            session,
+          ),
+        )
       }
+
+      const categoriesToMove = existingCategories.filter((c) =>
+        movedCategoryIds.includes(c.id.toString()),
+      )
+      const categoriesAfterMove = updatedCategories.filter((c) =>
+        movedCategoryIds.includes(c.id.toString()),
+      )
+
+      sideEffects.push(
+        ...this._updateCategoriesParentCountersWithOld(
+          categoriesToMove,
+          categoriesAfterMove,
+          userId,
+          session,
+        ),
+      )
     }
 
-    /* LOG */
-    const log = await this.operationLogService.create(
+    /** REORDER */
+    if (reorderCategoryIds.size > 0) {
+      const categoriesToReorder = updatedCategories
+        .filter((c) => reorderCategoryIds.has(c.id.toString()))
+        .map((c) => {
+          if (moveToEndIds.has(c.id.toString())) {
+            return { ...c, order: c.order + 99999 } // Сдвигаем виртуально
+          }
+          return c
+        })
+
+      sideEffects.push(this.reorderService.reorder('board', categoriesToReorder, userId, session))
+    }
+
+    /** LOGGING */
+    const logPromise = this.operationLogService.create(
       {
         operationType: OperationTypesEnum.UPDATE,
         collectionName: CollectionsEnum.CATEGORIES,
@@ -434,13 +568,18 @@ export class CategoryService extends BaseService<
         dependencies: [],
       },
       userId,
-      session
+      session,
     )
+    sideEffects.push(logPromise)
+
+    /** FINALIZATION */
+    await Promise.all(sideEffects)
+    const log = await logPromise
 
     const updatedCategoriesPopulated = await this.getByCriteria(
-      { ids: updatedCategories.map((t) => t.id.toString()) },
+      { ids: categoryIds },
       userId,
-      session
+      session,
     )
 
     return {
@@ -452,7 +591,7 @@ export class CategoryService extends BaseService<
   public async editMany(
     data: CategoryEditDTO[],
     user: IUser,
-    externalSession?: ClientSession
+    externalSession?: ClientSession,
   ): Promise<IResponseWithLog<ICategoryPopulated[]>> {
     const userId = user.id
 
@@ -460,51 +599,94 @@ export class CategoryService extends BaseService<
       return this._executeEditManyTransaction(data, userId, externalSession)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeEditManyTransaction(data, userId, session)
+        this._executeEditManyTransaction(data, userId, session),
       )
     }
+  }
+
+  public async regenerateReferencesByBoards(
+    categoryIds: string[],
+    userId: Types.ObjectId,
+    session: ClientSession,
+  ) {
+    const categories = await this.repository.findByCriteria(
+      { ids: categoryIds },
+      session,
+      undefined,
+      userId,
+    )
+    if (!categories.length) return
+
+    const boardIds = [...new Set(categories.map((c) => c.board.toString()))]
+
+    const boards = await this.boardService.getByCriteria({
+      ids: boardIds,
+    })
+
+    const boardMap = new Map(boards.map((b) => [b.id.toString(), b]))
+
+    const bulkUpdates = categories.reduce(
+      (acc, category) => {
+        const board = boardMap.get(category.board.toString())
+
+        if (board) {
+          acc.push({
+            id: category.id,
+            board: board.id,
+            workspace: board.workspace.id,
+          })
+        }
+        return acc
+      },
+      [] as SingleUpdateDTO<SafeUpdateData<ICategory>>[],
+    )
+
+    if (bulkUpdates.length > 0) {
+      return await this.repository.bulkUpdate(bulkUpdates, userId, session)
+    }
+
+    return null
   }
 
   private async _executeDeleteTransaction(
     criteria: ICategoryCriteria,
     userId: Types.ObjectId,
-    session: ClientSession
+    session: ClientSession,
   ): Promise<void> {
     const categoriesToDelete = await this.repository.findByCriteria(
       criteria,
       session,
       undefined,
-      userId
+      userId,
     )
 
-    if (categoriesToDelete.length === 0)
+    if (categoriesToDelete.length === 0) {
       throw new NotFoundError('Категории для удаления не найдены.')
+    }
+
+    const uniqueBoardIds = [...new Set(categoriesToDelete.map((t) => t.board.toString()))].map(
+      (id) => new Types.ObjectId(id),
+    )
+
+    await this.repository.deleteMany(criteria, userId, session)
 
     await Promise.all([
-      /* DELETE DEPENDENCIES */
-      this.taskService.deleteTasksByFilter(
+      ...this._updateCategoriesParentCounters(categoriesToDelete, userId, session),
+
+      this.taskService.deleteTasksByCriteria(
         { categoryIds: categoriesToDelete.map((c) => c.id.toString()) },
         userId,
-        session
+        session,
       ),
 
-      /* DELETE CATEGORIES */
-      this.repository.deleteMany(criteria, userId, session),
+      this.reorderService.reorderByParentIds(uniqueBoardIds, 'board', userId, session),
     ])
-
-    /* REORDER */
-    await this.reorderService.reorderByParentIds(
-      categoriesToDelete.map((c) => c.board),
-      'board',
-      userId,
-      session
-    )
   }
 
   public async delete(
     criteria: ICategoryCriteria,
     user: IUser,
-    externalSession?: ClientSession
+    externalSession?: ClientSession,
   ): Promise<void> {
     const userId = user.id
 
@@ -512,7 +694,7 @@ export class CategoryService extends BaseService<
       return this._executeDeleteTransaction(criteria, userId, externalSession)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeDeleteTransaction(criteria, userId, session)
+        this._executeDeleteTransaction(criteria, userId, session),
       )
     }
   }
@@ -521,7 +703,7 @@ export class CategoryService extends BaseService<
     criteria: ICategoryCriteria,
     isRecover: boolean,
     userId: Types.ObjectId,
-    session: ClientSession
+    session: ClientSession,
   ): Promise<IResponseWithLog<ICategoryPopulated[]>> {
     const deleteData: LifecycleDTO = {
       isDeleted: true,
@@ -539,7 +721,7 @@ export class CategoryService extends BaseService<
       criteria,
       session,
       undefined,
-      userId
+      userId,
     )
 
     const categoriesCriteria = { categoryIds: categoriesToProcess.map((b) => b.id.toString()) }
@@ -548,49 +730,60 @@ export class CategoryService extends BaseService<
 
     await Promise.all([
       /* PROCESS CHILDREN */
-      this.taskService.updateLifecycleTasksByFilter(
+      this.taskService.updateLifecycleTasksByCriteria(
         categoriesCriteria,
         { ...data, isDeletedExternal: isRecover ? false : true },
         userId,
-        session
+        session,
       ),
 
       /* PROCESS CATEGORIES */
       this.repository.updateManyByCriteria(criteria, data, session, userId),
     ])
 
-    const updatedCategories = await this.repository.findByCriteria<ICategory>(
-      criteria,
-      session,
-      undefined,
-      userId
-    )
+    const sideEffects: Promise<any>[] = []
+
+    const entitiesAfter = categoriesToProcess.map((category) => ({
+      ...category,
+      isDeleted: data.isDeleted,
+    }))
 
     /* REORDER */
-    await this.reorderService.reorderByParentIds(
-      categoriesToProcess.map((c) => c.board),
-      'board',
-      userId,
-      session
+    sideEffects.push(
+      this.reorderService.reorderByParentIds(
+        categoriesToProcess.map((c) => c.board),
+        'board',
+        userId,
+        session,
+      ),
     )
 
+    /** UPDATE COUNTERS */
+    sideEffects.push(...this._updateCategoriesParentCounters(categoriesToProcess, userId, session))
+
     /* LOG */
-    const log = await this.operationLogService.create(
+    const logPromise = this.operationLogService.create(
       {
         operationType: isRecover ? OperationTypesEnum.RECOVER : OperationTypesEnum.ARCHIVE,
         collectionName: CollectionsEnum.CATEGORIES,
         entitiesBefore: categoriesToProcess,
-        entitiesAfter: updatedCategories,
+        entitiesAfter,
         dependencies: [],
       },
       userId,
-      session
+      session,
     )
 
+    sideEffects.push(logPromise)
+
+    await Promise.all(sideEffects)
+
+    const log = await logPromise
+
     const updatedCategoriesPopulated = await this.getByCriteria(
-      { ids: updatedCategories.map((t) => t.id.toString()) },
+      { ids: entitiesAfter.map((c) => c.id.toString()) },
       userId,
-      session
+      session,
     )
 
     return {
@@ -602,7 +795,7 @@ export class CategoryService extends BaseService<
   public async archive(
     criteria: ICategoryCriteria,
     user: IUser,
-    externalSession?: ClientSession
+    externalSession?: ClientSession,
   ): Promise<IResponseWithLog<ICategoryPopulated[]>> {
     const userId = user.id
 
@@ -610,7 +803,7 @@ export class CategoryService extends BaseService<
       return this._executeLifecycleTransaction(criteria, false, userId, externalSession)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeLifecycleTransaction(criteria, false, userId, session)
+        this._executeLifecycleTransaction(criteria, false, userId, session),
       )
     }
   }
@@ -618,7 +811,7 @@ export class CategoryService extends BaseService<
   public async recover(
     criteria: ICategoryCriteria,
     user: IUser,
-    externalSession?: ClientSession
+    externalSession?: ClientSession,
   ): Promise<IResponseWithLog<ICategoryPopulated[]>> {
     const userId = user.id
 
@@ -626,7 +819,7 @@ export class CategoryService extends BaseService<
       return this._executeLifecycleTransaction(criteria, true, userId, externalSession)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeLifecycleTransaction(criteria, true, userId, session)
+        this._executeLifecycleTransaction(criteria, true, userId, session),
       )
     }
   }
@@ -634,7 +827,7 @@ export class CategoryService extends BaseService<
   private async _executeCloneTransaction(
     criteria: ICategoryCriteria,
     userId: Types.ObjectId,
-    session: ClientSession
+    session: ClientSession,
   ): Promise<IResponseWithLog<ICategoryPopulated[]>> {
     const dependencies: Types.ObjectId[] = []
 
@@ -644,7 +837,7 @@ export class CategoryService extends BaseService<
       {
         projection: '+embeddings -createdAt -updatedAt',
       },
-      userId
+      userId,
     )
 
     if (categoriesToClone.length === 0)
@@ -702,13 +895,21 @@ export class CategoryService extends BaseService<
     const cloneTasksResult = await this.taskService.cloneTasksByCategories(
       categoryIdsMap,
       userId,
-      session
+      session,
     )
 
     if (cloneTasksResult.logId) dependencies.push(cloneTasksResult.logId)
 
+    /* REORDER */
+    await this.reorderService.reorderByParentIds(
+      clonedCategories.map((c) => c.board),
+      'board',
+      userId,
+      session,
+    )
+
     /* LOG */
-    const log = await this.operationLogService.create(
+    const logPromise = this.operationLogService.create(
       {
         operationType: OperationTypesEnum.CREATE,
         collectionName: CollectionsEnum.CATEGORIES,
@@ -716,13 +917,20 @@ export class CategoryService extends BaseService<
         dependencies,
       },
       userId,
-      session
+      session,
     )
+
+    await Promise.all([
+      logPromise,
+      ...this._updateCategoriesParentCounters(clonedCategories, userId, session),
+    ])
+
+    const log = await logPromise
 
     const clonedCategoriesPopulated = await this.getByCriteria(
       { ids: clonedCategories.map((t) => t.id.toString()) },
       userId,
-      session
+      session,
     )
 
     return {
@@ -734,7 +942,7 @@ export class CategoryService extends BaseService<
   public async clone(
     criteria: ICategoryCriteria,
     user: IUser,
-    externalSession?: ClientSession
+    externalSession?: ClientSession,
   ): Promise<IResponseWithLog<ICategoryPopulated[]>> {
     const userId = user.id
 
@@ -742,7 +950,7 @@ export class CategoryService extends BaseService<
       return this._executeCloneTransaction(criteria, userId, externalSession)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeCloneTransaction(criteria, userId, session)
+        this._executeCloneTransaction(criteria, userId, session),
       )
     }
   }
@@ -750,7 +958,7 @@ export class CategoryService extends BaseService<
   public async revert(
     log: IOperationLog,
     user: IUser,
-    session: ClientSession
+    session: ClientSession,
   ): Promise<IUndoResponse> {
     const { operationType } = log
 
@@ -760,22 +968,9 @@ export class CategoryService extends BaseService<
     const idsBefore = before?.map((e) => e.id?.toString()) || []
     const idsAfter = after?.map((e) => e.id?.toString()) || []
 
-    const boardIdsSet = new Set<string>()
-
-    const collectBoardIds = (items: ICategoryPopulated[]) => {
-      items.forEach((c) => {
-        const bId = (c.board as any)?._id || (c.board as any)?.id || c.board
-        if (bId) boardIdsSet.add(bId.toString())
-      })
-    }
-
     switch (operationType) {
       case OperationTypesEnum.CREATE: {
         await this.delete({ ids: idsAfter }, user, session)
-
-        after.forEach((t) => {
-          if (t.board) boardIdsSet.add(t.board.toString())
-        })
         break
       }
 
@@ -785,20 +980,17 @@ export class CategoryService extends BaseService<
           id: e.id?.toString(),
         }))
 
-        const result = await this.editMany(payload, user, session)
-        collectBoardIds(result.data)
+        await this.editMany(payload, user, session)
         break
       }
 
       case OperationTypesEnum.ARCHIVE: {
-        const result = await this.recover({ ids: idsBefore }, user, session)
-        collectBoardIds(result.data)
+        await this.recover({ ids: idsBefore }, user, session)
         break
       }
 
       case OperationTypesEnum.RECOVER: {
-        const result = await this.archive({ ids: idsBefore }, user, session)
-        collectBoardIds(result.data)
+        await this.archive({ ids: idsBefore }, user, session)
         break
       }
 
@@ -807,27 +999,25 @@ export class CategoryService extends BaseService<
     }
 
     return {
-      affectedBoardIds: Array.from(boardIdsSet),
+      affectedCategoryIds: [...new Set([...idsBefore, ...idsAfter])],
     }
   }
 
-  public async updateLifecycleCategoriesByFilter(
+  public async updateLifecycleCategoriesByCriteria(
     criteria: ICategoryCriteria,
     data: SafeUpdateData<ICategory>,
     userId: Types.ObjectId,
-    session?: ClientSession
+    session?: ClientSession,
   ): Promise<UpdateWriteOpResult> {
     await this.repository.findByCriteria(criteria, session, undefined, userId)
-
-    // TODO: Update Counters
 
     return await this.repository.updateManyByCriteria(criteria, data, session, userId)
   }
 
-  public async deleteCategoriesByFilter(
+  public async deleteCategoriesByCriteria(
     criteria: ICategoryCriteria,
     userId: Types.ObjectId,
-    session?: ClientSession
+    session?: ClientSession,
   ): Promise<DeleteResult> {
     return await this.repository.deleteMany(criteria, userId, session)
   }
@@ -841,13 +1031,13 @@ export class CategoryService extends BaseService<
       }
     >,
     userId: Types.ObjectId,
-    session: ClientSession
-  ): Promise<IResponseWithLog<ICategoryPopulated[]>> {
+    session: ClientSession,
+  ): Promise<IResponseWithLog<ICategory[]>> {
     const sourceCategories = await this.repository.findByCriteria(
       { boardIds: Array.from(boardIdsMap.keys()) },
       session,
       undefined,
-      userId
+      userId,
     )
     const dependencies: Types.ObjectId[] = []
 
@@ -888,7 +1078,7 @@ export class CategoryService extends BaseService<
     const tasksCloneResult = await this.taskService.cloneTasksByCategories(
       categoryIdsMap,
       userId,
-      session
+      session,
     )
 
     if (tasksCloneResult.logId) dependencies.push(tasksCloneResult.logId)
@@ -902,17 +1092,11 @@ export class CategoryService extends BaseService<
         dependencies,
       },
       userId,
-      session
-    )
-
-    const clonedCategoriesPopulated = await this.getByCriteria(
-      { ids: clonedCategories.map((t) => t.id.toString()) },
-      userId,
-      session
+      session,
     )
 
     return {
-      data: clonedCategoriesPopulated,
+      data: clonedCategories,
       logId: log.id,
     }
   }
@@ -920,7 +1104,7 @@ export class CategoryService extends BaseService<
   private async prepareCategoryCreationPayload(
     data: CategoryDTO,
     userId: Types.ObjectId,
-    session?: ClientSession
+    session?: ClientSession,
   ): Promise<ICategoryCreatePayload> {
     const categoryName = data.name.trim()
 
@@ -940,7 +1124,7 @@ export class CategoryService extends BaseService<
         [Types.ObjectId.createFromHexString(data.boardId)],
         'board',
         userId,
-        session
+        session,
       )
       categoryPayload.order = lastOrder.length > 0 ? lastOrder[0].lastOrder + 1 : 1
     }
@@ -951,7 +1135,7 @@ export class CategoryService extends BaseService<
   private async prepareCategoriesCreationPayload(
     data: CategoryDTO[],
     userId: Types.ObjectId,
-    session?: ClientSession
+    session?: ClientSession,
   ): Promise<ICategoryCreatePayload[]> {
     const categoriesPayloads: ICategoryCreatePayload[] = []
     const categoriesGroupedByBoard: { [key: string]: CategoryDTO[] } = {}
@@ -969,7 +1153,7 @@ export class CategoryService extends BaseService<
       Object.keys(categoriesGroupedByBoard).map((id) => Types.ObjectId.createFromHexString(id)),
       'board',
       userId,
-      session
+      session,
     )
 
     const categoryNames = Array.from(new Set(data.map((category) => category.name.trim())))
@@ -980,7 +1164,7 @@ export class CategoryService extends BaseService<
     })
 
     const countMap = new Map(
-      grouppedCategoriesCount.map((entry) => [entry._id.toString(), entry.lastOrder])
+      grouppedCategoriesCount.map((entry) => [entry._id.toString(), entry.lastOrder]),
     )
 
     for (const [boardId, categories] of Object.entries(categoriesGroupedByBoard)) {
@@ -1007,21 +1191,26 @@ export class CategoryService extends BaseService<
 
   private async prepareCategoryEditPayload(
     data: CategoryEditDTO,
-    categoriesToUpdate: ICategory[]
+    categoriesToUpdate: ICategory[],
   ): Promise<SingleUpdateDTO<SafeUpdateData<ICategory>>> {
-    const { id, boardId, workspaceId, ...rest } = data
+    const { id, ...rest } = data
 
     const categoryPayload: SingleUpdateDTO<SafeUpdateData<ICategory>> = {
       ...rest,
 
       id: new Types.ObjectId(id),
-      board: boardId ? new Types.ObjectId(boardId) : undefined,
-      workspace: workspaceId ? new Types.ObjectId(workspaceId) : undefined,
+    }
+
+    if (data.boardId) {
+      categoryPayload.board = Types.ObjectId.createFromHexString(data.boardId)
+    }
+    if (data.workspaceId) {
+      categoryPayload.workspace = Types.ObjectId.createFromHexString(data.workspaceId)
     }
 
     if (data.name && categoriesToUpdate.length > 0) {
       const needEmbeddingsUpdate = categoriesToUpdate.some(
-        (ws) => data.name && ws.name.trim() !== data.name.trim()
+        (ws) => data.name && ws.name.trim() !== data.name.trim(),
       )
 
       const categoryName = data.name.trim()
@@ -1034,5 +1223,103 @@ export class CategoryService extends BaseService<
     }
 
     return categoryPayload
+  }
+
+  private _updateCategoriesParentCountersWithOld(
+    oldCategories: ICategory[],
+    newCategories: ICategory[],
+    userId: Types.ObjectId,
+    session: ClientSession,
+  ) {
+    const sideEffects: Promise<any>[] = []
+
+    const affectedBoards = new Set<string>()
+    const affectedWorkspaces = new Set<string>()
+
+    oldCategories.forEach((c) => {
+      affectedBoards.add(c.board.toString())
+      affectedWorkspaces.add(c.workspace.toString())
+    })
+
+    newCategories.forEach((c) => {
+      affectedBoards.add(c.board.toString())
+      affectedWorkspaces.add(c.workspace.toString())
+    })
+
+    const affectedWorkspaceIds = Array.from(affectedWorkspaces).map((id) => new Types.ObjectId(id))
+    const affectedBoardIds = Array.from(affectedBoards).map((id) => new Types.ObjectId(id))
+
+    sideEffects.push(
+      this.boardService.updateCategoriesCount(affectedBoardIds, userId, session),
+      this.boardService.updateTasksCount(affectedBoardIds, userId, session),
+
+      this.workspaceService.updateCategoriesCount(affectedWorkspaceIds, userId, session),
+      this.workspaceService.updateTasksCount(affectedWorkspaceIds, userId, session),
+    )
+
+    return sideEffects
+  }
+
+  private _updateCategoriesParentCounters(
+    categories: ICategory[],
+    userId: Types.ObjectId,
+    session: ClientSession,
+  ) {
+    const uniqueBoardIds = [...new Set(categories.map((c) => c.board.toString()))].map(
+      (id) => new Types.ObjectId(id),
+    )
+
+    const uniqueWorkspaceIds = [...new Set(categories.map((c) => c.workspace.toString()))].map(
+      (id) => new Types.ObjectId(id),
+    )
+
+    return [
+      this.boardService.updateCategoriesCount(uniqueBoardIds, userId, session),
+      this.boardService.updateTasksCount(uniqueBoardIds, userId, session),
+
+      this.workspaceService.updateCategoriesCount(uniqueWorkspaceIds, userId, session),
+      this.workspaceService.updateTasksCount(uniqueWorkspaceIds, userId, session),
+    ]
+  }
+
+  public async updateTasksCount(
+    categoryIds: Types.ObjectId[],
+    userId: Types.ObjectId,
+    session?: ClientSession,
+  ): Promise<MongooseBulkWriteResult | null> {
+    if (categoryIds.length === 0) return null
+
+    const tasksGroupped = await this.taskService.getTasksCountByCategories(
+      categoryIds,
+      userId,
+      session,
+    )
+
+    const tasksCountMap = new Map<string, number>(
+      tasksGroupped.map((tg) => [tg.parentId, tg.count]),
+    )
+
+    const bulkUpdates = categoryIds.map((categoryId) => ({
+      id: categoryId,
+      tasksCount: tasksCountMap.get(categoryId.toString()) || 0,
+    }))
+
+    return await this.repository.bulkUpdate(bulkUpdates, userId, session)
+  }
+
+  public async getCategoriesCountByBoards(
+    boardIds: Types.ObjectId[],
+    userId: Types.ObjectId,
+    session?: ClientSession,
+  ): Promise<{ parentId: string; count: number }[]> {
+    return this.repository.getCountGroupedByParents(boardIds, 'board', userId, session)
+  }
+
+  public async getCategoriesCountByWorkspaces(
+    workspaceIds: Types.ObjectId[],
+    userId: Types.ObjectId,
+    session?: ClientSession,
+  ): Promise<{ parentId: string; count: number }[]> {
+    return this.repository.getCountGroupedByParents(workspaceIds, 'workspace', userId, session)
   }
 }

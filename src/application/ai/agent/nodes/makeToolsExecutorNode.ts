@@ -1,9 +1,8 @@
 import { AgentDependencies } from '@/application/ai/agent/types/AgentDependencies.ts'
 import { AgentStateAnnotation } from '@/application/ai/agent/AgentStateAnnotation.ts'
-import { AIMessage, ToolMessage } from '@langchain/core/messages'
+import { AIMessage, SystemMessage, ToolMessage } from '@langchain/core/messages'
 import { RunnableConfig } from '@langchain/core/runnables'
 import { Configurable } from '@application/ai/interfaces/Configurable.ts'
-import { IUser } from '@entities/IUser.ts'
 import * as Sentry from '@sentry/node'
 
 export const makeToolsExecutorNode = (deps: AgentDependencies) => {
@@ -15,10 +14,9 @@ export const makeToolsExecutorNode = (deps: AgentDependencies) => {
 
     let toolCalls = lastMessage.tool_calls || []
 
-    const confirmedIds = state.tools_confirmed || []
     const cancelledIds = state.tools_cancelled || []
 
-    if (confirmedIds.length > 0 || cancelledIds.length > 0) {
+    if (cancelledIds.length > 0) {
       toolCalls = toolCalls.filter((tc) => !cancelledIds.includes(tc.id!))
     }
 
@@ -27,22 +25,16 @@ export const makeToolsExecutorNode = (deps: AgentDependencies) => {
         new ToolMessage({
           tool_call_id: id,
           content: 'Tool call cancelled by user request.',
-        })
+        }),
     )
 
     const executionResults = await Promise.all(
       toolCalls.map(async (tc) => {
         try {
-          // Пытаемся выполнить инструмент
-          return await toolExecutorService.executeTool(
-            tc,
-            state.messages,
-            configurable?.user as IUser
-          )
+          return await toolExecutorService.executeTool(tc, state.cancelled_entity_ids)
         } catch (error: any) {
           Sentry.captureException(error, { extra: { chatId: configurable?.chatId } })
 
-          // ВОЗВРАЩАЕМ ошибку Агенту как ToolMessage
           return new ToolMessage({
             tool_call_id: tc.id!,
             name: tc.name,
@@ -50,13 +42,25 @@ export const makeToolsExecutorNode = (deps: AgentDependencies) => {
             additional_kwargs: { error: true },
           })
         }
-      })
+      }),
     )
 
+    const cancelledEntityMessages: SystemMessage[] = []
+
+    if (state.cancelled_entity_ids && state.cancelled_entity_ids.length > 0) {
+      cancelledEntityMessages.push(
+        new SystemMessage({
+          content: `Some of the requested entities were filtered by user and not processed while executing tools. DO NOT continue processing these entities.`,
+        }),
+      )
+    }
+
     return {
-      messages: [...executionResults, ...cancelMessages],
-      tools_confirmed: [],
+      messages: [...executionResults, ...cancelMessages, ...cancelledEntityMessages],
       tools_cancelled: [],
+      cancelled_entity_ids: [],
+      prepared_confirmations: [],
+      is_confirmation_needed: false,
     }
   }
 }

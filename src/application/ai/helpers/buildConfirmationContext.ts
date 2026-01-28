@@ -15,7 +15,7 @@ export async function buildConfirmationContext(
   toolCalls: ToolCall[],
   state: typeof AgentStateAnnotation.State,
   config: RunnableConfig,
-  confirmationConfig: Record<string, ConfirmationContextConfig>
+  confirmationConfig: Record<string, ConfirmationContextConfig>,
 ) {
   const confirmations: Array<Confirmation> = []
 
@@ -51,7 +51,7 @@ export async function buildConfirmationContext(
         parsed = {}
       }
 
-      return { title: toolConfig.title, data: parsed, toolCall }
+      return [{ title: toolConfig.title, data: parsed, toolCall }]
     }
 
     // 2. Внешний контекст через контроллер

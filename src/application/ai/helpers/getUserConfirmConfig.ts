@@ -6,7 +6,7 @@ import { ContextExternalFetchService } from '@application/ai/services/ContextExt
 
 export function getUserConfirmConfig(
   confirmationType: AiConfirmationTypeEnum,
-  contextExternalFetchService: ContextExternalFetchService
+  contextExternalFetchService: ContextExternalFetchService,
 ) {
   let confirmationConfig: Record<string, ConfirmationContextConfig> = {}
 
@@ -15,7 +15,7 @@ export function getUserConfirmConfig(
   } else if (confirmationType === AiConfirmationTypeEnum.ALWAYS) {
     confirmationConfig = Object.assign(
       getConfirmationGeneralConfig(contextExternalFetchService),
-      getConfirmationDestructiveConfig(contextExternalFetchService)
+      getConfirmationDestructiveConfig(contextExternalFetchService),
     )
   }
   return confirmationConfig

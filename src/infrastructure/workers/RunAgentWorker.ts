@@ -86,9 +86,9 @@ async function cleanupLastIteration(agent: CompiledStateGraph<any, any>, config:
     const updateData: typeof AgentStateAnnotation.State = {
       messages: removeRequests,
       relevant_tools: [],
-      tools_confirmed: [],
       tools_cancelled: [],
       tools_validation_errors: [],
+      cancelled_entity_ids: [],
       validation_failed: false,
       planner_has_error: false,
       plan_hash: '',
@@ -108,7 +108,7 @@ export const RunAgentWorker = new Worker(
       payload: { messages: BaseMessage[] } | Command
       config: RunnableConfig
       isRetry: boolean
-    }>
+    }>,
   ) => {
     if (!job.data || !job.data.payload || !job.data.config) {
       throw new Error('Invalid job data')
@@ -118,8 +118,10 @@ export const RunAgentWorker = new Worker(
 
     const { payload, config, isRetry } = job.data
 
+    const configurable = config.configurable as Configurable
+
     if (config.configurable && typeof config.configurable.user.id === 'string') {
-      config.configurable.user.id = new Types.ObjectId(config.configurable.user.id)
+      configurable.user.id = new Types.ObjectId(configurable.user.id)
     }
 
     const checkInterval = setInterval(async () => {
@@ -136,8 +138,6 @@ export const RunAgentWorker = new Worker(
         Sentry.captureException(err, { extra: { jobId: job.id } })
       }
     }, 500)
-
-    const configurable = config.configurable as Configurable
 
     try {
       const bullMQHandler = new BullMQCallbackHandler(job)
@@ -168,19 +168,18 @@ export const RunAgentWorker = new Worker(
           isSynthesizeStarted = true
         }
 
-        if (event.name === AgentRoles.LIST_ENTITIES) {
+        if (event.name === AgentRoles.ACTIONS) {
           const data = event.data
 
           await createChatMessage(
             {
-              role: AgentRoles.LIST_ENTITIES,
-              content: data.entities,
-              listType: data.type,
+              role: AgentRoles.ACTIONS,
+              content: data.actions,
               threadId: configurable.thread_id,
               chatId: new Types.ObjectId(configurable.chatId),
             },
             configurable.user,
-            job
+            job,
           )
         }
 
@@ -203,7 +202,7 @@ export const RunAgentWorker = new Worker(
                       chatId: new Types.ObjectId(configurable.chatId),
                     },
                     configurable.user,
-                    job
+                    job,
                   )
                 }
 
@@ -246,7 +245,7 @@ export const RunAgentWorker = new Worker(
               chatId: new Types.ObjectId(configurable?.chatId),
             },
             configurable?.user,
-            job
+            job,
           )
         }
       }
@@ -288,7 +287,7 @@ export const RunAgentWorker = new Worker(
 
         const savedMsg = await dependencies.services.chatMessageService.create(
           errorMsgDTO,
-          configurable?.user
+          configurable?.user,
         )
 
         // 4. УВЕДОМЛЕНИЕ ФРОНТЕНДА
@@ -315,5 +314,5 @@ export const RunAgentWorker = new Worker(
       host: process.env.REDIS_HOST || 'localhost',
       port: Number(process.env.REDIS_PORT) || 6379,
     },
-  }
+  },
 )

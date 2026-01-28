@@ -16,7 +16,7 @@ export class WorkspaceCommandAdapterService {
   constructor(
     workspaceService: WorkspaceService,
     vectorSearchService: VectorSearchService,
-    aiSemanticService: AISemanticService
+    aiSemanticService: AISemanticService,
   ) {
     this.workspaceService = workspaceService
     this.vectorSearchService = vectorSearchService
@@ -28,20 +28,18 @@ export class WorkspaceCommandAdapterService {
     changes: EditWorkspacesDTO['changes'],
     user: IUser,
     session?: ClientSession,
-    threadId?: string
   ): Promise<IResponseWithLog<IWorkspace[]>> {
     const workspacesToUpdate: WorkspaceEditDTO[] = []
 
-    const existingWorkspaces = await this.workspaceService.getAll(
+    const existingWorkspaces = await this.workspaceService.getByCriteria(
       { ids: workspaceIds },
       user.id,
-      session
+      session,
     )
 
     for (const workspace of existingWorkspaces) {
       const updatedWorkspace = {
         id: workspace.id.toString(),
-        threadId: threadId,
       } as WorkspaceEditDTO
 
       if (typeof changes.order !== 'undefined') {
@@ -60,6 +58,12 @@ export class WorkspaceCommandAdapterService {
       workspacesToUpdate.push(updatedWorkspace)
     }
 
+    if (workspacesToUpdate.length === 0)
+      return {
+        data: [],
+        logId: null,
+      }
+
     if (typeof changes.name !== 'undefined') {
       let updatedNames: { id: Types.ObjectId; name: string }[] = []
 
@@ -67,21 +71,21 @@ export class WorkspaceCommandAdapterService {
         updatedNames = await this.aiSemanticService.buildNamesForEntities(
           existingWorkspaces,
           String(changes.name.set),
-          'set'
+          'set',
         )
       }
       if (changes.name.append) {
         updatedNames = await this.aiSemanticService.buildNamesForEntities(
           updatedNames.length > 0 ? updatedNames : existingWorkspaces,
           String(changes.name.append),
-          'append'
+          'append',
         )
       }
       if (changes.name.prepend) {
         updatedNames = await this.aiSemanticService.buildNamesForEntities(
           updatedNames.length > 0 ? updatedNames : existingWorkspaces,
           String(changes.name.prepend),
-          'prepend'
+          'prepend',
         )
       }
       if (changes.name.replace_part) {
@@ -89,7 +93,7 @@ export class WorkspaceCommandAdapterService {
           updatedNames.length > 0 ? updatedNames : existingWorkspaces,
           String(changes.name.replace_part.replace_with),
           'replace',
-          String(changes.name.replace_part.find)
+          String(changes.name.replace_part.find),
         )
       }
 

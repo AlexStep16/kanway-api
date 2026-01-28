@@ -14,11 +14,12 @@ import {
 } from '@application/ai/tools/toolSchemes.ts'
 import { ToolCall } from '@langchain/core/messages'
 import { RunnableConfig } from '@langchain/core/runnables'
-import { ITask } from '@entities/ITask.ts'
+import { Configurable } from '../interfaces/Configurable.ts'
+import dayjs from 'dayjs'
 import { Types } from 'mongoose'
-import { ICategory } from '@/domain/entities/ICategory.ts'
-import { IBoard } from '@/domain/entities/IBoard.ts'
-import { IWorkspace } from '@/domain/entities/IWorkspace.ts'
+import { ITaskPopulated } from '@/application/interfaces/ITaskPopulated.ts'
+import { ICategoryPopulated } from '@/application/interfaces/ICategoryPopulated.ts'
+import { IBoardPopulated } from '@/application/interfaces/IBoardPopulated.ts'
 
 interface BaseExternalParams {
   toolCall: ToolCall
@@ -35,7 +36,7 @@ export class ContextExternalFetchService {
     taskService: TaskService,
     categoryService: CategoryService,
     boardService: BoardService,
-    workspaceService: WorkspaceService
+    workspaceService: WorkspaceService,
   ) {
     this.taskService = taskService
     this.categoryService = categoryService
@@ -43,157 +44,246 @@ export class ContextExternalFetchService {
     this.workspaceService = workspaceService
   }
 
-  public async createTasks({ toolCall, config }: BaseExternalParams): Promise<Partial<ITask>[]> {
+  public async createTasks({ toolCall, config }: BaseExternalParams) {
     const args = toolCall.args as TaskCreateDTO
-    const allCategoryIds: string[] = args.tasks.map((t) => t.categoryId)
+    const taskDtosWithId = args.tasks as (TaskCreateDTO['tasks'][0] & { tempId: string })[]
+    const configurable = config.configurable as Configurable
+    const allCategoryIds: string[] = taskDtosWithId.map((t) => t.categoryId)
 
-    const categories = await this.categoryService.getAll(
+    const categories = await this.categoryService.getByCriteria(
       { ids: allCategoryIds },
-      config.configurable?.user?.id
+      config.configurable?.user?.id,
     )
 
-    const filledTasks: Partial<ITask>[] = []
+    const filledTasks: Partial<ITaskPopulated>[] = []
 
-    for (const taskDTO of args.tasks) {
+    for (const taskDTO of taskDtosWithId) {
+      const newId = new Types.ObjectId()
+
+      taskDTO.tempId = newId.toHexString()
+
       const extendedTask = {
-        ...taskDTO,
-        categoryId: Types.ObjectId.createFromHexString(taskDTO.categoryId),
-      } as Partial<ITask>
+        tempId: newId,
+        name: taskDTO.name,
+        description: taskDTO.description,
+        dueDate: taskDTO.dueDate,
+        color: taskDTO.color,
+        order: taskDTO.order,
+        tags: taskDTO.tags,
+        isCompleted: taskDTO.isCompleted,
+      } as Partial<ITaskPopulated>
+
+      if (taskDTO.dueDate && taskDTO.dueTime) {
+        const collectedDateTime = taskDTO.dueDate + 'T' + taskDTO.dueTime
+
+        const date = dayjs.tz(collectedDateTime, configurable.timezone).utc()
+
+        extendedTask.dueDate = date.format('YYYY-MM-DD')
+        extendedTask.dueHours = date.hour()
+        extendedTask.dueMinutes = date.minute()
+      }
 
       const category = categories.find((cat) => cat.id.toString() === taskDTO.categoryId)
 
       if (category) {
-        extendedTask.categoryName = category.name
-        extendedTask.boardId = category.boardId
-        extendedTask.boardName = category.boardName
-        extendedTask.workspaceId = category.workspaceId
-        extendedTask.workspaceName = category.workspaceName
+        extendedTask.category = {
+          id: category.id,
+          name: category.name,
+        }
+        extendedTask.board = {
+          id: category.board.id,
+          name: category.board.name,
+        }
+        extendedTask.workspace = {
+          id: category.workspace.id,
+          name: category.workspace.name,
+        }
       }
 
       filledTasks.push(extendedTask)
     }
 
-    return filledTasks
+    return {
+      entities: filledTasks,
+      args: {
+        tasks: taskDtosWithId,
+      },
+    }
   }
 
-  public async createCategories({
-    toolCall,
-    config,
-  }: BaseExternalParams): Promise<Partial<ICategory>[]> {
+  public async createCategories({ toolCall, config }: BaseExternalParams) {
     const args = toolCall.args as CategoryCreateDTO
+    const categoryDtosWithId = args.categories as (CategoryCreateDTO['categories'][0] & {
+      tempId: string
+    })[]
     const allBoardIds: string[] = args.categories.map((t) => t.boardId)
 
-    const boards = await this.boardService.getAll(
+    const boards = await this.boardService.getByCriteria(
       { ids: allBoardIds },
-      config.configurable?.user?.id
+      config.configurable?.user?.id,
     )
 
-    const filledCategories: Partial<ICategory>[] = []
+    const filledCategories: Partial<ICategoryPopulated>[] = []
 
-    for (const categoryDTO of args.categories) {
+    for (const categoryDTO of categoryDtosWithId) {
+      const newId = new Types.ObjectId()
+
+      categoryDTO.tempId = newId.toHexString()
+
       const extendedCategory = {
-        ...categoryDTO,
-        boardId: Types.ObjectId.createFromHexString(categoryDTO.boardId),
-      } as Partial<ICategory>
+        tempId: newId,
+        name: categoryDTO.name,
+        order: categoryDTO.order,
+      } as Partial<ICategoryPopulated>
 
       const board = boards.find((b) => b.id.toString() === categoryDTO.boardId)
 
       if (board) {
-        extendedCategory.boardName = board.name
-        extendedCategory.workspaceId = board.workspaceId
-        extendedCategory.workspaceName = board.workspaceName
+        extendedCategory.board = {
+          id: board.id,
+          name: board.name,
+        }
+        extendedCategory.workspace = {
+          id: board.workspace.id,
+          name: board.workspace.name,
+        }
       }
 
       filledCategories.push(extendedCategory)
     }
 
-    return filledCategories
+    return {
+      entities: filledCategories,
+      args: {
+        categories: categoryDtosWithId,
+      },
+    }
   }
 
-  public async createBoards({ toolCall, config }: BaseExternalParams): Promise<Partial<IBoard>[]> {
+  public async createBoards({ toolCall, config }: BaseExternalParams) {
     const args = toolCall.args as BoardCreateDTO
+    const boardDtosWithId = args.boards as (BoardCreateDTO['boards'][0] & { tempId: string })[]
     const allWorkspaceIds: string[] = args.boards.map((t) => t.workspaceId)
 
-    const workspaces = await this.workspaceService.getAll(
+    const workspaces = await this.workspaceService.getByCriteria(
       { ids: allWorkspaceIds },
-      config.configurable?.user?.id
+      config.configurable?.user?.id,
     )
 
-    const filledBoards: Partial<IBoard>[] = []
+    const filledBoards: Partial<IBoardPopulated>[] = []
 
-    for (const boardDTO of args.boards) {
+    for (const boardDTO of boardDtosWithId) {
+      const newId = new Types.ObjectId()
+
+      boardDTO.tempId = newId.toHexString()
+
       const extendedBoard = {
-        ...boardDTO,
-        workspaceId: Types.ObjectId.createFromHexString(boardDTO.workspaceId),
-      } as Partial<IBoard>
+        tempId: newId,
+        name: boardDTO.name,
+        isFavorite: boardDTO.isFavorite,
+        order: boardDTO.order,
+      } as Partial<IBoardPopulated>
 
       const workspace = workspaces.find((w) => w.id.toString() === boardDTO.workspaceId)
 
       if (workspace) {
-        extendedBoard.workspaceName = workspace.name
+        extendedBoard.workspace = {
+          id: workspace.id,
+          name: workspace.name,
+        }
       }
 
       filledBoards.push(extendedBoard)
     }
 
-    return filledBoards
+    return {
+      entities: filledBoards,
+      args: {
+        boards: boardDtosWithId,
+      },
+    }
   }
 
-  public async createWorkspaces({ toolCall }: BaseExternalParams): Promise<Partial<IWorkspace>[]> {
+  public async createWorkspaces({ toolCall }: BaseExternalParams) {
     const args = toolCall.args as WorkspaceCreateDTO
+    const workspaceDtosWithId = args.workspaces as (WorkspaceCreateDTO['workspaces'][0] & {
+      tempId: string
+    })[]
 
-    return args.workspaces.map((ws) => ({ ...ws } as Partial<IWorkspace>))
+    const workspaces = []
+
+    for (const workspaceDTO of workspaceDtosWithId) {
+      const newId = new Types.ObjectId()
+
+      workspaceDTO.tempId = newId.toHexString()
+
+      const extendedWorkspace = {
+        tempId: newId,
+        name: workspaceDTO.name,
+        color: workspaceDTO.color,
+        order: workspaceDTO.order,
+      }
+
+      workspaces.push(extendedWorkspace)
+    }
+
+    return {
+      entities: workspaces,
+      args: {
+        workspaces: workspaceDtosWithId,
+      },
+    }
   }
 
-  public async editTasks({ toolCall, config }: BaseExternalParams): Promise<ITask[]> {
+  public async editTasks({ toolCall, config }: BaseExternalParams) {
     const args = toolCall.args as EditTasksDTO
     const ids: string[] = args.filter.ids || []
 
-    return this.taskService.getAll({ ids }, config.configurable?.user?.id)
+    return this.taskService.getByCriteria({ ids }, config.configurable?.user?.id)
   }
 
   public async editCategories({ toolCall, config }: BaseExternalParams) {
     const args = toolCall.args as EditCategoriesDTO
     const ids: string[] = args.filter.ids || []
 
-    return this.categoryService.getAll({ ids }, config.configurable?.user?.id)
+    return this.categoryService.getByCriteria({ ids }, config.configurable?.user?.id)
   }
 
   public async editBoards({ toolCall, config }: BaseExternalParams) {
     const args = toolCall.args as EditBoardsDTO
     const ids: string[] = args.filter.ids || []
 
-    return this.boardService.getAll({ ids }, config.configurable?.user?.id)
+    return this.boardService.getByCriteria({ ids }, config.configurable?.user?.id)
   }
 
   public async editWorkspaces({ toolCall, config }: BaseExternalParams) {
     const args = toolCall.args as EditWorkspacesDTO
     const ids: string[] = args.filter.ids || []
 
-    return this.workspaceService.getAll({ ids }, config.configurable?.user?.id)
+    return this.workspaceService.getByCriteria({ ids }, config.configurable?.user?.id)
   }
 
-  public async getByArgsIdsTasks({ toolCall, config }: BaseExternalParams): Promise<ITask[]> {
+  public async getByArgsIdsTasks({ toolCall, config }: BaseExternalParams) {
     const ids: string[] = toolCall.args?.ids || []
 
-    return this.taskService.getAll({ ids }, config.configurable?.user?.id)
+    return this.taskService.getByCriteria({ ids }, config.configurable?.user?.id)
   }
 
   public async getByArgsIdsCategories({ toolCall, config }: BaseExternalParams) {
     const ids: string[] = toolCall.args?.ids || []
 
-    return this.categoryService.getAll({ ids }, config.configurable?.user?.id)
+    return this.categoryService.getByCriteria({ ids }, config.configurable?.user?.id)
   }
 
   public async getByArgsIdsBoards({ toolCall, config }: BaseExternalParams) {
     const ids: string[] = toolCall.args?.ids || []
 
-    return this.boardService.getAll({ ids }, config.configurable?.user?.id)
+    return this.boardService.getByCriteria({ ids }, config.configurable?.user?.id)
   }
 
   public async getByArgsIdsWorkspaces({ toolCall, config }: BaseExternalParams) {
     const ids: string[] = toolCall.args?.ids || []
 
-    return this.workspaceService.getAll({ ids }, config.configurable?.user?.id)
+    return this.workspaceService.getByCriteria({ ids }, config.configurable?.user?.id)
   }
 }

@@ -58,10 +58,10 @@ const zodConditionalValueRefinement = z.array(z.literal('Current schema')).refin
 })
 
 const andSchema = zodConditionalValueRefinement.describe(
-  'Use for logical AND conditions. An array of conditions to be ANDed together.'
+  'Use for logical AND conditions. An array of conditions to be ANDed together.',
 )
 const orSchema = zodConditionalValueRefinement.describe(
-  'Use for logical OR conditions. An array of conditions to be ORed together.'
+  'Use for logical OR conditions. An array of conditions to be ORed together.',
 )
 
 const createTaskFieldsObject = {
@@ -81,16 +81,16 @@ const TaskCreateSchema = z
       tasks: z.array(
         z.object(
           createTaskFieldsObject,
-          'Available only task creation fields: ' + Object.keys(createTaskFieldsObject).join(', ')
+          'Available only task creation fields: ' + Object.keys(createTaskFieldsObject).join(', '),
         ),
-        'Must be an array of tasks to create'
+        'Must be an array of tasks to create',
       ),
     },
-    'Available only tasks field'
+    'Available only tasks field',
   )
   .strict()
   .describe(
-    'If the user does not provide category then create the category with default category name but first try semantic search for some categories.'
+    'If the user does not provide category then create the category with default category name but first try semantic search for some categories.',
   )
 
 type TaskCreateDTO = z.infer<typeof TaskCreateSchema>
@@ -107,16 +107,17 @@ const CategoryCreateSchema = z
       categories: z.array(
         z.object(
           categoryFieldsObject,
-          'Available only category creation fields: ' + Object.keys(categoryFieldsObject).join(', ')
+          'Available only category creation fields: ' +
+            Object.keys(categoryFieldsObject).join(', '),
         ),
-        'Must be an array of categories to create'
+        'Must be an array of categories to create',
       ),
     },
-    'Available only categories field'
+    'Available only categories field',
   )
   .strict()
   .describe(
-    'If the user does not provide board then create the board with default board name but first try semantic search for some boards.'
+    'If the user does not provide board then create the board with default board name but first try semantic search for some boards.',
   )
 
 type CategoryCreateDTO = z.infer<typeof CategoryCreateSchema>
@@ -133,12 +134,12 @@ const BoardCreateSchema = z
       boards: z.array(
         z.object(
           boardFieldsObject,
-          'Available only board creation fields: ' + Object.keys(boardFieldsObject).join(', ')
+          'Available only board creation fields: ' + Object.keys(boardFieldsObject).join(', '),
         ),
-        'Must be an array of boards to create'
+        'Must be an array of boards to create',
       ),
     },
-    'Available only boards field'
+    'Available only boards field',
   )
   .strict()
 
@@ -157,12 +158,12 @@ const WorkspaceCreateSchema = z
         z.object(
           workspaceFieldsObject,
           'Available only workspace creation fields: ' +
-            Object.keys(workspaceFieldsObject).join(', ')
+            Object.keys(workspaceFieldsObject).join(', '),
         ),
-        'Must be an array of workspaces to create'
+        'Must be an array of workspaces to create',
       ),
     },
-    'Available only workspaces field'
+    'Available only workspaces field',
   )
   .strict()
 
@@ -179,13 +180,13 @@ const StringFilter = z
       operator: z
         .enum(
           ['equal', 'contains', 'starts_with', 'ends_with'],
-          'Operator must be one of: equal, contains, starts_with, ends_with'
+          'Operator must be one of: equal, contains, starts_with, ends_with',
         )
         .describe('Comparison logic. Use "contains" for partial matches, "equal" for exact match'),
 
       isNegated: zodIsNegated,
     },
-    'Available only string filter fields: value, operator, isNegated'
+    'Available only string filter fields: value, operator, isNegated',
   )
   .strict()
 
@@ -194,11 +195,11 @@ const BaseNumberFilter = z
     {
       operator: z.enum(
         ['eq', 'gt', 'gte', 'lt', 'lte'],
-        'Operator must be one of: eq, gt, gte, lt, lte'
+        'Operator must be one of: eq, gt, gte, lt, lte',
       ),
       isNegated: zodIsNegated,
     },
-    'Available only base number filter fields: operator, isNegated'
+    'Available only base number filter fields: operator, isNegated',
   )
   .strict()
 
@@ -220,7 +221,7 @@ const BaseArrayFilter = z
       operator: z
         .enum(
           ['equal', 'contains_all', 'contains_any'],
-          'Operator must be one of: equal, contains_all, contains_any'
+          'Operator must be one of: equal, contains_all, contains_any',
         )
         .describe('contains_all (AND logic), contains_any (OR logic), equal (exact set match)'),
       isNegated: z
@@ -228,7 +229,7 @@ const BaseArrayFilter = z
         .default(false)
         .describe('Set to true to exclude entities with these strings.'),
     },
-    'Available only base array filter fields: operator, isNegated'
+    'Available only base array filter fields: operator, isNegated',
   )
   .strict()
 
@@ -266,11 +267,11 @@ const taskFilterObject = {
 const TaskFilterSchema = z
   .object(
     taskFilterObject,
-    'Available only task filter fields: ' + Object.keys(taskFilterObject).join(', ')
+    'Available only task filter fields: ' + Object.keys(taskFilterObject).join(', '),
   )
   .strict()
   .describe(
-    "Top-level fields are joined by logical AND. Use 'or'/'and' only for complex nested logic."
+    "Top-level fields are joined by logical AND. Use 'or'/'and' only for complex nested logic.",
   )
 
 type TaskFilterDTO = z.infer<typeof TaskFilterSchema>
@@ -293,11 +294,11 @@ const categoryFilterObject = {
 const CategoryFilterSchema = z
   .object(
     categoryFilterObject,
-    'Available only category filter fields: ' + Object.keys(categoryFilterObject).join(', ')
+    'Available only category filter fields: ' + Object.keys(categoryFilterObject).join(', '),
   )
   .strict()
   .describe(
-    "Top-level fields are joined by logical AND. Use 'or'/'and' only for complex nested logic."
+    "Top-level fields are joined by logical AND. Use 'or'/'and' only for complex nested logic.",
   )
 
 type CategoryFilterDTO = z.infer<typeof CategoryFilterSchema>
@@ -321,11 +322,11 @@ const boardFilterObject = {
 const BoardFilterSchema = z
   .object(
     boardFilterObject,
-    'Available only board filter fields: ' + Object.keys(boardFilterObject).join(', ')
+    'Available only board filter fields: ' + Object.keys(boardFilterObject).join(', '),
   )
   .strict()
   .describe(
-    "Top-level fields are joined by logical AND. Use 'or'/'and' only for complex nested logic."
+    "Top-level fields are joined by logical AND. Use 'or'/'and' only for complex nested logic.",
   )
 
 type BoardFilterDTO = z.infer<typeof BoardFilterSchema>
@@ -348,11 +349,11 @@ const workspaceFilterObject = {
 const WorkspaceFilterSchema = z
   .object(
     workspaceFilterObject,
-    'Available only workspace filter fields: ' + Object.keys(workspaceFilterObject).join(', ')
+    'Available only workspace filter fields: ' + Object.keys(workspaceFilterObject).join(', '),
   )
   .strict()
   .describe(
-    "Top-level fields are joined by logical AND. Use 'or'/'and' only for complex nested logic."
+    "Top-level fields are joined by logical AND. Use 'or'/'and' only for complex nested logic.",
   )
 
 type WorkspaceFilterDTO = z.infer<typeof WorkspaceFilterSchema>
@@ -370,7 +371,7 @@ const stringModificationObject = {
         find: z.coerce.string().describe('Must be an exact substring from the current text.'),
         replace_with: z.coerce.string().describe('String to replace the found substring with.'),
       },
-      'should be an object with find and replace_with strings'
+      'should be an object with find and replace_with strings',
     )
     .strict()
     .optional()
@@ -379,7 +380,8 @@ const stringModificationObject = {
 const StringModificationSchema = z
   .object(
     stringModificationObject,
-    'Available only string modification fields: ' + Object.keys(stringModificationObject).join(', ')
+    'Available only string modification fields: ' +
+      Object.keys(stringModificationObject).join(', '),
   )
   .strict()
   .describe('Instructions to modify a string field. Use only one property.')
@@ -397,7 +399,7 @@ const dateModificationObject = {
 const DateModificationSchema = z
   .object(
     dateModificationObject,
-    'Available only date modification fields: ' + Object.keys(dateModificationObject).join(', ')
+    'Available only date modification fields: ' + Object.keys(dateModificationObject).join(', '),
   )
   .refine((data) => Object.keys(data).length <= 1, 'Only one modification operation is allowed.')
   .strict()
@@ -416,7 +418,7 @@ const timeModificationObject = {
 const TimeModificationSchema = z
   .object(
     timeModificationObject,
-    'Available only time modification fields: ' + Object.keys(timeModificationObject).join(', ')
+    'Available only time modification fields: ' + Object.keys(timeModificationObject).join(', '),
   )
   .refine((data) => Object.keys(data).length <= 1, 'Only one modification operation is allowed.')
   .strict()
@@ -434,7 +436,7 @@ const tagsModificationObject = {
 const TagsModificationSchema = z
   .object(
     tagsModificationObject,
-    'Available only tags modification fields: ' + Object.keys(tagsModificationObject).join(', ')
+    'Available only tags modification fields: ' + Object.keys(tagsModificationObject).join(', '),
   )
   .strict()
   .describe('Instructions to modify the tags array.')
@@ -457,7 +459,7 @@ const editTasksObject = {
       {
         ids: z.array(zodObjectId).describe('Array of task IDs to edit.'),
       },
-      'Available only task filter fields: ids'
+      'Available only task filter fields: ids',
     )
     .strict()
     .describe('Filter tasks to edit.'),
@@ -465,7 +467,7 @@ const editTasksObject = {
   changes: z
     .object(
       editTasksChangesObject,
-      'Available only task changes fields: ' + Object.keys(editTasksChangesObject).join(', ')
+      'Available only task changes fields: ' + Object.keys(editTasksChangesObject).join(', '),
     )
     .strict()
     .describe('Object with changes to apply to the found tasks.'),
@@ -473,7 +475,7 @@ const editTasksObject = {
 const EditTasksSchema = z
   .object(
     editTasksObject,
-    'Available only task modification fields: ' + Object.keys(editTasksObject).join(', ')
+    'Available only task modification fields: ' + Object.keys(editTasksObject).join(', '),
   )
   .strict()
 
@@ -490,7 +492,7 @@ const editCategoriesObject = {
       {
         ids: z.array(zodObjectId).describe('Array of category IDs to edit.'),
       },
-      'Available only category filter fields: ids'
+      'Available only category filter fields: ids',
     )
     .strict()
     .describe('Filter categories to edit.'),
@@ -499,7 +501,7 @@ const editCategoriesObject = {
     .object(
       editCategoriesChangesObject,
       'Available only category changes fields: ' +
-        Object.keys(editCategoriesChangesObject).join(', ')
+        Object.keys(editCategoriesChangesObject).join(', '),
     )
     .strict()
     .describe('Object with changes to apply to the found categories.'),
@@ -507,7 +509,7 @@ const editCategoriesObject = {
 const EditCategoriesSchema = z
   .object(
     editCategoriesObject,
-    'Available only category modification fields: ' + Object.keys(editCategoriesObject).join(', ')
+    'Available only category modification fields: ' + Object.keys(editCategoriesObject).join(', '),
   )
   .strict()
 
@@ -525,7 +527,7 @@ const editBoardsObject = {
       {
         ids: z.array(zodObjectId).describe('Array of board IDs to filter.'),
       },
-      'Available only board filter fields: ids'
+      'Available only board filter fields: ids',
     )
     .strict()
     .describe('Filter boards to edit.'),
@@ -533,7 +535,7 @@ const editBoardsObject = {
   changes: z
     .object(
       editBoardsChangesObject,
-      'Available only board changes fields: ' + Object.keys(editBoardsChangesObject).join(', ')
+      'Available only board changes fields: ' + Object.keys(editBoardsChangesObject).join(', '),
     )
     .strict()
     .describe('Object with changes to apply to the found boards.'),
@@ -541,7 +543,7 @@ const editBoardsObject = {
 const EditBoardsSchema = z
   .object(
     editBoardsObject,
-    'Available only board modification fields: ' + Object.keys(editBoardsObject).join(', ')
+    'Available only board modification fields: ' + Object.keys(editBoardsObject).join(', '),
   )
   .strict()
 
@@ -565,7 +567,7 @@ const editWorkspacesObject = {
     .object(
       editWorkspacesChangesObject,
       'Available only workspace changes fields: ' +
-        Object.keys(editWorkspacesChangesObject).join(', ')
+        Object.keys(editWorkspacesChangesObject).join(', '),
     )
     .strict()
     .describe('Object with changes to apply to the found workspaces.'),
@@ -574,7 +576,7 @@ const editWorkspacesObject = {
 const EditWorkspacesSchema = z
   .object(
     editWorkspacesObject,
-    'Available only workspace changes fields: ' + Object.keys(editWorkspacesObject).join(', ')
+    'Available only workspace changes fields: ' + Object.keys(editWorkspacesObject).join(', '),
   )
   .strict()
 
@@ -591,7 +593,7 @@ const Step = z.object({
   description: z
     .string()
     .describe(
-      "Описание одного атомарного действия, которое может быть выполнено одним инструментом. Разбивайте сложные запросы на несколько последовательных коротких шагов. Не объединяйте действия, такие как 'найти задачи для их удаления'. Например, 'удалить соответствующие задачи' должно быть двумя шагами: 'найти соответствующие задачи', а затем 'удалить найденные задачи'."
+      "Описание одного атомарного действия, которое может быть выполнено одним инструментом. Разбивайте сложные запросы на несколько последовательных коротких шагов. Не объединяйте действия, такие как 'найти задачи для их удаления'. Например, 'удалить соответствующие задачи' должно быть двумя шагами: 'найти соответствующие задачи', а затем 'удалить найденные задачи'.",
     ),
 })
 
@@ -599,7 +601,7 @@ const Plan = z.object({
   steps: z
     .array(Step)
     .describe(
-      "Массив логических шагов для выполнения запроса пользователя. Шаги должны быть максимально короткими и описательными. Например, 'найти задачу', 'создать категорию', 'изменить задачу' и т.д."
+      "Массив логических шагов для выполнения запроса пользователя. Шаги должны быть максимально короткими и описательными. Например, 'найти задачу', 'создать категорию', 'изменить задачу' и т.д.",
     ),
 })
 

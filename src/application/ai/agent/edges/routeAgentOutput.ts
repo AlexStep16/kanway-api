@@ -17,6 +17,10 @@ export const routeAgentOutput = (state: typeof AgentStateAnnotation.State) => {
     return 'retrieve'
   }
 
+  if (toolCalls.some((tc) => tc.name === 'finishResponse')) {
+    return 'synthesize'
+  }
+
   if (toolCalls.length > 0) {
     return 'verify'
   }

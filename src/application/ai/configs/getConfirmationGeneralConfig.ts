@@ -2,7 +2,7 @@ import { ConfirmationContextConfig } from '@/application/ai/interfaces/Confirmat
 import { ContextExternalFetchService } from '@application/ai/services/ContextExternalFetchService.ts'
 
 export function getConfirmationGeneralConfig(
-  contextExternalFetchService: ContextExternalFetchService
+  contextExternalFetchService: ContextExternalFetchService,
 ): Record<string, ConfirmationContextConfig> {
   return {
     createTasks: {
@@ -19,7 +19,7 @@ export function getConfirmationGeneralConfig(
         mode: 'external',
         entityType: 'category',
         externalFetch: contextExternalFetchService.createCategories.bind(
-          contextExternalFetchService
+          contextExternalFetchService,
         ),
       },
     },
@@ -37,8 +37,16 @@ export function getConfirmationGeneralConfig(
         mode: 'external',
         entityType: 'workspace',
         externalFetch: contextExternalFetchService.createWorkspaces.bind(
-          contextExternalFetchService
+          contextExternalFetchService,
         ),
+      },
+    },
+    editTasks: {
+      title: 'Следующим задачам будут присвоены значения:',
+      context: {
+        mode: 'external',
+        entityType: 'task',
+        externalFetch: contextExternalFetchService.editTasks.bind(contextExternalFetchService),
       },
     },
     editCategories: {
@@ -72,7 +80,7 @@ export function getConfirmationGeneralConfig(
         mode: 'external',
         entityType: 'task',
         externalFetch: contextExternalFetchService.getByArgsIdsTasks.bind(
-          contextExternalFetchService
+          contextExternalFetchService,
         ),
       },
     },
@@ -82,7 +90,7 @@ export function getConfirmationGeneralConfig(
         mode: 'external',
         entityType: 'category',
         externalFetch: contextExternalFetchService.getByArgsIdsCategories.bind(
-          contextExternalFetchService
+          contextExternalFetchService,
         ),
       },
     },
@@ -92,7 +100,7 @@ export function getConfirmationGeneralConfig(
         mode: 'external',
         entityType: 'board',
         externalFetch: contextExternalFetchService.getByArgsIdsBoards.bind(
-          contextExternalFetchService
+          contextExternalFetchService,
         ),
       },
     },
@@ -102,7 +110,48 @@ export function getConfirmationGeneralConfig(
         mode: 'external',
         entityType: 'workspace',
         externalFetch: contextExternalFetchService.getByArgsIdsWorkspaces.bind(
-          contextExternalFetchService
+          contextExternalFetchService,
+        ),
+      },
+    },
+
+    cloneTasks: {
+      title: 'Следующие задачи будут склонированы:',
+      context: {
+        mode: 'external',
+        entityType: 'task',
+        externalFetch: contextExternalFetchService.getByArgsIdsTasks.bind(
+          contextExternalFetchService,
+        ),
+      },
+    },
+    cloneCategories: {
+      title: 'Следующие категории будут склонированы:',
+      context: {
+        mode: 'external',
+        entityType: 'category',
+        externalFetch: contextExternalFetchService.getByArgsIdsCategories.bind(
+          contextExternalFetchService,
+        ),
+      },
+    },
+    cloneBoards: {
+      title: 'Следующие доски будут склонированы:',
+      context: {
+        mode: 'external',
+        entityType: 'board',
+        externalFetch: contextExternalFetchService.getByArgsIdsBoards.bind(
+          contextExternalFetchService,
+        ),
+      },
+    },
+    cloneWorkspaces: {
+      title: 'Следующие пространства будут склонированы:',
+      context: {
+        mode: 'external',
+        entityType: 'workspace',
+        externalFetch: contextExternalFetchService.getByArgsIdsWorkspaces.bind(
+          contextExternalFetchService,
         ),
       },
     },
@@ -113,7 +162,7 @@ export function getConfirmationGeneralConfig(
         mode: 'external',
         entityType: 'task',
         externalFetch: contextExternalFetchService.getByArgsIdsTasks.bind(
-          contextExternalFetchService
+          contextExternalFetchService,
         ),
       },
     },
@@ -123,7 +172,7 @@ export function getConfirmationGeneralConfig(
         mode: 'external',
         entityType: 'category',
         externalFetch: contextExternalFetchService.getByArgsIdsCategories.bind(
-          contextExternalFetchService
+          contextExternalFetchService,
         ),
       },
     },
@@ -133,7 +182,7 @@ export function getConfirmationGeneralConfig(
         mode: 'external',
         entityType: 'board',
         externalFetch: contextExternalFetchService.getByArgsIdsBoards.bind(
-          contextExternalFetchService
+          contextExternalFetchService,
         ),
       },
     },
@@ -143,7 +192,7 @@ export function getConfirmationGeneralConfig(
         mode: 'external',
         entityType: 'workspace',
         externalFetch: contextExternalFetchService.getByArgsIdsWorkspaces.bind(
-          contextExternalFetchService
+          contextExternalFetchService,
         ),
       },
     },

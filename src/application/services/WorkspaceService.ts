@@ -2,7 +2,7 @@ import { IWorkspace } from '@entities/IWorkspace.ts'
 import { IWorkspaceRaw } from '@entities/IWorkspaceRaw.ts'
 import WorkspaceRepository from '@repositories/WorkspaceRepository.ts'
 import { WorkspaceDTO } from '@dtos/WorkspaceDTO.ts'
-import mongoose, { ClientSession, Types } from 'mongoose'
+import mongoose, { ClientSession, MongooseBulkWriteResult, Types } from 'mongoose'
 import { EmbeddingService } from '@infrastructure/services/EmbeddingService.ts'
 import { IWorkspaceCriteria } from '@criterias/IWorkspaceCriteria.ts'
 import { OperationLogService } from '@application/services/OperationLogService.ts'
@@ -30,22 +30,25 @@ import { SafeUpdateData } from '@/infrastructure/types/SafeUpdateData.ts'
 
 const MAX_RETRIES = 3
 
+type ReorderServiceType = ReorderService<
+  IWorkspace,
+  IWorkspaceRaw,
+  IWorkspaceCriteria,
+  IWorkspace,
+  IWorkspaceCreatePayload
+>
+
 export class WorkspaceService extends BaseService<
   IWorkspaceRaw,
   IWorkspace,
   IWorkspaceCriteria,
+  IWorkspace,
   IWorkspaceCreatePayload
 > {
   protected repository: WorkspaceRepository
   protected embeddingService: EmbeddingService
   protected operationLogService: OperationLogService
-  protected reorderService: ReorderService<
-    IWorkspace,
-    IWorkspaceRaw,
-    IWorkspaceCriteria,
-    IWorkspace,
-    IWorkspaceCreatePayload
-  >
+  protected reorderService: ReorderServiceType
   protected boardService: BoardService
   protected categoryService: CategoryService
   protected taskService: TaskService
@@ -54,16 +57,10 @@ export class WorkspaceService extends BaseService<
     workspaceRepository: WorkspaceRepository,
     embeddingService: EmbeddingService,
     operationLogService: OperationLogService,
-    reorderService: ReorderService<
-      IWorkspace,
-      IWorkspaceRaw,
-      IWorkspaceCriteria,
-      IWorkspace,
-      IWorkspaceCreatePayload
-    >,
+    reorderService: ReorderServiceType,
     boardService: BoardService,
     categoryService: CategoryService,
-    taskService: TaskService
+    taskService: TaskService,
   ) {
     super(workspaceRepository)
 
@@ -103,27 +100,29 @@ export class WorkspaceService extends BaseService<
     }
     throw new AppError(
       'Произошла ошибка при выполнении операции после максимального количества попыток.',
-      500
+      500,
     )
   }
 
   private async _executeCreateTransaction(
     data: WorkspaceDTO,
     userId: Types.ObjectId,
-    session: ClientSession
+    session: ClientSession,
   ): Promise<IResponseWithLog<IWorkspace[]>> {
     const workspacePayload = await this.prepareWorkspaceCreationPayload(data, userId, session)
 
     /* CREATE */
     const newWorkspace = await this.repository.create(workspacePayload, session)
 
+    const sideEffects: Promise<any>[] = []
+
     /* REORDER */
     if (data.order !== undefined) {
-      await this.reorderService.reorder('userId', [newWorkspace], userId, session)
+      sideEffects.push(this.reorderService.reorder('userId', [newWorkspace], userId, session))
     }
 
     /* LOG */
-    const log = await this.operationLogService.create(
+    const logPromise = this.operationLogService.create(
       {
         operationType: OperationTypesEnum.CREATE,
         collectionName: CollectionsEnum.WORKSPACES,
@@ -131,8 +130,14 @@ export class WorkspaceService extends BaseService<
         dependencies: [],
       },
       userId,
-      session
+      session,
     )
+
+    sideEffects.push(logPromise)
+
+    await Promise.all(sideEffects)
+
+    const log = await logPromise
 
     return {
       data: [newWorkspace],
@@ -143,7 +148,7 @@ export class WorkspaceService extends BaseService<
   public async create(
     data: WorkspaceDTO,
     user: IUser,
-    externalSession?: ClientSession
+    externalSession?: ClientSession,
   ): Promise<IResponseWithLog<IWorkspace[]>> {
     const userId = user.id
 
@@ -151,7 +156,7 @@ export class WorkspaceService extends BaseService<
       return this._executeCreateTransaction(data, userId, externalSession)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeCreateTransaction(data, userId, session)
+        this._executeCreateTransaction(data, userId, session),
       )
     }
   }
@@ -159,12 +164,14 @@ export class WorkspaceService extends BaseService<
   private async _executeCreateManyTransaction(
     data: WorkspaceDTO[],
     userId: Types.ObjectId,
-    session: ClientSession
+    session: ClientSession,
   ): Promise<IResponseWithLog<IWorkspace[]>> {
     const workspacesPayload = await this.prepareWorkspacesCreationPayload(data, userId, session)
 
     /* CREATE */
     const newWorkspaces = await this.repository.createMany(workspacesPayload, session)
+
+    const sideEffects: Promise<any>[] = []
 
     /* REORDER */
     const isReorderNeeded = data.some((ws) => ws.order !== undefined)
@@ -174,11 +181,11 @@ export class WorkspaceService extends BaseService<
         return data[index].order !== undefined
       })
 
-      await this.reorderService.reorder('userId', workspacesToReorder, userId, session)
+      sideEffects.push(this.reorderService.reorder('userId', workspacesToReorder, userId, session))
     }
 
     /* LOG */
-    const log = await this.operationLogService.create(
+    const logPromise = this.operationLogService.create(
       {
         operationType: OperationTypesEnum.CREATE,
         collectionName: CollectionsEnum.WORKSPACES,
@@ -186,8 +193,14 @@ export class WorkspaceService extends BaseService<
         dependencies: [],
       },
       userId,
-      session
+      session,
     )
+
+    sideEffects.push(logPromise)
+
+    await Promise.all(sideEffects)
+
+    const log = await logPromise
 
     return {
       data: newWorkspaces,
@@ -198,7 +211,7 @@ export class WorkspaceService extends BaseService<
   public async createMany(
     data: WorkspaceDTO[],
     user: IUser,
-    externalSession?: ClientSession
+    externalSession?: ClientSession,
   ): Promise<IResponseWithLog<IWorkspace[]>> {
     const userId = user.id
 
@@ -206,7 +219,7 @@ export class WorkspaceService extends BaseService<
       return this._executeCreateManyTransaction(data, userId, externalSession)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeCreateManyTransaction(data, userId, session)
+        this._executeCreateManyTransaction(data, userId, session),
       )
     }
   }
@@ -215,17 +228,17 @@ export class WorkspaceService extends BaseService<
     data: WorkspaceEditDTO,
     criteria: IWorkspaceCriteria,
     userId: Types.ObjectId,
-    session: ClientSession
+    session: ClientSession,
   ): Promise<IResponseWithLog<IWorkspace[]>> {
     const workspacesToUpdate: IWorkspace[] = await this.repository.findByCriteria(
       criteria,
       session,
       undefined,
-      userId
+      userId,
     )
 
     if (workspacesToUpdate.length === 0)
-      throw new NotFoundError('Пространства для редактирования не найдены.')
+      throw new NotFoundError('Рабочие пространства для редактирования не найдены.')
 
     const workspacePayload = await this.prepareWorkspaceEditPayload(data, workspacesToUpdate)
     const workspacesBefore = projectProperties<IWorkspace>(workspacesToUpdate, workspacePayload)
@@ -235,29 +248,34 @@ export class WorkspaceService extends BaseService<
       criteria,
       workspacePayload,
       session,
-      userId
+      userId,
     )
 
     if (updateManyResult.modifiedCount === 0)
-      throw new AppError('Не удалось обновить пространства.', 500)
+      throw new AppError('Не удалось обновить рабочие пространства.', 500)
 
     const updatedWorkspaces = await this.repository.findByCriteria<IWorkspace>(
       criteria,
       session,
       undefined,
-      userId
+      userId,
     )
+
+    const sideEffects: Promise<any>[] = []
 
     /* REORDER */
     const workspacesToReorder = workspacesToUpdate.filter(
-      (ws) => data.order !== undefined && ws.order !== data.order
+      (b) => data.order !== undefined && b.order !== data.order,
     )
+
     if (workspacesToReorder.length > 0) {
-      await this.reorderService.reorder('userId', workspacesToReorder, userId, session)
+      sideEffects.push(
+        this.reorderService.reorder('userId', [...workspacesToReorder], userId, session),
+      )
     }
 
     /* LOG */
-    const log = await this.operationLogService.create(
+    const logPromise = this.operationLogService.create(
       {
         operationType: OperationTypesEnum.UPDATE,
         collectionName: CollectionsEnum.WORKSPACES,
@@ -266,8 +284,14 @@ export class WorkspaceService extends BaseService<
         dependencies: [],
       },
       userId,
-      session
+      session,
     )
+
+    sideEffects.push(logPromise)
+
+    await Promise.all(sideEffects)
+
+    const log = await logPromise
 
     return {
       data: updatedWorkspaces,
@@ -279,7 +303,7 @@ export class WorkspaceService extends BaseService<
     data: WorkspaceEditDTO,
     criteria: IWorkspaceCriteria,
     user: IUser,
-    externalSession?: ClientSession
+    externalSession?: ClientSession,
   ): Promise<IResponseWithLog<IWorkspace[]>> {
     const userId = user.id
 
@@ -287,7 +311,7 @@ export class WorkspaceService extends BaseService<
       return this._executeEditTransaction(data, criteria, userId, externalSession)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeEditTransaction(data, criteria, userId, session)
+        this._executeEditTransaction(data, criteria, userId, session),
       )
     }
   }
@@ -295,70 +319,71 @@ export class WorkspaceService extends BaseService<
   private async _executeEditManyTransaction(
     data: WorkspaceEditDTO[],
     userId: Types.ObjectId,
-    session: ClientSession
+    session: ClientSession,
   ): Promise<IResponseWithLog<IWorkspace[]>> {
-    let workspaceIdsToReorder: string[] = []
-
-    const workspacesToUpdate: SingleUpdateDTO<SafeUpdateData<IWorkspace>>[] = []
-    const workspacesBefore: Partial<IWorkspace>[] = []
-
     const workspaceIds = data.map((d) => d.id)
 
-    const existingWorkspaces: IWorkspace[] = await this.repository.findByCriteria(
+    const existingWorkspaces = await this.repository.findByCriteria(
       { ids: workspaceIds },
       session,
       undefined,
-      userId
+      userId,
     )
 
-    if (existingWorkspaces.length === 0)
+    if (existingWorkspaces.length === 0) {
       throw new NotFoundError('Рабочие пространства для обновления не найдены.')
+    }
+
+    const existingMap = new Map(existingWorkspaces.map((w) => [w.id.toString(), w]))
+
+    const workspacePayloads: SingleUpdateDTO<SafeUpdateData<IWorkspace>>[] = []
+    const workspacesBefore: Partial<IWorkspace>[] = []
+    const reorderWorkspaceIds = new Set<string>()
 
     for (const dto of data) {
-      const workspace = existingWorkspaces.find((c) => c.id.toString() === dto.id)
-
+      const workspace = existingMap.get(dto.id)
       if (!workspace) continue
 
       const workspacePayload = await this.prepareWorkspaceEditPayload(dto, [workspace])
+
       workspacesBefore.push(projectProperties<IWorkspace>([workspace], workspacePayload)[0])
+      workspacePayloads.push(workspacePayload)
 
-      workspacesToUpdate.push(workspacePayload)
-
-      if (dto.order != null && workspace.order !== dto.order) {
-        workspaceIdsToReorder.push(workspacePayload.id.toString())
+      if (dto.order !== undefined && workspace.order !== dto.order) {
+        reorderWorkspaceIds.add(dto.id)
       }
     }
 
-    /* BULK UPDATE */
     const updatedWorkspacesResult = await this.repository.bulkUpdate(
-      workspacesToUpdate,
+      workspacePayloads,
       userId,
-      session
+      session,
     )
 
-    if (!updatedWorkspacesResult || updatedWorkspacesResult.modifiedCount === 0)
-      throw new AppError('Не удалось обновить пространства.', 500)
+    if (!updatedWorkspacesResult || updatedWorkspacesResult.modifiedCount === 0) {
+      throw new AppError('Не удалось обновить рабочие пространства.', 500)
+    }
 
     const updatedWorkspaces = await this.repository.findByCriteria(
-      { ids: workspacesToUpdate.map((t) => t.id.toString()) },
+      { ids: workspacePayloads.map((p) => p.id.toString()) },
       session,
       undefined,
-      userId
+      userId,
     )
 
-    /* REORDER */
-    if (workspaceIdsToReorder.length > 0) {
-      const updatedWorkspacesToReorder = updatedWorkspaces.filter((uc) =>
-        workspaceIdsToReorder.includes(uc.id.toString())
+    const sideEffects: Promise<any>[] = []
+
+    /** REORDER */
+    if (reorderWorkspaceIds.size > 0) {
+      const workspacesToReorder = updatedWorkspaces.filter((w) =>
+        reorderWorkspaceIds.has(w.id.toString()),
       )
 
-      if (updatedWorkspacesToReorder.length > 0) {
-        await this.reorderService.reorder('userId', updatedWorkspacesToReorder, userId, session)
-      }
+      sideEffects.push(this.reorderService.reorder('userId', workspacesToReorder, userId, session))
     }
 
-    /* LOG */
-    const log = await this.operationLogService.create(
+    /** LOGGING */
+    const logPromise = this.operationLogService.create(
       {
         operationType: OperationTypesEnum.UPDATE,
         collectionName: CollectionsEnum.WORKSPACES,
@@ -367,8 +392,13 @@ export class WorkspaceService extends BaseService<
         dependencies: [],
       },
       userId,
-      session
+      session,
     )
+    sideEffects.push(logPromise)
+
+    /** FINALIZATION */
+    await Promise.all(sideEffects)
+    const log = await logPromise
 
     return {
       data: updatedWorkspaces,
@@ -379,7 +409,7 @@ export class WorkspaceService extends BaseService<
   public async editMany(
     data: WorkspaceEditDTO[],
     user: IUser,
-    externalSession?: ClientSession
+    externalSession?: ClientSession,
   ): Promise<IResponseWithLog<IWorkspace[]>> {
     const userId = user.id
 
@@ -387,7 +417,7 @@ export class WorkspaceService extends BaseService<
       return this._executeEditManyTransaction(data, userId, externalSession)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeEditManyTransaction(data, userId, session)
+        this._executeEditManyTransaction(data, userId, session),
       )
     }
   }
@@ -395,37 +425,40 @@ export class WorkspaceService extends BaseService<
   private async _executeDeleteTransaction(
     criteria: IWorkspaceCriteria,
     userId: Types.ObjectId,
-    session: ClientSession
+    session: ClientSession,
   ): Promise<void> {
     const workspacesToDelete = await this.repository.findByCriteria(
       criteria,
       session,
       undefined,
-      userId
+      userId,
     )
-    const workspacesFilter = { workspaceIds: workspacesToDelete.map((ws) => ws.id.toString()) }
 
-    if (workspacesToDelete.length === 0)
-      throw new NotFoundError('Пространства для удаления не найдены.')
+    if (workspacesToDelete.length === 0) {
+      throw new NotFoundError('Рабочие пространства для удаления не найдены.')
+    }
+
+    const uniqueWorkspaceIds = [...new Set(workspacesToDelete.map((t) => t.id.toString()))].map(
+      (id) => new Types.ObjectId(id),
+    )
+
+    await this.repository.deleteMany(criteria, userId, session)
+
+    const workspacesCriteria = { workspaceIds: workspacesToDelete.map((ws) => ws.id.toString()) }
 
     await Promise.all([
-      /* DELETE CHILDREN */
-      this.taskService.deleteTasksByFilter(workspacesFilter, userId),
-      this.categoryService.deleteCategoriesByFilter(workspacesFilter, userId),
-      this.boardService.deleteBoardsByFilter(workspacesFilter, userId),
+      this.taskService.deleteTasksByCriteria(workspacesCriteria, userId),
+      this.categoryService.deleteCategoriesByCriteria(workspacesCriteria, userId),
+      this.boardService.deleteBoardsByCriteria(workspacesCriteria, userId),
 
-      /* DELETE WORKSPACES */
-      this.repository.deleteMany(criteria, userId, session),
+      this.reorderService.reorderByParentIds(uniqueWorkspaceIds, 'userId', userId, session),
     ])
-
-    /* REORDER */
-    await this.reorderService.reorderByParentIds([userId], 'userId', userId, session)
   }
 
   public async delete(
     criteria: IWorkspaceCriteria,
     user: IUser,
-    externalSession?: ClientSession
+    externalSession?: ClientSession,
   ): Promise<void> {
     const userId = user.id
 
@@ -433,7 +466,7 @@ export class WorkspaceService extends BaseService<
       return this._executeDeleteTransaction(criteria, userId, externalSession)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeDeleteTransaction(criteria, userId, session)
+        this._executeDeleteTransaction(criteria, userId, session),
       )
     }
   }
@@ -442,7 +475,7 @@ export class WorkspaceService extends BaseService<
     criteria: IWorkspaceCriteria,
     isRecover: boolean,
     userId: Types.ObjectId,
-    session: ClientSession
+    session: ClientSession,
   ): Promise<IResponseWithLog<IWorkspace[]>> {
     const deleteData: LifecycleDTO = {
       isDeleted: true,
@@ -460,7 +493,7 @@ export class WorkspaceService extends BaseService<
       criteria,
       session,
       undefined,
-      userId
+      userId,
     )
 
     const workspacesCriteria = { workspaceIds: workspacesToProcess.map((ws) => ws.id.toString()) }
@@ -469,54 +502,60 @@ export class WorkspaceService extends BaseService<
 
     await Promise.all([
       /* PROCESS CHILDREN */
-      this.taskService.updateLifecycleTasksByFilter(
+      this.taskService.updateLifecycleTasksByCriteria(
         workspacesCriteria,
         childrenData,
         userId,
-        session
+        session,
       ),
-      this.categoryService.updateLifecycleCategoriesByFilter(
+      this.categoryService.updateLifecycleCategoriesByCriteria(
         workspacesCriteria,
         childrenData,
         userId,
-        session
+        session,
       ),
-      this.boardService.updateLifecycleBoardsByFilter(
+      this.boardService.updateLifecycleBoardsByCriteria(
         workspacesCriteria,
         childrenData,
         userId,
-        session
+        session,
       ),
 
       /* PROCESS WORKSPACES */
       this.repository.updateManyByCriteria(criteria, data, session, userId),
     ])
 
-    const updatedWorkspaces = await this.repository.findByCriteria<IWorkspace>(
-      criteria,
-      session,
-      undefined,
-      userId
-    )
+    const sideEffects: Promise<any>[] = []
 
     /* REORDER */
-    await this.reorderService.reorderByParentIds([userId], 'userId', userId, session)
+    sideEffects.push(this.reorderService.reorderByParentIds([userId], 'userId', userId, session))
+
+    const entitiesAfter = workspacesToProcess.map((workspace) => ({
+      ...workspace,
+      isDeleted: data.isDeleted,
+    }))
 
     /* LOG */
-    const log = await this.operationLogService.create(
+    const logPromise = this.operationLogService.create(
       {
         operationType: isRecover ? OperationTypesEnum.RECOVER : OperationTypesEnum.ARCHIVE,
         collectionName: CollectionsEnum.WORKSPACES,
         entitiesBefore: workspacesToProcess,
-        entitiesAfter: updatedWorkspaces,
+        entitiesAfter,
         dependencies: [],
       },
       userId,
-      session
+      session,
     )
 
+    sideEffects.push(logPromise)
+
+    await Promise.all(sideEffects)
+
+    const log = await logPromise
+
     return {
-      data: updatedWorkspaces,
+      data: entitiesAfter,
       logId: log.id,
     }
   }
@@ -524,7 +563,7 @@ export class WorkspaceService extends BaseService<
   public async archive(
     criteria: IWorkspaceCriteria,
     user: IUser,
-    externalSession?: ClientSession
+    externalSession?: ClientSession,
   ): Promise<IResponseWithLog<IWorkspace[]>> {
     const userId = user.id
 
@@ -532,7 +571,7 @@ export class WorkspaceService extends BaseService<
       return this._executeLifecycleTransaction(criteria, false, userId, externalSession)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeLifecycleTransaction(criteria, false, userId, session)
+        this._executeLifecycleTransaction(criteria, false, userId, session),
       )
     }
   }
@@ -556,7 +595,7 @@ export class WorkspaceService extends BaseService<
   public async recover(
     criteria: IWorkspaceCriteria,
     user: IUser,
-    externalSession?: ClientSession
+    externalSession?: ClientSession,
   ): Promise<IResponseWithLog<IWorkspace[]>> {
     const userId = user.id
 
@@ -564,7 +603,7 @@ export class WorkspaceService extends BaseService<
       return this._executeLifecycleTransaction(criteria, true, userId, externalSession)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeLifecycleTransaction(criteria, true, userId, session)
+        this._executeLifecycleTransaction(criteria, true, userId, session),
       )
     }
   }
@@ -572,7 +611,7 @@ export class WorkspaceService extends BaseService<
   private async _executeCloneTransaction(
     criteria: IWorkspaceCriteria,
     userId: Types.ObjectId,
-    session: ClientSession
+    session: ClientSession,
   ): Promise<IResponseWithLog<IWorkspace[]>> {
     const dependencies: Types.ObjectId[] = []
 
@@ -582,14 +621,14 @@ export class WorkspaceService extends BaseService<
       {
         projection: '+embeddings -createdAt -updatedAt',
       },
-      userId
+      userId,
     )
 
     let lastOrderGroupped = await this.repository.getLastOrderGroupedByParents(
       [userId],
       'user_id',
       userId,
-      session
+      session,
     )
     let lastOrder = lastOrderGroupped.length > 0 ? lastOrderGroupped[0].lastOrder : 0
 
@@ -628,10 +667,18 @@ export class WorkspaceService extends BaseService<
     const cloneBoardsResult = await this.boardService.cloneBoardsByWorkspaces(
       workspaceIdsMap,
       userId,
-      session
+      session,
     )
 
     if (cloneBoardsResult.logId) dependencies.push(cloneBoardsResult.logId)
+
+    /* REORDER */
+    await this.reorderService.reorderByParentIds(
+      newWorkspaces.map((b) => b.userId),
+      'userId',
+      userId,
+      session,
+    )
 
     /* LOG */
     const log = await this.operationLogService.create(
@@ -642,7 +689,7 @@ export class WorkspaceService extends BaseService<
         dependencies,
       },
       userId,
-      session
+      session,
     )
 
     return {
@@ -654,7 +701,7 @@ export class WorkspaceService extends BaseService<
   public async clone(
     criteria: IWorkspaceCriteria,
     user: IUser,
-    externalSession?: ClientSession
+    externalSession?: ClientSession,
   ): Promise<IResponseWithLog<IWorkspace[]>> {
     const userId = user.id
 
@@ -662,7 +709,7 @@ export class WorkspaceService extends BaseService<
       return this._executeCloneTransaction(criteria, userId, externalSession)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeCloneTransaction(criteria, userId, session)
+        this._executeCloneTransaction(criteria, userId, session),
       )
     }
   }
@@ -670,7 +717,7 @@ export class WorkspaceService extends BaseService<
   public async revert(
     log: IOperationLog,
     user: IUser,
-    session: ClientSession
+    session: ClientSession,
   ): Promise<IUndoResponse> {
     const { operationType } = log
 
@@ -680,12 +727,9 @@ export class WorkspaceService extends BaseService<
     const idsBefore = before?.map((e) => e.id?.toString()) || []
     const idsAfter = after?.map((e) => e.id?.toString()) || []
 
-    const workspaceIdsSet = new Set<string>()
-
     switch (operationType) {
       case OperationTypesEnum.CREATE: {
         await this.delete({ ids: idsAfter }, user, session)
-        idsAfter.forEach((id) => workspaceIdsSet.add(id))
         break
       }
 
@@ -695,20 +739,17 @@ export class WorkspaceService extends BaseService<
           id: e.id?.toString(),
         }))
 
-        const result = await this.editMany(payload, user, session)
-        result.data.forEach((workspace) => workspaceIdsSet.add(workspace.id.toString()))
+        await this.editMany(payload, user, session)
         break
       }
 
       case OperationTypesEnum.ARCHIVE: {
-        const result = await this.recover({ ids: idsBefore }, user, session)
-        result.data.forEach((workspace) => workspaceIdsSet.add(workspace.id.toString()))
+        await this.recover({ ids: idsBefore }, user, session)
         break
       }
 
       case OperationTypesEnum.RECOVER: {
-        const result = await this.archive({ ids: idsBefore }, user, session)
-        result.data.forEach((workspace) => workspaceIdsSet.add(workspace.id.toString()))
+        await this.archive({ ids: idsBefore }, user, session)
         break
       }
 
@@ -717,14 +758,14 @@ export class WorkspaceService extends BaseService<
     }
 
     return {
-      affectedWorkspaceIds: Array.from(workspaceIdsSet),
+      affectedWorkspaceIds: [...new Set([...idsBefore, ...idsAfter])],
     }
   }
 
   private async prepareWorkspaceCreationPayload(
     data: WorkspaceDTO,
     userId: Types.ObjectId,
-    session?: ClientSession
+    session?: ClientSession,
   ): Promise<IWorkspaceCreatePayload> {
     const workspaceName = data.name.trim()
 
@@ -748,7 +789,7 @@ export class WorkspaceService extends BaseService<
         [userId],
         'user_id',
         userId,
-        session
+        session,
       )
       workspacePayload.order = lastOrderGroupped.length > 0 ? lastOrderGroupped[0].lastOrder + 1 : 1
     }
@@ -759,21 +800,20 @@ export class WorkspaceService extends BaseService<
   private async prepareWorkspacesCreationPayload(
     data: WorkspaceDTO[],
     userId: Types.ObjectId,
-    session?: ClientSession
+    session?: ClientSession,
   ): Promise<IWorkspaceCreatePayload[]> {
     const lastOrderGroupped = await this.repository.getLastOrderGroupedByParents(
       [userId],
       'user_id',
       userId,
-      session
+      session,
     )
     let lastOrder = lastOrderGroupped.length > 0 ? lastOrderGroupped[0].lastOrder : 0
     let newOrder = lastOrder + 1
 
     const workspaceNames = data.map((workspace) => workspace.name.trim())
-    const embeddingsArray = await this.embeddingService.getEmbeddingsForMultipleTexts(
-      workspaceNames
-    )
+    const embeddingsArray =
+      await this.embeddingService.getEmbeddingsForMultipleTexts(workspaceNames)
 
     const workspacePayloads: IWorkspaceCreatePayload[] = data.map((dto, index) => {
       const payload = {
@@ -802,7 +842,7 @@ export class WorkspaceService extends BaseService<
 
   private async prepareWorkspaceEditPayload(
     data: WorkspaceEditDTO,
-    workspacesToUpdate: IWorkspace[]
+    workspacesToUpdate: IWorkspace[],
   ): Promise<SingleUpdateDTO<SafeUpdateData<IWorkspace>>> {
     const workspacePayload: SingleUpdateDTO<Partial<IWorkspace>> = {
       ...data,
@@ -811,7 +851,7 @@ export class WorkspaceService extends BaseService<
 
     if (data.name && workspacesToUpdate.length > 0) {
       const needEmbeddingsUpdate = workspacesToUpdate.some(
-        (ws) => data.name && ws.name.trim() !== data.name.trim()
+        (ws) => data.name && ws.name.trim() !== data.name.trim(),
       )
 
       const workspaceName = data.name.trim()
@@ -824,5 +864,80 @@ export class WorkspaceService extends BaseService<
     }
 
     return workspacePayload
+  }
+
+  public async updateTasksCount(
+    workspaceIds: Types.ObjectId[],
+    userId: Types.ObjectId,
+    session?: ClientSession,
+  ): Promise<MongooseBulkWriteResult | null> {
+    if (workspaceIds.length === 0) return null
+
+    const tasksGroupped = await this.taskService.getTasksCountByWorkspaces(
+      workspaceIds,
+      userId,
+      session,
+    )
+
+    const tasksCountMap = new Map<string, number>(
+      tasksGroupped.map((tg) => [tg.parentId, tg.count]),
+    )
+
+    const bulkUpdates = workspaceIds.map((workspaceId) => ({
+      id: workspaceId,
+      tasksCount: tasksCountMap.get(workspaceId.toString()) || 0,
+    }))
+
+    return await this.repository.bulkUpdate(bulkUpdates, userId, session)
+  }
+
+  public async updateCategoriesCount(
+    workspaceIds: Types.ObjectId[],
+    userId: Types.ObjectId,
+    session?: ClientSession,
+  ): Promise<MongooseBulkWriteResult | null> {
+    if (workspaceIds.length === 0) return null
+
+    const categoriesGroupped = await this.categoryService.getCategoriesCountByWorkspaces(
+      workspaceIds,
+      userId,
+      session,
+    )
+
+    const categoriesCountMap = new Map<string, number>(
+      categoriesGroupped.map((cg) => [cg.parentId, cg.count]),
+    )
+
+    const bulkUpdates = workspaceIds.map((workspaceId) => ({
+      id: workspaceId,
+      categoriesCount: categoriesCountMap.get(workspaceId.toString()) || 0,
+    }))
+
+    return await this.repository.bulkUpdate(bulkUpdates, userId, session)
+  }
+
+  public async updateBoardsCount(
+    workspaceIds: Types.ObjectId[],
+    userId: Types.ObjectId,
+    session?: ClientSession,
+  ): Promise<MongooseBulkWriteResult | null> {
+    if (workspaceIds.length === 0) return null
+
+    const boardsGroupped = await this.boardService.getBoardsCountByWorkspaces(
+      workspaceIds,
+      userId,
+      session,
+    )
+
+    const boardsCountMap = new Map<string, number>(
+      boardsGroupped.map((bg) => [bg.parentId, bg.count]),
+    )
+
+    const bulkUpdates = workspaceIds.map((workspaceId) => ({
+      id: workspaceId,
+      boardsCount: boardsCountMap.get(workspaceId.toString()) || 0,
+    }))
+
+    return await this.repository.bulkUpdate(bulkUpdates, userId, session)
   }
 }

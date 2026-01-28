@@ -142,6 +142,132 @@ export const AgentInstructions: AgentInstruction[] = [
     suggestedTools: ['editBoards', 'findBoardsByFilter', 'findWorkspacesByFilter'],
   },
   {
+    topic: 'Clone Tasks',
+    examples: [
+      "Clone task 'Buy milk'",
+      "Clone task 'New feature'",
+      "Clone task 'выполнить план'",
+      "Clone task 'удалить старые файлы'",
+      "Clone task 'перенести данные'",
+      "Clone task 'закрыть сделку'",
+      "Clone task 'Fix login bug'",
+      "Duplicate tasks 'X' and 'Y'",
+      "Duplicate task 'X'",
+
+      "Скопируй задачу 'Проверить отчет'",
+      "Скопируй баг 'Кнопка не работает'",
+      'Сделай клонирование задачи в колонку Готово',
+      'Клонируй задачу',
+      'Сделай копию такой же задачи',
+      'Повтори задачу',
+      'Продублируй задачи',
+    ],
+    rule: `*** RULE: CLONING TASKS ***
+    Goal: Create a duplicate of an existing task.
+
+    RULES:
+    1. Identify the task ID(s) to be cloned.
+    2. Call 'cloneTasks' with the identified ID(s).
+    3. If the user mentions any changes to the cloned task (e.g., different name, category), use 'editTasks' after cloning to apply those changes.
+
+    EXECUTION:
+    - Call 'cloneTasks' with the identified ID(s).
+    `,
+    suggestedTools: ['cloneTasks', 'editTasks', 'findTasksByFilter'],
+  },
+  {
+    topic: 'Clone Categories',
+    examples: [
+      "Clone category 'Done'",
+      "Clone category 'New'",
+      "Clone category 'Backlog'",
+      "Clone category 'Plan'",
+      "Duplicate categories 'X' and 'Y'",
+      "Duplicate category 'X'",
+
+      "Скопируй категорию 'Готово'",
+      "Скопируй колонку 'Баги'",
+      'Сделай клонирование категории в доску Готово',
+      'Клонируй категорию',
+      'Сделай копию такой же категории',
+      'Повтори категорию',
+      'Продублируй категории',
+    ],
+    rule: `*** RULE: CLONING CATEGORIES ***
+    Goal: Create a duplicate of an existing category.
+
+    RULES:
+    1. Identify the category ID(s) to be cloned.
+    2. Call 'cloneCategories' with the identified ID(s).
+    3. If the user mentions any changes to the cloned category (e.g., different name, board), use 'editCategories' after cloning to apply those changes.
+
+    EXECUTION:
+    - Call 'cloneCategories' with the identified ID(s).
+    `,
+    suggestedTools: ['cloneCategories', 'editCategories', 'findCategoriesByFilter'],
+  },
+  {
+    topic: 'Clone Boards',
+    examples: [
+      "Clone board 'Personal'",
+      "Clone board 'Sport'",
+      "Clone board 'Fitness'",
+      "Clone board 'Plan'",
+      "Duplicate boards 'X' and 'Y'",
+      "Duplicate board 'X'",
+
+      "Скопируй доску 'Готово'",
+      "Скопируй доску 'Баги'",
+      'Сделай клонирование доски в пространство Моё',
+      'Клонируй доску',
+      'Сделай копию такой же доски',
+      'Повтори доску',
+      'Продублируй доски',
+    ],
+    rule: `*** RULE: CLONING BOARDS ***
+    Goal: Create a duplicate of an existing board.
+
+    RULES:
+    1. Identify the board ID(s) to be cloned.
+    2. Call 'cloneBoards' with the identified ID(s).
+    3. If the user mentions any changes to the cloned board (e.g., different name, workspace), use 'editBoards' after cloning to apply those changes.
+
+    EXECUTION:
+    - Call 'cloneBoards' with the identified ID(s).
+    `,
+    suggestedTools: ['cloneBoards', 'editBoards', 'findBoardsByFilter'],
+  },
+  {
+    topic: 'Clone Workspaces',
+    examples: [
+      "Clone workspace 'Personal'",
+      "Clone workspace 'Sport'",
+      "Clone workspace 'Fitness'",
+      "Clone workspace 'Plan'",
+      "Duplicate workspaces 'X' and 'Y'",
+      "Duplicate workspace 'X'",
+
+      "Скопируй пространство 'Готово'",
+      "Скопируй пространство 'Баги'",
+      'Клонируй пространство',
+      'Сделай копию такого же пространства',
+      'Повтори пространство',
+      'Продублируй пространства',
+    ],
+    rule: `*** RULE: CLONING WORKSPACES ***
+    Goal: Create a duplicate of an existing workspace.
+
+    RULES:
+    1. Identify the workspace ID(s) to be cloned.
+    2. Call 'cloneWorkspaces' with the identified ID(s).
+    3. If the user mentions any changes to the cloned workspace (e.g., different name), use 'editWorkspaces' after cloning to apply those changes.
+
+    EXECUTION:
+    - Call 'cloneWorkspaces' with the identified ID(s).
+    `,
+    suggestedTools: ['cloneWorkspaces', 'editWorkspaces', 'findWorkspacesByFilter'],
+  },
+  {
     topic: 'Create Tasks',
     examples: [
       "Create task 'Buy milk'",

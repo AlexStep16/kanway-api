@@ -65,7 +65,7 @@ export class TaskService extends BaseService<
     reorderService: ReorderServiceType,
     categoryService: CategoryService,
     boardService: BoardService,
-    workspaceService: WorkspaceService
+    workspaceService: WorkspaceService,
   ) {
     super(taskRepository)
 
@@ -113,7 +113,7 @@ export class TaskService extends BaseService<
     }
     throw new AppError(
       'Произошла ошибка при выполнении операции после максимального количества попыток.',
-      500
+      500,
     )
   }
 
@@ -121,7 +121,7 @@ export class TaskService extends BaseService<
     data: TaskDTO,
     userId: Types.ObjectId,
     session: ClientSession,
-    timezone: string
+    timezone: string,
   ): Promise<IResponseWithLog<ITaskPopulated[]>> {
     const tempClientId = data.id
 
@@ -132,21 +132,17 @@ export class TaskService extends BaseService<
     /* CREATE */
     const newTask = await this.repository.create(taskPayload, session)
 
+    const sideEffects: Promise<any>[] = []
+
     /* REORDER */
     if (data.order !== undefined) {
-      await this.reorderService.reorder('category', [newTask], userId, session)
+      sideEffects.push(this.reorderService.reorder('category', [newTask], userId, session))
     }
 
-    const newTaskPopulated = await this.getByCriteria(
-      { id: newTask.id.toString() },
-      userId,
-      session
-    )
-
-    newTaskPopulated[0].tempClientId = tempClientId // Attach temp client ID back to the response to connect with client-side entity
+    sideEffects.push(...this._updateTasksParentCounters([newTask], userId, session))
 
     /* LOG */
-    const log = await this.operationLogService.create(
+    const logPromise = this.operationLogService.create(
       {
         operationType: OperationTypesEnum.CREATE,
         collectionName: CollectionsEnum.TASKS,
@@ -154,8 +150,22 @@ export class TaskService extends BaseService<
         dependencies: [],
       },
       userId,
-      session
+      session,
     )
+
+    sideEffects.push(logPromise)
+
+    await Promise.all(sideEffects)
+
+    const log = await logPromise
+
+    const newTaskPopulated = await this.getByCriteria(
+      { id: newTask.id.toString() },
+      userId,
+      session,
+    )
+
+    newTaskPopulated[0].tempClientId = tempClientId // Attach temp client ID back to the response to connect with client-side entity
 
     return {
       data: newTaskPopulated,
@@ -166,7 +176,7 @@ export class TaskService extends BaseService<
   public async create(
     data: TaskDTO,
     user: IUser,
-    externalSession?: ClientSession
+    externalSession?: ClientSession,
   ): Promise<IResponseWithLog<ITaskPopulated[]>> {
     const userId = user.id
 
@@ -174,7 +184,7 @@ export class TaskService extends BaseService<
       return this._executeCreateTransaction(data, userId, externalSession, user.timezone)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeCreateTransaction(data, userId, session, user.timezone)
+        this._executeCreateTransaction(data, userId, session, user.timezone),
       )
     }
   }
@@ -183,31 +193,35 @@ export class TaskService extends BaseService<
     data: TaskDTO[],
     userId: Types.ObjectId,
     session: ClientSession,
-    timezone: string
+    timezone: string,
   ): Promise<IResponseWithLog<ITaskPopulated[]>> {
     const tasksPayload = await this.prepareTasksCreationPayload(data, userId, timezone, session)
 
     /* CREATE */
     const newTasks = await this.repository.createMany(tasksPayload, session)
 
+    const sideEffects: Promise<any>[] = []
+
     /* REORDER */
     const isReorderNeeded = data.some((ws) => ws.order !== undefined)
     if (isReorderNeeded) {
-      await this.reorderService.reorder('category', newTasks, userId, session)
+      sideEffects.push(this.reorderService.reorder('category', newTasks, userId, session))
     }
 
     const newTasksPopulated = await this.getByCriteria(
       { ids: newTasks.map((t) => t.id.toString()) },
       userId,
-      session
+      session,
     )
 
     newTasksPopulated.forEach((nt, index) => {
       nt.tempClientId = data[index].id // Attach temp client ID back to the response to connect with client-side entity
     })
 
+    sideEffects.push(...this._updateTasksParentCounters(newTasks, userId, session))
+
     /* LOG */
-    const log = await this.operationLogService.create(
+    const logPromise = this.operationLogService.create(
       {
         operationType: OperationTypesEnum.CREATE,
         collectionName: CollectionsEnum.TASKS,
@@ -215,8 +229,14 @@ export class TaskService extends BaseService<
         dependencies: [],
       },
       userId,
-      session
+      session,
     )
+
+    sideEffects.push(logPromise)
+
+    await Promise.all(sideEffects)
+
+    const log = await logPromise
 
     return {
       data: newTasksPopulated,
@@ -227,7 +247,7 @@ export class TaskService extends BaseService<
   public async createMany(
     data: TaskDTO[],
     user: IUser,
-    externalSession?: ClientSession
+    externalSession?: ClientSession,
   ): Promise<IResponseWithLog<ITaskPopulated[]>> {
     const userId = user.id
 
@@ -235,7 +255,7 @@ export class TaskService extends BaseService<
       return this._executeCreateManyTransaction(data, userId, externalSession, user.timezone)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeCreateManyTransaction(data, userId, session, user.timezone)
+        this._executeCreateManyTransaction(data, userId, session, user.timezone),
       )
     }
   }
@@ -245,11 +265,16 @@ export class TaskService extends BaseService<
     criteria: ITaskCriteria,
     userId: Types.ObjectId,
     session: ClientSession,
-    timezone: string
+    timezone: string,
   ): Promise<IResponseWithLog<ITaskPopulated[]>> {
-    const tasksToUpdate = await this.repository.findByCriteria(criteria, session, undefined, userId)
+    const tasksToUpdate: ITask[] = await this.repository.findByCriteria(
+      criteria,
+      session,
+      undefined,
+      userId,
+    )
 
-    if (tasksToUpdate.length === 0) throw new NotFoundError('Задачи для обновления не найдены.')
+    if (tasksToUpdate.length === 0) throw new NotFoundError('Задачи для редактирования не найдены.')
 
     const taskPayload = await this.prepareTaskEditPayload(data, tasksToUpdate, timezone)
     const tasksBefore = projectProperties<ITask>(tasksToUpdate, taskPayload)
@@ -259,7 +284,7 @@ export class TaskService extends BaseService<
       criteria,
       taskPayload,
       session,
-      userId
+      userId,
     )
 
     if (updateManyResult.modifiedCount === 0) throw new AppError('Не удалось обновить задачи.', 500)
@@ -268,39 +293,59 @@ export class TaskService extends BaseService<
       criteria,
       session,
       undefined,
-      userId
+      userId,
     )
+
+    const sideEffects: Promise<any>[] = []
 
     /* MOVE */
     const tasksToMove = tasksToUpdate.filter(
-      (t) => data.categoryId !== undefined && t.category.toString() !== data.categoryId
+      (t) => data.categoryId !== undefined && t.category.toString() !== data.categoryId,
     )
 
     if (tasksToMove.length > 0) {
+      await this.regenerateReferencesByCategories(
+        tasksToMove.map((task) => task.id.toString()),
+        userId,
+        session,
+      )
+
+      const movedIds = tasksToMove.map((t) => t.id.toString())
+      const tasksAfterMove = updatedTasks.filter((t) => movedIds.includes(t.id.toString()))
+
+      sideEffects.push(
+        ...this._updateTasksParentCountersWithOld(tasksToMove, tasksAfterMove, userId, session),
+      )
     }
 
     /* REORDER */
-    const tasksToReorder = tasksToUpdate.filter((t) => data.order != null && t.order !== data.order)
-
-    const tasksToMoveToEnd = tasksToUpdate.filter(
-      (t) => data.order == null && tasksToMove.includes(t)
+    const tasksToReorder = tasksToUpdate.filter(
+      (t) => data.order !== undefined && t.order !== data.order,
     )
 
-    for (const taskToMoveToEnd of tasksToMoveToEnd) {
-      taskToMoveToEnd.order += 99999 // Move to end before reordering
-    }
+    const tasksToMoveToEnd = tasksToUpdate.filter(
+      (t) => data.order == null && tasksToMove.includes(t),
+    )
 
-    if (tasksToReorder.length > 0) {
-      await this.reorderService.reorder(
-        'category',
-        [...tasksToReorder, ...tasksToMoveToEnd],
-        userId,
-        session
+    if (tasksToReorder.length > 0 || tasksToMoveToEnd.length > 0) {
+      sideEffects.push(
+        this.reorderService.reorder(
+          'category',
+          [
+            ...tasksToReorder,
+            ...tasksToMoveToEnd.map((t) => ({
+              ...t,
+              order: t.order + 99999,
+            })),
+          ],
+          userId,
+          session,
+        ),
       )
     }
 
     /* LOG */
-    const log = await this.operationLogService.create(
+    const logPromise = this.operationLogService.create(
       {
         operationType: OperationTypesEnum.UPDATE,
         collectionName: CollectionsEnum.TASKS,
@@ -309,14 +354,16 @@ export class TaskService extends BaseService<
         dependencies: [],
       },
       userId,
-      session
+      session,
     )
 
-    const updatedTasksPopulated = await this.getByCriteria(
-      { ids: updatedTasks.map((t) => t.id.toString()) },
-      userId,
-      session
-    )
+    sideEffects.push(logPromise)
+
+    await Promise.all(sideEffects)
+
+    const log = await logPromise
+
+    const updatedTasksPopulated = await this.getByCriteria(criteria, userId, session)
 
     return {
       data: updatedTasksPopulated,
@@ -328,7 +375,7 @@ export class TaskService extends BaseService<
     data: TaskEditDTO,
     criteria: ITaskCriteria,
     user: IUser,
-    externalSession?: ClientSession
+    externalSession?: ClientSession,
   ): Promise<IResponseWithLog<ITaskPopulated[]>> {
     const userId = user.id
 
@@ -336,7 +383,7 @@ export class TaskService extends BaseService<
       return this._executeEditTransaction(data, criteria, userId, externalSession, user.timezone)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeEditTransaction(data, criteria, userId, session, user.timezone)
+        this._executeEditTransaction(data, criteria, userId, session, user.timezone),
       )
     }
   }
@@ -345,84 +392,94 @@ export class TaskService extends BaseService<
     data: TaskEditDTO[],
     userId: Types.ObjectId,
     session: ClientSession,
-    timezone: string
+    timezone: string,
   ): Promise<IResponseWithLog<ITaskPopulated[]>> {
-    const taskIdsToReorder: Set<string> = new Set()
-    const taskIdsToMoveToEnd: Set<string> = new Set()
-    const tasksPayload: SingleUpdateDTO<SafeUpdateData<ITask>>[] = []
-    const tasksPayloadToMove: SingleUpdateDTO<SafeUpdateData<ITask>>[] = []
-
-    const tasksBefore: Partial<ITask>[] = []
-
     const taskIds = data.map((d) => d.id)
 
-    const existingTasks: ITask[] = await this.repository.findByCriteria(
+    const existingTasks = await this.repository.findByCriteria(
       { ids: taskIds },
       session,
       undefined,
-      userId
+      userId,
     )
 
-    if (existingTasks.length === 0) throw new NotFoundError('Задачи для обновления не найдены.')
+    if (existingTasks.length === 0) {
+      throw new NotFoundError('Задачи для обновления не найдены.')
+    }
+
+    const existingMap = new Map(existingTasks.map((t) => [t.id.toString(), t]))
+
+    const taskPayloads: SingleUpdateDTO<SafeUpdateData<ITask>>[] = []
+    const tasksBefore: Partial<ITask>[] = []
+    const movedTaskIds: string[] = []
+    const reorderTaskIds = new Set<string>()
+    const moveToEndIds = new Set<string>()
 
     for (const dto of data) {
-      const task = existingTasks.find((t) => t.id.toString() === dto.id)
-
+      const task = existingMap.get(dto.id)
       if (!task) continue
 
       const taskPayload = await this.prepareTaskEditPayload(dto, [task], timezone)
+
       tasksBefore.push(projectProperties<ITask>([task], taskPayload)[0])
+      taskPayloads.push(taskPayload)
 
-      if (dto.categoryId && task.category.toString() !== dto.categoryId) {
-        tasksPayloadToMove.push(taskPayload)
+      const isMoving = dto.categoryId !== undefined && task.category.toString() !== dto.categoryId
+      if (isMoving) {
+        movedTaskIds.push(dto.id)
       }
 
-      if (dto.order != null && task.order !== dto.order) {
-        taskIdsToReorder.add(dto.id)
-      } else if (dto.order == null && tasksPayloadToMove.includes(taskPayload)) {
-        taskIdsToReorder.add(dto.id)
-        taskIdsToMoveToEnd.add(dto.id)
+      if (dto.order !== undefined && task.order !== dto.order) {
+        reorderTaskIds.add(dto.id)
+      } else if (dto.order == null && isMoving) {
+        reorderTaskIds.add(dto.id)
+        moveToEndIds.add(dto.id)
       }
-
-      tasksPayload.push(taskPayload)
     }
 
-    /* BULK UPDATE */
-    const updateTasksResult = await this.repository.bulkUpdate(tasksPayload, userId, session)
+    const updatedTasksResult = await this.repository.bulkUpdate(taskPayloads, userId, session)
 
-    if (!updateTasksResult || updateTasksResult.modifiedCount === 0)
+    if (!updatedTasksResult || updatedTasksResult.modifiedCount === 0) {
       throw new AppError('Не удалось обновить задачи.', 500)
+    }
 
     const updatedTasks = await this.repository.findByCriteria(
-      { ids: tasksPayload.map((t) => t.id.toString()) },
+      { ids: taskPayloads.map((p) => p.id.toString()) },
       session,
       undefined,
-      userId
+      userId,
     )
 
-    /* MOVE */
-    if (tasksPayloadToMove.length > 0) {
+    const sideEffects: Promise<any>[] = []
+
+    /** MOVE */
+    if (movedTaskIds.length > 0) {
+      await this.regenerateReferencesByCategories(movedTaskIds, userId, session)
+
+      const tasksToMove = existingTasks.filter((t) => movedTaskIds.includes(t.id.toString()))
+      const tasksAfterMove = updatedTasks.filter((t) => movedTaskIds.includes(t.id.toString()))
+
+      sideEffects.push(
+        ...this._updateTasksParentCountersWithOld(tasksToMove, tasksAfterMove, userId, session),
+      )
     }
 
-    /* REORDER */
-    if (taskIdsToReorder.size > 0) {
-      for (const taskId of taskIdsToMoveToEnd) {
-        const taskToMoveToEnd = updatedTasks.find((t) => t.id.toString() === taskId)
+    /** REORDER */
+    if (reorderTaskIds.size > 0) {
+      const tasksToReorder = updatedTasks
+        .filter((t) => reorderTaskIds.has(t.id.toString()))
+        .map((t) => {
+          if (moveToEndIds.has(t.id.toString())) {
+            return { ...t, order: t.order + 99999 }
+          }
+          return t
+        })
 
-        if (taskToMoveToEnd) {
-          taskToMoveToEnd.order += 99999 // Move to end before reordering
-        }
-      }
-
-      const tasksToReorder = updatedTasks.filter((ut) => taskIdsToReorder.has(ut.id.toString()))
-
-      if (tasksToReorder.length > 0) {
-        await this.reorderService.reorder('category', tasksToReorder, userId, session)
-      }
+      sideEffects.push(this.reorderService.reorder('category', tasksToReorder, userId, session))
     }
 
-    /* LOG */
-    const log = await this.operationLogService.create(
+    /** LOGGING */
+    const logPromise = this.operationLogService.create(
       {
         operationType: OperationTypesEnum.UPDATE,
         collectionName: CollectionsEnum.TASKS,
@@ -431,17 +488,22 @@ export class TaskService extends BaseService<
         dependencies: [],
       },
       userId,
-      session
+      session,
     )
+    sideEffects.push(logPromise)
 
-    const updatedEntitiesPopulated = await this.getByCriteria(
-      { ids: updatedTasks.map((t) => t.id.toString()) },
+    /** FINALIZATION */
+    await Promise.all(sideEffects)
+    const log = await logPromise
+
+    const updatedTasksPopulated = await this.getByCriteria(
+      { ids: taskPayloads.map((p) => p.id.toString()) },
       userId,
-      session
+      session,
     )
 
     return {
-      data: updatedEntitiesPopulated,
+      data: updatedTasksPopulated,
       logId: log.id,
     }
   }
@@ -449,7 +511,7 @@ export class TaskService extends BaseService<
   public async editMany(
     data: TaskEditDTO[],
     user: IUser,
-    externalSession?: ClientSession
+    externalSession?: ClientSession,
   ): Promise<IResponseWithLog<ITaskPopulated[]>> {
     const userId = user.id
 
@@ -457,38 +519,119 @@ export class TaskService extends BaseService<
       return this._executeEditManyTransaction(data, userId, externalSession, user.timezone)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeEditManyTransaction(data, userId, session, user.timezone)
+        this._executeEditManyTransaction(data, userId, session, user.timezone),
       )
     }
+  }
+
+  public async regenerateReferencesByCategories(
+    taskIds: string[],
+    userId: Types.ObjectId,
+    session: ClientSession,
+  ) {
+    const tasks = await this.repository.findByCriteria({ ids: taskIds }, session, undefined, userId)
+    if (!tasks.length) return
+
+    const categoryIds = [...new Set(tasks.map((t) => t.category.toString()))]
+
+    const categories = await this.categoryService.getByCriteria({
+      ids: categoryIds,
+    })
+
+    const categoryMap = new Map(categories.map((c) => [c.id.toString(), c]))
+
+    const bulkUpdates = tasks.reduce(
+      (acc, task) => {
+        const category = categoryMap.get(task.category.toString())
+
+        if (category) {
+          acc.push({
+            id: task.id,
+            board: category.board.id,
+            workspace: category.workspace.id,
+          })
+        }
+        return acc
+      },
+      [] as SingleUpdateDTO<SafeUpdateData<ITask>>[],
+    )
+
+    if (bulkUpdates.length > 0) {
+      return await this.repository.bulkUpdate(bulkUpdates, userId, session)
+    }
+
+    return null
+  }
+
+  public async regenerateReferencesByBoards(
+    taskIds: string[],
+    userId: Types.ObjectId,
+    session: ClientSession,
+  ) {
+    const tasks = await this.repository.findByCriteria({ ids: taskIds }, session, undefined, userId)
+    if (!tasks.length) return
+
+    const boardIds = [...new Set(tasks.map((t) => t.board.toString()))]
+
+    const boards = await this.boardService.getByCriteria({
+      ids: boardIds,
+    })
+
+    const boardMap = new Map(boards.map((b) => [b.id.toString(), b]))
+
+    const bulkUpdates = tasks.reduce(
+      (acc, task) => {
+        const board = boardMap.get(task.board.toString())
+
+        if (board) {
+          acc.push({
+            id: task.id,
+            board: board.id,
+            workspace: board.workspace.id,
+          })
+        }
+        return acc
+      },
+      [] as SingleUpdateDTO<SafeUpdateData<ITask>>[],
+    )
+
+    if (bulkUpdates.length > 0) {
+      return await this.repository.bulkUpdate(bulkUpdates, userId, session)
+    }
+
+    return null
   }
 
   private async _executeDeleteTransaction(
     criteria: ITaskCriteria,
     userId: Types.ObjectId,
-    session: ClientSession
+    session: ClientSession,
   ): Promise<void> {
     const tasksToDelete = await this.repository.findByCriteria(criteria, session, undefined, userId)
-    if (tasksToDelete.length === 0) throw new NotFoundError('Задачи для удаления не найдены.')
+
+    if (tasksToDelete.length === 0) {
+      throw new NotFoundError('Задачи для удаления не найдены.')
+    }
+
+    const uniqueCategoryIds = [...new Set(tasksToDelete.map((t) => t.category.toString()))].map(
+      (id) => new Types.ObjectId(id),
+    )
 
     await this.repository.deleteMany(criteria, userId, session)
 
-    // TODO: Update counters
+    const updateCountersPromises = this._updateTasksParentCounters(tasksToDelete, userId, session)
 
-    /* REORDER */
-    await this.reorderService.reorderByParentIds(
-      tasksToDelete.map((t) => t.category),
-      'category',
-      userId,
-      session
-    )
+    await Promise.all([
+      ...updateCountersPromises,
 
-    await session.commitTransaction()
+      this.reorderService.reorderByParentIds(uniqueCategoryIds, 'category', userId, session),
+    ])
   }
 
   public async delete(
     criteria: ITaskCriteria,
     user: IUser,
-    externalSession?: ClientSession
+    externalSession?: ClientSession,
   ): Promise<void> {
     const userId = user.id
 
@@ -496,7 +639,7 @@ export class TaskService extends BaseService<
       return this._executeDeleteTransaction(criteria, userId, externalSession)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeDeleteTransaction(criteria, userId, session)
+        this._executeDeleteTransaction(criteria, userId, session),
       )
     }
   }
@@ -505,27 +648,27 @@ export class TaskService extends BaseService<
     criteria: ITaskCriteria,
     isRecover: boolean,
     userId: Types.ObjectId,
-    session: ClientSession
+    session: ClientSession,
   ): Promise<IResponseWithLog<ITaskPopulated[]>> {
     const tasksToProcess = await this.repository.findByCriteria(
       criteria,
       session,
       undefined,
-      userId
+      userId,
     )
-
-    // TODO: Update Counters
 
     const deleteData: LifecycleDTO = {
       isDeleted: true,
       isDeletedExternal: false,
       deletedTime: new Date(),
     }
+
     const recoverData: LifecycleDTO = {
       isDeleted: false,
       isDeletedExternal: false,
       deletedTime: null,
     }
+
     const data = isRecover ? recoverData : deleteData
 
     if (tasksToProcess.length === 0) throw new NotFoundError('Задачи не найдены.')
@@ -535,38 +678,49 @@ export class TaskService extends BaseService<
     if (!updateResult || updateResult.modifiedCount === 0)
       throw new AppError('Не удалось обновить задачи.', 500)
 
-    const updatedTasks = await this.repository.findByCriteria<ITask>(
-      criteria,
-      session,
-      undefined,
-      userId
-    )
+    const sideEffects: Promise<any>[] = []
 
     /* REORDER */
-    await this.reorderService.reorderByParentIds(
-      tasksToProcess.map((c) => c.board),
-      'category',
-      userId,
-      session
+    sideEffects.push(
+      this.reorderService.reorderByParentIds(
+        tasksToProcess.map((c) => c.board),
+        'category',
+        userId,
+        session,
+      ),
     )
 
+    /** UPDATE COUNTERS */
+    sideEffects.push(...this._updateTasksParentCounters(tasksToProcess, userId, session))
+
+    const entitiesAfter = tasksToProcess.map((task) => ({
+      ...task,
+      isDeleted: data.isDeleted,
+    }))
+
     /* LOG */
-    const log = await this.operationLogService.create(
+    const logPromise = this.operationLogService.create(
       {
         operationType: isRecover ? OperationTypesEnum.RECOVER : OperationTypesEnum.ARCHIVE,
         collectionName: CollectionsEnum.TASKS,
         entitiesBefore: tasksToProcess,
-        entitiesAfter: updatedTasks,
+        entitiesAfter: entitiesAfter,
         dependencies: [],
       },
       userId,
-      session
+      session,
     )
 
+    sideEffects.push(logPromise)
+
+    await Promise.all(sideEffects)
+
+    const log = await logPromise
+
     const updatedTasksPopulated = await this.getByCriteria(
-      { ids: updatedTasks.map((t) => t.id.toString()) },
+      { ids: tasksToProcess.map((t) => t.id.toString()) },
       userId,
-      session
+      session,
     )
 
     return {
@@ -578,7 +732,7 @@ export class TaskService extends BaseService<
   public async archive(
     criteria: ITaskCriteria,
     user: IUser,
-    externalSession?: ClientSession
+    externalSession?: ClientSession,
   ): Promise<IResponseWithLog<ITaskPopulated[]>> {
     const userId = user.id
 
@@ -586,7 +740,7 @@ export class TaskService extends BaseService<
       return this._executeLifecycleTransaction(criteria, false, userId, externalSession)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeLifecycleTransaction(criteria, false, userId, session)
+        this._executeLifecycleTransaction(criteria, false, userId, session),
       )
     }
   }
@@ -594,7 +748,7 @@ export class TaskService extends BaseService<
   public async recover(
     criteria: ITaskCriteria,
     user: IUser,
-    externalSession?: ClientSession
+    externalSession?: ClientSession,
   ): Promise<IResponseWithLog<ITaskPopulated[]>> {
     const userId = user.id
 
@@ -602,7 +756,7 @@ export class TaskService extends BaseService<
       return this._executeLifecycleTransaction(criteria, true, userId, externalSession)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeLifecycleTransaction(criteria, true, userId, session)
+        this._executeLifecycleTransaction(criteria, true, userId, session),
       )
     }
   }
@@ -610,15 +764,15 @@ export class TaskService extends BaseService<
   private async _executeCloneTransaction(
     criteria: ITaskCriteria,
     userId: Types.ObjectId,
-    session: ClientSession
-  ): Promise<IResponseWithLog<ITask[]>> {
+    session: ClientSession,
+  ): Promise<IResponseWithLog<ITaskPopulated[]>> {
     const tasksToClone: (ITask & { embeddings: number[] })[] = await this.repository.findByCriteria(
       criteria,
       session,
       {
         projection: '+embeddings -createdAt -updatedAt',
       },
-      userId
+      userId,
     )
 
     if (tasksToClone.length === 0) throw new NotFoundError('Задачи для клонирования не найдены.')
@@ -639,7 +793,7 @@ export class TaskService extends BaseService<
     for (const [categoryId, tasks] of tasksGrouppedByCategory) {
       const categoryTasks = tasksToClone.filter((t) => t.category.toString() === categoryId)
 
-      let currentMaxOrder = categoryTasks.reduce((max, t) => (t.order > max ? t.order : max), 0)
+      let currentMaxOrder = categoryTasks.reduce((max, t) => (t.order > max ? t.order : max), 9999)
 
       for (const task of tasks) {
         const cleanTask = {
@@ -655,8 +809,16 @@ export class TaskService extends BaseService<
 
     const newTasks = await this.repository.createMany(transformedTasks, session)
 
+    /* REORDER */
+    await this.reorderService.reorderByParentIds(
+      newTasks.map((t) => t.category),
+      'category',
+      userId,
+      session,
+    )
+
     /* LOG */
-    const log = await this.operationLogService.create(
+    const logPromise = this.operationLogService.create(
       {
         operationType: OperationTypesEnum.CREATE,
         collectionName: CollectionsEnum.TASKS,
@@ -664,11 +826,21 @@ export class TaskService extends BaseService<
         dependencies: [],
       },
       userId,
-      session
+      session,
+    )
+
+    await Promise.all([logPromise, ...this._updateTasksParentCounters(newTasks, userId, session)])
+
+    const log = await logPromise
+
+    const clonedTasksPopulated = await this.getByCriteria(
+      { ids: newTasks.map((t) => t.id.toString()) },
+      userId,
+      session,
     )
 
     return {
-      data: [...newTasks],
+      data: [...clonedTasksPopulated],
       logId: log.id,
     }
   }
@@ -676,15 +848,15 @@ export class TaskService extends BaseService<
   public async clone(
     criteria: ITaskCriteria,
     user: IUser,
-    externalSession?: ClientSession
-  ): Promise<IResponseWithLog<ITask[]>> {
+    externalSession?: ClientSession,
+  ): Promise<IResponseWithLog<ITaskPopulated[]>> {
     const userId = user.id
 
     if (externalSession) {
       return this._executeCloneTransaction(criteria, userId, externalSession)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeCloneTransaction(criteria, userId, session)
+        this._executeCloneTransaction(criteria, userId, session),
       )
     }
   }
@@ -692,7 +864,7 @@ export class TaskService extends BaseService<
   public async revert(
     log: IOperationLog,
     user: IUser,
-    session: ClientSession
+    session: ClientSession,
   ): Promise<IUndoResponse> {
     const { operationType } = log
 
@@ -702,22 +874,9 @@ export class TaskService extends BaseService<
     const idsBefore = before?.map((e) => e.id?.toString()) || []
     const idsAfter = after?.map((e) => e.id?.toString()) || []
 
-    const boardIdsSet = new Set<string>()
-
-    const collectBoardIds = (items: ITaskPopulated[]) => {
-      items.forEach((t) => {
-        const bId = (t.board as any)?._id || (t.board as any)?.id || t.board
-        if (bId) boardIdsSet.add(bId.toString())
-      })
-    }
-
     switch (operationType) {
       case OperationTypesEnum.CREATE: {
         await this.delete({ ids: idsAfter }, user, session)
-
-        after.forEach((t) => {
-          if (t.board) boardIdsSet.add(t.board.toString())
-        })
         break
       }
 
@@ -727,20 +886,17 @@ export class TaskService extends BaseService<
           id: e.id?.toString(),
         }))
 
-        const result = await this.editMany(payload, user, session)
-        collectBoardIds(result.data)
+        await this.editMany(payload, user, session)
         break
       }
 
       case OperationTypesEnum.ARCHIVE: {
-        const result = await this.recover({ ids: idsBefore }, user, session)
-        collectBoardIds(result.data)
+        await this.recover({ ids: idsBefore }, user, session)
         break
       }
 
       case OperationTypesEnum.RECOVER: {
-        const result = await this.archive({ ids: idsBefore }, user, session)
-        collectBoardIds(result.data)
+        await this.archive({ ids: idsBefore }, user, session)
         break
       }
 
@@ -749,7 +905,7 @@ export class TaskService extends BaseService<
     }
 
     return {
-      affectedBoardIds: Array.from(boardIdsSet),
+      affectedTaskIds: [...new Set([...idsBefore, ...idsAfter])],
     }
   }
 
@@ -763,7 +919,7 @@ export class TaskService extends BaseService<
       }
     >,
     userId: Types.ObjectId,
-    session: ClientSession
+    session: ClientSession,
   ): Promise<IResponseWithLog<ITask[]>> {
     const sourceTasks: (ITask & { embeddings: number[] })[] = await this.repository.findByCriteria(
       { categoryIds: Array.from(categoryIdsMap.keys()) },
@@ -771,7 +927,7 @@ export class TaskService extends BaseService<
       {
         projection: '+embeddings -createdAt -updatedAt',
       },
-      userId
+      userId,
     )
 
     const cleanTasks = sourceTasks.map((task) => {
@@ -802,7 +958,7 @@ export class TaskService extends BaseService<
         dependencies: [],
       },
       userId,
-      session
+      session,
     )
 
     const clonedTasksTransformed = clonedTasks
@@ -813,25 +969,21 @@ export class TaskService extends BaseService<
     }
   }
 
-  public async deleteTasksByFilter(
+  public async deleteTasksByCriteria(
     criteria: ITaskCriteria,
     userId: Types.ObjectId,
-    session?: ClientSession
+    session?: ClientSession,
   ): Promise<DeleteResult> {
     return await this.repository.deleteMany(criteria, userId, session)
-
-    // TODO: Update counters
   }
 
-  public async updateLifecycleTasksByFilter(
+  public async updateLifecycleTasksByCriteria(
     criteria: ITaskCriteria,
     data: SafeUpdateData<ITask>,
     userId: Types.ObjectId,
-    session?: ClientSession
+    session?: ClientSession,
   ): Promise<UpdateWriteOpResult> {
     await this.repository.findByCriteria(criteria, session, undefined, userId)
-
-    // TODO: Update Counters
 
     return await this.repository.updateManyByCriteria(criteria, data, session, userId)
   }
@@ -840,7 +992,7 @@ export class TaskService extends BaseService<
     data: TaskDTO,
     userId: Types.ObjectId,
     timezone: string,
-    session?: ClientSession
+    session?: ClientSession,
   ): Promise<ITaskCreatePayload> {
     const taskName = data.name.trim()
 
@@ -870,7 +1022,7 @@ export class TaskService extends BaseService<
         [Types.ObjectId.createFromHexString(data.categoryId)],
         'category',
         userId,
-        session
+        session,
       )
 
       taskPayload.order = lastOrderGroupped.length > 0 ? lastOrderGroupped[0].lastOrder + 1 : 1
@@ -883,7 +1035,7 @@ export class TaskService extends BaseService<
     data: TaskDTO[],
     userId: Types.ObjectId,
     timezone: string,
-    session?: ClientSession
+    session?: ClientSession,
   ): Promise<ITaskCreatePayload[]> {
     const tasksPayloads: ITaskCreatePayload[] = []
     const tasksGroupedByCategory: { [key: string]: TaskDTO[] } = {}
@@ -901,7 +1053,7 @@ export class TaskService extends BaseService<
       Object.keys(tasksGroupedByCategory).map(Types.ObjectId.createFromHexString),
       'category',
       userId,
-      session
+      session,
     )
 
     const taskNames = Array.from(new Set(data.map((task) => task.name.trim())))
@@ -912,7 +1064,7 @@ export class TaskService extends BaseService<
     })
 
     const countMap = new Map(
-      grouppedTasksCount.map((entry) => [entry._id.toString(), entry.lastOrder])
+      grouppedTasksCount.map((entry) => [entry._id.toString(), entry.lastOrder]),
     )
 
     for (const [categoryId, tasks] of Object.entries(tasksGroupedByCategory)) {
@@ -955,7 +1107,7 @@ export class TaskService extends BaseService<
   private prepareTaskMainFields(
     data: TaskDTO | TaskEditDTO,
     taskPayload: ITaskCreatePayload | SingleUpdateDTO<SafeUpdateData<ITask>>,
-    timezone: string
+    timezone: string,
   ) {
     if (data.color && TASK_COLORS_MAP[data.color]) {
       taskPayload.colorName = TASK_COLORS_MAP[data.color]
@@ -974,17 +1126,24 @@ export class TaskService extends BaseService<
   private async prepareTaskEditPayload(
     data: TaskEditDTO,
     tasksToUpdate: ITask[],
-    timezone: string
+    timezone: string,
   ): Promise<SingleUpdateDTO<SafeUpdateData<ITask>>> {
-    const { id, categoryId, boardId, workspaceId, ...rest } = data
+    const { id, ...rest } = data
 
     const taskPayload: SingleUpdateDTO<SafeUpdateData<ITask>> = {
       ...rest,
 
       id: new Types.ObjectId(id),
-      category: categoryId ? new Types.ObjectId(categoryId) : undefined,
-      board: boardId ? new Types.ObjectId(boardId) : undefined,
-      workspace: workspaceId ? new Types.ObjectId(workspaceId) : undefined,
+    }
+
+    if (data.categoryId) {
+      taskPayload.category = Types.ObjectId.createFromHexString(data.categoryId)
+    }
+    if (data.boardId) {
+      taskPayload.board = Types.ObjectId.createFromHexString(data.boardId)
+    }
+    if (data.workspaceId) {
+      taskPayload.workspace = Types.ObjectId.createFromHexString(data.workspaceId)
     }
 
     if (data.tags) taskPayload.tags = data.tags.map((tag) => tag.toString())
@@ -993,7 +1152,7 @@ export class TaskService extends BaseService<
 
     if (data.name && tasksToUpdate.length > 0) {
       const needEmbeddingsUpdate = tasksToUpdate.some(
-        (ws) => data.name && ws.name.trim() !== data.name.trim()
+        (ws) => data.name && ws.name.trim() !== data.name.trim(),
       )
 
       const taskName = data.name.trim()
@@ -1022,5 +1181,98 @@ export class TaskService extends BaseService<
     }
 
     return closestColor
+  }
+
+  private _updateTasksParentCountersWithOld(
+    oldTasks: ITask[],
+    newTasks: ITask[],
+    userId: Types.ObjectId,
+    session: ClientSession,
+  ) {
+    const sideEffects: Promise<any>[] = []
+
+    const affectedCategories = new Set<string>()
+    const affectedBoards = new Set<string>()
+    const affectedWorkspaces = new Set<string>()
+
+    oldTasks.forEach((t) => {
+      affectedCategories.add(t.category.toString())
+      affectedBoards.add(t.board.toString())
+      affectedWorkspaces.add(t.workspace.toString())
+    })
+
+    newTasks.forEach((t) => {
+      affectedCategories.add(t.category.toString())
+      affectedBoards.add(t.board.toString())
+      affectedWorkspaces.add(t.workspace.toString())
+    })
+
+    sideEffects.push(
+      this.categoryService.updateTasksCount(
+        Array.from(affectedCategories).map((id) => new Types.ObjectId(id)),
+        userId,
+        session,
+      ),
+      this.boardService.updateTasksCount(
+        Array.from(affectedBoards).map((id) => new Types.ObjectId(id)),
+        userId,
+        session,
+      ),
+      this.workspaceService.updateTasksCount(
+        Array.from(affectedWorkspaces).map((id) => new Types.ObjectId(id)),
+        userId,
+        session,
+      ),
+    )
+
+    return sideEffects
+  }
+
+  private _updateTasksParentCounters(
+    tasks: ITask[],
+    userId: Types.ObjectId,
+    session: ClientSession,
+  ) {
+    const uniqueCategoryIds = [...new Set(tasks.map((t) => t.category.toString()))].map(
+      (id) => new Types.ObjectId(id),
+    )
+
+    const uniqueBoardIds = [...new Set(tasks.map((t) => t.board.toString()))].map(
+      (id) => new Types.ObjectId(id),
+    )
+
+    const uniqueWorkspaceIds = [...new Set(tasks.map((t) => t.workspace.toString()))].map(
+      (id) => new Types.ObjectId(id),
+    )
+
+    return [
+      this.categoryService.updateTasksCount(uniqueCategoryIds, userId, session),
+      this.boardService.updateTasksCount(uniqueBoardIds, userId, session),
+      this.workspaceService.updateTasksCount(uniqueWorkspaceIds, userId, session),
+    ]
+  }
+
+  public getTasksCountByCategories(
+    categoryIds: Types.ObjectId[],
+    userId: Types.ObjectId,
+    session?: ClientSession,
+  ): Promise<{ parentId: string; count: number }[]> {
+    return this.repository.getCountGroupedByParents(categoryIds, 'category', userId, session)
+  }
+
+  public getTasksCountByBoards(
+    boardIds: Types.ObjectId[],
+    userId: Types.ObjectId,
+    session?: ClientSession,
+  ): Promise<{ parentId: string; count: number }[]> {
+    return this.repository.getCountGroupedByParents(boardIds, 'board', userId, session)
+  }
+
+  public getTasksCountByWorkspaces(
+    workspaceIds: Types.ObjectId[],
+    userId: Types.ObjectId,
+    session?: ClientSession,
+  ): Promise<{ parentId: string; count: number }[]> {
+    return this.repository.getCountGroupedByParents(workspaceIds, 'workspace', userId, session)
   }
 }

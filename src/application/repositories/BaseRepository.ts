@@ -20,7 +20,7 @@ export abstract class BaseRepository<
   TRawEntity,
   TEntity,
   TCriteria = Record<string, any>,
-  TCreatePayload = Omit<TEntity, SystemFields>
+  TCreatePayload = Omit<TEntity, SystemFields>,
 > {
   protected model: Model<TRawEntity>
 
@@ -41,10 +41,9 @@ export abstract class BaseRepository<
 
   public async create(
     data: TCreatePayload,
-    session: ClientSession | null = null
+    session: ClientSession | null = null,
   ): Promise<TEntity> {
     const mongoData = toMongoCaseKeys<Partial<TRawEntity>>(data)
-
     const [newDoc] = await this.model.create([mongoData], { session })
     const newDocObj = newDoc.toObject() as TRawEntity
     delete (newDocObj as any).embeddings
@@ -54,7 +53,7 @@ export abstract class BaseRepository<
 
   public async createMany(
     data: TCreatePayload[],
-    session: ClientSession | null = null
+    session: ClientSession | null = null,
   ): Promise<TEntity[]> {
     const mongoData = data.map((item) => toMongoCaseKeys<Partial<TRawEntity>>(item))
     const options: CreateOptions = { session }
@@ -77,7 +76,7 @@ export abstract class BaseRepository<
     filter: FilterQuery<TRawEntity>,
     data: Partial<TRawEntity>,
     session?: ClientSession,
-    unset?: Record<string, true>
+    unset?: Record<string, true>,
   ): Promise<UpdateWriteOpResult> {
     return this.model.updateMany(filter, { $set: data, $unset: unset }, { session })
   }
@@ -85,7 +84,7 @@ export abstract class BaseRepository<
   public async updateMany(
     filter: FilterQuery<TRawEntity>,
     data: SafeUpdateData<TEntity>,
-    session?: ClientSession
+    session?: ClientSession,
   ): Promise<UpdateWriteOpResult> {
     const mongoData = toMongoCaseKeys<Partial<TRawEntity>>(data)
 
@@ -107,7 +106,7 @@ export abstract class BaseRepository<
     criteria: TCriteria,
     data: SafeUpdateData<TEntity>,
     session?: ClientSession,
-    userId?: Types.ObjectId
+    userId?: Types.ObjectId,
   ): Promise<UpdateWriteOpResult> {
     const filter = this.buildFilter(criteria, userId)
 
@@ -117,7 +116,7 @@ export abstract class BaseRepository<
   public async updateManyByFilter(
     filter: FilterQuery<TRawEntity>,
     data: SafeUpdateData<TEntity>,
-    session?: ClientSession
+    session?: ClientSession,
   ): Promise<UpdateWriteOpResult> {
     return this.updateMany(filter, data, session)
   }
@@ -125,7 +124,7 @@ export abstract class BaseRepository<
   public async bulkUpdate(
     updates: SingleUpdateDTO<SafeUpdateData<TEntity>>[],
     userId: Types.ObjectId,
-    session?: ClientSession
+    session?: ClientSession,
   ): Promise<MongooseBulkWriteResult | null> {
     if (updates.length === 0) return null
 
@@ -158,7 +157,7 @@ export abstract class BaseRepository<
     })
 
     const validOps = bulkOperations.filter(
-      (op) => op.updateOne.update.$set || op.updateOne.update.$unset
+      (op) => op.updateOne.update.$set || op.updateOne.update.$unset,
     )
 
     if (validOps.length === 0) return null
@@ -169,7 +168,7 @@ export abstract class BaseRepository<
   public async bulkUpdateOrders(
     updates: IReordable[],
     userId: Types.ObjectId,
-    session?: ClientSession
+    session?: ClientSession,
   ): Promise<MongooseBulkWriteResult | null> {
     if (updates.length === 0) return null
 
@@ -187,7 +186,7 @@ export abstract class BaseRepository<
   public async deleteMany(
     criteria: TCriteria,
     userId?: Types.ObjectId,
-    session?: ClientSession
+    session?: ClientSession,
   ): Promise<DeleteResult> {
     const filter = this.buildFilter(criteria, userId)
 
@@ -202,7 +201,7 @@ export abstract class BaseRepository<
       limit?: number
       populate?: PopulateOptions | (string | PopulateOptions)[]
       sort?: Record<string, 1 | -1>
-    } = {}
+    } = {},
   ): Promise<TFindResult[]> {
     const { projection = null, limit = 1000, populate, sort = { created_at: -1 } } = options
 
@@ -226,7 +225,7 @@ export abstract class BaseRepository<
       populate?: PopulateOptions | (string | PopulateOptions)[]
       sort?: Record<string, 1 | -1>
     } = {},
-    userId?: Types.ObjectId
+    userId?: Types.ObjectId,
   ): Promise<TFindResult[]> {
     const filter = this.buildFilter(criteria, userId)
 
@@ -241,7 +240,7 @@ export abstract class BaseRepository<
       limit?: number
       populate?: PopulateOptions | (string | PopulateOptions)[]
       sort?: Record<string, 1 | -1>
-    } = {}
+    } = {},
   ): Promise<TFindResult[]> {
     return this.find<TFindResult>(filter, session, options)
   }
@@ -249,7 +248,7 @@ export abstract class BaseRepository<
   public async getCount(
     criteria: TCriteria,
     session: ClientSession | null = null,
-    userId?: Types.ObjectId
+    userId?: Types.ObjectId,
   ): Promise<number> {
     const filter = this.buildFilter(criteria, userId)
 
@@ -260,7 +259,7 @@ export abstract class BaseRepository<
     parentIds: Types.ObjectId[],
     parentField: keyof TRawEntity,
     userId: Types.ObjectId,
-    session?: ClientSession
+    session?: ClientSession,
   ): Promise<{ _id: Types.ObjectId; lastOrder: number }[]> {
     return await this.model
       .aggregate([
@@ -268,7 +267,7 @@ export abstract class BaseRepository<
           $match: {
             [parentField]: { $in: parentIds },
             user_id: userId,
-            is_deleted: { $ne: true },
+            is_deleted: false,
           },
         },
 
@@ -282,11 +281,45 @@ export abstract class BaseRepository<
       .session(session || null)
   }
 
+  public async getCountGroupedByParents(
+    parentIds: Types.ObjectId[],
+    parentField: keyof TRawEntity,
+    userId: Types.ObjectId,
+    session: ClientSession | null = null,
+  ): Promise<{ parentId: string; count: number }[]> {
+    if (!parentIds.length) return []
+
+    const pipeline = [
+      {
+        $match: {
+          [parentField]: { $in: parentIds },
+          user_id: userId,
+          is_deleted: false,
+        },
+      },
+      {
+        $group: {
+          _id: `$${String(parentField)}`,
+          count: { $sum: 1 },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          parentId: { $toString: '$_id' },
+          count: 1,
+        },
+      },
+    ]
+
+    return await this.model.aggregate(pipeline).session(session).exec()
+  }
+
   public async getAllToOrder(
     parentId: Types.ObjectId,
     parentField: string,
     userId?: Types.ObjectId,
-    session?: ClientSession
+    session?: ClientSession,
   ): Promise<TEntity[]> {
     const result = await this.model
       .find({ [parentField]: parentId, user_id: userId, is_deleted: false })

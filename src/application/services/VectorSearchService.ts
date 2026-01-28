@@ -22,7 +22,7 @@ export class VectorSearchService {
   private async _executeSearch<T>(params: {
     collectionName: string
     indexName: string
-    query: string
+    query: string[]
     count: number
     filter?: any
     textKey?: string
@@ -40,12 +40,18 @@ export class VectorSearchService {
       embeddingKey: 'embeddings',
     })
 
-    const emb = await this.embeddingService.getEmbeddings(query.trim().toLowerCase())
+    const emb = await this.embeddingService.getEmbeddingsForMultipleTexts(
+      query.map((q) => q.trim().toLowerCase()),
+    )
 
     const searchOptions: any = {}
     if (filter) searchOptions.preFilter = filter
 
-    const documents = await vectorstore.similaritySearchVectorWithScore(emb, count, searchOptions)
+    const result = await Promise.all(
+      emb.map((e) => vectorstore.similaritySearchVectorWithScore(e, count, searchOptions)),
+    )
+
+    const documents = result.flat()
 
     const results: any[] = []
     const maxScore = documents.length > 0 ? documents[0][1] : 0
@@ -61,10 +67,10 @@ export class VectorSearchService {
   }
 
   public async similaritySearchTasks(
-    query: string,
+    query: string[],
     userId: Types.ObjectId,
     count: number,
-    categoryIds?: Array<Types.ObjectId>
+    categoryIds?: Array<Types.ObjectId>,
   ): Promise<ITask[]> {
     const filter: any = { user_id: { $eq: userId }, is_deleted: { $eq: false } }
     if (categoryIds?.length) filter.category = { $in: categoryIds }
@@ -84,10 +90,10 @@ export class VectorSearchService {
   }
 
   public async similaritySearchCategories(
-    query: string,
+    query: string[],
     userId: Types.ObjectId,
     count: number,
-    boardIds?: Array<Types.ObjectId>
+    boardIds?: Array<Types.ObjectId>,
   ): Promise<ICategory[]> {
     const filter: any = { user_id: { $eq: userId }, is_deleted: { $eq: false } }
     if (boardIds?.length) filter.board = { $in: boardIds }
@@ -107,10 +113,10 @@ export class VectorSearchService {
   }
 
   public async similaritySearchBoards(
-    query: string,
+    query: string[],
     userId: Types.ObjectId,
     count: number,
-    workspaceIds?: Array<Types.ObjectId>
+    workspaceIds?: Array<Types.ObjectId>,
   ): Promise<IBoard[]> {
     const filter: any = { user_id: { $eq: userId }, is_deleted: { $eq: false } }
     if (workspaceIds?.length) filter.workspace = { $in: workspaceIds }
@@ -130,9 +136,9 @@ export class VectorSearchService {
   }
 
   public async similaritySearchWorkspaces(
-    query: string,
+    query: string[],
     userId: Types.ObjectId,
-    count: number
+    count: number,
   ): Promise<IWorkspace[]> {
     const filter: any = { user_id: { $eq: userId }, is_deleted: { $eq: false } }
 
@@ -163,7 +169,7 @@ export class VectorSearchService {
     const accDocuments: [Document<Record<string, any>>, number][] = []
 
     const descriptionsEmbeddings = await this.embeddingService.getEmbeddingsForMultipleTexts(
-      steps.map((step) => step.description.trim().toLowerCase())
+      steps.map((step) => step.description.trim().toLowerCase()),
     )
 
     for (const queryEmbedding of descriptionsEmbeddings) {
@@ -188,7 +194,7 @@ export class VectorSearchService {
 
   public async similaritySearchAgentInstructions(
     query: string,
-    topK: number = 2
+    topK: number = 2,
   ): Promise<Array<IAgentInstruction>> {
     const collection = this.mongoClient
       .db(process.env.DATABASE_NAME)

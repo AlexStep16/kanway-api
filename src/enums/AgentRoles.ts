@@ -6,8 +6,9 @@ export enum AgentRoles {
   SYNTHESIZE_START = 'synthesize_start',
   INTEGRATION = 'integration',
   PREVIEW = 'preview',
+  UNDO = 'undo',
+  ACTIONS = 'actions',
   ASSISTANT_CHUNK = 'assistant_chunk',
   ASSISTANT_FINAL = 'assistant',
   NEW_MESSAGE = 'new_message',
-  LIST_ENTITIES = 'list_entities',
 }

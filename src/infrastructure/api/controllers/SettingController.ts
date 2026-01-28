@@ -22,7 +22,7 @@ export class SettingController {
 
   public get = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const entity = await this.service.getByCriteria({ id: req.user!.id.toString() })
+      const entity = await this.service.getByCriteria({ userId: req.user!.id.toString() })
 
       res.status(200).json(new SuccessResponse(entity))
     } catch (error) {

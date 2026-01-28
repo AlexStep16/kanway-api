@@ -10,10 +10,6 @@ export const AgentStateAnnotation = Annotation.Root({
     reducer: (_, y) => y,
     default: () => [],
   }),
-  tools_confirmed: Annotation<string[]>({
-    reducer: (_, y) => y,
-    default: () => [],
-  }),
   tools_cancelled: Annotation<string[]>({
     reducer: (_, y) => y,
     default: () => [],
@@ -44,6 +40,18 @@ export const AgentStateAnnotation = Annotation.Root({
   }),
   planner_has_error: Annotation<boolean>({
     reducer: (_, y) => y,
+    default: () => false,
+  }),
+  cancelled_entity_ids: Annotation<string[]>({
+    reducer: (x, y) => y ?? x,
+    default: () => [],
+  }),
+  prepared_confirmations: Annotation<any[]>({
+    reducer: (x, y) => y ?? x,
+    default: () => [],
+  }),
+  is_confirmation_needed: Annotation<boolean>({
+    reducer: (x, y) => y ?? x,
     default: () => false,
   }),
   summary: Annotation<string>({

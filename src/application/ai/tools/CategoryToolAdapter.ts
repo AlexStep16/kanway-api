@@ -18,11 +18,11 @@ import { Types } from 'mongoose'
 import { CategoryCommandAdapterService } from '@/application/ai/services/CategoryCommandAdapterService.ts'
 import { FilterToMongoQueryService } from '@/application/ai/services/FilterToMongoQueryService.ts'
 import { BoardService } from '@/application/services/BoardService.ts'
-import { IUndoResponse } from '@/application/interfaces/IUndoResponse.ts'
-import { ICategoriesWithChildrenResponse } from '@/application/interfaces/ICategoriesWithChildrenResponse.ts'
-import { ICategory } from '@/domain/entities/ICategory.ts'
 import * as Sentry from '@sentry/node'
 import { Configurable } from '@application/ai/interfaces/Configurable.ts'
+import { ICategoryPopulated } from '@/application/interfaces/ICategoryPopulated.ts'
+import { validateInputBySchema } from '@/utils/validateInputBySchema.ts'
+import { IBoardPopulated } from '@/application/interfaces/IBoardPopulated.ts'
 
 interface CompressedCategory {
   id: string
@@ -42,7 +42,7 @@ export class CategoryToolAdapter {
     categoryService: CategoryService,
     categoryCommandAdapterService: CategoryCommandAdapterService,
     filterToMongoQueryService: FilterToMongoQueryService,
-    boardService: BoardService
+    boardService: BoardService,
   ) {
     this.vectorSearchService = vectorSearchService
     this.categoryService = categoryService
@@ -52,25 +52,25 @@ export class CategoryToolAdapter {
     this.boardService = boardService
   }
 
-  private _compressCategories(categories: ICategory[]): Array<CompressedCategory> {
+  private _compressCategories(categories: ICategoryPopulated[]): Array<CompressedCategory> {
     return categories.map((category) => ({
       id: category.id.toString(),
       name: category.name,
-      boardName: category.boardName,
+      boardName: category.board.name,
     }))
   }
 
   // [Tool 1]
   public async findCategoriesByFilter(
     dto: CategoryFilterDTO,
-    config: LangGraphRunnableConfig
+    config: LangGraphRunnableConfig,
   ): Promise<string> {
     const configurable = config.configurable as Configurable
     const user = configurable.user
     const timezone = configurable.timezone || 'Europe/Moscow'
 
     try {
-      const errorMsgs = this.baseService.validateInputBySchema(dto, CategoryFilterSchema)
+      const errorMsgs = validateInputBySchema(dto, CategoryFilterSchema)
 
       if (errorMsgs.length > 0) {
         return (
@@ -82,23 +82,34 @@ export class CategoryToolAdapter {
         dto,
         timezone,
         user.id,
-        configurable.activeWorkspaceId
+        configurable.activeWorkspaceId,
       )
 
       if (Object.keys(mongoFilter).length === 0) return JSON.stringify([])
 
-      const categories = await this.categoryService.getByFilter(mongoFilter, user.id, 30)
+      const categories = await this.categoryService.getByFilter(
+        mongoFilter,
+        undefined,
+        undefined,
+        30,
+      )
 
       if (categories.length === 0) {
         const categoryName = getFilterNameField(mongoFilter)
 
         if (categoryName) {
           // If no categories found but filter includes 'name', try semantic search as fallback
-          const semanticSearchResults = await this.baseService.similaritySearchCategories(
-            categoryName,
+          const semanticSearchResults = await this.vectorSearchService.similaritySearchCategories(
+            [categoryName],
             user.id,
-            2
+            5,
           )
+
+          const populatedSemanticResults = await this.categoryService.getByFilter({
+            id: { $in: semanticSearchResults.map((cat) => cat.id) },
+          })
+
+          const compressedSemanticResults = this._compressCategories(populatedSemanticResults)
 
           if (semanticSearchResults.length === 0) {
             return `No categories found matching the filter or semantically similar to the name "${categoryName}".`
@@ -106,7 +117,7 @@ export class CategoryToolAdapter {
 
           return (
             `No exact matches found. Here are some categories that might be relevant based on the name "${categoryName}":\n` +
-            JSON.stringify(semanticSearchResults)
+            JSON.stringify(compressedSemanticResults)
           )
         }
       }
@@ -128,22 +139,29 @@ export class CategoryToolAdapter {
   }
 
   public async findRelevantCategories(
-    findRelevantDto: { nameToFind: string },
-    config: LangGraphRunnableConfig
+    dto: { namesToFind: string[] },
+    config: LangGraphRunnableConfig,
   ): Promise<string> {
     try {
-      const { nameToFind } = findRelevantDto
+      const { namesToFind } = dto
       const configurable = config.configurable as Configurable
 
-      if (!nameToFind) {
-        return 'Category name required to find relevant categories.'
+      if (!namesToFind || namesToFind.length === 0) {
+        return 'Category names required to find relevant categories.'
       }
 
       const userId = configurable.user.id
 
-      const categories = await this.baseService.similaritySearchCategories(nameToFind, userId, 30)
+      const categories = await this.vectorSearchService.similaritySearchCategories(
+        namesToFind,
+        userId,
+        30,
+      )
+      const populatedCategories = await this.categoryService.getByFilter({
+        id: { $in: categories.map((cat) => cat.id) },
+      })
 
-      const compressedCategories = this._compressCategories(categories)
+      const compressedCategories = this._compressCategories(populatedCategories)
 
       if (compressedCategories.length === 0) {
         return 'No categories found matching the provided filter.'
@@ -161,11 +179,10 @@ export class CategoryToolAdapter {
 
   public async createCategories(
     dto: CategoryCreateDTO,
-    config: LangGraphRunnableConfig
+    config: LangGraphRunnableConfig,
   ): Promise<IToolResult> {
     const configurable = config.configurable as Configurable
     const user = configurable.user
-    const threadId = configurable.thread_id
 
     try {
       const categories = dto.categories
@@ -180,13 +197,9 @@ export class CategoryToolAdapter {
         categories,
         errors,
         user.id,
-        threadId
       )
 
-      const validationSchemaMessages = this.baseService.validateInputBySchema(
-        dto,
-        CategoryCreateSchema
-      )
+      const validationSchemaMessages = validateInputBySchema(dto, CategoryCreateSchema)
 
       errors.push(...validationSchemaMessages)
 
@@ -194,7 +207,7 @@ export class CategoryToolAdapter {
         return new FailedToolResult(
           'There are some errors in create Categories schema:\n' +
             errors.join('\n') +
-            '\nPlease correct it and try again.'
+            '\nPlease correct it and try again.',
         )
       }
 
@@ -210,20 +223,15 @@ export class CategoryToolAdapter {
         return new FailedToolResult('Categories creation failed.')
       }
 
-      const integration: IUndoResponse<ICategoriesWithChildrenResponse> = {
-        create: {
-          categories: categoriesResult.data,
-          tasks: [],
-        },
-      }
-
-      const dataWithIntegration = {
+      return new SuccessToolResult({
         data: categoriesResult.data.map((category) => ({ id: category.id, name: category.name })),
         logId: categoriesResult.logId,
-        integration,
-      }
-
-      return new SuccessToolResult(dataWithIntegration)
+        actions: {
+          create: {
+            categories: categoriesResult.data,
+          },
+        },
+      })
     } catch (e) {
       Sentry.captureException(e)
 
@@ -233,11 +241,10 @@ export class CategoryToolAdapter {
 
   public async editCategories(
     dto: EditCategoriesDTO,
-    config: LangGraphRunnableConfig
+    config: LangGraphRunnableConfig,
   ): Promise<IToolResult> {
     const configurable = config.configurable as Configurable
     const user = configurable.user
-    const threadId = configurable.thread_id
 
     try {
       const boardIdValidationMessage = dto.changes.boardId
@@ -250,10 +257,7 @@ export class CategoryToolAdapter {
 
       const errors: string[] = []
 
-      const validationSchemaMessages = this.baseService.validateInputBySchema(
-        dto,
-        EditCategoriesSchema
-      )
+      const validationSchemaMessages = validateInputBySchema(dto, EditCategoriesSchema)
 
       errors.push(...validationSchemaMessages)
 
@@ -261,7 +265,7 @@ export class CategoryToolAdapter {
         return new FailedToolResult(
           'There are some errors in edit Categories schema:\n' +
             errors.join('\n') +
-            '\nPlease correct it and try again.'
+            '\nPlease correct it and try again.',
         )
       }
 
@@ -269,8 +273,6 @@ export class CategoryToolAdapter {
         dto.filter.ids,
         dto.changes,
         user,
-        undefined,
-        threadId
       )
 
       // Get only changed columns to return
@@ -286,20 +288,15 @@ export class CategoryToolAdapter {
         return taskWithChangedColumns
       })
 
-      const integration: IUndoResponse<ICategoriesWithChildrenResponse> = {
-        update: {
-          categories: editResult.data,
-          tasks: [],
-        },
-      }
-
-      const dataWithIntegration = {
+      return new SuccessToolResult({
         data: dataWithChangedColumns,
         logId: editResult.logId,
-        integration,
-      }
-
-      return new SuccessToolResult(dataWithIntegration)
+        actions: {
+          edit: {
+            categories: editResult.data,
+          },
+        },
+      })
     } catch (e) {
       Sentry.captureException(e)
 
@@ -309,7 +306,7 @@ export class CategoryToolAdapter {
 
   public async archiveCategories(
     dto: { ids: string[] },
-    config: LangGraphRunnableConfig
+    config: LangGraphRunnableConfig,
   ): Promise<IToolResult> {
     const configurable = config.configurable as Configurable
     const user = configurable.user
@@ -332,7 +329,7 @@ export class CategoryToolAdapter {
         return new FailedToolResult(
           'There are some errors while archiving categories:\n' +
             errors.join('\n') +
-            '\nPlease correct it and try again.'
+            '\nPlease correct it and try again.',
         )
       }
 
@@ -342,30 +339,21 @@ export class CategoryToolAdapter {
         return new FailedToolResult('Categories archiving failed.')
       }
 
-      if (
-        archiveResult.data &&
-        archiveResult.data.categories &&
-        archiveResult.data.categories.length === 0
-      ) {
+      if (archiveResult.data && archiveResult.data.length === 0) {
         return new FailedToolResult('No categories were archived.')
       } else if (!archiveResult.data) {
         return new FailedToolResult('Categories archiving failed.')
       }
 
-      const integration: IUndoResponse<ICategoriesWithChildrenResponse> = {
-        update: {
-          categories: archiveResult.data.categories,
-          tasks: archiveResult.data.tasks,
-        },
-      }
-
-      const dataWithIntegration = {
-        data: archiveResult.data.categories.map((category) => category.id),
+      return new SuccessToolResult({
+        data: archiveResult.data.map((category) => category.id),
         logId: archiveResult.logId,
-        integration,
-      }
-
-      return new SuccessToolResult(dataWithIntegration)
+        actions: {
+          archive: {
+            categories: archiveResult.data,
+          },
+        },
+      })
     } catch (e) {
       Sentry.captureException(e)
 
@@ -373,9 +361,66 @@ export class CategoryToolAdapter {
     }
   }
 
+  public async cloneCategories(
+    dto: { ids: string[] },
+    config: LangGraphRunnableConfig,
+  ): Promise<IToolResult> {
+    const configurable = config.configurable as Configurable
+    const user = configurable.user
+    const ids = dto.ids
+
+    try {
+      if (!ids || ids.length === 0) {
+        return new FailedToolResult('No categories provided for cloning.')
+      }
+
+      const errors: string[] = []
+
+      for (const id of ids) {
+        if (!Types.ObjectId.isValid(id)) {
+          errors.push(`Invalid Id: ${id}`)
+        }
+      }
+
+      if (errors.length > 0) {
+        return new FailedToolResult(
+          'There are some errors while cloning categories:\n' +
+            errors.join('\n') +
+            '\nPlease correct it and try again.',
+        )
+      }
+
+      const cloneResult = await this.categoryService.clone({ ids }, user)
+
+      if (!cloneResult) {
+        return new FailedToolResult('Categories cloning failed.')
+      }
+
+      if (cloneResult.data && cloneResult.data.length === 0) {
+        return new FailedToolResult('No categories were cloned.')
+      } else if (!cloneResult.data) {
+        return new FailedToolResult('Categories cloning failed.')
+      }
+
+      return new SuccessToolResult({
+        data: cloneResult.data.map((category) => category.id),
+        logId: cloneResult.logId,
+        actions: {
+          clone: {
+            categories: cloneResult.data,
+          },
+        },
+      })
+    } catch (e) {
+      Sentry.captureException(e)
+
+      return new FailedToolResult(`Error cloning categories: ${(e as Error).message}`)
+    }
+  }
+
   public async deleteCategories(
     dto: { ids: string[] },
-    config: LangGraphRunnableConfig
+    config: LangGraphRunnableConfig,
   ): Promise<IToolResult> {
     const configurable = config.configurable as Configurable
     const user = configurable.user
@@ -398,35 +443,22 @@ export class CategoryToolAdapter {
         return new FailedToolResult(
           'There are some errors while deleting categories:\n' +
             errors.join('\n') +
-            '\nPlease correct it and try again.'
+            '\nPlease correct it and try again.',
         )
       }
 
-      const deleteResult = await this.categoryService.delete({ ids }, user)
+      const categoriesToDelete = await this.categoryService.getByCriteria({ ids }, user.id)
 
-      if (!deleteResult) {
-        return new FailedToolResult('Categories deletion failed.')
-      }
+      await this.categoryService.delete({ ids }, user)
 
-      const deletedIds: unknown = ids.map((id) => ({ id }))
-
-      const integration: IUndoResponse<ICategoriesWithChildrenResponse> = {
-        update: {
-          categories: deleteResult,
-          tasks: [],
+      return new SuccessToolResult({
+        data: categoriesToDelete.map((category) => category.id),
+        actions: {
+          delete: {
+            categories: categoriesToDelete,
+          },
         },
-        delete: {
-          categories: deletedIds as ICategory[],
-          tasks: [],
-        },
-      }
-
-      const dataWithIntegration = {
-        data: deleteResult.map((category) => category.id),
-        integration,
-      }
-
-      return new SuccessToolResult(dataWithIntegration)
+      })
     } catch (e) {
       Sentry.captureException(e)
 
@@ -436,7 +468,7 @@ export class CategoryToolAdapter {
 
   public async recoverCategories(
     dto: { ids: string[] },
-    config: LangGraphRunnableConfig
+    config: LangGraphRunnableConfig,
   ): Promise<IToolResult> {
     const configurable = config.configurable as Configurable
     const user = configurable.user
@@ -459,7 +491,7 @@ export class CategoryToolAdapter {
         return new FailedToolResult(
           'There are some errors while recovering categories:\n' +
             errors.join('\n') +
-            '\nPlease correct it and try again.'
+            '\nPlease correct it and try again.',
         )
       }
 
@@ -469,30 +501,21 @@ export class CategoryToolAdapter {
         return new FailedToolResult('Categories recovering failed.')
       }
 
-      if (
-        recoverResult.data &&
-        recoverResult.data.categories &&
-        recoverResult.data.categories.length === 0
-      ) {
+      if (recoverResult.data && recoverResult.data.length === 0) {
         return new FailedToolResult('No categories were recovered.')
       } else if (!recoverResult.data) {
         return new FailedToolResult('Categories recovering failed.')
       }
 
-      const integration: IUndoResponse<ICategoriesWithChildrenResponse> = {
-        update: {
-          categories: recoverResult.data.categories,
-          tasks: recoverResult.data.tasks,
-        },
-      }
-
-      const dataWithIntegration = {
-        data: recoverResult.data.categories.map((category) => category.id),
+      return new SuccessToolResult({
+        data: recoverResult.data.map((category) => category.id),
         logId: recoverResult.logId,
-        integration,
-      }
-
-      return new SuccessToolResult(dataWithIntegration)
+        actions: {
+          recover: {
+            categories: recoverResult.data,
+          },
+        },
+      })
     } catch (e) {
       Sentry.captureException(e)
 
@@ -504,12 +527,27 @@ export class CategoryToolAdapter {
     categories: CategoryCreateDTO['categories'],
     errors: string[],
     userId: Types.ObjectId,
-    threadId?: string
   ): Promise<CategoryDTO[]> {
     const extendedCategories: CategoryDTO[] = []
 
+    const boardIdsSet = new Set<string>()
+
     for (const category of categories) {
-      const board = await this.boardService.getById(category.boardId, userId)
+      boardIdsSet.add(category.boardId)
+    }
+
+    const boardIds = Array.from(boardIdsSet)
+
+    const existingBoards = await this.boardService.getByCriteria({ ids: boardIds }, userId)
+
+    const existingBoardsMap = new Map<string, IBoardPopulated>()
+
+    for (const board of existingBoards) {
+      existingBoardsMap.set(board.id.toString(), board)
+    }
+
+    for (const category of categories) {
+      const board = existingBoardsMap.get(category.boardId)
 
       if (!board) {
         errors.push(`Board with ID ${category.boardId} not found.`)
@@ -519,14 +557,8 @@ export class CategoryToolAdapter {
 
       const categoryExtended: CategoryDTO = {
         ...category,
-        boardId: category.boardId.toString(),
-        boardName: board.name,
-        workspaceId: board.workspaceId.toString(),
-        workspaceName: board.workspaceName,
-      }
-
-      if (threadId) {
-        categoryExtended.threadId = threadId
+        boardId: category.boardId,
+        workspaceId: board.workspace.id.toString(),
       }
 
       extendedCategories.push(categoryExtended)
@@ -536,7 +568,8 @@ export class CategoryToolAdapter {
   }
 
   private async _validateBoardId(boardId: string, userId: Types.ObjectId): Promise<string> {
-    const board = await this.categoryService.getById(boardId, userId)
+    const boards = await this.categoryService.getByCriteria({ id: boardId }, userId)
+    const board = boards[0]
 
     if (!board) {
       return `Board with ID ${boardId} not found.`

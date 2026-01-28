@@ -10,8 +10,6 @@ import getLastHumanMessage from '../../helpers/getLastHumanMessage.ts'
 
 export const makePlannerNode = (deps: AgentDependencies) => {
   return async (state: typeof AgentStateAnnotation.State, _: RunnableConfig) => {
-    // Используем более дешевую/быструю модель для планирования (если есть), или основную
-    // Planner не требует огромного контекста, glm-4p5 отлично справится
     const { agentModel } = deps.models
 
     const lastHumanMessage = getLastHumanMessage(state.messages)
@@ -20,7 +18,6 @@ export const makePlannerNode = (deps: AgentDependencies) => {
       return { plan: [], planner_has_error: false }
     }
 
-    // Создаем определение инструмента
     const { toolExecutorService } = deps.services
     const tools = toolExecutorService.plannerTools
 
@@ -28,17 +25,14 @@ export const makePlannerNode = (deps: AgentDependencies) => {
       throw new Error('Agent model does not support tool binding.')
     }
 
-    // Создаем системный промпт для планировщика
     const chatHistory = getLastChatHistory(state.messages)
 
     const prompt = ChatPromptTemplate.fromMessages([['system', PlannerPrompt], ...chatHistory])
 
-    // Принудительно заставляем модель вызвать этот инструмент
     const modelWithTool = agentModel.bindTools(tools, {
-      tool_choice: 'submitPlan', // <-- FORCE CALL
+      tool_choice: 'submitPlan',
     })
 
-    // Вызываем модель
     const chain = prompt.pipe(modelWithTool)
 
     const response = await chain.invoke({})
@@ -49,10 +43,9 @@ export const makePlannerNode = (deps: AgentDependencies) => {
         (m) =>
           new RemoveMessage({
             id: m.id!,
-          })
+          }),
       )
 
-    // Парсим результат
     const toolCall = response.tool_calls?.[0]
 
     if (!toolCall || toolCall.name !== 'submitPlan') {

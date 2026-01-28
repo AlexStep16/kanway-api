@@ -12,12 +12,17 @@ const ChatSchema = new Schema<IChatRaw>(
       type: String,
       required: true,
     },
+    workspace_id: {
+      type: Schema.Types.ObjectId,
+      ref: 'Workspace',
+      required: true,
+    },
     name: {
       type: String,
       required: true,
     },
   },
-  { timestamps: true }
+  { timestamps: true },
 )
 
 const Chat = model<IChatRaw>('Chat', ChatSchema)

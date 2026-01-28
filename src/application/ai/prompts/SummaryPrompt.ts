@@ -17,4 +17,5 @@ export const SummaryPrompt = `
   
   **GENERAL INSTRUCTIONS:**
   - **Goal:** Another AI reading your summary should instantly understand the context and be ready for the next action.
+  - Do not duplicate entity details in text format when the showEntitiesToUser tool is used. Just return empty text.
 `

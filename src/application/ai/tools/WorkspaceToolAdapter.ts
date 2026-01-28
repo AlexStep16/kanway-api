@@ -17,11 +17,10 @@ import { WorkspaceDTO } from '@/application/dtos/WorkspaceDTO.ts'
 import { Types } from 'mongoose'
 import { WorkspaceCommandAdapterService } from '@/application/ai/services/WorkspaceCommandAdapterService.ts'
 import { FilterToMongoQueryService } from '@/application/ai/services/FilterToMongoQueryService.ts'
-import { IUndoResponse } from '@/application/interfaces/IUndoResponse.ts'
-import { IWorkspacesWithChildrenResponse } from '@/application/interfaces/IWorkspacesWithChildrenResponse.ts'
 import { IWorkspace } from '@/domain/entities/IWorkspace.ts'
 import * as Sentry from '@sentry/node'
 import { Configurable } from '@application/ai/interfaces/Configurable.ts'
+import { validateInputBySchema } from '@/utils/validateInputBySchema.ts'
 
 interface CompressedWorkspace {
   id: string
@@ -38,7 +37,7 @@ export class WorkspaceToolAdapter {
     vectorSearchService: VectorSearchService,
     workspaceService: WorkspaceService,
     workspaceCommandAdapterService: WorkspaceCommandAdapterService,
-    filterToMongoQueryService: FilterToMongoQueryService
+    filterToMongoQueryService: FilterToMongoQueryService,
   ) {
     this.vectorSearchService = vectorSearchService
     this.workspaceService = workspaceService
@@ -56,14 +55,14 @@ export class WorkspaceToolAdapter {
   // [Tool 1]
   public async findWorkspacesByFilter(
     dto: WorkspaceFilterDTO,
-    config: LangGraphRunnableConfig
+    config: LangGraphRunnableConfig,
   ): Promise<string> {
     const configurable = config.configurable as Configurable
     const user = configurable.user
     const timezone = configurable.timezone || 'Europe/Moscow'
 
     try {
-      const errorMsgs = this.baseService.validateInputBySchema(dto, WorkspaceFilterSchema)
+      const errorMsgs = validateInputBySchema(dto, WorkspaceFilterSchema)
 
       if (errorMsgs.length > 0) {
         return (
@@ -75,18 +74,25 @@ export class WorkspaceToolAdapter {
 
       if (Object.keys(mongoFilter).length === 0) return JSON.stringify([])
 
-      const workspaces = await this.workspaceService.getByFilter(mongoFilter, user.id, 30)
+      const workspaces = await this.workspaceService.getByFilter(
+        mongoFilter,
+        undefined,
+        undefined,
+        30,
+      )
 
       if (workspaces.length === 0) {
         const workspaceName = getFilterNameField(mongoFilter)
 
         if (workspaceName) {
           // If no workspaces found but filter includes 'name', try semantic search as fallback
-          const semanticSearchResults = await this.baseService.similaritySearchWorkspaces(
-            workspaceName,
+          const semanticSearchResults = await this.vectorSearchService.similaritySearchWorkspaces(
+            [workspaceName],
             user.id,
-            2
+            5,
           )
+
+          const compressedWorkspaces = this._compressWorkspaces(semanticSearchResults)
 
           if (semanticSearchResults.length === 0) {
             return `No workspaces found matching the filter or semantically similar to the name "${workspaceName}".`
@@ -94,7 +100,7 @@ export class WorkspaceToolAdapter {
 
           return (
             `No exact matches found. Here are some workspaces that might be relevant based on the name "${workspaceName}":\n` +
-            JSON.stringify(semanticSearchResults)
+            JSON.stringify(compressedWorkspaces)
           )
         }
       }
@@ -116,20 +122,24 @@ export class WorkspaceToolAdapter {
   }
 
   public async findRelevantWorkspaces(
-    findRelevantDto: { nameToFind: string },
-    config: LangGraphRunnableConfig
+    dto: { namesToFind: string[] },
+    config: LangGraphRunnableConfig,
   ): Promise<string> {
     try {
-      const { nameToFind } = findRelevantDto
+      const { namesToFind } = dto
       const configurable = config.configurable as Configurable
 
-      if (!nameToFind) {
-        return 'Workspace name required to find relevant workspaces.'
+      if (!namesToFind || namesToFind.length === 0) {
+        return 'Workspace names required to find relevant workspaces.'
       }
 
       const userId = configurable.user.id
 
-      const workspaces = await this.baseService.similaritySearchWorkspaces(nameToFind, userId, 30)
+      const workspaces = await this.vectorSearchService.similaritySearchWorkspaces(
+        namesToFind,
+        userId,
+        30,
+      )
 
       const compressedWorkspaces = this._compressWorkspaces(workspaces)
 
@@ -149,11 +159,10 @@ export class WorkspaceToolAdapter {
 
   public async createWorkspaces(
     dto: WorkspaceCreateDTO,
-    config: LangGraphRunnableConfig
+    config: LangGraphRunnableConfig,
   ): Promise<IToolResult> {
     const configurable = config.configurable as Configurable
     const user = configurable.user
-    const threadId = configurable.thread_id
 
     try {
       const workspaces = dto.workspaces
@@ -164,15 +173,9 @@ export class WorkspaceToolAdapter {
 
       const errors: string[] = []
 
-      const extendedWorkspaces = await this._extendWorkspaceCreateDTOWithContext(
-        workspaces,
-        threadId
-      )
+      const extendedWorkspaces = await this._extendWorkspaceCreateDTOWithContext(workspaces)
 
-      const validationSchemaMessages = this.baseService.validateInputBySchema(
-        dto,
-        WorkspaceCreateSchema
-      )
+      const validationSchemaMessages = validateInputBySchema(dto, WorkspaceCreateSchema)
 
       errors.push(...validationSchemaMessages)
 
@@ -180,7 +183,7 @@ export class WorkspaceToolAdapter {
         return new FailedToolResult(
           'There are some errors in create Workspaces schema:\n' +
             errors.join('\n') +
-            '\nPlease correct it and try again.'
+            '\nPlease correct it and try again.',
         )
       }
 
@@ -196,25 +199,18 @@ export class WorkspaceToolAdapter {
         return new FailedToolResult('Workspaces creation failed.')
       }
 
-      const integration: IUndoResponse<IWorkspacesWithChildrenResponse> = {
-        create: {
-          workspaces: workspacesResult.data,
-          boards: [],
-          categories: [],
-          tasks: [],
-        },
-      }
-
-      const dataWithIntegration = {
+      return new SuccessToolResult({
         data: workspacesResult.data.map((workspace) => ({
           id: workspace.id,
           name: workspace.name,
         })),
         logId: workspacesResult.logId,
-        integration,
-      }
-
-      return new SuccessToolResult(dataWithIntegration)
+        actions: {
+          create: {
+            workspaces: workspacesResult.data,
+          },
+        },
+      })
     } catch (e) {
       Sentry.captureException(e)
 
@@ -224,19 +220,15 @@ export class WorkspaceToolAdapter {
 
   public async editWorkspaces(
     dto: EditWorkspacesDTO,
-    config: LangGraphRunnableConfig
+    config: LangGraphRunnableConfig,
   ): Promise<IToolResult> {
     const configurable = config.configurable as Configurable
     const user = configurable.user
-    const threadId = configurable.thread_id
 
     try {
       const errors: string[] = []
 
-      const validationSchemaMessages = this.baseService.validateInputBySchema(
-        dto,
-        EditWorkspacesSchema
-      )
+      const validationSchemaMessages = validateInputBySchema(dto, EditWorkspacesSchema)
 
       errors.push(...validationSchemaMessages)
 
@@ -244,7 +236,7 @@ export class WorkspaceToolAdapter {
         return new FailedToolResult(
           'There are some errors in edit Workspaces schema:\n' +
             errors.join('\n') +
-            '\nPlease correct it and try again.'
+            '\nPlease correct it and try again.',
         )
       }
 
@@ -252,18 +244,7 @@ export class WorkspaceToolAdapter {
         dto.filter.ids,
         dto.changes,
         user,
-        undefined,
-        threadId
       )
-
-      const integration: IUndoResponse<IWorkspacesWithChildrenResponse> = {
-        update: {
-          workspaces: editResult.data,
-          boards: [],
-          categories: [],
-          tasks: [],
-        },
-      }
 
       // Get only changed columns to return
       const changedColumns = Object.keys(dto.changes)
@@ -278,13 +259,15 @@ export class WorkspaceToolAdapter {
         return workspaceWithChangedColumns
       })
 
-      const dataWithIntegration = {
+      return new SuccessToolResult({
         data: dataWithChangedColumns,
         logId: editResult.logId,
-        integration,
-      }
-
-      return new SuccessToolResult(dataWithIntegration)
+        actions: {
+          edit: {
+            workspaces: editResult.data,
+          },
+        },
+      })
     } catch (e) {
       Sentry.captureException(e)
 
@@ -294,7 +277,7 @@ export class WorkspaceToolAdapter {
 
   public async archiveWorkspaces(
     dto: { ids: string[] },
-    config: LangGraphRunnableConfig
+    config: LangGraphRunnableConfig,
   ): Promise<IToolResult> {
     const configurable = config.configurable as Configurable
     const user = configurable.user
@@ -317,7 +300,7 @@ export class WorkspaceToolAdapter {
         return new FailedToolResult(
           'There are some errors while archiving workspaces:\n' +
             errors.join('\n') +
-            '\nPlease correct it and try again.'
+            '\nPlease correct it and try again.',
         )
       }
 
@@ -327,32 +310,21 @@ export class WorkspaceToolAdapter {
         return new FailedToolResult('Workspaces archiving failed.')
       }
 
-      if (
-        archiveResult.data &&
-        archiveResult.data.workspaces &&
-        archiveResult.data.workspaces.length === 0
-      ) {
+      if (archiveResult.data && archiveResult.data.length === 0) {
         return new FailedToolResult('No workspaces were archived.')
       } else if (!archiveResult.data) {
         return new FailedToolResult('Workspaces archiving failed.')
       }
 
-      const integration: IUndoResponse<IWorkspacesWithChildrenResponse> = {
-        update: {
-          workspaces: archiveResult.data.workspaces,
-          boards: archiveResult.data.boards,
-          categories: archiveResult.data.categories,
-          tasks: archiveResult.data.tasks,
-        },
-      }
-
-      const dataWithIntegration = {
-        data: archiveResult.data.workspaces.map((workspace) => workspace.id),
+      return new SuccessToolResult({
+        data: archiveResult.data.map((workspace) => workspace.id),
         logId: archiveResult.logId,
-        integration,
-      }
-
-      return new SuccessToolResult(dataWithIntegration)
+        actions: {
+          archive: {
+            workspaces: archiveResult.data,
+          },
+        },
+      })
     } catch (e) {
       Sentry.captureException(e)
 
@@ -360,9 +332,66 @@ export class WorkspaceToolAdapter {
     }
   }
 
+  public async cloneWorkspaces(
+    dto: { ids: string[] },
+    config: LangGraphRunnableConfig,
+  ): Promise<IToolResult> {
+    const configurable = config.configurable as Configurable
+    const user = configurable.user
+    const ids = dto.ids
+
+    try {
+      if (!ids || ids.length === 0) {
+        return new FailedToolResult('No workspaces provided for cloning.')
+      }
+
+      const errors: string[] = []
+
+      for (const id of ids) {
+        if (!Types.ObjectId.isValid(id)) {
+          errors.push(`Invalid Id: ${id}`)
+        }
+      }
+
+      if (errors.length > 0) {
+        return new FailedToolResult(
+          'There are some errors while cloning workspaces:\n' +
+            errors.join('\n') +
+            '\nPlease correct it and try again.',
+        )
+      }
+
+      const cloneResult = await this.workspaceService.clone({ ids }, user)
+
+      if (!cloneResult) {
+        return new FailedToolResult('Workspaces cloning failed.')
+      }
+
+      if (cloneResult.data && cloneResult.data.length === 0) {
+        return new FailedToolResult('No workspaces were cloned.')
+      } else if (!cloneResult.data) {
+        return new FailedToolResult('Workspaces cloning failed.')
+      }
+
+      return new SuccessToolResult({
+        data: cloneResult.data.map((workspace) => workspace.id),
+        logId: cloneResult.logId,
+        actions: {
+          clone: {
+            workspaces: cloneResult.data,
+          },
+        },
+      })
+    } catch (e) {
+      Sentry.captureException(e)
+
+      return new FailedToolResult(`Error cloning workspaces: ${(e as Error).message}`)
+    }
+  }
+
   public async deleteWorkspaces(
     dto: { ids: string[] },
-    config: LangGraphRunnableConfig
+    config: LangGraphRunnableConfig,
   ): Promise<IToolResult> {
     const configurable = config.configurable as Configurable
     const user = configurable.user
@@ -385,39 +414,22 @@ export class WorkspaceToolAdapter {
         return new FailedToolResult(
           'There are some errors while deleting workspaces:\n' +
             errors.join('\n') +
-            '\nPlease correct it and try again.'
+            '\nPlease correct it and try again.',
         )
       }
 
-      const deleteResult = await this.workspaceService.delete({ ids }, user)
+      const workspacesToDelete = await this.workspaceService.getByCriteria({ ids }, user.id)
 
-      if (!deleteResult) {
-        return new FailedToolResult('Workspaces deletion failed.')
-      }
+      await this.workspaceService.delete({ ids }, user)
 
-      const deletedIds: unknown = ids.map((id) => ({ id }))
-
-      const integration: IUndoResponse<IWorkspacesWithChildrenResponse> = {
-        update: {
-          workspaces: deleteResult,
-          boards: [],
-          categories: [],
-          tasks: [],
+      return new SuccessToolResult({
+        data: workspacesToDelete.map((workspace) => workspace.id),
+        actions: {
+          delete: {
+            workspaces: workspacesToDelete,
+          },
         },
-        delete: {
-          workspaces: deletedIds as IWorkspace[],
-          boards: [],
-          categories: [],
-          tasks: [],
-        },
-      }
-
-      const dataWithIntegration = {
-        data: deleteResult.map((workspace) => workspace.id),
-        integration,
-      }
-
-      return new SuccessToolResult(dataWithIntegration)
+      })
     } catch (e) {
       Sentry.captureException(e)
 
@@ -427,7 +439,7 @@ export class WorkspaceToolAdapter {
 
   public async recoverWorkspaces(
     dto: { ids: string[] },
-    config: LangGraphRunnableConfig
+    config: LangGraphRunnableConfig,
   ): Promise<IToolResult> {
     const configurable = config.configurable as Configurable
     const user = configurable.user
@@ -450,7 +462,7 @@ export class WorkspaceToolAdapter {
         return new FailedToolResult(
           'There are some errors while recovering workspaces:\n' +
             errors.join('\n') +
-            '\nPlease correct it and try again.'
+            '\nPlease correct it and try again.',
         )
       }
 
@@ -460,29 +472,20 @@ export class WorkspaceToolAdapter {
         return new FailedToolResult('Workspaces recovering failed.')
       }
 
-      if (
-        recoverResult.data &&
-        recoverResult.data.workspaces &&
-        recoverResult.data.workspaces.length === 0
-      ) {
+      if (recoverResult.data && recoverResult.data.length === 0) {
         return new FailedToolResult('No workspaces were recovered.')
       } else if (!recoverResult.data) {
         return new FailedToolResult('Workspaces recovering failed.')
       }
 
-      const integration: IUndoResponse<IWorkspacesWithChildrenResponse> = {
-        update: {
-          workspaces: recoverResult.data.workspaces,
-          boards: recoverResult.data.boards,
-          categories: recoverResult.data.categories,
-          tasks: recoverResult.data.tasks,
-        },
-      }
-
       const dataWithIntegration = {
-        data: recoverResult.data.workspaces.map((workspace) => workspace.id),
+        data: recoverResult.data.map((workspace) => workspace.id),
         logId: recoverResult.logId,
-        integration,
+        actions: {
+          recover: {
+            workspaces: recoverResult.data,
+          },
+        },
       }
 
       return new SuccessToolResult(dataWithIntegration)
@@ -495,7 +498,6 @@ export class WorkspaceToolAdapter {
 
   private async _extendWorkspaceCreateDTOWithContext(
     workspaces: WorkspaceCreateDTO['workspaces'],
-    threadId?: string
   ): Promise<WorkspaceDTO[]> {
     const extendedWorkspaces: WorkspaceDTO[] = []
 
@@ -505,10 +507,6 @@ export class WorkspaceToolAdapter {
       const workspaceExtended: WorkspaceDTO = {
         ...workspace,
         color: closestColor,
-      }
-
-      if (threadId) {
-        workspaceExtended.threadId = threadId
       }
 
       extendedWorkspaces.push(workspaceExtended)

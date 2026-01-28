@@ -4,6 +4,7 @@ export interface ApproveToolCallDTO {
   boardId: string
   isConfirmed: boolean
   isCancelled: boolean
+  cancelledEntityIds: string[]
   workspaceId: string
   timezone: string
 }

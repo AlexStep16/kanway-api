@@ -64,7 +64,7 @@ export class FilterToMongoQueryService {
   constructor(
     taskService: TaskService,
     categoryService: CategoryService,
-    boardService: BoardService
+    boardService: BoardService,
   ) {
     this.taskService = taskService
     this.categoryService = categoryService
@@ -121,7 +121,7 @@ export class FilterToMongoQueryService {
     input: Filter,
     timezone: string,
     userId: Types.ObjectId,
-    activeWorkspaceId?: string
+    activeWorkspaceId?: string,
   ): Promise<FilterQuery<any>> {
     const currentAndConditions: any[] = []
     const currentOrConditions: any[] = []
@@ -179,13 +179,13 @@ export class FilterToMongoQueryService {
 
       if (input.workspaceIds !== undefined && input.workspaceIds.length > 0) {
         currentAndConditions.push({
-          workspace_id: {
+          workspace: {
             $in: input.workspaceIds.map((id) => Types.ObjectId.createFromHexString(id)),
           },
         })
       } else if (activeWorkspaceId) {
         currentAndConditions.push({
-          workspace_id: Types.ObjectId.createFromHexString(activeWorkspaceId),
+          workspace: Types.ObjectId.createFromHexString(activeWorkspaceId),
         })
       }
 
@@ -235,13 +235,15 @@ export class FilterToMongoQueryService {
         const normalizedColors = value.map((color) => this.taskService.getNearestColor(color) || '')
 
         currentAndConditions.push(
-          this._getArrayQuery('color', normalizedColors, operator, isNegated)
+          this._getArrayQuery('color', normalizedColors, operator, isNegated),
         )
       }
 
       if (currentOrConditions.length > 0) {
         currentAndConditions.push({ $or: currentOrConditions })
       }
+
+      currentAndConditions.push({ user_id: userId })
 
       if (currentAndConditions.length === 1) {
         return currentAndConditions[0]
@@ -259,7 +261,7 @@ export class FilterToMongoQueryService {
     field: string,
     value: number,
     operator: DateAndNumberOperators,
-    isNegated: boolean = false
+    isNegated: boolean = false,
   ): FilterQuery<any> {
     if (operator === 'eq') {
       if (isNegated) {
@@ -320,7 +322,7 @@ export class FilterToMongoQueryService {
     field: string,
     values: string[],
     operator: ArrayOperators,
-    isNegated: boolean = false
+    isNegated: boolean = false,
   ): FilterQuery<any> {
     if (operator === 'equal') {
       if (isNegated) {
@@ -359,7 +361,7 @@ export class FilterToMongoQueryService {
     value: string,
     operator: DateAndNumberOperators,
     userTimezone: string,
-    isNegated: boolean = false
+    isNegated: boolean = false,
   ): FilterQuery<any> {
     const dateStr = value.split('T')[0]
 
@@ -450,7 +452,7 @@ export class FilterToMongoQueryService {
     value: string,
     operator: DateAndNumberOperators,
     timezone: string,
-    isNegated: boolean = false
+    isNegated: boolean = false,
   ): any {
     value = value.toString().padStart(5, '0') // Гарантируем формат "HH:mm"
 
@@ -550,7 +552,7 @@ export class FilterToMongoQueryService {
       }
     } else {
       throw new Error(
-        `Operator ${operator} is not fully supported for 'time' field when mapped to 'due_hours'/'due_minutes'. Consider refining the LLM output or how 'time' filters are interpreted.`
+        `Operator ${operator} is not fully supported for 'time' field when mapped to 'due_hours'/'due_minutes'. Consider refining the LLM output or how 'time' filters are interpreted.`,
       )
     }
   }

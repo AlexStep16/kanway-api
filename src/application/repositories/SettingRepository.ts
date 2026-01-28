@@ -23,6 +23,10 @@ export default class SettingRepository extends BaseRepository<
       filter._id = { $in: criteria.ids }
     }
 
+    if (criteria.userId) {
+      filter.user_id = new Types.ObjectId(criteria.userId)
+    }
+
     return filter
   }
 }

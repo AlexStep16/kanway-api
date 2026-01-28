@@ -140,18 +140,14 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
           {
             name: data.message?.slice(0, 500) || 'Новый чат',
             workspaceId: data.workspaceId,
-            threadId: threadId,
+            threadId,
           },
           user,
         )
 
         chat = createResult.data[0]
       } else {
-        const getChatResult = await this.getByCriteria(
-          { threadId: data.threadId },
-          user.id,
-          externalSession,
-        )
+        const getChatResult = await this.getByCriteria({ threadId }, user.id, externalSession)
 
         chat = getChatResult[0]
       }
@@ -330,7 +326,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     const chat = await this.repository.create(
       {
         name: data.name,
-        workspaceId: Types.ObjectId.createFromHexString(data.workspaceId),
+        workspaceId: new Types.ObjectId(data.workspaceId),
         userId: user.id,
         threadId: data.threadId,
       },
@@ -426,9 +422,6 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
         timezone: data.timezone || 'UTC',
       })
 
-      const toolsConfirmed = updatedContent
-        .filter((item) => item.isConfirmed === true)
-        .map((item) => item.callId)
       const toolsCancelled = updatedContent
         .filter((item) => item.isCancelled === true)
         .map((item) => item.callId)
@@ -442,7 +435,12 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       )
 
       const job = await langgraphQueue.add('review', {
-        payload: new Command({ resume: { toolsConfirmed, toolsCancelled } }),
+        payload: new Command({
+          resume: {
+            toolsCancelled,
+            cancelledEntityIds: data.cancelledEntityIds,
+          },
+        }),
         config,
       })
 

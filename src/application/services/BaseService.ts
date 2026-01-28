@@ -1,4 +1,4 @@
-import { ClientSession, FilterQuery, PopulateOptions, Types } from 'mongoose'
+import { ClientSession, FilterQuery, PopulateOptions, ProjectionType, Types } from 'mongoose'
 import { BaseRepository } from '../repositories/BaseRepository.ts'
 import { SystemFields } from '@infrastructure/types/SystemFields.ts'
 
@@ -7,10 +7,10 @@ export abstract class BaseService<
   TEntity,
   TCriteria,
   TResult = TEntity,
-  TCreatePayload = Omit<TEntity, SystemFields>
+  TCreatePayload = Omit<TEntity, SystemFields>,
 > {
   constructor(
-    protected repository: BaseRepository<TRawEntity, TEntity, TCriteria, TCreatePayload>
+    protected repository: BaseRepository<TRawEntity, TEntity, TCriteria, TCreatePayload>,
   ) {}
 
   protected getPopulateOptions(): PopulateOptions | (string | PopulateOptions)[] | null {
@@ -20,7 +20,8 @@ export abstract class BaseService<
   public async getByCriteria(
     criteria: TCriteria,
     userId?: Types.ObjectId,
-    session?: ClientSession
+    session?: ClientSession,
+    projection?: ProjectionType<TRawEntity>,
   ): Promise<TResult[]> {
     const populateOptions = this.getPopulateOptions()
 
@@ -29,8 +30,9 @@ export abstract class BaseService<
       session,
       {
         populate: populateOptions || undefined,
+        projection,
       },
-      userId
+      userId,
     )
 
     return items
@@ -38,12 +40,16 @@ export abstract class BaseService<
 
   public async getByFilter(
     filter: FilterQuery<TEntity>,
-    session?: ClientSession
+    session?: ClientSession,
+    projection?: ProjectionType<TRawEntity>,
+    limit?: number,
   ): Promise<TResult[]> {
     const populateOptions = this.getPopulateOptions()
 
     const items = await this.repository.findByFilter<TResult>(filter, session, {
       populate: populateOptions || undefined,
+      projection,
+      limit,
     })
 
     return items
@@ -52,7 +58,7 @@ export abstract class BaseService<
   public getCount(
     criteria: TCriteria,
     userId: Types.ObjectId,
-    session?: ClientSession
+    session?: ClientSession,
   ): Promise<number> {
     return this.repository.getCount(criteria, session, userId)
   }

@@ -22,7 +22,7 @@ export class SettingService extends BaseService<ISettingRaw, ISetting, ISettingC
   public async create(
     data: SettingDTO,
     userId: Types.ObjectId,
-    session?: ClientSession
+    session?: ClientSession,
   ): Promise<ISetting> {
     const setting: Omit<ISetting, SystemFields> = {
       aiName: data.aiName,
@@ -38,7 +38,7 @@ export class SettingService extends BaseService<ISettingRaw, ISetting, ISettingC
   public async edit(
     data: SettingEditDTO,
     criteria: ISettingCriteria,
-    user: IUser
+    user: IUser,
   ): Promise<ISetting[]> {
     const payload = toMongoCaseKeys<ISetting>(data)
 
@@ -46,14 +46,14 @@ export class SettingService extends BaseService<ISettingRaw, ISetting, ISettingC
       criteria,
       payload,
       undefined,
-      user.id
+      user.id,
     )
 
     if (updateSettingResult.modifiedCount === 0) {
       throw new Error('Настройки пользователя не найдены')
     }
 
-    const updatedSetting = await this.repository.findByCriteria(criteria)
+    const updatedSetting = await this.repository.findByCriteria({ userId: user.id.toString() })
 
     return updatedSetting.map(toServerCaseKeys<ISetting>)
   }

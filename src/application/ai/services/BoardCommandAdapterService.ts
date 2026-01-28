@@ -6,9 +6,9 @@ import { AISemanticService } from '@application/services/AISemanticService.ts'
 import { IUser } from '@domain/entities/IUser.ts'
 import { BoardEditDTO } from '@dtos/BoardEditDTO.ts'
 import { BoardService } from '@application/services/BoardService.ts'
-import { IBoard } from '@/domain/entities/IBoard.ts'
 import { WorkspaceService } from '@/application/services/WorkspaceService.ts'
 import { NotFoundError } from '@/domain/errors/NotFound.ts'
+import { IBoardPopulated } from '@/application/interfaces/IBoardPopulated.ts'
 
 export class BoardCommandAdapterService {
   protected boardService: BoardService
@@ -20,7 +20,7 @@ export class BoardCommandAdapterService {
     boardService: BoardService,
     workspaceService: WorkspaceService,
     vectorSearchService: VectorSearchService,
-    aiSemanticService: AISemanticService
+    aiSemanticService: AISemanticService,
   ) {
     this.boardService = boardService
     this.workspaceService = workspaceService
@@ -33,24 +33,30 @@ export class BoardCommandAdapterService {
     changes: EditBoardsDTO['changes'],
     user: IUser,
     session?: ClientSession,
-    threadId?: string
-  ): Promise<IResponseWithLog<IBoard[]>> {
+  ): Promise<IResponseWithLog<IBoardPopulated[]>> {
     const boardsToUpdate: BoardEditDTO[] = []
 
-    const existingBoards = await this.boardService.getAll({ ids: boardIds }, user.id, session)
+    const existingBoards = await this.boardService.getByCriteria(
+      { ids: boardIds },
+      user.id,
+      session,
+    )
 
     for (const board of existingBoards) {
       const updatedBoard = {
         id: board.id.toString(),
-        threadId: threadId,
       } as BoardEditDTO
 
       if (typeof changes.workspaceId !== 'undefined' && typeof changes.workspaceId === 'string') {
         updatedBoard.workspaceId = changes.workspaceId
 
-        const workspace = await this.workspaceService.getById(changes.workspaceId, user.id, session)
+        const workspacesCount = await this.workspaceService.getCount(
+          { id: changes.workspaceId },
+          user.id,
+          session,
+        )
 
-        if (!workspace) {
+        if (workspacesCount === 0) {
           throw new NotFoundError(`Workspace with id ${changes.workspaceId} not found`)
         }
       }
@@ -67,6 +73,12 @@ export class BoardCommandAdapterService {
       boardsToUpdate.push(updatedBoard)
     }
 
+    if (boardsToUpdate.length === 0)
+      return {
+        data: [],
+        logId: null,
+      }
+
     if (typeof changes.name !== 'undefined') {
       let updatedNames: { id: Types.ObjectId; name: string }[] = []
 
@@ -74,21 +86,21 @@ export class BoardCommandAdapterService {
         updatedNames = await this.aiSemanticService.buildNamesForEntities(
           existingBoards,
           String(changes.name.set),
-          'set'
+          'set',
         )
       }
       if (changes.name.append) {
         updatedNames = await this.aiSemanticService.buildNamesForEntities(
           updatedNames.length > 0 ? updatedNames : existingBoards,
           String(changes.name.append),
-          'append'
+          'append',
         )
       }
       if (changes.name.prepend) {
         updatedNames = await this.aiSemanticService.buildNamesForEntities(
           updatedNames.length > 0 ? updatedNames : existingBoards,
           String(changes.name.prepend),
-          'prepend'
+          'prepend',
         )
       }
       if (changes.name.replace_part) {
@@ -96,7 +108,7 @@ export class BoardCommandAdapterService {
           updatedNames.length > 0 ? updatedNames : existingBoards,
           String(changes.name.replace_part.replace_with),
           'replace',
-          String(changes.name.replace_part.find)
+          String(changes.name.replace_part.find),
         )
       }
 

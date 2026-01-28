@@ -9,7 +9,7 @@ import { getLastHumanContent } from '../../helpers/getLastHumanContent.ts'
 
 export const makeAgentNode = (deps: AgentDependencies) => {
   return async (state: typeof AgentStateAnnotation.State, config: RunnableConfig) => {
-    const { toolExecutorService, baseService } = deps.services
+    const { toolExecutorService, vectorSearchService } = deps.services
     const { agentModel } = deps.models
 
     const configurable = config.configurable as Configurable
@@ -46,7 +46,7 @@ export const makeAgentNode = (deps: AgentDependencies) => {
       const newTools = new Set<string>()
 
       for (const step of plan) {
-        const instructions = await baseService.similaritySearchAgentInstructions(step)
+        const instructions = await vectorSearchService.similaritySearchAgentInstructions(step)
         for (const instruction of instructions) {
           if (instruction.rule) newRules.add(instruction.rule)
           if (instruction.suggestedTools) {

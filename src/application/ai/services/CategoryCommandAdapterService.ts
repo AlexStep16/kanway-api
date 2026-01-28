@@ -6,9 +6,9 @@ import { AISemanticService } from '@application/services/AISemanticService.ts'
 import { IUser } from '@domain/entities/IUser.ts'
 import { CategoryService } from '../../services/CategoryService.ts'
 import { CategoryEditDTO } from '../../dtos/CategoryEditDTO.ts'
-import { ICategory } from '@/domain/entities/ICategory.ts'
 import { BoardService } from '@/application/services/BoardService.ts'
 import { NotFoundError } from '@/domain/errors/NotFound.ts'
+import { ICategoryPopulated } from '@/application/interfaces/ICategoryPopulated.ts'
 
 export class CategoryCommandAdapterService {
   protected categoryService: CategoryService
@@ -20,7 +20,7 @@ export class CategoryCommandAdapterService {
     categoryService: CategoryService,
     boardService: BoardService,
     vectorSearchService: VectorSearchService,
-    aiSemanticService: AISemanticService
+    aiSemanticService: AISemanticService,
   ) {
     this.categoryService = categoryService
     this.boardService = boardService
@@ -33,28 +33,30 @@ export class CategoryCommandAdapterService {
     changes: EditCategoriesDTO['changes'],
     user: IUser,
     session?: ClientSession,
-    threadId?: string
-  ): Promise<IResponseWithLog<ICategory[]>> {
+  ): Promise<IResponseWithLog<ICategoryPopulated[]>> {
     const categoriesToUpdate: CategoryEditDTO[] = []
 
-    const existingCategories = await this.categoryService.getAll(
+    const existingCategories = await this.categoryService.getByCriteria(
       { ids: categoryIds },
       user.id,
-      session
+      session,
     )
 
     for (const category of existingCategories) {
       const updatedCategory = {
         id: category.id.toString(),
-        threadId: threadId,
       } as CategoryEditDTO
 
       if (typeof changes.boardId !== 'undefined' && typeof changes.boardId === 'string') {
         updatedCategory.boardId = changes.boardId
 
-        const board = await this.boardService.getById(changes.boardId, user.id, session)
+        const boardCount = await this.boardService.getCount(
+          { id: changes.boardId },
+          user.id,
+          session,
+        )
 
-        if (!board) {
+        if (boardCount === 0) {
           throw new NotFoundError(`Board with id ${changes.boardId} not found`)
         }
       }
@@ -67,6 +69,12 @@ export class CategoryCommandAdapterService {
       categoriesToUpdate.push(updatedCategory)
     }
 
+    if (categoriesToUpdate.length === 0)
+      return {
+        data: [],
+        logId: null,
+      }
+
     if (typeof changes.name !== 'undefined') {
       let updatedNames: { id: Types.ObjectId; name: string }[] = []
 
@@ -74,21 +82,21 @@ export class CategoryCommandAdapterService {
         updatedNames = await this.aiSemanticService.buildNamesForEntities(
           existingCategories,
           String(changes.name.set),
-          'set'
+          'set',
         )
       }
       if (changes.name.append) {
         updatedNames = await this.aiSemanticService.buildNamesForEntities(
           updatedNames.length > 0 ? updatedNames : existingCategories,
           String(changes.name.append),
-          'append'
+          'append',
         )
       }
       if (changes.name.prepend) {
         updatedNames = await this.aiSemanticService.buildNamesForEntities(
           updatedNames.length > 0 ? updatedNames : existingCategories,
           String(changes.name.prepend),
-          'prepend'
+          'prepend',
         )
       }
       if (changes.name.replace_part) {
@@ -96,7 +104,7 @@ export class CategoryCommandAdapterService {
           updatedNames.length > 0 ? updatedNames : existingCategories,
           String(changes.name.replace_part.replace_with),
           'replace',
-          String(changes.name.replace_part.find)
+          String(changes.name.replace_part.find),
         )
       }
 

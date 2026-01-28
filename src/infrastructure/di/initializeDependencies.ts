@@ -111,12 +111,12 @@ export function initializeDependencies() {
   const embeddingService = new EmbeddingService()
   const operationLogService = new OperationLogService(
     operationLogRepository,
-    new Map<string, IRevertableService<any>>([
+    new Map<string, IRevertableService>([
       ['tasks', mockTaskService],
       ['categories', mockCategoryService],
       ['boards', mockBoardService],
       ['workspaces', mockWorkspaceService],
-    ])
+    ]),
   )
   const vectorSearchService = new VectorSearchService(embeddingService, mongoClient)
 
@@ -155,7 +155,7 @@ export function initializeDependencies() {
     taskReorderService,
     mockCategoryService,
     mockBoardService,
-    mockWorkspaceService
+    mockWorkspaceService,
   )
   /* TASK SERVICES END */
 
@@ -174,7 +174,7 @@ export function initializeDependencies() {
     categoryReorderService,
     mockWorkspaceService,
     mockBoardService,
-    taskService
+    taskService,
   )
   /* CATEGORY SERVICES END */
 
@@ -193,7 +193,7 @@ export function initializeDependencies() {
     boardReorderService,
     mockWorkspaceService,
     categoryService,
-    taskService
+    taskService,
   )
   /* BOARD SERVICES END */
 
@@ -212,12 +212,12 @@ export function initializeDependencies() {
     workspaceReorderService,
     boardService,
     categoryService,
-    taskService
+    taskService,
   )
   /* WORKSPACE SERVICES END */
 
   const categoryMethodsToCopy = Object.getOwnPropertyNames(CategoryService.prototype).filter(
-    (name) => name !== 'constructor'
+    (name) => name !== 'constructor',
   )
 
   for (const methodName of categoryMethodsToCopy) {
@@ -228,7 +228,7 @@ export function initializeDependencies() {
     }
   }
   const boardMethodsToCopy = Object.getOwnPropertyNames(BoardService.prototype).filter(
-    (name) => name !== 'constructor'
+    (name) => name !== 'constructor',
   )
 
   for (const methodName of boardMethodsToCopy) {
@@ -240,7 +240,7 @@ export function initializeDependencies() {
   }
 
   const taskMethodsToCopy = Object.getOwnPropertyNames(TaskService.prototype).filter(
-    (name) => name !== 'constructor'
+    (name) => name !== 'constructor',
   )
 
   for (const methodName of taskMethodsToCopy) {
@@ -252,7 +252,7 @@ export function initializeDependencies() {
   }
 
   const workspaceMethodsToCopy = Object.getOwnPropertyNames(WorkspaceService.prototype).filter(
-    (name) => name !== 'constructor'
+    (name) => name !== 'constructor',
   )
 
   for (const methodName of workspaceMethodsToCopy) {
@@ -273,13 +273,13 @@ export function initializeDependencies() {
   const filterToMongoQueryService = new FilterToMongoQueryService(
     taskService,
     categoryService,
-    boardService
+    boardService,
   )
   const contextExternalFetchService = new ContextExternalFetchService(
     taskService,
     categoryService,
     boardService,
-    workspaceService
+    workspaceService,
   )
   const chatMessageService = new ChatMessageService(chatMessageRepository, operationLogService)
   const chatService = new ChatService(
@@ -287,12 +287,12 @@ export function initializeDependencies() {
     operationLogService,
     chatMessageService,
     settingService,
-    contextExternalFetchService
+    contextExternalFetchService,
   )
   const toolService = new ToolService(toolRepository, embeddingService)
   const agentInstructionService = new AgentInstructionService(
     agentInstructionRepository,
-    embeddingService
+    embeddingService,
   )
   /** AI SERVICES END */
 
@@ -301,7 +301,7 @@ export function initializeDependencies() {
     taskService,
     categoryService,
     vectorSearchService,
-    aiSemanticService
+    aiSemanticService,
   )
   const baseToolAdapter = new BaseToolAdapter(
     vectorSearchService,
@@ -309,7 +309,7 @@ export function initializeDependencies() {
     taskService,
     categoryService,
     boardService,
-    workspaceService
+    workspaceService,
   )
 
   const taskToolAdapter = new TaskToolAdapter(
@@ -317,47 +317,47 @@ export function initializeDependencies() {
     taskService,
     taskCommandAdapter,
     categoryService,
-    filterToMongoQueryService
+    filterToMongoQueryService,
   )
 
   const categoryCommandAdapter = new CategoryCommandAdapterService(
     categoryService,
     boardService,
     vectorSearchService,
-    aiSemanticService
+    aiSemanticService,
   )
   const categoryToolAdapter = new CategoryToolAdapter(
     vectorSearchService,
     categoryService,
     categoryCommandAdapter,
     filterToMongoQueryService,
-    boardService
+    boardService,
   )
 
   const boardCommandAdapter = new BoardCommandAdapterService(
     boardService,
     workspaceService,
     vectorSearchService,
-    aiSemanticService
+    aiSemanticService,
   )
   const boardToolAdapter = new BoardToolAdapter(
     vectorSearchService,
     boardService,
     boardCommandAdapter,
     filterToMongoQueryService,
-    workspaceService
+    workspaceService,
   )
 
   const workspaceCommandAdapter = new WorkspaceCommandAdapterService(
     workspaceService,
     vectorSearchService,
-    aiSemanticService
+    aiSemanticService,
   )
   const workspaceToolAdapter = new WorkspaceToolAdapter(
     vectorSearchService,
     workspaceService,
     workspaceCommandAdapter,
-    filterToMongoQueryService
+    filterToMongoQueryService,
   )
   /** TOOLS ADAPTERS END */
 
@@ -368,7 +368,7 @@ export function initializeDependencies() {
     taskToolAdapter,
     categoryToolAdapter,
     boardToolAdapter,
-    workspaceToolAdapter
+    workspaceToolAdapter,
   )
 
   const authController = new AuthController(authService)
@@ -380,7 +380,7 @@ export function initializeDependencies() {
     taskService,
     categoryService,
     boardService,
-    workspaceService
+    workspaceService,
   )
   const userController = new UserController(userService)
   const settingController = new SettingController(settingService)

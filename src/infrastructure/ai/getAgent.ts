@@ -55,7 +55,7 @@ export async function getAgent(dependencies: any) {
       services: {
         toolExecutorService: dependencies.services.toolExecutorService,
         contextExternalFetchService: dependencies.services.contextExternalFetchService,
-        baseService: dependencies.services.baseService,
+        vectorSearchService: dependencies.services.vectorSearchService,
       },
       models: {
         agentModel,
@@ -63,7 +63,7 @@ export async function getAgent(dependencies: any) {
         summarizerModel,
       },
     },
-    checkpointer
+    checkpointer,
   )
 
   return agentInstance

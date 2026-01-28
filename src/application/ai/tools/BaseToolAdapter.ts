@@ -24,7 +24,7 @@ export class BaseToolAdapter {
     taskService: TaskService,
     categoryService: CategoryService,
     boardService: BoardService,
-    workspaceService: WorkspaceService
+    workspaceService: WorkspaceService,
   ) {
     this.vectorSearchService = vectorSearchService
     this.operationLogService = operationLogService
@@ -39,7 +39,7 @@ export class BaseToolAdapter {
       ids: string[]
       type: 'task' | 'category' | 'board' | 'workspace'
     },
-    config: LangGraphRunnableConfig
+    config: LangGraphRunnableConfig,
   ) {
     const { ids, type } = dto
     const configurable = config.configurable as Configurable
@@ -56,25 +56,25 @@ export class BaseToolAdapter {
 
     switch (type) {
       case 'task':
-        entities = await this.taskService.getAll({ ids }, userId)
+        entities = await this.taskService.getByCriteria({ ids }, userId)
         break
       case 'category':
-        entities = await this.categoryService.getAll({ ids }, userId)
+        entities = await this.categoryService.getByCriteria({ ids }, userId)
         break
       case 'board':
-        entities = await this.boardService.getAll({ ids }, userId)
+        entities = await this.boardService.getByCriteria({ ids }, userId)
         break
       case 'workspace':
-        entities = await this.workspaceService.getAll({ ids }, userId)
+        entities = await this.workspaceService.getByCriteria({ ids }, userId)
         break
     }
 
-    return JSON.stringify(entities)
+    return entities
   }
 
   public async undoOperations(
     dto: { operationIds: string[] },
-    config: LangGraphRunnableConfig
+    config: LangGraphRunnableConfig,
   ): Promise<IToolResult> {
     const operationIds = dto.operationIds
     const user = config.configurable?.user
@@ -85,11 +85,8 @@ export class BaseToolAdapter {
 
     const result = await this.operationLogService.undoOperations(operationIds, user)
 
-    const dataWithIntegration = {
-      data: 'Operations undone successfully.',
-      integration: result,
-    }
-
-    return new SuccessToolResult(dataWithIntegration)
+    return new SuccessToolResult({
+      undo: result,
+    })
   }
 }

@@ -18,12 +18,13 @@ import { TaskDTO } from '@/application/dtos/TaskDTO.ts'
 import { Types } from 'mongoose'
 import { TaskCommandAdapterService } from '@/application/ai/services/TaskCommandAdapterService.ts'
 import { FilterToMongoQueryService } from '@/application/ai/services/FilterToMongoQueryService.ts'
-import { IUndoResponse } from '@/application/interfaces/IUndoResponse.ts'
-import { ITasksResponse } from '@/application/interfaces/ITasksResponse.ts'
 import { ITask } from '@/domain/entities/ITask.ts'
 import dayjs from 'dayjs'
 import * as Sentry from '@sentry/node'
 import { Configurable } from '@application/ai/interfaces/Configurable.ts'
+import { ITaskPopulated } from '@/application/interfaces/ITaskPopulated.ts'
+import { validateInputBySchema } from '@/utils/validateInputBySchema.ts'
+import { ICategoryPopulated } from '@/application/interfaces/ICategoryPopulated.ts'
 
 interface CompressedTask {
   id: string
@@ -46,7 +47,7 @@ export class TaskToolAdapter {
     taskService: TaskService,
     taskCommandAdapterService: TaskCommandAdapterService,
     categoryService: CategoryService,
-    filterToMongoQueryService: FilterToMongoQueryService
+    filterToMongoQueryService: FilterToMongoQueryService,
   ) {
     this.vectorSearchService = vectorSearchService
     this.taskService = taskService
@@ -55,7 +56,7 @@ export class TaskToolAdapter {
     this.filterToMongoQueryService = filterToMongoQueryService
   }
 
-  private _convertDateToTimezone(task: Partial<ITask>, timezone: string) {
+  private _convertDateToTimezone(task: ITaskPopulated, timezone: string) {
     const collectedDateTime =
       task.dueDate +
       'T' +
@@ -77,7 +78,7 @@ export class TaskToolAdapter {
       dueDate: 'dueDate',
       dueTime: ['dueHours', 'dueMinutes'],
       tags: 'tags',
-      categoryId: 'categoryId',
+      categoryId: 'category',
       isCompleted: 'isCompleted',
       color: 'color',
       order: 'order',
@@ -96,11 +97,13 @@ export class TaskToolAdapter {
     return changedColumns
   }
 
-  private _compressTasks(tasks: ITask[]): Array<CompressedTask> {
+  private _compressTasks(tasks: ITaskPopulated[]): Array<CompressedTask> {
     return tasks.map((task) => ({
       id: task.id.toString(),
       name: task.name,
-      categoryName: task.categoryName,
+      categoryName: task.category.name,
+      boardName: task.board.name,
+      workspaceName: task.workspace.name,
       description: task.description ? task.description.slice(0, 100) : '',
       isCompleted: task.isCompleted,
       dueDate: task.dueDate,
@@ -110,14 +113,14 @@ export class TaskToolAdapter {
   // [Tool 1]
   public async findTasksByFilter(
     dto: TaskFilterDTO,
-    config: LangGraphRunnableConfig
+    config: LangGraphRunnableConfig,
   ): Promise<string> {
     const configurable = config.configurable as Configurable
     const user = configurable.user
     const timezone = configurable.timezone || 'Europe/Moscow'
 
     try {
-      const errorMsgs = this.baseService.validateInputBySchema(dto, TaskFilterSchema)
+      const errorMsgs = validateInputBySchema(dto, TaskFilterSchema)
 
       if (errorMsgs.length > 0) {
         return (
@@ -129,23 +132,27 @@ export class TaskToolAdapter {
         dto,
         timezone,
         user.id,
-        configurable.activeWorkspaceId
+        configurable.activeWorkspaceId,
       )
 
       if (Object.keys(mongoFilter).length === 0) return JSON.stringify([])
 
-      const tasks = await this.taskService.getByFilter(mongoFilter, user.id, 30)
+      const tasks = await this.taskService.getByFilter(mongoFilter, undefined, undefined, 30)
 
       if (tasks.length === 0) {
         const taskName = getFilterNameField(mongoFilter)
 
         if (taskName) {
-          // If no tasks found but filter includes 'name', try semantic search as fallback
-          const semanticSearchResults = await this.baseService.similaritySearchTasks(
-            taskName,
+          const semanticSearchResults = await this.vectorSearchService.similaritySearchTasks(
+            [taskName],
             user.id,
-            2
+            5,
           )
+          const populatedSemanticResults = await this.taskService.getByCriteria({
+            ids: semanticSearchResults.map((t) => t.id.toString()),
+          })
+
+          const compressedSemanticResults = this._compressTasks(populatedSemanticResults)
 
           if (semanticSearchResults.length === 0) {
             return `No tasks found matching the filter or semantically similar to the name "${taskName}".`
@@ -153,7 +160,7 @@ export class TaskToolAdapter {
 
           return (
             `No exact matches found. Here are some tasks that might be relevant based on the name "${taskName}":\n` +
-            JSON.stringify(semanticSearchResults)
+            JSON.stringify(compressedSemanticResults)
           )
         }
       }
@@ -175,22 +182,27 @@ export class TaskToolAdapter {
   }
 
   public async findRelevantTasks(
-    findRelevantDto: { nameToFind: string },
-    config: LangGraphRunnableConfig
+    dto: { namesToFind: string[] },
+    config: LangGraphRunnableConfig,
   ): Promise<string> {
     try {
-      const { nameToFind } = findRelevantDto
+      const { namesToFind } = dto
       const configurable = config.configurable as Configurable
 
-      if (!nameToFind) {
-        return 'Task name required to find relevant tasks.'
+      if (!namesToFind || namesToFind.length === 0) {
+        return 'Task names required to find relevant tasks.'
       }
 
       const userId = configurable.user.id
+      console.log(dto)
+      console.log(userId)
+      const tasks = await this.vectorSearchService.similaritySearchTasks(namesToFind, userId, 30)
+      console.log(tasks)
+      const populatedTasks = await this.taskService.getByCriteria({
+        ids: tasks.map((t) => t.id.toString()),
+      })
 
-      const tasks = await this.baseService.similaritySearchTasks(nameToFind, userId, 30)
-
-      const compressedTasks = this._compressTasks(tasks)
+      const compressedTasks = this._compressTasks(populatedTasks)
 
       if (compressedTasks.length === 0) {
         return 'No tasks found matching the provided filter.'
@@ -208,11 +220,10 @@ export class TaskToolAdapter {
 
   public async createTasks(
     dto: TaskCreateDTO,
-    config: LangGraphRunnableConfig
+    config: LangGraphRunnableConfig,
   ): Promise<IToolResult> {
     const configurable = config.configurable as Configurable
     const user = configurable.user
-    const threadId = configurable.thread_id
 
     try {
       const tasks = dto.tasks
@@ -223,15 +234,9 @@ export class TaskToolAdapter {
 
       const errors: string[] = []
 
-      const extendedTasks = await this._extendTaskCreateDTOWithContext(
-        tasks,
-        errors,
-        user.id,
-        configurable.timezone || 'Europe/Moscow',
-        threadId
-      )
+      const extendedTasks = await this._extendTaskCreateDTOWithContext(tasks, errors, user.id)
 
-      const validationSchemaMessages = this.baseService.validateInputBySchema(dto, TaskCreateSchema)
+      const validationSchemaMessages = validateInputBySchema(dto, TaskCreateSchema)
 
       errors.push(...validationSchemaMessages)
 
@@ -239,7 +244,7 @@ export class TaskToolAdapter {
         return new FailedToolResult(
           'There are some errors in create Tasks schema:\n' +
             errors.join('\n') +
-            '\nPlease correct it and try again.'
+            '\nPlease correct it and try again.',
         )
       }
 
@@ -255,19 +260,15 @@ export class TaskToolAdapter {
         return new FailedToolResult('Tasks creation failed.')
       }
 
-      const integration: IUndoResponse<ITasksResponse> = {
-        create: {
-          tasks: createResult.data,
-        },
-      }
-
-      const dataWithIntegration = {
+      return new SuccessToolResult({
         data: createResult.data.map((task) => ({ id: task.id, name: task.name })),
         logId: createResult.logId,
-        integration,
-      }
-
-      return new SuccessToolResult(dataWithIntegration)
+        actions: {
+          create: {
+            tasks: createResult.data,
+          },
+        },
+      })
     } catch (e) {
       Sentry.captureException(e)
 
@@ -277,8 +278,8 @@ export class TaskToolAdapter {
 
   public async editTasks(dto: EditTasksDTO, config: LangGraphRunnableConfig): Promise<IToolResult> {
     const configurable = config.configurable as Configurable
+
     const user = configurable.user
-    const threadId = configurable.thread_id
     const timezone = configurable.timezone || 'Europe/Moscow'
 
     try {
@@ -292,7 +293,7 @@ export class TaskToolAdapter {
 
       const errors: string[] = []
 
-      const validationSchemaMessages = this.baseService.validateInputBySchema(dto, EditTasksSchema)
+      const validationSchemaMessages = validateInputBySchema(dto, EditTasksSchema)
 
       errors.push(...validationSchemaMessages)
 
@@ -300,7 +301,7 @@ export class TaskToolAdapter {
         return new FailedToolResult(
           'There are some errors in edit Tasks schema:\n' +
             errors.join('\n') +
-            '\nPlease correct it and try again.'
+            '\nPlease correct it and try again.',
         )
       }
 
@@ -309,15 +310,7 @@ export class TaskToolAdapter {
         dto.changes,
         timezone,
         user,
-        undefined,
-        threadId
       )
-
-      const integration: IUndoResponse<ITasksResponse> = {
-        update: {
-          tasks: editResult.data,
-        },
-      }
 
       // Get only changed columns to return
       const changedColumns = this._getChangedColumns(dto.changes)
@@ -343,13 +336,15 @@ export class TaskToolAdapter {
         return taskWithChangedColumns
       })
 
-      const dataWithIntegration = {
+      return new SuccessToolResult({
         data: dataWithChangedColumns,
         logId: editResult.logId,
-        integration,
-      }
-
-      return new SuccessToolResult(dataWithIntegration)
+        actions: {
+          edit: {
+            tasks: editResult.data,
+          },
+        },
+      })
     } catch (e) {
       Sentry.captureException(e)
 
@@ -357,14 +352,70 @@ export class TaskToolAdapter {
     }
   }
 
-  public async archiveTasks(
+  public async cloneTasks(
     dto: { ids: string[] },
-    config: LangGraphRunnableConfig
+    config: LangGraphRunnableConfig,
   ): Promise<IToolResult> {
     const configurable = config.configurable as Configurable
     const user = configurable.user
     const ids = dto.ids
 
+    try {
+      if (!ids || ids.length === 0) {
+        return new FailedToolResult('No tasks provided for cloning.')
+      }
+
+      const errors: string[] = []
+
+      for (const id of ids) {
+        if (!Types.ObjectId.isValid(id)) {
+          errors.push(`Invalid Id: ${id}`)
+        }
+      }
+
+      if (errors.length > 0) {
+        return new FailedToolResult(
+          'There are some errors while cloning tasks:\n' +
+            errors.join('\n') +
+            '\nPlease correct it and try again.',
+        )
+      }
+
+      const cloneResult = await this.taskService.clone({ ids }, user)
+
+      if (!cloneResult) {
+        return new FailedToolResult('Tasks cloning failed.')
+      }
+
+      if (cloneResult.data && cloneResult.data.length === 0) {
+        return new FailedToolResult('No tasks were cloned.')
+      } else if (!cloneResult.data) {
+        return new FailedToolResult('Tasks cloning failed.')
+      }
+
+      return new SuccessToolResult({
+        data: cloneResult.data.map((task) => task.id),
+        logId: cloneResult.logId,
+        actions: {
+          clone: {
+            tasks: cloneResult.data,
+          },
+        },
+      })
+    } catch (e) {
+      Sentry.captureException(e)
+
+      return new FailedToolResult(`Error cloning tasks: ${(e as Error).message}`)
+    }
+  }
+
+  public async archiveTasks(
+    dto: { ids: string[] },
+    config: LangGraphRunnableConfig,
+  ): Promise<IToolResult> {
+    const configurable = config.configurable as Configurable
+    const user = configurable.user
+    const ids = dto.ids
     try {
       if (!ids || ids.length === 0) {
         return new FailedToolResult('No tasks provided for archiving.')
@@ -382,7 +433,7 @@ export class TaskToolAdapter {
         return new FailedToolResult(
           'There are some errors while archiving tasks:\n' +
             errors.join('\n') +
-            '\nPlease correct it and try again.'
+            '\nPlease correct it and try again.',
         )
       }
 
@@ -392,25 +443,21 @@ export class TaskToolAdapter {
         return new FailedToolResult('Tasks archiving failed.')
       }
 
-      if (archiveResult.data && archiveResult.data.tasks && archiveResult.data.tasks.length === 0) {
+      if (archiveResult.data && archiveResult.data.length === 0) {
         return new FailedToolResult('No tasks were archived.')
       } else if (!archiveResult.data) {
         return new FailedToolResult('Tasks archiving failed.')
       }
 
-      const integration: IUndoResponse<ITasksResponse> = {
-        update: {
-          tasks: archiveResult.data.tasks,
-        },
-      }
-
-      const dataWithIntegration = {
-        data: archiveResult.data.tasks.map((task) => task.id),
+      return new SuccessToolResult({
+        data: archiveResult.data.map((task) => task.id),
         logId: archiveResult.logId,
-        integration,
-      }
-
-      return new SuccessToolResult(dataWithIntegration)
+        actions: {
+          archive: {
+            tasks: archiveResult.data,
+          },
+        },
+      })
     } catch (e) {
       Sentry.captureException(e)
 
@@ -420,7 +467,7 @@ export class TaskToolAdapter {
 
   public async deleteTasks(
     dto: { ids: string[] },
-    config: LangGraphRunnableConfig
+    config: LangGraphRunnableConfig,
   ): Promise<IToolResult> {
     const configurable = config.configurable as Configurable
     const user = configurable.user
@@ -443,33 +490,22 @@ export class TaskToolAdapter {
         return new FailedToolResult(
           'There are some errors while deleting tasks:\n' +
             errors.join('\n') +
-            '\nPlease correct it and try again.'
+            '\nPlease correct it and try again.',
         )
       }
 
-      const deleteResult = await this.taskService.delete({ ids }, user)
+      const tasksToDelete = await this.taskService.getByCriteria({ ids }, user.id)
 
-      if (!deleteResult) {
-        return new FailedToolResult('Tasks deletion failed.')
-      }
+      await this.taskService.delete({ ids }, user)
 
-      const deletedIds: unknown = ids.map((id) => ({ id }))
-
-      const integration: IUndoResponse<ITasksResponse> = {
-        update: {
-          tasks: deleteResult,
+      return new SuccessToolResult({
+        data: tasksToDelete.map((task) => task.id),
+        actions: {
+          delete: {
+            tasks: tasksToDelete,
+          },
         },
-        delete: {
-          tasks: deletedIds as ITask[],
-        },
-      }
-
-      const dataWithIntegration = {
-        data: deleteResult.map((task) => task.id),
-        integration,
-      }
-
-      return new SuccessToolResult(dataWithIntegration)
+      })
     } catch (e) {
       Sentry.captureException(e)
 
@@ -479,7 +515,7 @@ export class TaskToolAdapter {
 
   public async recoverTasks(
     dto: { ids: string[] },
-    config: LangGraphRunnableConfig
+    config: LangGraphRunnableConfig,
   ): Promise<IToolResult> {
     const configurable = config.configurable as Configurable
     const user = configurable.user
@@ -502,7 +538,7 @@ export class TaskToolAdapter {
         return new FailedToolResult(
           'There are some errors while recovering tasks:\n' +
             errors.join('\n') +
-            '\nPlease correct it and try again.'
+            '\nPlease correct it and try again.',
         )
       }
 
@@ -512,25 +548,21 @@ export class TaskToolAdapter {
         return new FailedToolResult('Tasks recovering failed.')
       }
 
-      if (recoverResult.data && recoverResult.data.tasks && recoverResult.data.tasks.length === 0) {
+      if (recoverResult.data && recoverResult.data.length === 0) {
         return new FailedToolResult('No tasks were recovered.')
       } else if (!recoverResult.data) {
         return new FailedToolResult('Tasks recovering failed.')
       }
 
-      const integration: IUndoResponse<ITasksResponse> = {
-        update: {
-          tasks: recoverResult.data.tasks,
-        },
-      }
-
-      const dataWithIntegration = {
-        data: recoverResult.data.tasks.map((task) => task.id),
+      return new SuccessToolResult({
+        data: recoverResult.data.map((task) => task.id),
         logId: recoverResult.logId,
-        integration,
-      }
-
-      return new SuccessToolResult(dataWithIntegration)
+        actions: {
+          recover: {
+            tasks: recoverResult.data,
+          },
+        },
+      })
     } catch (e) {
       Sentry.captureException(e)
 
@@ -542,13 +574,30 @@ export class TaskToolAdapter {
     tasks: TaskCreateDTO['tasks'],
     errors: string[],
     userId: Types.ObjectId,
-    timezone: string,
-    threadId?: string
   ): Promise<TaskDTO[]> {
     const extendedTasks: TaskDTO[] = []
 
+    const categoryIdsSet = new Set<string>()
+
     for (const task of tasks) {
-      const category = await this.categoryService.getById(task.categoryId, userId)
+      categoryIdsSet.add(task.categoryId)
+    }
+
+    const categoryIds = Array.from(categoryIdsSet)
+
+    const existingCategories = await this.categoryService.getByCriteria(
+      { ids: categoryIds },
+      userId,
+    )
+
+    const existingCategoriesMap = new Map<string, ICategoryPopulated>()
+
+    for (const category of existingCategories) {
+      existingCategoriesMap.set(category.id.toString(), category)
+    }
+
+    for (const task of tasks) {
+      const category = existingCategoriesMap.get(task.categoryId)
 
       if (!category) {
         errors.push(`Category with ID ${task.categoryId} not found.`)
@@ -561,28 +610,19 @@ export class TaskToolAdapter {
       const taskExtended: TaskDTO = {
         ...task,
         color: closestColor,
-        categoryName: category.name,
-        boardId: category.boardId.toString(),
-        boardName: category.boardName,
-        workspaceId: category.workspaceId.toString(),
-        workspaceName: category.workspaceName,
+        boardId: category.board.id.toString(),
+        workspaceId: category.workspace.id.toString(),
       }
 
       if (task.dueDate) {
         if (task.dueTime) {
-          const collectedDateTime = task.dueDate + 'T' + task.dueTime
-          const date = dayjs.tz(dayjs(collectedDateTime), timezone).utc()
+          const parsedDueTime = task.dueTime.split(':')
 
-          taskExtended.dueDate = date.format('YYYY-MM-DD')
-          taskExtended.dueHours = date.hour()
-          taskExtended.dueMinutes = date.minute()
+          taskExtended.dueHours = parseInt(parsedDueTime[0], 10)
+          taskExtended.dueMinutes = parseInt(parsedDueTime[1], 10)
 
           delete (taskExtended as any).dueTime // Remove dueTime as it's now split into hours and minutes
         }
-      }
-
-      if (threadId) {
-        taskExtended.threadId = threadId
       }
 
       extendedTasks.push(taskExtended)
@@ -592,9 +632,9 @@ export class TaskToolAdapter {
   }
 
   private async _validateCategoryId(categoryId: string, userId: Types.ObjectId): Promise<string> {
-    const category = await this.categoryService.getById(categoryId, userId)
+    const categoryCount = await this.categoryService.getCount({ id: categoryId }, userId)
 
-    if (!category) {
+    if (categoryCount === 0) {
       return `Category with ID ${categoryId} not found.`
     }
 

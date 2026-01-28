@@ -2,7 +2,6 @@ import { TaskService } from '@application/services/TaskService.ts'
 import { EditTasksDTO } from '@application/ai/tools/toolSchemes.ts'
 import { ClientSession, Types } from 'mongoose'
 import { IResponseWithLog } from '@interfaces/IResponseWithLog.ts'
-import { ITask } from '@entities/ITask.ts'
 import { TaskEditDTO } from '@dtos/TaskEditDTO.ts'
 import dayjs from 'dayjs'
 import { VectorSearchService } from '@/application/services/VectorSearchService.ts'
@@ -10,6 +9,7 @@ import { AISemanticService } from '@application/services/AISemanticService.ts'
 import { IUser } from '@domain/entities/IUser.ts'
 import { CategoryService } from '@application/services/CategoryService.ts'
 import { NotFoundError } from '@/domain/errors/NotFound.ts'
+import { ITaskPopulated } from '@/application/interfaces/ITaskPopulated.ts'
 
 export class TaskCommandAdapterService {
   protected taskService: TaskService
@@ -21,7 +21,7 @@ export class TaskCommandAdapterService {
     taskService: TaskService,
     categoryService: CategoryService,
     vectorSearchService: VectorSearchService,
-    aiSemanticService: AISemanticService
+    aiSemanticService: AISemanticService,
   ) {
     this.taskService = taskService
     this.categoryService = categoryService
@@ -29,12 +29,11 @@ export class TaskCommandAdapterService {
     this.aiSemanticService = aiSemanticService
   }
 
-  private _getCollectedTaskDateTime(task: ITask, timezone: string): dayjs.Dayjs {
+  private _getCollectedTaskDateTime(task: ITaskPopulated, timezone: string): dayjs.Dayjs {
     const dateStr = task.dueDate || dayjs.utc().format('YYYY-MM-DD')
     const h = task.dueHours ?? 0
     const m = task.dueMinutes ?? 0
 
-    // Сначала собираем UTC, потом переводим в локальное
     return dayjs
       .utc(`${dateStr}T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00`)
       .tz(timezone)
@@ -46,24 +45,26 @@ export class TaskCommandAdapterService {
     timezone: string,
     user: IUser,
     session?: ClientSession,
-    threadId?: string
-  ): Promise<IResponseWithLog<ITask[]>> {
+  ): Promise<IResponseWithLog<ITaskPopulated[]>> {
     const tasksToUpdate: TaskEditDTO[] = []
 
-    const existingTasks = await this.taskService.getAll({ ids: taskIds }, user.id, session)
+    const existingTasks = await this.taskService.getByCriteria({ ids: taskIds }, user.id, session)
 
     for (const task of existingTasks) {
       const updatedTask = {
         id: task.id.toString(),
-        threadId: threadId,
       } as TaskEditDTO
 
       if (typeof changes.categoryId !== 'undefined' && typeof changes.categoryId === 'string') {
         updatedTask.categoryId = changes.categoryId
 
-        const category = await this.categoryService.getById(changes.categoryId, user.id, session)
+        const categoryCount = await this.categoryService.getCount(
+          { id: changes.categoryId },
+          user.id,
+          session,
+        )
 
-        if (!category) {
+        if (categoryCount === 0) {
           throw new NotFoundError(`Category with id ${changes.categoryId} not found`)
         }
       }
@@ -95,7 +96,7 @@ export class TaskCommandAdapterService {
             updatedTask.tags = [...new Set([...(updatedTask.tags || []), ...valueTyped.add])]
           if (typeof valueTyped.remove !== 'undefined')
             updatedTask.tags = (updatedTask.tags || []).filter(
-              (tag) => !valueTyped.remove!.includes(String(tag))
+              (tag) => !valueTyped.remove!.includes(String(tag)),
             )
         }
       }
@@ -156,6 +157,12 @@ export class TaskCommandAdapterService {
       tasksToUpdate.push(updatedTask)
     }
 
+    if (tasksToUpdate.length === 0)
+      return {
+        data: [],
+        logId: null,
+      }
+
     if (typeof changes.name !== 'undefined') {
       let updatedNames: { id: Types.ObjectId; name: string }[] = []
 
@@ -163,21 +170,21 @@ export class TaskCommandAdapterService {
         updatedNames = await this.aiSemanticService.buildNamesForEntities(
           existingTasks,
           String(changes.name.set),
-          'set'
+          'set',
         )
       }
       if (changes.name.append) {
         updatedNames = await this.aiSemanticService.buildNamesForEntities(
           updatedNames.length > 0 ? updatedNames : existingTasks,
           String(changes.name.append),
-          'append'
+          'append',
         )
       }
       if (changes.name.prepend) {
         updatedNames = await this.aiSemanticService.buildNamesForEntities(
           updatedNames.length > 0 ? updatedNames : existingTasks,
           String(changes.name.prepend),
-          'prepend'
+          'prepend',
         )
       }
       if (changes.name.replace_part) {
@@ -185,7 +192,7 @@ export class TaskCommandAdapterService {
           updatedNames.length > 0 ? updatedNames : existingTasks,
           String(changes.name.replace_part.replace_with),
           'replace',
-          String(changes.name.replace_part.find)
+          String(changes.name.replace_part.find),
         )
       }
 
@@ -209,21 +216,21 @@ export class TaskCommandAdapterService {
         updatedDescriptions = await this.aiSemanticService.buildDescriptionsForEntities(
           existingTasks,
           String(changes.description.set),
-          'set'
+          'set',
         )
       }
       if (changes.description.append) {
         updatedDescriptions = await this.aiSemanticService.buildDescriptionsForEntities(
           updatedDescriptions.length > 0 ? updatedDescriptions : existingTasks,
           String(changes.description.append),
-          'append'
+          'append',
         )
       }
       if (changes.description.prepend) {
         updatedDescriptions = await this.aiSemanticService.buildDescriptionsForEntities(
           updatedDescriptions.length > 0 ? updatedDescriptions : existingTasks,
           String(changes.description.prepend),
-          'prepend'
+          'prepend',
         )
       }
       if (changes.description.replace_part) {
@@ -231,13 +238,13 @@ export class TaskCommandAdapterService {
           updatedDescriptions.length > 0 ? updatedDescriptions : existingTasks,
           String(changes.description.replace_part.replace_with),
           'replace',
-          String(changes.description.replace_part.find)
+          String(changes.description.replace_part.find),
         )
       }
 
       for (const updatedTask of tasksToUpdate) {
         const updatedDescriptionData = updatedDescriptions.find((data) =>
-          data.id.equals(updatedTask.id)
+          data.id.equals(updatedTask.id),
         )
 
         if (updatedDescriptionData) {

@@ -23,23 +23,30 @@ import { BoardToolAdapter } from '@application/ai/tools/BoardToolAdapter.ts'
 import { WorkspaceToolAdapter } from '@application/ai/tools/WorkspaceToolAdapter.ts'
 import { BaseToolAdapter } from './BaseToolAdapter.ts'
 
+const zodObjectId = z
+  .string()
+  .refine((val) => /^[0-9a-fA-F]{24}$/.test(val), {
+    message: 'Invalid ObjectId format',
+  })
+  .describe('The unique 24-char hex ID')
+
 export function createCategoryTools(adapter: CategoryToolAdapter) {
   const findCategoriesByFilter = tool(
     (filter, config) => adapter.findCategoriesByFilter(filter, config),
     {
       name: 'findCategoriesByFilter',
       schema: CategoryFilterSchema,
-    }
+    },
   )
 
   const findRelevantCategories = tool(
-    ({ nameToFind }, config) => adapter.findRelevantCategories({ nameToFind }, config),
+    ({ namesToFind }, config) => adapter.findRelevantCategories({ namesToFind }, config),
     {
       name: 'findRelevantCategories',
       schema: z.object({
-        nameToFind: z.string(),
+        namesToFind: z.array(z.string()),
       }),
-    }
+    },
   )
 
   const createCategories = tool((data, config) => adapter.createCategories(data, config), {
@@ -55,21 +62,28 @@ export function createCategoryTools(adapter: CategoryToolAdapter) {
   const archiveCategories = tool((args, config) => adapter.archiveCategories(args, config), {
     name: 'archiveCategories',
     schema: z.object({
-      ids: z.array(z.string()).describe('Массив ID категорий для архивирования.'),
+      ids: z.array(zodObjectId).describe('Массив ID категорий для архивирования.'),
+    }),
+  })
+
+  const cloneCategories = tool((args, config) => adapter.cloneCategories(args, config), {
+    name: 'cloneCategories',
+    schema: z.object({
+      ids: z.array(zodObjectId).describe('Массив ID категорий для клонирования.'),
     }),
   })
 
   const recoverCategories = tool((args, config) => adapter.recoverCategories(args, config), {
     name: 'recoverCategories',
     schema: z.object({
-      ids: z.array(z.string()).describe('Массив ID категорий для восстановления.'),
+      ids: z.array(zodObjectId).describe('Массив ID категорий для восстановления.'),
     }),
   })
 
   const deleteCategories = tool((args, config) => adapter.deleteCategories(args, config), {
     name: 'deleteCategories',
     schema: z.object({
-      ids: z.array(z.string()).describe('Массив ID категорий для удаления.'),
+      ids: z.array(zodObjectId).describe('Массив ID категорий для удаления.'),
     }),
   })
 
@@ -81,6 +95,7 @@ export function createCategoryTools(adapter: CategoryToolAdapter) {
     archiveCategories,
     recoverCategories,
     deleteCategories,
+    cloneCategories,
   ]
 }
 
@@ -91,13 +106,13 @@ export function createBoardTools(adapter: BoardToolAdapter) {
   })
 
   const findRelevantBoards = tool(
-    ({ nameToFind }, config) => adapter.findRelevantBoards({ nameToFind }, config),
+    ({ namesToFind }, config) => adapter.findRelevantBoards({ namesToFind }, config),
     {
       name: 'findRelevantBoards',
       schema: z.object({
-        nameToFind: z.string(),
+        namesToFind: z.array(z.string()),
       }),
-    }
+    },
   )
 
   const createBoards = tool((data, config) => adapter.createBoards(data, config), {
@@ -113,21 +128,28 @@ export function createBoardTools(adapter: BoardToolAdapter) {
   const archiveBoards = tool((args, config) => adapter.archiveBoards(args, config), {
     name: 'archiveBoards',
     schema: z.object({
-      ids: z.array(z.string()).describe('Массив ID досок для архивирования.'),
+      ids: z.array(zodObjectId).describe('Массив ID досок для архивирования.'),
+    }),
+  })
+
+  const cloneBoards = tool((args, config) => adapter.cloneBoards(args, config), {
+    name: 'cloneBoards',
+    schema: z.object({
+      ids: z.array(zodObjectId).describe('Массив ID досок для клонирования.'),
     }),
   })
 
   const recoverBoards = tool((args, config) => adapter.recoverBoards(args, config), {
     name: 'recoverBoards',
     schema: z.object({
-      ids: z.array(z.string()).describe('Массив ID досок для восстановления.'),
+      ids: z.array(zodObjectId).describe('Массив ID досок для восстановления.'),
     }),
   })
 
   const deleteBoards = tool((args, config) => adapter.deleteBoards(args, config), {
     name: 'deleteBoards',
     schema: z.object({
-      ids: z.array(z.string()).describe('Массив ID досок для удаления.'),
+      ids: z.array(zodObjectId).describe('Массив ID досок для удаления.'),
     }),
   })
 
@@ -139,6 +161,7 @@ export function createBoardTools(adapter: BoardToolAdapter) {
     archiveBoards,
     recoverBoards,
     deleteBoards,
+    cloneBoards,
   ]
 }
 
@@ -148,17 +171,17 @@ export function createWorkspaceTools(adapter: WorkspaceToolAdapter) {
     {
       name: 'findWorkspacesByFilter',
       schema: WorkspaceFilterSchema,
-    }
+    },
   )
 
   const findRelevantWorkspaces = tool(
-    ({ nameToFind }, config) => adapter.findRelevantWorkspaces({ nameToFind }, config),
+    ({ namesToFind }, config) => adapter.findRelevantWorkspaces({ namesToFind }, config),
     {
       name: 'findRelevantWorkspaces',
       schema: z.object({
-        nameToFind: z.string(),
+        namesToFind: z.array(z.string()),
       }),
-    }
+    },
   )
 
   const createWorkspaces = tool((data, config) => adapter.createWorkspaces(data, config), {
@@ -174,21 +197,28 @@ export function createWorkspaceTools(adapter: WorkspaceToolAdapter) {
   const archiveWorkspaces = tool((args, config) => adapter.archiveWorkspaces(args, config), {
     name: 'archiveWorkspaces',
     schema: z.object({
-      ids: z.array(z.string()).describe('Массив ID пространств для архивирования.'),
+      ids: z.array(zodObjectId).describe('Массив ID пространств для архивирования.'),
+    }),
+  })
+
+  const cloneWorkspaces = tool((args, config) => adapter.cloneWorkspaces(args, config), {
+    name: 'cloneWorkspaces',
+    schema: z.object({
+      ids: z.array(zodObjectId).describe('Массив ID пространств для клонирования.'),
     }),
   })
 
   const recoverWorkspaces = tool((args, config) => adapter.recoverWorkspaces(args, config), {
     name: 'recoverWorkspaces',
     schema: z.object({
-      ids: z.array(z.string()).describe('Массив ID пространств для восстановления.'),
+      ids: z.array(zodObjectId).describe('Массив ID пространств для восстановления.'),
     }),
   })
 
   const deleteWorkspaces = tool((args, config) => adapter.deleteWorkspaces(args, config), {
     name: 'deleteWorkspaces',
     schema: z.object({
-      ids: z.array(z.string()).describe('Массив ID пространств для удаления.'),
+      ids: z.array(zodObjectId).describe('Массив ID пространств для удаления.'),
     }),
   })
 
@@ -200,6 +230,7 @@ export function createWorkspaceTools(adapter: WorkspaceToolAdapter) {
     archiveWorkspaces,
     recoverWorkspaces,
     deleteWorkspaces,
+    cloneWorkspaces,
   ]
 }
 
@@ -210,13 +241,13 @@ export function createTaskTools(adapter: TaskToolAdapter) {
   })
 
   const findRelevantTasks = tool(
-    ({ nameToFind }, config) => adapter.findRelevantTasks({ nameToFind }, config),
+    ({ namesToFind }, config) => adapter.findRelevantTasks({ namesToFind }, config),
     {
       name: 'findRelevantTasks',
       schema: z.object({
-        nameToFind: z.string(),
+        namesToFind: z.array(z.string()),
       }),
-    }
+    },
   )
 
   const createTasks = tool((data, config) => adapter.createTasks(data, config), {
@@ -232,21 +263,28 @@ export function createTaskTools(adapter: TaskToolAdapter) {
   const archiveTasks = tool((args, config) => adapter.archiveTasks(args, config), {
     name: 'archiveTasks',
     schema: z.object({
-      ids: z.array(z.string()).describe('Массив ID задач для архивирования.'),
+      ids: z.array(zodObjectId).describe('Массив ID задач для архивирования.'),
+    }),
+  })
+
+  const cloneTasks = tool((args, config) => adapter.cloneTasks(args, config), {
+    name: 'cloneTasks',
+    schema: z.object({
+      ids: z.array(zodObjectId).describe('Массив ID задач для клонирования.'),
     }),
   })
 
   const recoverTasks = tool((args, config) => adapter.recoverTasks(args, config), {
     name: 'recoverTasks',
     schema: z.object({
-      ids: z.array(z.string()).describe('Массив ID задач для восстановления.'),
+      ids: z.array(zodObjectId).describe('Массив ID задач для восстановления.'),
     }),
   })
 
   const deleteTasks = tool((args, config) => adapter.deleteTasks(args, config), {
     name: 'deleteTasks',
     schema: z.object({
-      ids: z.array(z.string()).describe('Массив ID задач для удаления.'),
+      ids: z.array(zodObjectId).describe('Массив ID задач для удаления.'),
     }),
   })
 
@@ -258,6 +296,7 @@ export function createTaskTools(adapter: TaskToolAdapter) {
     archiveTasks,
     recoverTasks,
     deleteTasks,
+    cloneTasks,
   ]
 }
 
@@ -266,9 +305,10 @@ export function createBaseTools(adapter: BaseToolAdapter) {
     async (data, config) => await adapter.showEntitiesToUser(data, config),
     {
       name: 'showEntitiesToUser',
-      description: 'Shows entities to the user by their IDs and types.',
+      description:
+        'Shows entities to the user by their IDs and types. Do not describe entities to user after calling this tool. USE it ONLY when user asked to show the entities, eg. "Show me the tasks with IDs 123 and 456". Do not use when do some actions, eg. create, edit, delete, archive, recover, clone.',
       schema: ShowEntitiesToUserSchema,
-    }
+    },
   )
 
   const undoOperations = tool(async (data, config) => adapter.undoOperations(data, config), {
@@ -288,7 +328,7 @@ export function createBaseTools(adapter: BaseToolAdapter) {
       name: 'getRelevantTools',
       description: 'Internal tool for self-analysis. Use it to expand your set of tools.',
       schema: Plan,
-    }
+    },
   )
 
   const finishResponse = tool(
@@ -302,7 +342,7 @@ export function createBaseTools(adapter: BaseToolAdapter) {
       schema: z.object({
         response: z.string().describe('The final response to the user.'),
       }),
-    }
+    },
   )
 
   const submitPlan = tool(
@@ -312,7 +352,7 @@ export function createBaseTools(adapter: BaseToolAdapter) {
     {
       name: 'submitPlan',
       schema: PlanToolSchema,
-    }
+    },
   )
 
   return [showEntitiesToUser, undoOperations, getRelevantTools, finishResponse, submitPlan]

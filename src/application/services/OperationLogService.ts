@@ -20,11 +20,11 @@ export class OperationLogService extends BaseService<
   IOperationLogCriteria
 > {
   protected repository: OperationLogRepository
-  private revertAdapters: Map<string, IRevertableService<any>>
+  private revertAdapters: Map<string, IRevertableService>
 
   constructor(
     operationLogRepository: OperationLogRepository,
-    revertServices: Map<string, IRevertableService<any>>
+    revertServices: Map<string, IRevertableService>,
   ) {
     super(operationLogRepository)
 
@@ -59,14 +59,14 @@ export class OperationLogService extends BaseService<
     }
     throw new AppError(
       'Произошла ошибка при выполнении операции после максимального количества попыток.',
-      500
+      500,
     )
   }
 
   public async create(
     data: OperationLogCreationDTO,
     userId: Types.ObjectId,
-    session: ClientSession | null = null
+    session: ClientSession | null = null,
   ): Promise<IOperationLog> {
     const operationLogPayload: Omit<IOperationLog, SystemFields> = {
       ...data,
@@ -80,7 +80,7 @@ export class OperationLogService extends BaseService<
   private async _recursiveRevert(
     log: IOperationLog,
     user: IUser,
-    session: ClientSession
+    session: ClientSession,
   ): Promise<IUndoResponse[]> {
     const service = this.revertAdapters.get(log.collectionName)
     const dependencies: IOperationLog[] = []
@@ -91,7 +91,7 @@ export class OperationLogService extends BaseService<
         { ids: log.dependencies.map((id) => id.toString()) },
         session,
         undefined,
-        user.id
+        user.id,
       )
 
       dependencies.push(...depLogs)
@@ -117,7 +117,7 @@ export class OperationLogService extends BaseService<
   private async _executeUndoOperations(
     logIds: string[],
     user: IUser,
-    session: ClientSession
+    session: ClientSession,
   ): Promise<IUndoResponse> {
     const logs = await this.repository.findByCriteria({ ids: logIds }, session, undefined, user.id)
     const results: IUndoResponse[] = []
@@ -136,19 +136,40 @@ export class OperationLogService extends BaseService<
   }
 
   public async combineUndoResult(result: IUndoResponse[]): Promise<IUndoResponse> {
-    const combinedResult: IUndoResponse = {}
+    const combinedResult: {
+      affectedWorkspaceIds: string[]
+      affectedBoardIds: string[]
+      affectedCategoryIds: string[]
+      affectedTaskIds: string[]
+    } = {
+      affectedWorkspaceIds: [],
+      affectedBoardIds: [],
+      affectedCategoryIds: [],
+      affectedTaskIds: [],
+    }
 
     for (const res of result) {
-      for (const key in res) {
-        if (!combinedResult[key as keyof IUndoResponse]) {
-          combinedResult[key as keyof IUndoResponse] = res[key as keyof IUndoResponse]
-        } else {
-          const existingArray = combinedResult[key as keyof IUndoResponse] as any[]
-          const newArray = res[key as keyof IUndoResponse] as any[]
-          combinedResult[key as keyof IUndoResponse] = existingArray.concat(newArray)
-        }
+      if (res.affectedWorkspaceIds) {
+        combinedResult.affectedWorkspaceIds.push(...res.affectedWorkspaceIds)
+      }
+
+      if (res.affectedBoardIds) {
+        combinedResult.affectedBoardIds.push(...res.affectedBoardIds)
+      }
+
+      if (res.affectedCategoryIds) {
+        combinedResult.affectedCategoryIds.push(...res.affectedCategoryIds)
+      }
+
+      if (res.affectedTaskIds) {
+        combinedResult.affectedTaskIds.push(...res.affectedTaskIds)
       }
     }
+
+    combinedResult.affectedWorkspaceIds = [...new Set(combinedResult.affectedWorkspaceIds)]
+    combinedResult.affectedBoardIds = [...new Set(combinedResult.affectedBoardIds)]
+    combinedResult.affectedCategoryIds = [...new Set(combinedResult.affectedCategoryIds)]
+    combinedResult.affectedTaskIds = [...new Set(combinedResult.affectedTaskIds)]
 
     return combinedResult
   }
@@ -156,13 +177,13 @@ export class OperationLogService extends BaseService<
   public async undoOperations(
     logIds: string[],
     user: IUser,
-    externalSession: ClientSession | null = null
+    externalSession: ClientSession | null = null,
   ): Promise<IUndoResponse> {
     if (externalSession) {
       return this._executeUndoOperations(logIds, user, externalSession)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeUndoOperations(logIds, user, session)
+        this._executeUndoOperations(logIds, user, session),
       )
     }
   }
