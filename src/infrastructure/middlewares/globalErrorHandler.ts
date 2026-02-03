@@ -1,15 +1,14 @@
 import { AppError } from '@errors/AppError.ts'
 import { Request, Response, NextFunction } from 'express'
 import * as Sentry from '@sentry/node'
+import { ValidationError } from '@/domain/errors/ValidationError.ts'
 
 export const globalErrorHandler = (err: any, _r: Request, res: Response, _n: NextFunction) => {
   if (process.env.NODE_ENV === 'development') {
     console.error(err)
   }
 
-  Sentry.captureException(err)
-
-  if (err instanceof AppError) {
+  if (err instanceof AppError || err instanceof ValidationError) {
     return res.status(err.statusCode).json({
       success: false,
       error: {
@@ -18,6 +17,8 @@ export const globalErrorHandler = (err: any, _r: Request, res: Response, _n: Nex
       },
     })
   }
+
+  if (!(err instanceof AppError)) Sentry.captureException(err)
 
   return res.status(500).json({
     success: false,

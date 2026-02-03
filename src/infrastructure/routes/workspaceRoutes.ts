@@ -13,6 +13,7 @@ export default (controller: IWorkspaceRawController): Router => {
   router.use(jwtAuthMiddleware)
 
   router.get('/', controller.getAll)
+  router.get('/count', controller.getCount)
   router.get('/:id', controller.getById)
   router.post('/', validationMiddleware(WorkspaceDTOSchema), controller.create)
   router.patch('/:id', validationMiddleware(WorkspaceEditDTOSchema), controller.update)

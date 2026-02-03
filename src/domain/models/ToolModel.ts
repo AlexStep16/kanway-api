@@ -17,7 +17,7 @@ const ToolSchema = new Schema<IToolRaw>(
       select: false,
     },
   },
-  { timestamps: true }
+  { timestamps: true },
 )
 
 const Tool = model<IToolRaw>('Tool', ToolSchema)

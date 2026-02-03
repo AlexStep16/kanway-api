@@ -2,9 +2,10 @@ import { Types } from 'mongoose'
 
 export interface IToken {
   id: Types.ObjectId
-  token: String
+  token: string
   type: Number
   userId: Types.ObjectId
+  isActive: boolean
   createdAt: Date
   updatedAt: Date
 }

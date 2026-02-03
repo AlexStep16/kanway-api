@@ -1,10 +1,10 @@
 import { ErrorMessages } from '@/enums/ErrorMessages.ts'
 import { z } from 'zod'
 
-export const LoginCredentialsSchema = z.object({
-  email: z.email({
+export const PasswordRecoverySchema = z.object({
+  token: z.string({
     error: (iss) =>
-      iss.input === undefined ? ErrorMessages.EMAIL_REQUIRED : ErrorMessages.INVALID_EMAIL_FORMAT,
+      iss.input === undefined ? ErrorMessages.TOKEN_REQUIRED : ErrorMessages.INVALID_TOKEN_FORMAT,
   }),
   password: z
     .string({
@@ -13,7 +13,7 @@ export const LoginCredentialsSchema = z.object({
           ? ErrorMessages.PASSWORD_REQUIRED
           : ErrorMessages.INVALID_PASSWORD_FORMAT,
     })
-    .min(1, ErrorMessages.PASSWORD_TOO_SHORT_1),
+    .min(10, ErrorMessages.PASSWORD_TOO_SHORT_10),
 })
 
-export type LoginCredentialsDTO = z.infer<typeof LoginCredentialsSchema>
+export type PasswordRecoveryDTO = z.infer<typeof PasswordRecoverySchema>

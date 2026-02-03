@@ -19,7 +19,7 @@ export const UserDTOSchema = z.object({
           ? ErrorMessages.PASSWORD_REQUIRED
           : ErrorMessages.INVALID_PASSWORD_FORMAT,
     })
-    .min(6, ErrorMessages.PASSWORD_TOO_SHORT)
+    .min(10, ErrorMessages.PASSWORD_TOO_SHORT_10)
     .max(100, ErrorMessages.PASSWORD_TOO_LONG),
   avatarColor: z.enum(BASE_COLORS, {
     error: (iss) =>
@@ -31,6 +31,7 @@ export const UserDTOSchema = z.object({
     error: (iss) =>
       iss.input === undefined ? ErrorMessages.TIMEZONE_REQUIRED : ErrorMessages.INVALID_TIMEZONE,
   }),
+  isConfirmed: z.boolean().optional(),
   paymentMethodId: z.string({
     error: (iss) =>
       iss.input === undefined

@@ -1,23 +1,19 @@
 import TokenRepository from '@repositories/TokenRepository.ts'
-import nodemailer from 'nodemailer'
 import { TokenService } from '@application/services/TokenService.ts'
 import { NotFoundError } from '@errors/NotFound.ts'
 import { ErrorMessages } from '@/enums/ErrorMessages.ts'
-import { Types } from 'mongoose'
+import path from 'path'
+import * as Sentry from '@sentry/node'
+import * as fs from 'node:fs'
+import { IUser } from '@/domain/entities/IUser.ts'
+import { TokenTypesEnum } from '@/domain/enums/TokenTypesEnum.ts'
+import { Redis } from 'ioredis'
+import { AppError } from '@/domain/errors/AppError.ts'
 
-const transporter = nodemailer.createTransport({
-  service: 'Yandex',
-  port: 465,
-  secure: true,
-  logger: true,
-  auth: {
-    user: 'owner@kanbar.ru',
-    pass: '123456Saharaq1+',
-  },
-  tls: {
-    rejectUnauthorized: true,
-  },
-})
+const redis = new Redis()
+
+const SEND_INTERVAL = 60
+const SLACK_TIME = 2
 
 export class EmailService {
   protected tokenRepository: TokenRepository
@@ -28,34 +24,124 @@ export class EmailService {
     this.tokenService = tokenService
   }
 
-  public async sendEmailToUser(email: string, user_id: Types.ObjectId) {
-    const tokenModel = await this.tokenService.generateAndSaveConfirmationToken(user_id)
+  public async sendVerifyEmailToUser(user: IUser) {
+    const key = `limit:resend_email:${user.email}_` + TokenTypesEnum.EMAIL_CONFIRMATION
+
+    const ttl = await redis.ttl(key)
+
+    if (ttl > 0) {
+      throw new AppError(`Слишком много запросов. Попробуйте через ${ttl} секунд(ы).`, 429)
+    }
+
+    await redis.set(key, 'locked', 'EX', SEND_INTERVAL - SLACK_TIME)
+
+    const tokenModel = await this.tokenService.generateAndSaveConfirmationToken(user.id)
 
     if (!tokenModel) {
       throw new NotFoundError(ErrorMessages.TOKEN_NOT_FOUND)
     }
 
-    const mailOptions = {
-      from: 'Kanbar <noreply@kanbar.ru>',
-      to: email,
-      subject: 'Подтвердите свой аккаунт на Kanbar.ru',
-      html: `
-        <div style="text-align: center; width: 100%; background-color: white; font-family: 'Tahoma', sans-serif; max-width: 600px">
-          <img src="https://kanbar.ru/assets/favicon/logo.png" height="33" alt="Logo" title="Logo" style="display: inline-block">
-          <h2 style="color: #3B3B3B; margin-top: 30px;">Приветствуем на Kanbar.ru!</h2>
-          <p style="color: #3B3B3B; line-height: 1.5; font-size: 15px;">Остался всего один шаг, чтобы начать пользоваться возможностями Kanbar.ru. Пожалуйста, подтвердите свой адрес электронной почты, нажав на кнопку ниже:</p>
-          <p style="text-align: center; margin-top: 22px; margin-bottom: 22px;">
-            <a href="https://kanbar.ru/confirmation/${tokenModel.token}" style="font-size: 13px; background-color: #3B82F6; color: white; padding: 10px 14px; font-weight: 500; text-decoration: none; border-radius: 6px;">Подтвердить Email</a>
-          </p>
-          <p style="color: #3B3B3B; line-height: 1.5; font-size: 15px;">Ссылка действительна в течение 24 часов. Если вы не подтвердите свой адрес электронной почты в течение этого времени, вам нужно будет запросить новое письмо с подтверждением.</p>
-          <hr style="border: 0; border-top: 1px solid #ddd; margin: 30px 0;">
-          <p style="color: #3B3B3B; line-height: 1.5; font-size: 15px;"><strong>Не запрашивали это письмо?</strong></p>
-          <p style="color: #3B3B3B; line-height: 1.5; font-size: 15px;">Возможно, кто-то другой по ошибке указал ваш адрес электронной почты. Если это так, просто проигнорируйте это письмо. Ваш адрес электронной почты не будет использован для создания аккаунта.</p>
-          </p>
-        </div>
-      `,
+    const verificationUrl = `https://kanbar.com/verify?token=${tokenModel.token}`
+
+    try {
+      const templatePath = path.resolve('email-templates/verify-email.html')
+
+      let htmlContent = await fs.promises.readFile(templatePath, 'utf8')
+
+      const inputBody = {
+        message: {
+          recipients: [
+            {
+              email: user.email,
+              substitutions: {
+                confirmation_link: verificationUrl,
+              },
+            },
+          ],
+          body: {
+            html: htmlContent,
+            plaintext: `Подтвердите почту по ссылке: ${verificationUrl}`,
+          },
+          subject: 'Подтверждение почты',
+          from_email: 'noreply@kanbar.ru',
+          from_name: 'Kanbar',
+          track_links: 0,
+          track_read: 0,
+        },
+      }
+
+      await fetch('https://go2.unisender.ru/ru/transactional/api/v1/email/send.json', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          'X-API-KEY': process.env.UNISENDER_API_KEY || '',
+        },
+        body: JSON.stringify(inputBody),
+      })
+    } catch (err: unknown) {
+      await redis.del(key)
+      if (err instanceof AppError && err.statusCode !== 429) Sentry.captureException(err)
+    }
+  }
+
+  public async sendPasswordRecoveryEmailToUser(user: IUser) {
+    const key = `limit:resend_email:${user.email}_` + TokenTypesEnum.RESET_PASSWORD
+
+    const ttl = await redis.ttl(key)
+
+    if (ttl > 0) {
+      throw new AppError(`Слишком много запросов. Попробуйте через ${ttl} секунд(ы).`, 429)
     }
 
-    return transporter.sendMail(mailOptions)
+    await redis.set(key, 'locked', 'EX', SEND_INTERVAL - SLACK_TIME)
+
+    const tokenModel = await this.tokenService.generateAndSaveResetToken(user.id)
+
+    if (!tokenModel) {
+      throw new NotFoundError(ErrorMessages.TOKEN_NOT_FOUND)
+    }
+
+    const recoveryUrl = `https://kanbar.com/password-recovery?token=${tokenModel.token}`
+    try {
+      const templatePath = path.resolve('email-templates/password-recovery.html')
+
+      let htmlContent = await fs.promises.readFile(templatePath, 'utf8')
+
+      const inputBody = {
+        message: {
+          recipients: [
+            {
+              email: user.email,
+              substitutions: {
+                recovery_link: recoveryUrl,
+              },
+            },
+          ],
+          body: {
+            html: htmlContent,
+            plaintext: `Восстановите пароль по ссылке: ${recoveryUrl}`,
+          },
+          subject: 'Восстановление пароля',
+          from_email: 'noreply@kanbar.ru',
+          from_name: 'Kanbar',
+          track_links: 0,
+          track_read: 0,
+        },
+      }
+
+      await fetch('https://go2.unisender.ru/ru/transactional/api/v1/email/send.json', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          'X-API-KEY': process.env.UNISENDER_API_KEY || '',
+        },
+        body: JSON.stringify(inputBody),
+      })
+    } catch (err: unknown) {
+      await redis.del(key)
+      if (err instanceof AppError && err.statusCode !== 429) Sentry.captureException(err)
+    }
   }
 }

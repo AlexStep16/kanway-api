@@ -11,6 +11,7 @@ RULES:
    - BAD: "Move task 'X' to 'Done'"
    - GOOD: "Move the task to a specific category"
 4. DO NOT write any text. CALL 'submitPlan' IMMEDIATELY.
+5. YOU MUST return something when user requests an action, even if it's just one step.
 
 Examples:
 User: "Назначь дату сегодня в 19:30 задаче пойти поесть"
@@ -18,4 +19,7 @@ Function Call: submitPlan(steps=["Update task due date"])
 
 User: "Создай задачу 'Купить молоко' и удали колонку 'Trash'"
 Function Call: submitPlan(steps=["Create a task", "Delete a category"])
+
+User: "Покажи задачи на сегодня"
+Function Call: submitPlan(steps=["Find tasks by date"])
 `

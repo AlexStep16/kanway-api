@@ -16,8 +16,12 @@ export const TokenSchema = new Schema<ITokenRaw>(
       ref: 'User',
       required: true,
     },
+    is_active: {
+      type: Boolean,
+      default: true,
+    },
   },
-  { timestamps: true }
+  { timestamps: true },
 )
 
 const Token = model<ITokenRaw>('Token', TokenSchema)

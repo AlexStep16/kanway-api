@@ -2,7 +2,7 @@ import { IUser } from '@entities/IUser.ts'
 import SuccessResponse from '@application/services/SuccessResponse.ts'
 import { Request, Response, NextFunction } from 'express'
 import { IControllerService } from '@interfaces/traits/IControllerService.ts'
-import { IBaseCriteria } from '@/application/interfaces/IBaseCriteria.ts'
+import { IBaseCriteria } from '@/application/interfaces/criterias/IBaseCriteria.ts'
 
 export abstract class BaseController<
   TEntity,
@@ -10,7 +10,7 @@ export abstract class BaseController<
   TCriteria extends IBaseCriteria,
   TCreateDTO,
   TEditDTO,
-  TResult = Record<string, any>
+  TResult = Record<string, any>,
 > {
   constructor(protected service: TService) {}
 

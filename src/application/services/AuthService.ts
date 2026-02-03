@@ -8,6 +8,9 @@ import { LoginCredentialsDTO } from '@/application/dtos/LoginCredentialsDTO.ts'
 import mongoose from 'mongoose'
 import { SettingService } from '@application/services/SettingService.ts'
 import { AiConfirmationTypeEnum } from '@/domain/enums/AiConfirmationTypeEnum.ts'
+import { TokenTypesEnum } from '@/domain/enums/TokenTypesEnum.ts'
+import { ErrorMessages } from '@/enums/ErrorMessages.ts'
+import { AppError } from '@/domain/errors/AppError.ts'
 
 export class AuthService {
   private userService: UserService
@@ -19,7 +22,7 @@ export class AuthService {
     userService: UserService,
     emailService: EmailService,
     tokenService: TokenService,
-    settingService: SettingService
+    settingService: SettingService,
   ) {
     this.userService = userService
     this.emailService = emailService
@@ -28,7 +31,7 @@ export class AuthService {
   }
 
   public async register(
-    credentials: RegisterCredentialsDTO
+    credentials: RegisterCredentialsDTO,
   ): Promise<{ user: IUser; serialized: string }> {
     const session = await mongoose.startSession()
     session.startTransaction()
@@ -36,9 +39,9 @@ export class AuthService {
     try {
       const newUser = await this.userService.create(credentials, session)
 
-      //await this.emailService.sendEmailToUser(newUser[0].email, newUser[0].id)
+      await this.emailService.sendVerifyEmailToUser(newUser[0])
 
-      const token = this.tokenService.generateToken(newUser[0].id)
+      const token = this.tokenService.generateToken(newUser[0].id, 60 * 60 * 24 * 30)
 
       const serialized = serialize('token', token, {
         httpOnly: true,
@@ -54,7 +57,7 @@ export class AuthService {
           aiConfirmationType: AiConfirmationTypeEnum.ONLY_FOR_SENSITIVE,
         },
         newUser[0].id,
-        session
+        session,
       )
 
       await session.commitTransaction()
@@ -72,12 +75,18 @@ export class AuthService {
     }
   }
 
+  public async checkEmailUnique(email: string): Promise<boolean> {
+    const user = await this.userService.getByEmail(email)
+
+    return !user
+  }
+
   public async login(
-    credentials: LoginCredentialsDTO
+    credentials: LoginCredentialsDTO,
   ): Promise<{ user: IUser; serialized: string }> {
     const user = await this.userService.validateCredentials(credentials.email, credentials.password)
 
-    const token = this.tokenService.generateToken(user.id)
+    const token = this.tokenService.generateToken(user.id, 60 * 60 * 24 * 30)
 
     const serialized = serialize('token', token, {
       httpOnly: true,
@@ -91,5 +100,90 @@ export class AuthService {
       user,
       serialized,
     }
+  }
+
+  public async changeUserPassword(
+    token: string,
+    password: string,
+  ): Promise<{ user: IUser; serialized: string }> {
+    const userToken = await this.tokenService.getToken(token, TokenTypesEnum.RESET_PASSWORD)
+
+    if (!userToken) throw new AppError(ErrorMessages.TOKEN_NOT_FOUND, 404)
+    if (userToken.isActive === false) throw new AppError(ErrorMessages.TOKEN_EXPIRED, 410)
+
+    const updatedUser = await this.userService.edit(
+      { password },
+      { id: userToken.userId.toHexString() },
+    )
+
+    await this.tokenService.edit({ isActive: false }, token, userToken.userId)
+
+    return await this.login({
+      email: updatedUser.email,
+      password,
+    })
+  }
+
+  public async sendResetPasswordEmail(email: string): Promise<void> {
+    const user = await this.userService.getByEmail(email)
+
+    if (!user) {
+      throw new AppError(ErrorMessages.USER_NOT_FOUND, 404)
+    }
+
+    await this.emailService.sendPasswordRecoveryEmailToUser(user)
+  }
+
+  public async sendVerificationEmailByToken(token: string): Promise<void> {
+    const tokenModel = await this.tokenService.getToken(token, TokenTypesEnum.EMAIL_CONFIRMATION)
+
+    if (!tokenModel) throw new AppError(ErrorMessages.TOKEN_NOT_FOUND, 404)
+
+    const user = await this.userService.getById(tokenModel.userId!.toString())
+
+    if (!user) throw new AppError(ErrorMessages.USER_NOT_FOUND, 404)
+
+    if (user.isConfirmed) throw new AppError(ErrorMessages.USER_ALREADY_CONFIRMED, 409)
+
+    await this.emailService.sendVerifyEmailToUser(user)
+  }
+
+  public async sendResetPasswordEmailByToken(token: string): Promise<void> {
+    const tokenModel = await this.tokenService.getToken(token, TokenTypesEnum.RESET_PASSWORD)
+
+    if (!tokenModel) throw new AppError(ErrorMessages.TOKEN_NOT_FOUND, 404)
+
+    const user = await this.userService.getById(tokenModel.userId!.toString())
+
+    if (!user) throw new AppError(ErrorMessages.USER_NOT_FOUND, 404)
+
+    await this.emailService.sendPasswordRecoveryEmailToUser(user)
+  }
+
+  public async confirmEmail(token: string): Promise<IUser> {
+    try {
+      const tokenModel = await this.tokenService.getToken(token, TokenTypesEnum.EMAIL_CONFIRMATION)
+
+      if (!tokenModel) throw new AppError(ErrorMessages.TOKEN_NOT_FOUND, 404)
+      if (tokenModel.isActive === false) throw new AppError(ErrorMessages.TOKEN_EXPIRED, 410)
+
+      const user = await this.userService.getById(tokenModel.userId.toString())
+
+      if (!user) throw new AppError(ErrorMessages.USER_NOT_FOUND, 404)
+      if (user.isConfirmed) throw new AppError(ErrorMessages.USER_ALREADY_CONFIRMED, 409)
+
+      await this.userService.edit({ isConfirmed: true }, { id: tokenModel.userId.toString() })
+
+      return user
+    } catch (error) {
+      throw error
+    }
+  }
+
+  public async validateToken(token: string, type: TokenTypesEnum): Promise<void> {
+    const tokenModel = await this.tokenService.getToken(token, type)
+
+    if (!tokenModel) throw new AppError(ErrorMessages.TOKEN_NOT_FOUND, 404)
+    if (tokenModel.isActive === false) throw new AppError(ErrorMessages.TOKEN_EXPIRED, 410)
   }
 }

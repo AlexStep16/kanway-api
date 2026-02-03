@@ -17,12 +17,15 @@ import { SubscriptionPlanEnum } from '@domain/enums/SubscriptionPlanEnum.ts'
 import { ClientSession, Types } from 'mongoose'
 import sharp from 'sharp'
 import { rm } from 'fs/promises'
+import { EmailService } from '@/infrastructure/services/EmailService.ts'
 
 export class UserService implements ICreateUserService<IUser, RegisterCredentialsDTO> {
   private repository: UserRepository
+  protected emailService: EmailService
 
-  constructor(repository: UserRepository) {
+  constructor(repository: UserRepository, emailService: EmailService) {
     this.repository = repository
+    this.emailService = emailService
   }
 
   public async create(
@@ -44,10 +47,10 @@ export class UserService implements ICreateUserService<IUser, RegisterCredential
     return [toServerCaseKeys(result)]
   }
 
-  public async edit(data: UserEditDTO, criteria: IUserCriteria, user: IUser) {
+  public async edit(data: UserEditDTO, criteria: IUserCriteria, user?: IUser) {
     const payload = toMongoCaseKeys<IUserRaw>(data)
 
-    if (data.password && data.currentPassword) {
+    if (data.password && data.currentPassword && user) {
       const oldPasswordHash = await this._comparePasswords(
         data.currentPassword,
         new Types.ObjectId(user.id),
@@ -58,9 +61,9 @@ export class UserService implements ICreateUserService<IUser, RegisterCredential
       if (isOldPasswordSameAsNew) {
         throw new AppError({ newPassword: ErrorMessages.PASSWORD_SAME_AS_OLD }, 422)
       }
-
-      payload.password_hash = await bcrypt.hash(data.password, SALT_ROUNDS)
     }
+
+    if (data.password) payload.password_hash = await bcrypt.hash(data.password, SALT_ROUNDS)
 
     const updateUserResult = await this.repository.updateManyByCriteria(criteria, payload)
 
@@ -99,8 +102,16 @@ export class UserService implements ICreateUserService<IUser, RegisterCredential
     return toServerCaseKeys(users[0])
   }
 
+  public async getByEmail(email: string): Promise<IUser | null> {
+    const normalizedEmail = email.toLowerCase().trim()
+    const users = await this.repository.findByCriteria({ email: normalizedEmail })
+
+    return toServerCaseKeys(users[0])
+  }
+
   public async validateCredentials(email: string, passwordPlain: string): Promise<IUser> {
-    const user = await this.repository.findByEmail(email)
+    const normalizedEmail = email.toLowerCase().trim()
+    const user = await this.repository.findByEmail(normalizedEmail)
 
     if (!user) {
       throw new AppError(ErrorMessages.INVALID_CREDENTIALS, 401)
@@ -139,5 +150,11 @@ export class UserService implements ICreateUserService<IUser, RegisterCredential
 
   public async resetAvatar(id: Types.ObjectId): Promise<void> {
     await this.repository.updateManyByCriteria({ id: id.toString() }, { avatarUrl: null })
+  }
+
+  public async sendVerificationEmail(user: IUser): Promise<void> {
+    if (user.isConfirmed) throw new AppError(ErrorMessages.USER_ALREADY_CONFIRMED, 409)
+
+    await this.emailService.sendVerifyEmailToUser(user)
   }
 }

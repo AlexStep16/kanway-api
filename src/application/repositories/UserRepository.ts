@@ -19,11 +19,15 @@ export default class UserRepository extends BaseRepository<IUserRaw, IUser, IUse
       filter._id = { $in: criteria.ids }
     }
 
+    if (criteria.email) {
+      filter.email = criteria.email.toLowerCase()
+    }
+
     return filter
   }
 
   public async findByEmail(email: string): Promise<IUserRaw | null> {
-    const user = await UserModel.findByEmailWithPassword(email)
+    const user = await UserModel.findByEmailWithPassword(email.toLowerCase())
 
     return user
   }

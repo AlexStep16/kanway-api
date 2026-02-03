@@ -4,7 +4,8 @@ export enum ErrorMessages {
   INVALID_CURRENT_PASSWORD = 'Неверный текущий пароль.',
   USER_NOT_FOUND = 'Пользователь не найден.',
   EMAIL_ALREADY_EXISTS = 'Пользователь с таким email уже существует.',
-  PASSWORD_TOO_SHORT = 'Пароль должен содержать не менее 6 символов.',
+  PASSWORD_TOO_SHORT_10 = 'Пароль должен содержать не менее 10 символов.',
+  PASSWORD_TOO_SHORT_1 = 'Пароль должен содержать хотя бы 1 символ.',
   PASSWORD_TOO_LONG = 'Пароль не должен превышать 100 символов.',
   PASSWORD_SAME_AS_OLD = 'Новый пароль не должен совпадать с текущим.',
   INVALID_EMAIL_FORMAT = 'Неверный формат электронной почты.',
@@ -54,6 +55,7 @@ export enum ErrorMessages {
   USERNAME_TOO_SHORT = 'Имя пользователя должно содержать не менее 1 символа.',
   USERNAME_TOO_LONG = 'Имя пользователя не должно превышать 50 символов.',
   USER_COLOR_REQUIRED = 'Требуется цвет пользователя.',
+  USER_ALREADY_CONFIRMED = 'Пользователь уже подтвержден.',
   TIMEZONE_REQUIRED = 'Требуется часовой пояс.',
   INVALID_TIMEZONE = 'Неверный часовой пояс.',
 
@@ -89,6 +91,11 @@ export enum ErrorMessages {
   MESSAGE_TOO_LONG = 'Сообщение не должно превышать 1000 символов.',
 
   CHAT_ID_INVALID = 'Неверный идентификатор чата.',
+
+  TOKEN_REQUIRED = 'Требуется токен.',
+  INVALID_TOKEN_FORMAT = 'Неверный формат токена.',
+  TOKEN_EXPIRED = 'Срок действия токена истек.',
+  TOKEN_TYPE_REQUIRED = 'Требуется тип токена.',
 
   SUBSCRIPTION_PLAN_NOT_FOUND = 'План подписки не найден. Обратитесь в поддержку.',
   INVALID_ID_FORMAT = 'Неверный формат идентификатора.',

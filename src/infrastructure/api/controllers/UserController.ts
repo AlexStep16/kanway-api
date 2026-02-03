@@ -4,12 +4,18 @@ import { UserService } from '@application/services/UserService.ts'
 import { Request, Response, NextFunction } from 'express'
 import { AppError } from '@errors/AppError.ts'
 import { IUser } from '@entities/IUser.ts'
+import { EmailService } from '@/infrastructure/services/EmailService.ts'
+import { Redis } from 'ioredis'
+
+const redis = new Redis()
 
 export class UserController {
   protected service: UserService
+  protected emailService: EmailService
 
-  constructor(serviceInstance: UserService) {
+  constructor(serviceInstance: UserService, emailServiceInstance: EmailService) {
     this.service = serviceInstance
+    this.emailService = emailServiceInstance
   }
 
   public update = async (req: Request, res: Response, next: NextFunction) => {
@@ -61,6 +67,44 @@ export class UserController {
   public resetAvatar = async (req: Request, res: Response, next: NextFunction) => {
     try {
       await this.service.resetAvatar(req.user!.id)
+
+      return res.status(200).json(new SuccessResponse(null))
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  public async sendVerificationEmail(req: Request, res: Response, next: NextFunction) {
+    const ipKey = `limit:ip:${req.ip}`
+
+    try {
+      const ipRequests = await redis.incr(ipKey)
+
+      if (ipRequests === 1) {
+        await redis.expire(ipKey, 3600)
+      }
+
+      if (ipRequests > 10) {
+        throw new AppError('Слишком много запросов с вашего IP-адреса. Попробуйте позже.', 429)
+      }
+
+      await this.service.sendVerificationEmail(req.user!)
+
+      return res.status(200).json(new SuccessResponse(null))
+    } catch (error) {
+      await redis.decr(ipKey)
+      next(error)
+    }
+  }
+
+  public async logout(_: Request, res: Response, next: NextFunction) {
+    try {
+      res.clearCookie('token', {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        path: '/',
+      })
 
       return res.status(200).json(new SuccessResponse(null))
     } catch (error) {

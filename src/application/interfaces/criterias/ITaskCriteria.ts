@@ -1,4 +1,4 @@
-import { IBaseCriteria } from '../IBaseCriteria.ts'
+import { IBaseCriteria } from './IBaseCriteria.ts'
 
 export interface ITaskCriteria extends IBaseCriteria {
   id?: string

@@ -130,8 +130,8 @@ export function initializeDependencies() {
 
   /* AUTH SERVICES START */
   const tokenService = new TokenService(tokenRepository)
-  const userService = new UserService(userRepository)
   const emailService = new EmailService(tokenRepository, tokenService)
+  const userService = new UserService(userRepository, emailService)
   const authService = new AuthService(userService, emailService, tokenService, settingService)
   /* AUTH SERVICES END */
 
@@ -382,7 +382,7 @@ export function initializeDependencies() {
     boardService,
     workspaceService,
   )
-  const userController = new UserController(userService)
+  const userController = new UserController(userService, emailService)
   const settingController = new SettingController(settingService)
   const subscriptionController = new SubscriptionController(subscriptionService)
   const paymentController = new PaymentController(paymentService)
