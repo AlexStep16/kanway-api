@@ -10,7 +10,7 @@ interface IUserRawMethods {
 
 interface IUserRawStatics extends Model<IUserRaw> {
   findByEmailWithPassword(
-    email: string
+    email: string,
   ): Promise<HydratedDocument<IUserRaw, IUserRawMethods> | null>
 }
 
@@ -63,9 +63,6 @@ export const UserSchema = new Schema<IUserRaw, IUserRawStatics, IUserRawMethods>
       type: Number,
       default: 0,
     },
-    is_password_in_reset_state: {
-      type: Boolean,
-    },
     is_tips_completed: {
       type: Boolean,
       default: false,
@@ -94,8 +91,16 @@ export const UserSchema = new Schema<IUserRaw, IUserRawStatics, IUserRawMethods>
     payment_method_id: {
       type: String,
     },
+    payment_retries_count: {
+      type: Number,
+      default: 0,
+    },
+    pending_change_plan: {
+      type: Number,
+      required: false,
+    },
   },
-  { timestamps: true }
+  { timestamps: true },
 )
 
 UserSchema.pre('save', async function (next) {

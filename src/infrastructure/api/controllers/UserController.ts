@@ -5,9 +5,6 @@ import { Request, Response, NextFunction } from 'express'
 import { AppError } from '@errors/AppError.ts'
 import { IUser } from '@entities/IUser.ts'
 import { EmailService } from '@/infrastructure/services/EmailService.ts'
-import { Redis } from 'ioredis'
-
-const redis = new Redis()
 
 export class UserController {
   protected service: UserService
@@ -75,24 +72,11 @@ export class UserController {
   }
 
   public async sendVerificationEmail(req: Request, res: Response, next: NextFunction) {
-    const ipKey = `limit:ip:${req.ip}`
-
     try {
-      const ipRequests = await redis.incr(ipKey)
-
-      if (ipRequests === 1) {
-        await redis.expire(ipKey, 3600)
-      }
-
-      if (ipRequests > 10) {
-        throw new AppError('Слишком много запросов с вашего IP-адреса. Попробуйте позже.', 429)
-      }
-
       await this.service.sendVerificationEmail(req.user!)
 
       return res.status(200).json(new SuccessResponse(null))
     } catch (error) {
-      await redis.decr(ipKey)
       next(error)
     }
   }

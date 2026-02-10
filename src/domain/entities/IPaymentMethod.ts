@@ -1,14 +1,17 @@
+import { IPaymentMethodType } from '@/application/interfaces/IPaymentMethodType.ts'
 import { Types } from 'mongoose'
 
 export interface IPaymentMethod {
   id: Types.ObjectId
   serviceId: string
-  type: string
-  cardFirst6: string
-  cardLast4: string
-  cardType: string
-  expiryMonth: number
-  expiryYear: number
+  paymentId: string
+  type: IPaymentMethodType
+  cardFirst6?: string
+  cardLast4?: string
+  cardType?: string
+  cardExpiryMonth?: string
+  cardExpiryYear?: string
+  phone?: string
   userId: Types.ObjectId
   createdAt: Date
   updatedAt: Date

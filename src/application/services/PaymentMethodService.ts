@@ -7,12 +7,12 @@ import { PaymentMethodDTO } from '@dtos/PaymentMethodDTO.ts'
 import { ClientSession, Types } from 'mongoose'
 import { UserService } from '@application/services/UserService.ts'
 import { BaseService } from './BaseService.ts'
-import { IPaymentCriteria } from '../interfaces/criterias/IPaymentCriteria.ts'
+import { IPaymentMethodCriteria } from '../interfaces/criterias/IPaymentMethodCriteria.ts'
 
 export class PaymentMethodService extends BaseService<
   IPaymentMethodRaw,
   IPaymentMethod,
-  IPaymentCriteria
+  IPaymentMethodCriteria
 > {
   protected repository: PaymentMethodRepository
   protected userService: UserService
@@ -27,16 +27,18 @@ export class PaymentMethodService extends BaseService<
   public async create(
     data: PaymentMethodDTO,
     userId: Types.ObjectId,
-    session?: ClientSession
+    session?: ClientSession,
   ): Promise<IPaymentMethod[]> {
     const paymentMethod: Omit<IPaymentMethod, SystemFields> = {
       serviceId: data.serviceId,
+      paymentId: data.paymentId,
       type: data.type,
       cardFirst6: data.cardFirst6,
       cardLast4: data.cardLast4,
       cardType: data.cardType,
-      expiryMonth: data.expiryMonth,
-      expiryYear: data.expiryYear,
+      cardExpiryMonth: data.cardExpiryMonth,
+      cardExpiryYear: data.cardExpiryYear,
+      phone: data.phone,
       userId: userId,
     }
 
@@ -48,7 +50,7 @@ export class PaymentMethodService extends BaseService<
   public async deleteById(
     id: string,
     userId: Types.ObjectId,
-    session?: ClientSession
+    session?: ClientSession,
   ): Promise<void> {
     await this.repository.deleteMany({ id }, userId, session)
     // If the deleted payment method was the user's selected payment method, unset it
@@ -59,7 +61,7 @@ export class PaymentMethodService extends BaseService<
       await this.userService.edit(
         { paymentMethodId: paymentMethods[0]?.id.toString() ?? null },
         {},
-        user
+        user,
       )
     }
   }

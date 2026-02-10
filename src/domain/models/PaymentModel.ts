@@ -1,24 +1,32 @@
 import { model, Schema } from 'mongoose'
 import { IPaymentRaw } from '@entities/IPaymentRaw.ts'
-import { PaymentStatusEnum } from '../enums/PaymentStatusEnum.ts'
+import { PaymentStatusesEnum } from '../enums/PaymentStatusesEnum.ts'
 
 export const PaymentSchema = new Schema<IPaymentRaw>(
   {
+    service_id: {
+      type: String,
+      required: true,
+    },
     description: {
       type: String,
       required: true,
     },
     amount: {
-      type: Number,
+      type: String,
       required: true,
     },
     currency: {
       type: String,
       required: true,
     },
-    status: {
+    type: {
       type: Number,
-      enum: PaymentStatusEnum,
+      required: true,
+    },
+    status: {
+      type: String,
+      enum: PaymentStatusesEnum,
       required: true,
     },
     user_id: {
@@ -27,7 +35,7 @@ export const PaymentSchema = new Schema<IPaymentRaw>(
       required: true,
     },
   },
-  { timestamps: true }
+  { timestamps: true },
 )
 
 const Payment = model<IPaymentRaw>('Payment', PaymentSchema)

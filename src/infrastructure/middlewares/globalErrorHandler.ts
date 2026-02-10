@@ -18,7 +18,8 @@ export const globalErrorHandler = (err: any, _r: Request, res: Response, _n: Nex
     })
   }
 
-  if (!(err instanceof AppError)) Sentry.captureException(err)
+  if (!(err instanceof AppError) || (err instanceof AppError && err.statusCode === 500))
+    Sentry.captureException(err)
 
   return res.status(500).json({
     success: false,

@@ -22,6 +22,7 @@ export abstract class BaseService<
     userId?: Types.ObjectId,
     session?: ClientSession,
     projection?: ProjectionType<TRawEntity>,
+    options?: { limit?: number; skip?: number; sort?: Record<string, any> },
   ): Promise<TResult[]> {
     const populateOptions = this.getPopulateOptions()
 
@@ -31,6 +32,7 @@ export abstract class BaseService<
       {
         populate: populateOptions || undefined,
         projection,
+        ...options,
       },
       userId,
     )

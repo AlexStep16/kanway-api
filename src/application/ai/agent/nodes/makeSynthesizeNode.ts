@@ -6,10 +6,14 @@ import { SynthesizePrompt } from '@/application/ai/prompts/SynthesizePrompt.ts'
 import { ChatPromptTemplate } from '@langchain/core/prompts'
 import { AgentDependencies } from '@application/ai/agent/types/AgentDependencies.ts'
 import { AIMessage, AIMessageChunk, BaseMessage, RemoveMessage } from '@langchain/core/messages'
+import { Configurable } from '../../interfaces/Configurable.ts'
+import { RunnableConfig } from '@langchain/core/runnables'
 
 export const makeSynthesizeNode = (deps: AgentDependencies) => {
-  return async (state: typeof AgentStateAnnotation.State) => {
+  return async (state: typeof AgentStateAnnotation.State, config: RunnableConfig) => {
     await dispatchCustomEvent(AgentRoles.SYNTHESIZE_START, null)
+
+    const configurable = config.configurable as Configurable
 
     const lastMessage = state.messages.at(-1)
 
@@ -37,7 +41,7 @@ export const makeSynthesizeNode = (deps: AgentDependencies) => {
           chatHistory.push(
             new AIMessage({
               content: responseContent,
-            })
+            }),
           )
         }
 
@@ -56,6 +60,8 @@ export const makeSynthesizeNode = (deps: AgentDependencies) => {
     const response = await chain.invoke({})
 
     messages.push(response)
+
+    await deps.services.userService.decrementGenerationsCount(configurable.user.id.toString(), 1)
 
     return {
       messages,

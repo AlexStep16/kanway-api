@@ -21,7 +21,9 @@ export class PaymentMethodController {
 
   public getAll = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const entity = await this.service.getByCriteria({ id: req.user!.id.toString() })
+      const entity = await this.service.getByCriteria({}, req.user!.id, undefined, undefined, {
+        sort: { createdAt: -1 },
+      })
 
       res.status(200).json(new SuccessResponse(entity))
     } catch (error) {

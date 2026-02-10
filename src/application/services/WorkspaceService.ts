@@ -27,6 +27,7 @@ import { LifecycleDTO } from '@dtos/LifecycleDTO.ts'
 import { BaseService } from '@application/services/BaseService.ts'
 import { IWorkspaceCreatePayload } from '@interfaces/IWorkspaceCreatePayload.ts'
 import { SafeUpdateData } from '@/infrastructure/types/SafeUpdateData.ts'
+import { LimitService } from './LimitService.ts'
 
 const MAX_RETRIES = 3
 
@@ -52,6 +53,7 @@ export class WorkspaceService extends BaseService<
   protected boardService: BoardService
   protected categoryService: CategoryService
   protected taskService: TaskService
+  protected limitService: LimitService
 
   constructor(
     workspaceRepository: WorkspaceRepository,
@@ -61,6 +63,7 @@ export class WorkspaceService extends BaseService<
     boardService: BoardService,
     categoryService: CategoryService,
     taskService: TaskService,
+    limitService: LimitService,
   ) {
     super(workspaceRepository)
 
@@ -71,6 +74,7 @@ export class WorkspaceService extends BaseService<
     this.boardService = boardService
     this.categoryService = categoryService
     this.taskService = taskService
+    this.limitService = limitService
   }
 
   private async _retryExecutor<T>(executor: (session: ClientSession) => Promise<T>): Promise<T> {
@@ -106,10 +110,13 @@ export class WorkspaceService extends BaseService<
 
   private async _executeCreateTransaction(
     data: WorkspaceDTO,
-    userId: Types.ObjectId,
+    user: IUser,
     session: ClientSession,
   ): Promise<IResponseWithLog<IWorkspace[]>> {
-    const workspacePayload = await this.prepareWorkspaceCreationPayload(data, userId, session)
+    /** LIMITS CHECK */
+    await this.limitService.checkWorkspacesLimit(user, session)
+
+    const workspacePayload = await this.prepareWorkspaceCreationPayload(data, user.id, session)
 
     /* CREATE */
     const newWorkspace = await this.repository.create(workspacePayload, session)
@@ -118,7 +125,7 @@ export class WorkspaceService extends BaseService<
 
     /* REORDER */
     if (data.order !== undefined) {
-      sideEffects.push(this.reorderService.reorder('userId', [newWorkspace], userId, session))
+      sideEffects.push(this.reorderService.reorder('userId', [newWorkspace], user.id, session))
     }
 
     /* LOG */
@@ -129,7 +136,7 @@ export class WorkspaceService extends BaseService<
         entitiesAfter: [newWorkspace],
         dependencies: [],
       },
-      userId,
+      user.id,
       session,
     )
 
@@ -150,23 +157,24 @@ export class WorkspaceService extends BaseService<
     user: IUser,
     externalSession?: ClientSession,
   ): Promise<IResponseWithLog<IWorkspace[]>> {
-    const userId = user.id
-
     if (externalSession) {
-      return this._executeCreateTransaction(data, userId, externalSession)
+      return this._executeCreateTransaction(data, user, externalSession)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeCreateTransaction(data, userId, session),
+        this._executeCreateTransaction(data, user, session),
       )
     }
   }
 
   private async _executeCreateManyTransaction(
     data: WorkspaceDTO[],
-    userId: Types.ObjectId,
+    user: IUser,
     session: ClientSession,
   ): Promise<IResponseWithLog<IWorkspace[]>> {
-    const workspacesPayload = await this.prepareWorkspacesCreationPayload(data, userId, session)
+    /** LIMITS CHECK */
+    await this.limitService.checkWorkspacesLimit(user, session)
+
+    const workspacesPayload = await this.prepareWorkspacesCreationPayload(data, user.id, session)
 
     /* CREATE */
     const newWorkspaces = await this.repository.createMany(workspacesPayload, session)
@@ -181,7 +189,7 @@ export class WorkspaceService extends BaseService<
         return data[index].order !== undefined
       })
 
-      sideEffects.push(this.reorderService.reorder('userId', workspacesToReorder, userId, session))
+      sideEffects.push(this.reorderService.reorder('userId', workspacesToReorder, user.id, session))
     }
 
     /* LOG */
@@ -192,7 +200,7 @@ export class WorkspaceService extends BaseService<
         entitiesAfter: newWorkspaces,
         dependencies: [],
       },
-      userId,
+      user.id,
       session,
     )
 
@@ -213,13 +221,11 @@ export class WorkspaceService extends BaseService<
     user: IUser,
     externalSession?: ClientSession,
   ): Promise<IResponseWithLog<IWorkspace[]>> {
-    const userId = user.id
-
     if (externalSession) {
-      return this._executeCreateManyTransaction(data, userId, externalSession)
+      return this._executeCreateManyTransaction(data, user, externalSession)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeCreateManyTransaction(data, userId, session),
+        this._executeCreateManyTransaction(data, user, session),
       )
     }
   }

@@ -39,6 +39,7 @@ export class UserService implements ICreateUserService<IUser, RegisterCredential
       subscriptionId: SubscriptionPlanEnum.Basic,
       isConfirmed: false,
       avatarColor: BASE_COLORS[Math.floor(Math.random() * 7)],
+      paymentRetriesCount: 0,
       isTipsCompleted: false,
     }
 
@@ -47,7 +48,12 @@ export class UserService implements ICreateUserService<IUser, RegisterCredential
     return [toServerCaseKeys(result)]
   }
 
-  public async edit(data: UserEditDTO, criteria: IUserCriteria, user?: IUser) {
+  public async edit(
+    data: UserEditDTO,
+    criteria: IUserCriteria,
+    user?: IUser,
+    session?: ClientSession,
+  ): Promise<IUser> {
     const payload = toMongoCaseKeys<IUserRaw>(data)
 
     if (data.password && data.currentPassword && user) {
@@ -59,13 +65,13 @@ export class UserService implements ICreateUserService<IUser, RegisterCredential
       const isOldPasswordSameAsNew = await bcrypt.compare(data.password, oldPasswordHash)
 
       if (isOldPasswordSameAsNew) {
-        throw new AppError({ newPassword: ErrorMessages.PASSWORD_SAME_AS_OLD }, 422)
+        throw new AppError(ErrorMessages.PASSWORD_SAME_AS_OLD, 422)
       }
     }
 
     if (data.password) payload.password_hash = await bcrypt.hash(data.password, SALT_ROUNDS)
 
-    const updateUserResult = await this.repository.updateManyByCriteria(criteria, payload)
+    const updateUserResult = await this.repository.updateManyByCriteria(criteria, payload, session)
 
     if (updateUserResult.modifiedCount === 0) {
       throw new AppError(ErrorMessages.USER_NOT_FOUND, 404)
@@ -156,5 +162,16 @@ export class UserService implements ICreateUserService<IUser, RegisterCredential
     if (user.isConfirmed) throw new AppError(ErrorMessages.USER_ALREADY_CONFIRMED, 409)
 
     await this.emailService.sendVerifyEmailToUser(user)
+  }
+
+  public async decrementGenerationsCount(
+    userId: string,
+    generationsToDecrement: number,
+  ): Promise<void> {
+    await this.repository.decrementFieldByCriteria(
+      { id: userId },
+      'generations_count',
+      generationsToDecrement,
+    )
   }
 }

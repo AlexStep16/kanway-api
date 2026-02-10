@@ -178,9 +178,9 @@ export abstract class BaseRepository<
         update: { $set: { order: item.order } },
         options: { runValidators: false },
       },
-    }))
+    })) as any
 
-    return await this.model.bulkWrite(bulkOperations, { session })
+    return this.model.bulkWrite(bulkOperations, { session }) as any
   }
 
   public async deleteMany(
@@ -329,5 +329,26 @@ export abstract class BaseRepository<
       .lean()
 
     return result.map(toServerCaseKeys<TEntity>)
+  }
+
+  public async decrementFieldByCriteria(
+    criteria: TCriteria,
+    fieldName: keyof TRawEntity,
+    decrementBy = 1,
+    session?: ClientSession,
+    userId?: Types.ObjectId,
+  ): Promise<UpdateWriteOpResult> {
+    const filter = this.buildFilter(criteria, userId)
+
+    const atomicFilter = {
+      ...filter,
+      [fieldName]: { $gte: decrementBy },
+    }
+
+    return await this.model.updateOne(
+      atomicFilter,
+      { $inc: { [fieldName]: -decrementBy } } as any,
+      { session },
+    )
   }
 }

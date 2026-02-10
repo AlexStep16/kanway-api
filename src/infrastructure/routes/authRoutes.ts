@@ -1,10 +1,11 @@
 import express, { Router } from 'express'
 import AuthController from '@controllers/AuthController.ts'
-import { validationMiddleware } from '../middlewares/validationMiddleware.ts'
+import { validationMiddleware } from '../middlewares/validations/validationMiddleware.ts'
 import { RegisterCredentialsSchema } from '@/application/dtos/RegisterCredentialsDTO.ts'
 import { LoginCredentialsSchema } from '@/application/dtos/LoginCredentialsDTO.ts'
 import { PasswordRecoveryLinkSchema } from '@/application/dtos/PasswordRecoveryLinkDTO.ts'
 import { TokenWithTypePayloadSchemaDTO } from '@/application/dtos/TokenWithTypePayloadDTO.ts'
+import { emailLimiter } from '@/limiters.ts'
 
 export default (controller: AuthController): Router => {
   const router = express.Router()
@@ -22,13 +23,19 @@ export default (controller: AuthController): Router => {
   router.post(
     '/send/password/recovery',
     validationMiddleware(PasswordRecoveryLinkSchema),
+    emailLimiter,
     controller.sendResetPasswordEmail.bind(controller),
   )
   router.post(
     '/send/password/recovery/:token',
+    emailLimiter,
     controller.sendResetPasswordEmailByToken.bind(controller),
   )
-  router.post('/send/verify/:token', controller.sendVerificationEmailByToken.bind(controller))
+  router.post(
+    '/send/verify/:token',
+    emailLimiter,
+    controller.sendVerificationEmailByToken.bind(controller),
+  )
   router.post(
     '/verify/token',
     validationMiddleware(TokenWithTypePayloadSchemaDTO),

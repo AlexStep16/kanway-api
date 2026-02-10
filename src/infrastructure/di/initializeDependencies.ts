@@ -81,6 +81,9 @@ import { ICategoryCreatePayload } from '@/application/interfaces/ICategoryCreate
 import { IBoardPopulated } from '@/application/interfaces/IBoardPopulated.ts'
 import { IBoardCreatePayload } from '@/application/interfaces/IBoardCreatePayload.ts'
 import { IWorkspaceCreatePayload } from '@/application/interfaces/IWorkspaceCreatePayload.ts'
+import SupportController from '../api/controllers/SupportController.ts'
+import SupportRepository from '@/application/repositories/SupportRepository.ts'
+import { BaseService } from '@/application/services/BaseService.ts'
 
 export function initializeDependencies() {
   const mongoClient = new MongoClient(process.env.MONGODB_URI || '')
@@ -100,6 +103,7 @@ export function initializeDependencies() {
   const chatRespository = new ChatRepository()
   const toolRepository = new ToolRepository()
   const agentInstructionRepository = new AgentInstructionRepository()
+  const supportRepository = new SupportRepository()
 
   /* MOCK SERVICES START */
   const mockCategoryService = {} as CategoryService
@@ -136,8 +140,13 @@ export function initializeDependencies() {
   /* AUTH SERVICES END */
 
   /* PAYMENT SERVICES START */
-  const paymentService = new PaymentService(paymentRepository)
   const paymentMethodService = new PaymentMethodService(paymentMethodRepository, userService)
+  const paymentService = new PaymentService(
+    paymentRepository,
+    userService,
+    paymentMethodService,
+    emailService,
+  )
   /* PAYMENT SERVICES END */
 
   /* TASK SERVICES START */
@@ -215,6 +224,21 @@ export function initializeDependencies() {
     taskService,
   )
   /* WORKSPACE SERVICES END */
+
+  const baseMethodsToCopy = Object.getOwnPropertyNames(BaseService.prototype).filter(
+    (name) => name !== 'constructor',
+  )
+
+  for (const methodName of baseMethodsToCopy) {
+    const method = (taskService.constructor.prototype as any)[methodName]
+
+    if (typeof method === 'function') {
+      ;(mockTaskService as any)[methodName] = method.bind(taskService)
+      ;(mockCategoryService as any)[methodName] = method.bind(categoryService)
+      ;(mockBoardService as any)[methodName] = method.bind(boardService)
+      ;(mockWorkspaceService as any)[methodName] = method.bind(workspaceService)
+    }
+  }
 
   const categoryMethodsToCopy = Object.getOwnPropertyNames(CategoryService.prototype).filter(
     (name) => name !== 'constructor',
@@ -390,6 +414,7 @@ export function initializeDependencies() {
   const operationLogController = new OperationLogController(operationLogService)
   const chatController = new ChatController(chatService)
   const chatMessageController = new ChatMessageController(chatMessageService)
+  const supportController = new SupportController(supportRepository, emailService)
 
   return {
     services: {
@@ -430,6 +455,7 @@ export function initializeDependencies() {
       operationLogController,
       chatController,
       chatMessageController,
+      supportController,
     },
     adapters: {
       baseToolAdapter,

@@ -1,15 +1,20 @@
-import { PaymentStatusEnum } from '@domain/enums/PaymentStatusEnum.ts'
 import { ErrorMessages } from '@/enums/ErrorMessages.ts'
+import { SubscriptionPlanEnum } from '@/domain/enums/SubscriptionPlanEnum.ts'
+import { PaymentStatusesEnum } from '@/domain/enums/PaymentStatusesEnum.ts'
 import { z } from 'zod'
 
 export const PaymentDTOSchema = z.object({
+  serviceId: z.string().min(1, ErrorMessages.PAYMENT_SERVICE_ID_REQUIRED),
+  type: z.enum(SubscriptionPlanEnum, {
+    error: () => ({ message: ErrorMessages.PAYMENT_TYPE_INVALID }),
+  }),
   description: z
     .string()
     .min(1, ErrorMessages.PAYMENT_DESCRIPTION_TOO_SHORT)
     .max(255, ErrorMessages.PAYMENT_DESCRIPTION_TOO_LONG),
-  amount: z.number().min(0.01, ErrorMessages.PAYMENT_AMOUNT_TOO_SMALL),
+  amount: z.string().min(1, ErrorMessages.PAYMENT_AMOUNT_REQUIRED),
   currency: z.string().length(3, ErrorMessages.PAYMENT_CURRENCY_INVALID),
-  status: z.enum(PaymentStatusEnum, {
+  status: z.enum(PaymentStatusesEnum, {
     error: () => ({ message: ErrorMessages.PAYMENT_STATUS_INVALID }),
   }),
 })

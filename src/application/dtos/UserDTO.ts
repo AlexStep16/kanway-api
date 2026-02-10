@@ -1,3 +1,4 @@
+import { SubscriptionPlanEnum } from '@/domain/enums/SubscriptionPlanEnum.ts'
 import { ErrorMessages } from '@/enums/ErrorMessages.ts'
 import { BASE_COLORS } from '@constants/BASE_COLORS.ts'
 import { z } from 'zod'
@@ -38,6 +39,21 @@ export const UserDTOSchema = z.object({
         ? ErrorMessages.PAYMENT_METHOD_ID_REQUIRED
         : ErrorMessages.INVALID_PAYMENT_METHOD_ID,
   }),
+  generationsCount: z.number().optional(),
+  subscriptionId: z
+    .enum(SubscriptionPlanEnum, {
+      error: () => ({ message: ErrorMessages.SUBSCRIPTION_PLAN_INVALID }),
+    })
+    .optional(),
+  isSubscriptionActive: z.boolean().optional(),
+  subscriptionUntil: z.date().nullable().optional(),
+  paymentRetriesCount: z.number().optional(),
+  pendingChangePlan: z
+    .enum(SubscriptionPlanEnum, {
+      error: () => ({ message: ErrorMessages.SUBSCRIPTION_PLAN_INVALID }),
+    })
+    .nullable()
+    .optional(),
 })
 
 export type UserDTO = z.infer<typeof UserDTOSchema>

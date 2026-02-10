@@ -30,8 +30,8 @@ export const makeSummaryHistoryNode = (deps: AgentDependencies) => {
       summarizerModel.withStructuredOutput(
         z.object({
           summary: z.string(),
-        })
-      )
+        }),
+      ),
     )
 
     const response = await chain.invoke({})

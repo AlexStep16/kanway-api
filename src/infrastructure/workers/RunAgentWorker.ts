@@ -88,6 +88,8 @@ async function cleanupLastIteration(agent: CompiledStateGraph<any, any>, config:
       relevant_tools: [],
       tools_cancelled: [],
       tools_validation_errors: [],
+      prepared_confirmations: [],
+      is_confirmation_needed: false,
       cancelled_entity_ids: [],
       validation_failed: false,
       planner_has_error: false,

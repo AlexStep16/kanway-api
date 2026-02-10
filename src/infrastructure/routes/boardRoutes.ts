@@ -1,9 +1,10 @@
 import { Router } from 'express'
 import BoardController from '@controllers/BoardController.ts'
 import { jwtAuthMiddleware } from '@infrastructure/auth/passportJWTStrategy.ts'
-import { validationMiddleware } from '@middlewares/validationMiddleware.ts'
+import { validationMiddleware } from '@/infrastructure/middlewares/validations/validationMiddleware.ts'
 import { BoardDTOSchema } from '@dtos/BoardDTO.ts'
 import { BoardEditDTOSchema } from '@dtos/BoardEditDTO.ts'
+import { patchEntitiesLimiter, postEntitiesLimiter } from '@/limiters.ts'
 
 interface IBoardRawController extends BoardController {}
 
@@ -15,13 +16,19 @@ export default (controller: IBoardRawController): Router => {
   router.get('/', controller.getAll)
   router.get('/count', controller.getCount)
   router.get('/:id', controller.getById)
-  router.post('/', validationMiddleware(BoardDTOSchema), controller.create)
-  router.patch('/:id', validationMiddleware(BoardEditDTOSchema), controller.update)
+
+  router.post('/', postEntitiesLimiter, validationMiddleware(BoardDTOSchema), controller.create)
+  router.patch(
+    '/:id',
+    patchEntitiesLimiter,
+    validationMiddleware(BoardEditDTOSchema),
+    controller.update,
+  )
   router.delete('/:id', controller.delete)
 
-  router.patch('/:id/archive', controller.archive)
-  router.patch('/:id/recover', controller.recover)
-  router.post('/:id/clone', controller.clone)
+  router.patch('/:id/archive', patchEntitiesLimiter, controller.archive)
+  router.patch('/:id/recover', patchEntitiesLimiter, controller.recover)
+  router.post('/:id/clone', postEntitiesLimiter, controller.clone)
 
   return router
 }

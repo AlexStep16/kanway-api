@@ -1,12 +1,15 @@
-import { PaymentStatusEnum } from '@/domain/enums/PaymentStatusEnum.ts'
+import { PaymentStatusesEnum } from '@/domain/enums/PaymentStatusesEnum.ts'
 import { Types } from 'mongoose'
+import { SubscriptionPlanEnum } from '../enums/SubscriptionPlanEnum.ts'
 
 export interface IPaymentRaw {
   _id: Types.ObjectId
+  service_id: string
   description: string
-  amount: number
+  amount: string
   currency: string
-  status: PaymentStatusEnum
+  type: SubscriptionPlanEnum
+  status: PaymentStatusesEnum
   user_id: Types.ObjectId
   createdAt: Date
   updatedAt: Date

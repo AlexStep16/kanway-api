@@ -1,4 +1,5 @@
 import { Types } from 'mongoose'
+import { SubscriptionPlanEnum } from '../enums/SubscriptionPlanEnum.ts'
 
 export interface IUser {
   id: Types.ObjectId
@@ -11,8 +12,7 @@ export interface IUser {
   isDeleted?: boolean
   deletedTime?: Date
   isConfirmed: boolean
-  isPasswordInResetState?: boolean
-  subscriptionId: number
+  subscriptionId: SubscriptionPlanEnum
   subscriptionUntil?: Date | null
   isSubscriptionActive?: boolean
   generationsCount?: number
@@ -22,6 +22,8 @@ export interface IUser {
   yaAvatarId?: string
   yaId?: string
   paymentMethodId?: string | null
+  paymentRetriesCount: number
+  pendingChangePlan?: SubscriptionPlanEnum | null
   createdAt: Date
   updatedAt: Date
 }

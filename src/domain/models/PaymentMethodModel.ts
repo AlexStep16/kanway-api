@@ -7,15 +7,20 @@ export const PaymentMethodSchema = new Schema<IPaymentMethodRaw>({
     required: true,
     unique: true,
   },
+  payment_id: {
+    type: String,
+    required: true,
+    unique: true,
+  },
   type: {
     type: String,
     required: true,
   },
-  card_first_6: {
+  card_first6: {
     type: String,
     required: true,
   },
-  card_last_4: {
+  card_last4: {
     type: String,
     required: true,
   },
@@ -23,13 +28,14 @@ export const PaymentMethodSchema = new Schema<IPaymentMethodRaw>({
     type: String,
     required: true,
   },
-  expiry_month: {
-    type: Number,
-    required: true,
+  card_expiry_month: {
+    type: String,
   },
-  expiry_year: {
-    type: Number,
-    required: true,
+  card_expiry_year: {
+    type: String,
+  },
+  phone: {
+    type: String,
   },
   user_id: {
     type: Schema.Types.ObjectId,

@@ -9,6 +9,7 @@ import { IUser } from '@/domain/entities/IUser.ts'
 import { TokenTypesEnum } from '@/domain/enums/TokenTypesEnum.ts'
 import { Redis } from 'ioredis'
 import { AppError } from '@/domain/errors/AppError.ts'
+import dayjs from 'dayjs'
 
 const redis = new Redis()
 
@@ -70,18 +71,26 @@ export class EmailService {
         },
       }
 
-      await fetch('https://go2.unisender.ru/ru/transactional/api/v1/email/send.json', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-          'X-API-KEY': process.env.UNISENDER_API_KEY || '',
+      const response = await fetch(
+        'https://go2.unisender.ru/ru/transactional/api/v1/email/send.json',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+            'X-API-KEY': process.env.UNISENDER_API_KEY || '',
+          },
+          body: JSON.stringify(inputBody),
         },
-        body: JSON.stringify(inputBody),
-      })
+      )
+
+      const responseBody = await response.json()
+
+      if (responseBody?.status === 'error')
+        Sentry.captureException(new AppError(responseBody.message, 500))
     } catch (err: unknown) {
       await redis.del(key)
-      if (err instanceof AppError && err.statusCode !== 429) Sentry.captureException(err)
+      throw err
     }
   }
 
@@ -130,7 +139,129 @@ export class EmailService {
         },
       }
 
-      await fetch('https://go2.unisender.ru/ru/transactional/api/v1/email/send.json', {
+      const response = await fetch(
+        'https://go2.unisender.ru/ru/transactional/api/v1/email/send.json',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+            'X-API-KEY': process.env.UNISENDER_API_KEY || '',
+          },
+          body: JSON.stringify(inputBody),
+        },
+      )
+
+      const responseBody = await response.json()
+
+      if (responseBody?.status === 'error')
+        Sentry.captureException(new AppError(responseBody.message, 500))
+    } catch (err: unknown) {
+      await redis.del(key)
+      throw err
+    }
+  }
+
+  public async sendSupportEmail(
+    theme: string,
+    details: string,
+    userEmail: string,
+    userName: string,
+  ) {
+    const key = `limit:support`
+
+    const ttl = await redis.ttl(key)
+
+    if (ttl > 0) {
+      throw new AppError(`Слишком много запросов. Попробуйте через ${ttl} секунд(ы).`, 429)
+    }
+
+    await redis.set(key, 'locked', 'EX', 10)
+
+    try {
+      const templatePath = path.resolve('email-templates/support.html')
+
+      let htmlContent = await fs.promises.readFile(templatePath, 'utf8')
+
+      const inputBody = {
+        message: {
+          recipients: [
+            {
+              email: process.env.SUPPORT_EMAIL || 'alexander.work2020@gmail.com',
+              substitutions: {
+                email: userEmail,
+                name: userName,
+                theme,
+                details,
+              },
+            },
+          ],
+          body: {
+            html: htmlContent,
+            plaintext: `Сообщение от пользователя`,
+          },
+          subject: 'Сообщение в поддержку',
+          from_email: 'noreply@kanbar.ru',
+          from_name: 'Kanbar',
+          track_links: 0,
+          track_read: 0,
+        },
+      }
+
+      const response = await fetch(
+        'https://go2.unisender.ru/ru/transactional/api/v1/email/send.json',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+            'X-API-KEY': process.env.UNISENDER_API_KEY || '',
+          },
+          body: JSON.stringify(inputBody),
+        },
+      )
+
+      const responseBody = await response.json()
+
+      if (responseBody?.status === 'error')
+        Sentry.captureException(new AppError(responseBody.message, 500))
+    } catch (err: unknown) {
+      await redis.del(key)
+      throw err
+    }
+  }
+
+  public async sendPaymentFailedEmail(user: IUser, amount: string, days: string) {
+    const templatePath = path.resolve('email-templates/payment-failed.html')
+
+    let htmlContent = await fs.promises.readFile(templatePath, 'utf8')
+
+    const inputBody = {
+      message: {
+        recipients: [
+          {
+            email: user.email,
+            substitutions: {
+              amount,
+              days,
+            },
+          },
+        ],
+        body: {
+          html: htmlContent,
+          plaintext: `К сожалению, ваш платеж не прошёл.`,
+        },
+        subject: 'Проблема с оплатой подписки — Kanbar.',
+        from_email: 'noreply@kanbar.ru',
+        from_name: 'Kanbar',
+        track_links: 0,
+        track_read: 0,
+      },
+    }
+
+    const response = await fetch(
+      'https://go2.unisender.ru/ru/transactional/api/v1/email/send.json',
+      {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -138,10 +269,115 @@ export class EmailService {
           'X-API-KEY': process.env.UNISENDER_API_KEY || '',
         },
         body: JSON.stringify(inputBody),
-      })
-    } catch (err: unknown) {
-      await redis.del(key)
-      if (err instanceof AppError && err.statusCode !== 429) Sentry.captureException(err)
+      },
+    )
+
+    const responseBody = await response.json()
+
+    if (responseBody?.status === 'error')
+      Sentry.captureException(new AppError(responseBody.message, 500))
+  }
+
+  public async sendPaymentFinalFailedEmail(user: IUser) {
+    const templatePath = path.resolve('email-templates/payment-failed-final.html')
+
+    let htmlContent = await fs.promises.readFile(templatePath, 'utf8')
+
+    const inputBody = {
+      message: {
+        recipients: [
+          {
+            email: user.email,
+          },
+        ],
+        body: {
+          html: htmlContent,
+          plaintext: `К сожалению, ваш платеж не прошёл.`,
+        },
+        subject: 'Проблема с оплатой подписки — Kanbar.',
+        from_email: 'noreply@kanbar.ru',
+        from_name: 'Kanbar',
+        track_links: 0,
+        track_read: 0,
+      },
     }
+
+    const response = await fetch(
+      'https://go2.unisender.ru/ru/transactional/api/v1/email/send.json',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          'X-API-KEY': process.env.UNISENDER_API_KEY || '',
+        },
+        body: JSON.stringify(inputBody),
+      },
+    )
+
+    const responseBody = await response.json()
+
+    if (responseBody?.status === 'error')
+      Sentry.captureException(new AppError(responseBody.message, 500))
+  }
+
+  public async sendPaymentSuccessEmail(
+    user: IUser,
+    data: {
+      subscription_name: string
+      amount: string
+      date: string
+      next_billing_date: string
+    },
+  ) {
+    const templatePath = path.resolve('email-templates/payment-success.html')
+
+    let htmlContent = await fs.promises.readFile(templatePath, 'utf8')
+
+    const date = dayjs(data.date).format('DD.MM.YYYY HH:mm')
+    const nextBillingDate = dayjs(data.next_billing_date).format('DD.MM.YYYY 00:00')
+
+    const inputBody = {
+      message: {
+        recipients: [
+          {
+            email: user.email,
+            substitutions: {
+              subscription_name: data.subscription_name,
+              amount: data.amount,
+              date,
+              next_billing_date: nextBillingDate,
+            },
+          },
+        ],
+        body: {
+          html: htmlContent,
+          plaintext: `Поздравляем! Ваш платеж прошёл успешно.`,
+        },
+        subject: 'Успешная оплата подписки — Kanbar.',
+        from_email: 'noreply@kanbar.ru',
+        from_name: 'Kanbar',
+        track_links: 0,
+        track_read: 0,
+      },
+    }
+
+    const response = await fetch(
+      'https://go2.unisender.ru/ru/transactional/api/v1/email/send.json',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          'X-API-KEY': process.env.UNISENDER_API_KEY || '',
+        },
+        body: JSON.stringify(inputBody),
+      },
+    )
+
+    const responseBody = await response.json()
+
+    if (responseBody?.status === 'error')
+      Sentry.captureException(new AppError(responseBody.message, 500))
   }
 }

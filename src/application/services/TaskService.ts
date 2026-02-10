@@ -1113,11 +1113,14 @@ export class TaskService extends BaseService<
       taskPayload.colorName = TASK_COLORS_MAP[data.color]
     }
 
-    if (data.dueDate && data.dueHours != null && data.dueMinutes != null) {
-      const collectedDateTime = `${data.dueDate}T${data.dueHours}:${data.dueMinutes}`
+    const isDueDateProvided = data.dueDate != null || taskPayload.dueDate != null
+    const dueDate = data.dueDate || taskPayload.dueDate || dayjs().tz(timezone).format('YYYY-MM-DD')
+
+    if (dueDate && data.dueHours != null && data.dueMinutes != null) {
+      const collectedDateTime = `${dueDate}T${data.dueHours}:${data.dueMinutes}`
       const utcDueDate = dayjs.tz(collectedDateTime, timezone).utc()
 
-      taskPayload.dueDate = utcDueDate.format('YYYY-MM-DD')
+      if (isDueDateProvided) taskPayload.dueDate = utcDueDate.format('YYYY-MM-DD')
       taskPayload.dueHours = utcDueDate.hour()
       taskPayload.dueMinutes = utcDueDate.minute()
     }

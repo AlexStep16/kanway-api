@@ -31,6 +31,7 @@ import { BaseService } from './BaseService.ts'
 import { IBoardPopulated } from '../interfaces/IBoardPopulated.ts'
 import { IBoardCreatePayload } from '../interfaces/IBoardCreatePayload.ts'
 import { SafeUpdateData } from '@/infrastructure/types/SafeUpdateData.ts'
+import { LimitService } from './LimitService.ts'
 
 const MAX_RETRIES = 3
 
@@ -56,6 +57,7 @@ export class BoardService extends BaseService<
   protected workspaceService: WorkspaceService
   protected categoryService: CategoryService
   protected taskService: TaskService
+  protected limitService: LimitService
 
   constructor(
     boardRepository: BoardRepository,
@@ -65,6 +67,7 @@ export class BoardService extends BaseService<
     workspaceService: WorkspaceService,
     categoryService: CategoryService,
     taskService: TaskService,
+    limitService: LimitService,
   ) {
     super(boardRepository)
 
@@ -75,6 +78,7 @@ export class BoardService extends BaseService<
     this.workspaceService = workspaceService
     this.categoryService = categoryService
     this.taskService = taskService
+    this.limitService = limitService
   }
 
   protected getPopulateOptions() {
@@ -114,10 +118,13 @@ export class BoardService extends BaseService<
 
   private async _executeCreateTransaction(
     data: BoardDTO,
-    userId: Types.ObjectId,
+    user: IUser,
     session: ClientSession,
   ): Promise<IResponseWithLog<IBoardPopulated[]>> {
-    const boardPayload = await this.prepareBoardCreationPayload(data, userId, session)
+    /** LIMITS CHECK */
+    await this.limitService.checkBoardsLimit(user, data.workspaceId, session)
+
+    const boardPayload = await this.prepareBoardCreationPayload(data, user.id, session)
 
     const sideEffects: Promise<any>[] = []
 
@@ -126,14 +133,14 @@ export class BoardService extends BaseService<
 
     /* REORDER */
     if (data.order !== undefined) {
-      sideEffects.push(this.reorderService.reorder('workspace', [newBoard], userId, session))
+      sideEffects.push(this.reorderService.reorder('workspace', [newBoard], user.id, session))
     }
 
     /* UPDATE COUNTERS */
     sideEffects.push(
       this.workspaceService.updateBoardsCount(
         [new Types.ObjectId(newBoard.workspace.id)],
-        userId,
+        user.id,
         session,
       ),
     )
@@ -146,7 +153,7 @@ export class BoardService extends BaseService<
         entitiesAfter: [newBoard],
         dependencies: [],
       },
-      userId,
+      user.id,
       session,
     )
 
@@ -158,7 +165,7 @@ export class BoardService extends BaseService<
 
     const newBoardsPopulated = await this.getByCriteria(
       { id: newBoard.id.toString() },
-      userId,
+      user.id,
       session,
     )
 
@@ -173,23 +180,36 @@ export class BoardService extends BaseService<
     user: IUser,
     externalSession?: ClientSession,
   ): Promise<IResponseWithLog<IBoardPopulated[]>> {
-    const userId = user.id
-
     if (externalSession) {
-      return this._executeCreateTransaction(data, userId, externalSession)
+      return this._executeCreateTransaction(data, user, externalSession)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeCreateTransaction(data, userId, session),
+        this._executeCreateTransaction(data, user, session),
       )
     }
   }
 
   private async _executeCreateManyTransaction(
     data: BoardDTO[],
-    userId: Types.ObjectId,
+    user: IUser,
     session: ClientSession,
   ): Promise<IResponseWithLog<IBoardPopulated[]>> {
-    const boardsPayload = await this.prepareBoardsCreationPayload(data, userId, session)
+    const uniqueWorkspaceIds = [...new Set(data.map((board) => board.workspaceId))]
+
+    /** LIMITS CHECK */
+    const incomingCounts: Record<string, number> = {}
+    for (const board of data) {
+      incomingCounts[board.workspaceId] = (incomingCounts[board.workspaceId] || 0) + 1
+    }
+
+    await this.limitService.checkBoardsLimitByWorkspaces(
+      user,
+      uniqueWorkspaceIds,
+      incomingCounts,
+      session,
+    )
+
+    const boardsPayload = await this.prepareBoardsCreationPayload(data, user.id, session)
 
     /* CREATE */
     const newBoards = await this.repository.createMany(boardsPayload, session)
@@ -199,16 +219,14 @@ export class BoardService extends BaseService<
     /* REORDER */
     const isReorderNeeded = data.some((ws) => ws.order !== undefined)
     if (isReorderNeeded) {
-      sideEffects.push(this.reorderService.reorder('workspace', newBoards, userId, session))
+      sideEffects.push(this.reorderService.reorder('workspace', newBoards, user.id, session))
     }
-
-    const uniqueWorkspaceIds = [...new Set(newBoards.map((board) => board.workspace.toHexString()))]
 
     /** UPDATE COUNTERS */
     sideEffects.push(
       this.workspaceService.updateBoardsCount(
         uniqueWorkspaceIds.map((id) => new Types.ObjectId(id)),
-        userId,
+        user.id,
         session,
       ),
     )
@@ -221,7 +239,7 @@ export class BoardService extends BaseService<
         entitiesAfter: newBoards,
         dependencies: [],
       },
-      userId,
+      user.id,
       session,
     )
 
@@ -233,7 +251,7 @@ export class BoardService extends BaseService<
 
     const newBoardsPopulated = await this.getByCriteria(
       { ids: newBoards.map((b) => b.id.toString()) },
-      userId,
+      user.id,
       session,
     )
 
@@ -248,13 +266,11 @@ export class BoardService extends BaseService<
     user: IUser,
     externalSession?: ClientSession,
   ): Promise<IResponseWithLog<IBoardPopulated[]>> {
-    const userId = user.id
-
     if (externalSession) {
-      return this._executeCreateManyTransaction(data, userId, externalSession)
+      return this._executeCreateManyTransaction(data, user, externalSession)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeCreateManyTransaction(data, userId, session),
+        this._executeCreateManyTransaction(data, user, session),
       )
     }
   }
@@ -1260,10 +1276,10 @@ export class BoardService extends BaseService<
   }
 
   public async getBoardsCountByWorkspaces(
-    boardIds: Types.ObjectId[],
+    workspaceIds: Types.ObjectId[],
     userId: Types.ObjectId,
     session?: ClientSession,
   ): Promise<{ parentId: string; count: number }[]> {
-    return this.repository.getCountGroupedByParents(boardIds, 'workspace', userId, session)
+    return this.repository.getCountGroupedByParents(workspaceIds, 'workspace', userId, session)
   }
 }

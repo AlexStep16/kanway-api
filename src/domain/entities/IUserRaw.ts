@@ -1,4 +1,5 @@
 import { Types } from 'mongoose'
+import { SubscriptionPlanEnum } from '../enums/SubscriptionPlanEnum.ts'
 
 export interface IUserRaw {
   _id: Types.ObjectId
@@ -11,8 +12,7 @@ export interface IUserRaw {
   avatar_url?: string
   timezone: string
   is_confirmed: boolean
-  is_password_in_reset_state?: boolean
-  subscription_id: number
+  subscription_id: SubscriptionPlanEnum
   subscription_until?: Date | null
   is_subscription_active?: boolean
   generations_count?: number
@@ -22,6 +22,8 @@ export interface IUserRaw {
   ya_avatar_id?: string
   ya_id?: string
   payment_method_id?: string | null
+  payment_retries_count: number
+  pending_change_plan?: SubscriptionPlanEnum | null
   createdAt: Date
   updatedAt: Date
 }
