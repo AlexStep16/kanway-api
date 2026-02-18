@@ -795,11 +795,10 @@ export class BoardService extends BaseService<
     userId: Types.ObjectId,
     session: ClientSession,
   ): Promise<IResponseWithLog<IBoardPopulated[]>> {
-    const filter = this.repository.buildFilter(criteria, userId)
     const dependencies: Types.ObjectId[] = []
 
     const boardsToClone = await this.repository.findByCriteria(
-      filter,
+      criteria,
       session,
       {
         projection: '+embeddings -createdAt -updatedAt',
@@ -1001,9 +1000,9 @@ export class BoardService extends BaseService<
     const workspaceIds = Array.from(workspaceIdsMap.keys())
     const dependencies: Types.ObjectId[] = []
 
-    const filter = this.repository.buildFilter({ workspaceIds }, userId)
+    const criteria = { workspaceIds, isDeleted: false, isDeletedExternal: false }
 
-    const sourceBoards = await this.repository.findByCriteria(filter, session, undefined, userId)
+    const sourceBoards = await this.repository.findByCriteria(criteria, session, undefined, userId)
 
     const cleanBoards = sourceBoards.map((board) => {
       const workpsaceData = workspaceIdsMap.get(board.workspace.toString())

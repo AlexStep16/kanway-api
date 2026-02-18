@@ -84,6 +84,7 @@ import { IWorkspaceCreatePayload } from '@/application/interfaces/IWorkspaceCrea
 import SupportController from '../api/controllers/SupportController.ts'
 import SupportRepository from '@/application/repositories/SupportRepository.ts'
 import { BaseService } from '@/application/services/BaseService.ts'
+import { LimitService } from '@/application/services/LimitService.ts'
 
 export function initializeDependencies() {
   const mongoClient = new MongoClient(process.env.MONGODB_URI || '')
@@ -123,6 +124,8 @@ export function initializeDependencies() {
     ]),
   )
   const vectorSearchService = new VectorSearchService(embeddingService, mongoClient)
+
+  const limitService = new LimitService(mockBoardService, mockWorkspaceService)
 
   /* SETTING SERVICES START */
   const settingService = new SettingService(settingRepository)
@@ -203,6 +206,7 @@ export function initializeDependencies() {
     mockWorkspaceService,
     categoryService,
     taskService,
+    limitService,
   )
   /* BOARD SERVICES END */
 
@@ -222,6 +226,7 @@ export function initializeDependencies() {
     boardService,
     categoryService,
     taskService,
+    limitService,
   )
   /* WORKSPACE SERVICES END */
 

@@ -1034,7 +1034,7 @@ export class CategoryService extends BaseService<
     session: ClientSession,
   ): Promise<IResponseWithLog<ICategory[]>> {
     const sourceCategories = await this.repository.findByCriteria(
-      { boardIds: Array.from(boardIdsMap.keys()) },
+      { boardIds: Array.from(boardIdsMap.keys()), isDeleted: false, isDeletedExternal: false },
       session,
       undefined,
       userId,

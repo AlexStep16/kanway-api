@@ -922,7 +922,11 @@ export class TaskService extends BaseService<
     session: ClientSession,
   ): Promise<IResponseWithLog<ITask[]>> {
     const sourceTasks: (ITask & { embeddings: number[] })[] = await this.repository.findByCriteria(
-      { categoryIds: Array.from(categoryIdsMap.keys()) },
+      {
+        categoryIds: Array.from(categoryIdsMap.keys()),
+        isDeleted: false,
+        isDeletedExternal: false,
+      },
       session,
       {
         projection: '+embeddings -createdAt -updatedAt',
