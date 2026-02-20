@@ -10,6 +10,7 @@ export const ChatSendDTOSchema = z.object({
     .optional(),
   message: z.string(ErrorMessages.MESSAGE_TYPE_INVALID).optional(),
   chatId: z.string(ErrorMessages.CHAT_ID_INVALID).optional(),
+  jobId: z.string(ErrorMessages.JOB_ID_INVALID),
   threadId: z.string(ErrorMessages.THREAD_ID_INVALID).optional(),
   boardId: z
     .string({

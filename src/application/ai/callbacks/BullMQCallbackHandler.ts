@@ -1,7 +1,5 @@
-import { TOOLS_TIPS_MAP } from '@/constants/TOOLS_TIPS_MAP.ts'
-import { AgentRoles } from '@/enums/AgentRoles.ts'
+import { CustomEvents } from '@/enums/CustomEvents.ts'
 import { BaseCallbackHandler } from '@langchain/core/callbacks/base'
-import { Serialized } from '@langchain/core/load/serializable'
 import type { Job } from 'bullmq'
 
 export class BullMQCallbackHandler extends BaseCallbackHandler {
@@ -13,45 +11,22 @@ export class BullMQCallbackHandler extends BaseCallbackHandler {
     this.job = job
   }
 
-  async handleToolStart(
-    _t: Serialized,
-    input: string,
-    _: string,
-    _a?: string | undefined,
-    _b?: string[] | undefined,
-    _c?: Record<string, unknown> | undefined,
-    runName?: string | undefined,
-  ) {
-    const toolTip = TOOLS_TIPS_MAP.get(runName || '')
-
-    await this.job.updateProgress({
-      role: AgentRoles.TOOLS_EXECUTION,
-      name: runName,
-      input,
-      title: toolTip,
-    })
-  }
-
   async handleCustomEvent(event: string, data: any) {
-    if (event === AgentRoles.TOOLS_EXECUTION) {
-      await this.job.updateProgress({ role: AgentRoles.TOOLS_EXECUTION })
+    if (event === CustomEvents.TOOLS_RETRIEVING) {
+      await this.job.updateProgress({ role: CustomEvents.TOOLS_RETRIEVING })
     }
 
-    if (event === AgentRoles.TOOLS_RETRIEVING) {
-      await this.job.updateProgress({ role: AgentRoles.TOOLS_RETRIEVING })
+    if (event === CustomEvents.HISTORY_RETRIEVING) {
+      await this.job.updateProgress({ role: CustomEvents.HISTORY_RETRIEVING })
     }
 
-    if (event === AgentRoles.HISTORY_RETRIEVING) {
-      await this.job.updateProgress({ role: AgentRoles.HISTORY_RETRIEVING })
+    if (event === CustomEvents.UNDO) {
+      await this.job.updateProgress({ role: CustomEvents.UNDO, undo: data })
     }
 
-    if (event === AgentRoles.UNDO) {
-      await this.job.updateProgress({ role: AgentRoles.UNDO, undo: data })
-    }
-
-    if (event === AgentRoles.INTEGRATION) {
+    if (event === CustomEvents.INTEGRATION) {
       await this.job.updateProgress({
-        role: AgentRoles.INTEGRATION,
+        role: CustomEvents.INTEGRATION,
         integration: data.integration,
       })
     }

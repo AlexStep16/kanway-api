@@ -1,7 +1,7 @@
 import { AgentDependencies } from '@/application/ai/agent/types/AgentDependencies.ts'
 import { AgentStateAnnotation } from '@/application/ai/agent/AgentStateAnnotation.ts'
 import { RunnableConfig } from '@langchain/core/runnables'
-import { AgentRoles } from '@/enums/AgentRoles.ts'
+import { CustomEvents } from '@/enums/CustomEvents.ts'
 import { dispatchCustomEvent } from '@langchain/core/callbacks/dispatch'
 import { getLastChatHistory } from '@application/ai/helpers/getLastChatHistory.ts'
 import { ChatPromptTemplate } from '@langchain/core/prompts'
@@ -10,7 +10,7 @@ import z from 'zod'
 
 export const makeSummaryHistoryNode = (deps: AgentDependencies) => {
   return async (state: typeof AgentStateAnnotation.State, _: RunnableConfig) => {
-    await dispatchCustomEvent(AgentRoles.HISTORY_RETRIEVING, null)
+    await dispatchCustomEvent(CustomEvents.HISTORY_RETRIEVING, null)
 
     const messages = state.messages
     const { summarizerModel } = deps.models

@@ -208,7 +208,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
 
       const jobPayload = { payload: { messages }, config }
 
-      const job = await langgraphQueue.add('process_query', jobPayload)
+      const job = await langgraphQueue.add('process_query', jobPayload, { jobId: data.jobId })
 
       return {
         jobId: job.id,
@@ -229,6 +229,41 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
         this._executeSendTransaction(data, user, session),
       )
     }
+  }
+
+  private async _updateStepperState(
+    data: { chatId: string; threadId: string },
+    user: IUser,
+    externalSession?: ClientSession,
+  ) {
+    const chatMessages = await this.chatMessageService.getByCriteria(
+      { chatId: data.chatId, threadId: data.threadId },
+      user.id,
+      externalSession,
+    )
+
+    const stepperMessage = [...chatMessages].reverse().find((msg) => msg.role === 'steps')
+
+    if (!stepperMessage) return
+
+    const steps = stepperMessage.content as {
+      id: string
+      name: string
+      state: 'in_progress' | 'completed' | 'failed'
+    }[]
+
+    steps.forEach((step) => {
+      if (step.state !== 'completed') {
+        step.state = 'failed'
+      }
+    })
+
+    await this.chatMessageService.edit(
+      { content: steps },
+      { chatId: data.chatId, threadId: data.threadId },
+      user,
+      externalSession,
+    )
   }
 
   private async _deleteLastIteration(
@@ -272,7 +307,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
 
     const jobPayload = { payload: { messages: [] }, config, isRetry: true }
 
-    const job = await langgraphQueue.add('process_query', jobPayload)
+    const job = await langgraphQueue.add('process_query', jobPayload, { jobId: data.jobId })
 
     return {
       jobId: job.id,
@@ -294,12 +329,12 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     user: IUser,
     externalSession?: ClientSession,
   ) {
-    await this._deleteLastIteration(data, user, externalSession)
+    await this._updateStepperState(data, user, externalSession)
 
     const job = await langgraphQueue.getJob(data.jobId)
 
     if (!job) {
-      throw new NotFoundError('Job not found.')
+      throw new NotFoundError('Задача не найдена.')
     }
 
     await job.updateData({

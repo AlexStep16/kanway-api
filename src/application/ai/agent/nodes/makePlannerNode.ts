@@ -7,6 +7,9 @@ import { PlannerPrompt } from '@application/ai/prompts/PlannerPrompt.ts'
 import { getLastChatHistory } from '../../helpers/getLastChatHistory.ts'
 import * as Sentry from '@sentry/node'
 import getLastHumanMessage from '../../helpers/getLastHumanMessage.ts'
+import { CustomEvents } from '@/enums/CustomEvents.ts'
+import { dispatchCustomEvent } from '@langchain/core/callbacks/dispatch'
+import { Types } from 'mongoose'
 
 export const makePlannerNode = (deps: AgentDependencies) => {
   return async (state: typeof AgentStateAnnotation.State, _: RunnableConfig) => {
@@ -17,6 +20,13 @@ export const makePlannerNode = (deps: AgentDependencies) => {
     if (!lastHumanMessage) {
       return { plan: [], planner_has_error: false }
     }
+
+    const stepId = new Types.ObjectId()
+
+    await dispatchCustomEvent(CustomEvents.STEP_ADD, {
+      id: stepId.toString(),
+      name: 'Планирую',
+    })
 
     const { toolExecutorService } = deps.services
     const tools = toolExecutorService.plannerTools
@@ -47,12 +57,19 @@ export const makePlannerNode = (deps: AgentDependencies) => {
       )
 
     const toolCall = response.tool_calls?.[0]
+    const invalidToolCalls = response.invalid_tool_calls?.[0]
 
-    if (!toolCall || toolCall.name !== 'submitPlan') {
-      Sentry.captureException(new Error('Planner did not return a valid tool call for submitPlan.'))
+    if (!toolCall || toolCall.name !== 'submitPlan' || invalidToolCalls) {
+      //Sentry.captureException(new Error('Planner did not return a valid tool call for submitPlan.'))
+
+      let content = 'You MUST submit a plan using the submitPlan tool.'
+
+      if (invalidToolCalls) {
+        content += ` Error: ${invalidToolCalls.error}`
+      }
 
       const errorMessage = new SystemMessage({
-        content: 'You MUST submit a plan using the submitPlan tool.',
+        content,
         additional_kwargs: { error: true, isPlanner: true },
       })
 
@@ -64,6 +81,11 @@ export const makePlannerNode = (deps: AgentDependencies) => {
     }
 
     const plan = toolCall.args.steps as string[]
+
+    await dispatchCustomEvent(CustomEvents.STEP_UPDATE, {
+      id: stepId.toString(),
+      state: 'completed',
+    })
 
     return {
       plan: plan,

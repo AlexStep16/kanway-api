@@ -30,7 +30,7 @@ const ChatMessageSchema = new Schema<IChatMessageRaw>(
       required: true,
     },
   },
-  { timestamps: true }
+  { timestamps: true },
 )
 
 const ChatMessage = model<IChatMessageRaw>('ChatMessage', ChatMessageSchema)

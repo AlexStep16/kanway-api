@@ -1,14 +1,15 @@
-export enum AgentRoles {
+export enum CustomEvents {
   TOOLS_RETRIEVING = 'tools_retrieving',
   CALLING_TOOLS = 'calling_tools_start',
-  TOOLS_EXECUTION = 'tools_execution',
   HISTORY_RETRIEVING = 'history_retrieving',
   SYNTHESIZE_START = 'synthesize_start',
+  STEP_ADD = 'step_add',
+  STEP_UPDATE = 'step_update',
   INTEGRATION = 'integration',
   PREVIEW = 'preview',
   UNDO = 'undo',
   ACTIONS = 'actions',
   ASSISTANT_CHUNK = 'assistant_chunk',
-  ASSISTANT_FINAL = 'assistant',
   NEW_MESSAGE = 'new_message',
+  UPDATE_MESSAGE = 'update_message',
 }

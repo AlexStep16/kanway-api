@@ -7,7 +7,7 @@ import connectToDatabase from '@db/connectToDatabase.ts'
 import { getAssistantTextFromOutput } from '@utils/getAssistantTextFromOutput.ts'
 import { getAgent } from '@/infrastructure/ai/getAgent.ts'
 import { BullMQCallbackHandler } from '@application/ai/callbacks/BullMQCallbackHandler.ts'
-import { AgentRoles } from '@/enums/AgentRoles.ts'
+import { CustomEvents } from '@/enums/CustomEvents.ts'
 import { initializeDependencies } from '../di/initializeDependencies.ts'
 import { ChatMessageDTO } from '@/application/dtos/ChatMessageDTO.ts'
 import { AgentStateAnnotation } from '@application/ai/agent/AgentStateAnnotation.ts'
@@ -27,6 +27,8 @@ import { Command, CompiledStateGraph } from '@langchain/langgraph'
 import getLastHumanMessage from '@application/ai/helpers/getLastHumanMessage.ts'
 import { IUser } from '@/domain/entities/IUser.ts'
 import { langgraphQueue } from '../queues/index.ts'
+import { IChatMessageCriteria } from '@/application/interfaces/criterias/IChatMessageCriteria.ts'
+import { IChatMessage } from '@/domain/entities/IChatMessage.ts'
 
 const dependencies = initializeDependencies()
 
@@ -52,8 +54,28 @@ async function createChatMessage(dto: ChatMessageDTO, user: IUser, job: Job) {
   const createChatMessageResult = await dependencies.services.chatMessageService.create(dto, user)
 
   await job.updateProgress({
-    role: AgentRoles.NEW_MESSAGE,
+    role: CustomEvents.NEW_MESSAGE,
     message: createChatMessageResult.data[0],
+  })
+
+  return createChatMessageResult.data[0]
+}
+
+async function editChatMessage(
+  dto: Partial<ChatMessageDTO>,
+  criteria: IChatMessageCriteria,
+  user: IUser,
+  job: Job,
+) {
+  const editChatMessageResult = await dependencies.services.chatMessageService.edit(
+    dto,
+    criteria,
+    user,
+  )
+
+  await job.updateProgress({
+    role: CustomEvents.UPDATE_MESSAGE,
+    message: editChatMessageResult,
   })
 }
 
@@ -141,6 +163,24 @@ export const RunAgentWorker = new Worker(
       }
     }, 500)
 
+    let aiMessage: IChatMessage | null = null
+
+    const stepsMessage = await createChatMessage(
+      {
+        role: 'steps',
+        content: [],
+        threadId: configurable.thread_id,
+        chatId: new Types.ObjectId(configurable.chatId),
+      },
+      configurable.user,
+      job,
+    )
+    const steps: {
+      id: string
+      name: string
+      state: 'in_progress' | 'completed' | 'failed'
+    }[] = []
+
     try {
       const bullMQHandler = new BullMQCallbackHandler(job)
 
@@ -162,20 +202,68 @@ export const RunAgentWorker = new Worker(
       let interruptPayload: any = null
       let finalEvent: any = null
       let isSynthesizeStarted = false
+      let accumulatedContent = ''
 
       for await (const event of stream) {
         const eventType = event.event
 
-        if (event.name === AgentRoles.SYNTHESIZE_START) {
+        if (event.name === CustomEvents.SYNTHESIZE_START) {
           isSynthesizeStarted = true
+
+          aiMessage = await createChatMessage(
+            {
+              role: 'assistant',
+              content: '',
+              threadId: configurable.thread_id,
+              chatId: new Types.ObjectId(configurable.chatId),
+            },
+            configurable.user,
+            job,
+          )
         }
 
-        if (event.name === AgentRoles.ACTIONS) {
+        if (event.name === CustomEvents.STEP_ADD) {
+          const stepData = event.data
+
+          const newStep = {
+            id: stepData.id,
+            name: stepData.name,
+            state: 'in_progress' as const,
+          }
+          steps.push(newStep)
+
+          await job.updateProgress({
+            role: CustomEvents.UPDATE_MESSAGE,
+            message: {
+              ...stepsMessage,
+              content: steps,
+            },
+          })
+        }
+
+        if (event.name === CustomEvents.STEP_UPDATE) {
+          const stepData = event.data
+          const stepIndex = steps.findIndex((s) => s.id === stepData.id)
+
+          if (stepIndex !== -1) {
+            Object.assign(steps[stepIndex], stepData)
+          }
+
+          await job.updateProgress({
+            role: CustomEvents.UPDATE_MESSAGE,
+            message: {
+              ...stepsMessage,
+              content: steps,
+            },
+          })
+        }
+
+        if (event.name === CustomEvents.ACTIONS) {
           const data = event.data
 
           await createChatMessage(
             {
-              role: AgentRoles.ACTIONS,
+              role: CustomEvents.ACTIONS,
               content: data.actions,
               threadId: configurable.thread_id,
               chatId: new Types.ObjectId(configurable.chatId),
@@ -198,7 +286,7 @@ export const RunAgentWorker = new Worker(
                 if (toolConfirmations.length > 0) {
                   await createChatMessage(
                     {
-                      role: AgentRoles.PREVIEW,
+                      role: CustomEvents.PREVIEW,
                       content: toolConfirmations,
                       threadId: configurable.thread_id,
                       chatId: new Types.ObjectId(configurable.chatId),
@@ -216,7 +304,7 @@ export const RunAgentWorker = new Worker(
 
         finalEvent = event
 
-        if (interrupted) break // при первом interrupt выходим (пусть фронт решает confirm/cancel)
+        if (interrupted) break
 
         if (!isSynthesizeStarted) continue
 
@@ -224,27 +312,35 @@ export const RunAgentWorker = new Worker(
           const chunk = event.data.chunk
 
           if (chunk.content && typeof chunk.content === 'string') {
-            await job.updateProgress({
-              role: AgentRoles.ASSISTANT_CHUNK,
-              content: chunk.content,
-            })
+            accumulatedContent += chunk.content
+
+            if (aiMessage)
+              await job.updateProgress({
+                role: CustomEvents.UPDATE_MESSAGE,
+                message: {
+                  ...aiMessage,
+                  content: accumulatedContent,
+                },
+              })
           }
         }
       }
 
-      // Критично для резюме/отмены: финальный результат лежит в on_chain_end -> data.output
       if (finalEvent) {
         const lastOutput = finalEvent.data.output
 
         const finalText = getAssistantTextFromOutput(lastOutput)
 
         if (finalText && finalText.trim()) {
-          await createChatMessage(
+          await editChatMessage(
             {
-              role: AgentRoles.ASSISTANT_FINAL,
+              role: 'assistant',
               content: finalText,
               threadId: configurable?.thread_id,
               chatId: new Types.ObjectId(configurable?.chatId),
+            },
+            {
+              id: aiMessage ? aiMessage.id.toString() : '',
             },
             configurable?.user,
             job,
@@ -253,17 +349,20 @@ export const RunAgentWorker = new Worker(
       }
 
       if (interrupted) {
-        // Возвращаем конфиг — фронт/бэк используют его для resume с тем же thread_id
         return {
           status: 'interrupted',
           interrupt: interruptPayload,
         }
       }
 
-      // Если не было interrupt, считаем выполнение завершённым
-      // lastOutput уже обработан в on_chain_end; просто возвращаем completed
       return { status: 'completed', message: 'Агент завершил свою работу.' }
     } catch (error: any) {
+      for (const step of steps) {
+        if (step.state === 'in_progress') {
+          step.state = 'failed'
+        }
+      }
+
       if (error.name === 'AbortError' || controller.signal.aborted) {
         const agent = await getAgent(dependencies)
 
@@ -276,12 +375,9 @@ export const RunAgentWorker = new Worker(
 
       const userFriendlyMessage = getFriendlyErrorMessage(error)
 
-      // 3. СОХРАНЕНИЕ В БАЗУ
-      // Пользователь должен увидеть ответ в чате, чтобы не ждать бесконечно
       try {
         const errorMsgDTO: ChatMessageDTO = {
           role: 'error',
-          // Добавляем иконку, чтобы визуально отличить от нормального ответа
           content: `😔 ${userFriendlyMessage}`,
           threadId: configurable?.thread_id,
           chatId: new Types.ObjectId(configurable?.chatId),
@@ -292,9 +388,8 @@ export const RunAgentWorker = new Worker(
           configurable?.user,
         )
 
-        // 4. УВЕДОМЛЕНИЕ ФРОНТЕНДА
         await job.updateProgress({
-          role: AgentRoles.NEW_MESSAGE,
+          role: CustomEvents.NEW_MESSAGE,
           message: {
             ...savedMsg.data[0],
             isError: true,
@@ -309,6 +404,17 @@ export const RunAgentWorker = new Worker(
       throw error
     } finally {
       clearInterval(checkInterval)
+
+      editChatMessage(
+        {
+          content: steps,
+        },
+        {
+          id: stepsMessage.id.toString(),
+        },
+        configurable?.user,
+        job,
+      )
     }
   },
   {

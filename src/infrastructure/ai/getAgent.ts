@@ -35,12 +35,12 @@ export async function getAgent(dependencies: any) {
   // 5. Инициализируем модели
   // Выносим параметры в конфиг или ENV для гибкости
   const agentModel = new ChatFireworks({
-    model: 'accounts/fireworks/models/gpt-oss-120b',
+    model: 'accounts/fireworks/models/deepseek-v3p1',
     temperature: 0,
   })
 
   const synthesizerModel = new ChatFireworks({
-    model: 'accounts/fireworks/models/gpt-oss-120b',
+    model: 'accounts/fireworks/models/deepseek-v3p1',
     temperature: 0,
   })
 
@@ -56,6 +56,7 @@ export async function getAgent(dependencies: any) {
         toolExecutorService: dependencies.services.toolExecutorService,
         contextExternalFetchService: dependencies.services.contextExternalFetchService,
         vectorSearchService: dependencies.services.vectorSearchService,
+        userService: dependencies.services.userService,
       },
       models: {
         agentModel,

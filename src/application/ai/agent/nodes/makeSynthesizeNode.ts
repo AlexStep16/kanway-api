@@ -1,6 +1,6 @@
 import { AgentStateAnnotation } from '@/application/ai/agent/AgentStateAnnotation.ts'
 import { dispatchCustomEvent } from '@langchain/core/callbacks/dispatch'
-import { AgentRoles } from '@/enums/AgentRoles.ts'
+import { CustomEvents } from '@/enums/CustomEvents.ts'
 import { getLastIterationHistory } from '@application/ai/helpers/getLastIterationHistory.ts'
 import { SynthesizePrompt } from '@/application/ai/prompts/SynthesizePrompt.ts'
 import { ChatPromptTemplate } from '@langchain/core/prompts'
@@ -8,10 +8,18 @@ import { AgentDependencies } from '@application/ai/agent/types/AgentDependencies
 import { AIMessage, AIMessageChunk, BaseMessage, RemoveMessage } from '@langchain/core/messages'
 import { Configurable } from '../../interfaces/Configurable.ts'
 import { RunnableConfig } from '@langchain/core/runnables'
+import { Types } from 'mongoose'
 
 export const makeSynthesizeNode = (deps: AgentDependencies) => {
   return async (state: typeof AgentStateAnnotation.State, config: RunnableConfig) => {
-    await dispatchCustomEvent(AgentRoles.SYNTHESIZE_START, null)
+    await dispatchCustomEvent(CustomEvents.SYNTHESIZE_START, null)
+
+    const stepId = new Types.ObjectId()
+
+    await dispatchCustomEvent(CustomEvents.STEP_ADD, {
+      id: stepId.toString(),
+      name: 'Синтезирую ответ',
+    })
 
     const configurable = config.configurable as Configurable
 
@@ -35,16 +43,6 @@ export const makeSynthesizeNode = (deps: AgentDependencies) => {
       const finishResponseCall = toolCalls.find((tc) => tc.name === 'finishResponse')
 
       if (finishResponseCall) {
-        const responseContent = finishResponseCall.args.response
-
-        if (responseContent) {
-          chatHistory.push(
-            new AIMessage({
-              content: responseContent,
-            }),
-          )
-        }
-
         const removedMessage = new RemoveMessage({
           id: lastMessage?.id || '',
         })
@@ -58,6 +56,11 @@ export const makeSynthesizeNode = (deps: AgentDependencies) => {
     const chain = prompt.pipe(synthesizerModel)
 
     const response = await chain.invoke({})
+
+    await dispatchCustomEvent(CustomEvents.STEP_UPDATE, {
+      id: stepId.toString(),
+      state: 'completed',
+    })
 
     messages.push(response)
 

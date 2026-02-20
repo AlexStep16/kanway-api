@@ -5,13 +5,21 @@ import { RunnableConfig } from '@langchain/core/runnables'
 import { ChatPromptTemplate } from '@langchain/core/prompts'
 import { ChatbotPrompt } from '@application/ai/prompts/ChatbotPrompt.ts'
 import { getLastChatHistory } from '@application/ai/helpers/getLastChatHistory.ts'
-import { AgentRoles } from '@/enums/AgentRoles.ts'
+import { CustomEvents } from '@/enums/CustomEvents.ts'
 import { dispatchCustomEvent } from '@langchain/core/callbacks/dispatch'
 import { Configurable } from '../../interfaces/Configurable.ts'
+import { Types } from 'mongoose'
 
 export const makeChatbotNode = (deps: AgentDependencies) => {
   return async (state: typeof AgentStateAnnotation.State, config: RunnableConfig) => {
-    await dispatchCustomEvent(AgentRoles.SYNTHESIZE_START, null)
+    await dispatchCustomEvent(CustomEvents.SYNTHESIZE_START, null)
+
+    const stepId = new Types.ObjectId()
+
+    await dispatchCustomEvent(CustomEvents.STEP_ADD, {
+      id: stepId.toString(),
+      name: 'Синтезирую ответ',
+    })
 
     const { agentModel } = deps.models
 
@@ -53,6 +61,11 @@ export const makeChatbotNode = (deps: AgentDependencies) => {
       aiName: configurable?.aiName || 'Kanbar',
       defaultCategoryName: configurable?.defaultCategoryName || '',
       defaultBoardName: configurable?.defaultBoardName || '',
+    })
+
+    await dispatchCustomEvent(CustomEvents.STEP_UPDATE, {
+      id: stepId.toString(),
+      state: 'completed',
     })
 
     return {

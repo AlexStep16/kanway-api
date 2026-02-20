@@ -112,6 +112,7 @@ export enum ErrorMessages {
   SUBSCRIPTION_PLAN_NOT_FOUND = 'План подписки не найден. Обратитесь в поддержку.',
   SUBSCRIPTION_PLAN_INVALID = 'Неверный план подписки.',
   INVALID_ID_FORMAT = 'Неверный формат идентификатора.',
+  JOB_ID_INVALID = 'Неверный идентификатор задачи.',
   WORKSPACE_ID_INVALID = 'Неверный идентификатор рабочего пространства.',
   WORKSPACE_ID_REQUIRED = 'Требуется идентификатор рабочего пространства.',
   BOARD_ID_INVALID = 'Неверный идентификатор доски.',

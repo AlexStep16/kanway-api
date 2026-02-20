@@ -14,7 +14,12 @@ export default class ChatMessageController {
     try {
       const entities = await this.service.getByCriteria(
         { ...req.query, chatId: req.params.chatId } as IChatMessageCriteria,
-        req.user!.id
+        req.user!.id,
+        undefined,
+        undefined,
+        {
+          sort: { createdAt: 1 },
+        },
       )
 
       res.status(200).json(new SuccessResponse(entities))

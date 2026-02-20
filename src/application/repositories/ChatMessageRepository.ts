@@ -16,7 +16,7 @@ export default class ChatMessageRepository extends BaseRepository<
 
   public buildFilter(
     criteria: IChatMessageCriteria,
-    userId: Types.ObjectId
+    userId: Types.ObjectId,
   ): FilterQuery<IChatMessageRaw> {
     const filter: FilterQuery<IChatMessageRaw> = { user_id: userId }
 

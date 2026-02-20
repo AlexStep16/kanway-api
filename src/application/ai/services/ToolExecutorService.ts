@@ -2,7 +2,7 @@ import { ToolCall, ToolMessage } from '@langchain/core/messages'
 import { DynamicStructuredTool } from '@langchain/core/tools'
 import { dispatchCustomEvent } from '@langchain/core/callbacks/dispatch'
 import { VectorSearchService } from '@/application/services/VectorSearchService.ts'
-import { AgentRoles } from '@/enums/AgentRoles.ts'
+import { CustomEvents } from '@/enums/CustomEvents.ts'
 import { createTools } from '../helpers/toolsHelper.ts'
 import { TaskToolAdapter } from '../tools/TaskToolAdapter.ts'
 import { CategoryToolAdapter } from '../tools/CategoryToolAdapter.ts'
@@ -13,6 +13,8 @@ import z from 'zod'
 import { BaseToolAdapter } from '../tools/BaseToolAdapter.ts'
 import { IActionResponse } from '../interfaces/IActionsResponse.ts'
 import { cleanArgsByCancelled } from '../helpers/cleanArgsByCancelled.ts'
+import { Types } from 'mongoose'
+import { TOOLS_TIPS_MAP } from '@/constants/TOOLS_TIPS_MAP.ts'
 
 export class ToolExecutorService {
   protected vectorSearchService: VectorSearchService
@@ -64,7 +66,7 @@ export class ToolExecutorService {
   }
 
   public async getRelevantTools(steps: Array<{ description: string }>) {
-    await dispatchCustomEvent(AgentRoles.TOOLS_RETRIEVING, null)
+    await dispatchCustomEvent(CustomEvents.TOOLS_RETRIEVING, null)
 
     const toolsFound = await this.vectorSearchService.similaritySearchTools(steps)
     const finalNames = toolsFound.map((tool) => tool.name)
@@ -89,6 +91,12 @@ export class ToolExecutorService {
   ): Promise<ToolMessage> {
     const functionName = toolCall.name
     const tool: DynamicStructuredTool = this.toolsByName[functionName]
+    const stepId = new Types.ObjectId()
+
+    await dispatchCustomEvent(CustomEvents.STEP_ADD, {
+      id: stepId.toString(),
+      name: TOOLS_TIPS_MAP.get(functionName) || 'Выполнение инструмента',
+    })
 
     if (!tool) {
       return new ToolMessage({
@@ -105,6 +113,11 @@ export class ToolExecutorService {
     functionSchema.parse(cleanedArgs) as Record<string, any>
 
     const observation: any = await tool.invoke(cleanedArgs, { context: { cancelledEntityIds } })
+
+    await dispatchCustomEvent(CustomEvents.STEP_UPDATE, {
+      id: stepId.toString(),
+      state: 'completed',
+    })
 
     if (tool.name === 'showEntitiesToUser') {
       let parsedObservation: any = observation
@@ -128,7 +141,7 @@ export class ToolExecutorService {
         }
       }
 
-      await dispatchCustomEvent(AgentRoles.ACTIONS, {
+      await dispatchCustomEvent(CustomEvents.ACTIONS, {
         actions,
       })
 
@@ -150,7 +163,7 @@ export class ToolExecutorService {
     }
 
     if (tool.name === 'undoOperations') {
-      await dispatchCustomEvent(AgentRoles.UNDO, result)
+      await dispatchCustomEvent(CustomEvents.UNDO, result)
 
       return new ToolMessage({
         content: 'Operations undone successfully.',
@@ -160,7 +173,7 @@ export class ToolExecutorService {
     }
 
     if (this.toolsWithActionsByName[functionName]) {
-      await dispatchCustomEvent(AgentRoles.ACTIONS, result)
+      await dispatchCustomEvent(CustomEvents.ACTIONS, result)
     }
 
     if (this.toolsWithOperationLogByName[functionName]) {

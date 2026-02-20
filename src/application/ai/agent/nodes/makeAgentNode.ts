@@ -6,6 +6,9 @@ import { ChatPromptTemplate } from '@langchain/core/prompts'
 import { AgentPrompt } from '@/application/ai/prompts/AgentPrompt.ts'
 import { Configurable } from '@application/ai/interfaces/Configurable.ts'
 import { getLastHumanContent } from '../../helpers/getLastHumanContent.ts'
+import { dispatchCustomEvent } from '@langchain/core/callbacks/dispatch'
+import { CustomEvents } from '@/enums/CustomEvents.ts'
+import { Types } from 'mongoose'
 
 export const makeAgentNode = (deps: AgentDependencies) => {
   return async (state: typeof AgentStateAnnotation.State, config: RunnableConfig) => {
@@ -27,6 +30,13 @@ export const makeAgentNode = (deps: AgentDependencies) => {
     if (!lastChatHistory) {
       throw new Error('Chat history is empty.')
     }
+
+    const stepId = new Types.ObjectId()
+
+    await dispatchCustomEvent(CustomEvents.STEP_ADD, {
+      id: stepId.toString(),
+      name: 'Размышляю',
+    })
 
     const plan = state.plan || []
     const currentPlanHash = plan.join('||')
@@ -127,6 +137,11 @@ export const makeAgentNode = (deps: AgentDependencies) => {
       updates.rag_tool_names = suggestedToolsNames
       updates.plan_hash = currentPlanHash
     }
+
+    await dispatchCustomEvent(CustomEvents.STEP_UPDATE, {
+      id: stepId.toString(),
+      state: 'completed',
+    })
 
     return updates
   }
