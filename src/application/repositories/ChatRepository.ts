@@ -10,8 +10,12 @@ export default class ChatRepository extends BaseRepository<IChatRaw, IChat, ICha
     super(Chat)
   }
 
-  public buildFilter(criteria: IChatCriteria, userId: Types.ObjectId): FilterQuery<IChatRaw> {
-    const filter: FilterQuery<IChatRaw> = { user_id: userId }
+  public buildFilter(criteria: IChatCriteria, userId?: Types.ObjectId): FilterQuery<IChatRaw> {
+    const filter: FilterQuery<IChatRaw> = {}
+
+    if (userId) {
+      filter.user_id = userId
+    }
 
     if (criteria.id) {
       filter._id = criteria.id

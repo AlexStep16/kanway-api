@@ -1,19 +1,27 @@
 import { AgentDependencies } from '@/application/ai/agent/types/AgentDependencies.ts'
 import { AgentStateAnnotation } from '@/application/ai/agent/AgentStateAnnotation.ts'
-import { RemoveMessage, SystemMessage } from '@langchain/core/messages'
+import { BaseMessage, RemoveMessage, SystemMessage } from '@langchain/core/messages'
 import { RunnableConfig } from '@langchain/core/runnables'
 import { ChatPromptTemplate } from '@langchain/core/prompts'
 import { PlannerPrompt } from '@application/ai/prompts/PlannerPrompt.ts'
 import { getLastChatHistory } from '../../helpers/getLastChatHistory.ts'
-import * as Sentry from '@sentry/node'
+//import * as Sentry from '@sentry/node'
 import getLastHumanMessage from '../../helpers/getLastHumanMessage.ts'
 import { CustomEvents } from '@/enums/CustomEvents.ts'
 import { dispatchCustomEvent } from '@langchain/core/callbacks/dispatch'
 import { Types } from 'mongoose'
+import { SKILLS_GROUP } from '@/constants/SKILLS_GROUP.ts'
+import { Configurable } from '../../interfaces/Configurable.ts'
 
 export const makePlannerNode = (deps: AgentDependencies) => {
-  return async (state: typeof AgentStateAnnotation.State, _: RunnableConfig) => {
+  return async (state: typeof AgentStateAnnotation.State, config: RunnableConfig) => {
     const { agentModel } = deps.models
+
+    const configurable = config.configurable as Configurable
+
+    const activeBoardName = configurable?.activeBoardName
+    const activeWorkspaceName = configurable?.activeWorkspaceName
+    const currentDate = configurable?.currentDate
 
     const lastHumanMessage = getLastHumanMessage(state.messages)
 
@@ -25,7 +33,7 @@ export const makePlannerNode = (deps: AgentDependencies) => {
 
     await dispatchCustomEvent(CustomEvents.STEP_ADD, {
       id: stepId.toString(),
-      name: 'Планирую',
+      name: 'Составляю план',
     })
 
     const { toolExecutorService } = deps.services
@@ -35,19 +43,47 @@ export const makePlannerNode = (deps: AgentDependencies) => {
       throw new Error('Agent model does not support tool binding.')
     }
 
-    const chatHistory = getLastChatHistory(state.messages)
+    const lastChatHistory = getLastChatHistory(state.messages)
+    const summaryHistory = state.summary
 
-    const prompt = ChatPromptTemplate.fromMessages([['system', PlannerPrompt], ...chatHistory])
+    if (!lastChatHistory) {
+      throw new Error('Chat history is empty.')
+    }
+    // Формируем контекст для Агента
+    let dynamicSystemPrompt = PlannerPrompt
 
-    const modelWithTool = agentModel.bindTools(tools, {
-      tool_choice: 'submitPlan',
-    })
+    if (summaryHistory) {
+      dynamicSystemPrompt += `\n\n### CHAT SUMMARY:
+      ${summaryHistory}`
+    }
+
+    const prompt = ChatPromptTemplate.fromMessages([
+      ['system', dynamicSystemPrompt],
+      ...lastChatHistory,
+    ])
+
+    const modelWithTool = agentModel.bindTools(tools)
 
     const chain = prompt.pipe(modelWithTool)
 
-    const response = await chain.invoke({})
+    const response = await chain.invoke({
+      aiName: configurable?.aiName || 'Kanbar',
+      boardName: activeBoardName,
+      workspaceName: activeWorkspaceName,
+      currentDate: currentDate,
 
-    const messages = state.messages
+      SEARCH_SKILLS: SKILLS_GROUP.SEARCH.map((s) => s.name).join(', '),
+      TASK_BASE_SKILLS: SKILLS_GROUP.TASK_BASE.map((s) => s.name).join(', '),
+      TASK_UPDATE_SKILLS: SKILLS_GROUP.TASK_UPDATE.map((s) => s.name).join(', '),
+      BOARD_BASE_SKILLS: SKILLS_GROUP.BOARD_BASE.map((s) => s.name).join(', '),
+      BOARD_UPDATE_SKILLS: SKILLS_GROUP.BOARD_UPDATE.map((s) => s.name).join(', '),
+      CATEGORY_BASE_SKILLS: SKILLS_GROUP.CATEGORY_BASE.map((s) => s.name).join(', '),
+      CATEGORY_UPDATE_SKILLS: SKILLS_GROUP.CATEGORY_UPDATE.map((s) => s.name).join(', '),
+      WORKSPACE_BASE_SKILLS: SKILLS_GROUP.WORKSPACE_BASE.map((s) => s.name).join(', '),
+      WORKSPACE_UPDATE_SKILLS: SKILLS_GROUP.WORKSPACE_UPDATE.map((s) => s.name).join(', '),
+    })
+
+    const messages: BaseMessage[] = state.messages
       .filter((msg) => msg.additional_kwargs?.error && msg.additional_kwargs?.isPlanner)
       .map(
         (m) =>
@@ -56,13 +92,24 @@ export const makePlannerNode = (deps: AgentDependencies) => {
           }),
       )
 
+    messages.push(response)
+
     const toolCall = response.tool_calls?.[0]
     const invalidToolCalls = response.invalid_tool_calls?.[0]
 
-    if (!toolCall || toolCall.name !== 'submitPlan' || invalidToolCalls) {
-      //Sentry.captureException(new Error('Planner did not return a valid tool call for submitPlan.'))
+    await dispatchCustomEvent(CustomEvents.STEP_UPDATE, {
+      id: stepId.toString(),
+      state: 'completed',
+    })
 
-      let content = 'You MUST submit a plan using the submitPlan tool.'
+    if (
+      !toolCall ||
+      !['executePlan', 'finishResponse'].includes(toolCall.name) ||
+      invalidToolCalls
+    ) {
+      //Sentry.captureException(new Error('Planner did not return a valid tool call.'))
+
+      let content = 'You MUST respond only with a valid tool call (executePlan or finishResponse).'
 
       if (invalidToolCalls) {
         content += ` Error: ${invalidToolCalls.error}`
@@ -80,16 +127,40 @@ export const makePlannerNode = (deps: AgentDependencies) => {
       }
     }
 
-    const plan = toolCall.args.steps as string[]
+    if (toolCall.name === 'finishResponse') {
+      return {
+        plan: [],
+        messages,
+        planner_has_error: false,
+      }
+    }
 
-    await dispatchCustomEvent(CustomEvents.STEP_UPDATE, {
-      id: stepId.toString(),
-      state: 'completed',
-    })
+    const plan = toolCall.args.steps as string[]
+    const skills = toolCall.args.relevantInstructions as string[]
+    const reasoning = toolCall.args.reasoning as string
+
+    // Если план есть, но нет инструкций, это тоже ошибка, потому что план должен быть выполнимым
+    if (plan.length > 0 && skills.length === 0) {
+      //Sentry.captureException(new Error('Planner returned a plan but no relevant instructions.'))
+      const errorMessage = new SystemMessage({
+        content: 'Planner returned a plan but no relevant instructions.',
+        additional_kwargs: { error: true, isPlanner: true },
+      })
+
+      return {
+        plan: [],
+        messages: [errorMessage],
+        planner_has_error: true,
+      }
+    }
+
+    messages.push(new RemoveMessage({ id: response.id! }))
 
     return {
-      plan: plan,
+      plan,
+      skills,
       messages,
+      planner_reasoning: reasoning,
       planner_has_error: false,
     }
   }

@@ -12,7 +12,6 @@ import { ITask } from '@entities/ITask.ts'
 import { ReorderService } from '@application/services/ReorderService.ts'
 import { TaskEditDTO } from '@dtos/TaskEditDTO.ts'
 import { NotFoundError } from '@errors/NotFound.ts'
-import { TASK_COLORS, TASK_COLORS_MAP } from '@/constants/TASK_COLORS.ts'
 import { CategoryService } from '@application/services/CategoryService.ts'
 
 import dayjs from 'dayjs'
@@ -21,9 +20,6 @@ import { projectProperties } from '@/utils/projectProperties.ts'
 import { IResponseWithLog } from '../interfaces/IResponseWithLog.ts'
 import { IOperationLog } from '@/domain/entities/IOperationLog.ts'
 import { IUndoResponse } from '../interfaces/IUndoResponse.ts'
-
-import chroma from 'chroma-js'
-import { BASE_COLORS } from '@/constants/BASE_COLORS.ts'
 import { AppError } from '@/domain/errors/AppError.ts'
 import { BoardService } from '@application/services/BoardService.ts'
 import { WorkspaceService } from '@application/services/WorkspaceService.ts'
@@ -32,6 +28,7 @@ import { ITaskPopulated } from '@interfaces/ITaskPopulated.ts'
 import { BaseService } from '@application/services/BaseService.ts'
 import { SafeUpdateData } from '@/infrastructure/types/SafeUpdateData.ts'
 import { ITaskCreatePayload } from '../interfaces/ITaskCreatePayload.ts'
+import { OperationLogStatusesEnum } from '@/domain/enums/OperationLogStatusesEnum.ts'
 
 const MAX_RETRIES = 3
 
@@ -177,7 +174,7 @@ export class TaskService extends BaseService<
     data: TaskDTO,
     user: IUser,
     externalSession?: ClientSession,
-  ): Promise<IResponseWithLog<ITaskPopulated[]>> {
+  ): Promise<IResponseWithLog<ITaskPopulated[]> | ITaskCreatePayload> {
     const userId = user.id
 
     if (externalSession) {
@@ -194,8 +191,34 @@ export class TaskService extends BaseService<
     userId: Types.ObjectId,
     session: ClientSession,
     timezone: string,
+    isDryRun: boolean = false,
   ): Promise<IResponseWithLog<ITaskPopulated[]>> {
-    const tasksPayload = await this.prepareTasksCreationPayload(data, userId, timezone, session)
+    const tasksPayload = await this.prepareTasksCreationPayload(
+      data,
+      userId,
+      timezone,
+      session,
+      isDryRun,
+    )
+
+    if (isDryRun) {
+      const log = await this.operationLogService.create(
+        {
+          operationType: OperationTypesEnum.CREATE,
+          collectionName: CollectionsEnum.TASKS,
+          entitiesAfter: tasksPayload,
+          dependencies: [],
+          status: OperationLogStatusesEnum.PENDING,
+        },
+        userId,
+        session,
+      )
+
+      return {
+        data: [],
+        logId: log.id,
+      }
+    }
 
     /* CREATE */
     const newTasks = await this.repository.createMany(tasksPayload, session)
@@ -248,20 +271,27 @@ export class TaskService extends BaseService<
     data: TaskDTO[],
     user: IUser,
     externalSession?: ClientSession,
+    isDryRun: boolean = false,
   ): Promise<IResponseWithLog<ITaskPopulated[]>> {
     const userId = user.id
 
     if (externalSession) {
-      return this._executeCreateManyTransaction(data, userId, externalSession, user.timezone)
+      return this._executeCreateManyTransaction(
+        data,
+        userId,
+        externalSession,
+        user.timezone,
+        isDryRun,
+      )
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeCreateManyTransaction(data, userId, session, user.timezone),
+        this._executeCreateManyTransaction(data, userId, session, user.timezone, isDryRun),
       )
     }
   }
 
   private async _executeEditTransaction(
-    data: TaskEditDTO,
+    data: Omit<TaskEditDTO, 'id'>,
     criteria: ITaskCriteria,
     userId: Types.ObjectId,
     session: ClientSession,
@@ -350,7 +380,7 @@ export class TaskService extends BaseService<
         operationType: OperationTypesEnum.UPDATE,
         collectionName: CollectionsEnum.TASKS,
         entitiesBefore: tasksBefore,
-        entitiesAfter: updatedTasks,
+        entitiesAfter: projectProperties<ITask>(updatedTasks, taskPayload),
         dependencies: [],
       },
       userId,
@@ -372,7 +402,7 @@ export class TaskService extends BaseService<
   }
 
   public async edit(
-    data: TaskEditDTO,
+    data: Omit<TaskEditDTO, 'id'>,
     criteria: ITaskCriteria,
     user: IUser,
     externalSession?: ClientSession,
@@ -393,6 +423,7 @@ export class TaskService extends BaseService<
     userId: Types.ObjectId,
     session: ClientSession,
     timezone: string,
+    isDryRun: boolean = false,
   ): Promise<IResponseWithLog<ITaskPopulated[]>> {
     const taskIds = data.map((d) => d.id)
 
@@ -410,7 +441,7 @@ export class TaskService extends BaseService<
     const existingMap = new Map(existingTasks.map((t) => [t.id.toString(), t]))
 
     const taskPayloads: SingleUpdateDTO<SafeUpdateData<ITask>>[] = []
-    const tasksBefore: Partial<ITask>[] = []
+    const tasksBefore: (Partial<ITask> & { id: Types.ObjectId })[] = []
     const movedTaskIds: string[] = []
     const reorderTaskIds = new Set<string>()
     const moveToEndIds = new Set<string>()
@@ -419,9 +450,10 @@ export class TaskService extends BaseService<
       const task = existingMap.get(dto.id)
       if (!task) continue
 
-      const taskPayload = await this.prepareTaskEditPayload(dto, [task], timezone)
+      const taskPayload = await this.prepareTaskEditManyPayload(dto, [task], timezone, isDryRun)
+      const taskBefore = projectProperties<ITask>([task], taskPayload)[0]
 
-      tasksBefore.push(projectProperties<ITask>([task], taskPayload)[0])
+      tasksBefore.push(taskBefore)
       taskPayloads.push(taskPayload)
 
       const isMoving = dto.categoryId !== undefined && task.category.toString() !== dto.categoryId
@@ -434,6 +466,37 @@ export class TaskService extends BaseService<
       } else if (dto.order == null && isMoving) {
         reorderTaskIds.add(dto.id)
         moveToEndIds.add(dto.id)
+      }
+    }
+
+    if (isDryRun) {
+      const tasksAfter = tasksBefore.map((t) => {
+        const payload = taskPayloads.find((p) => p.id.toString() === t.id.toString())
+
+        if (!payload) return t
+
+        return {
+          ...t,
+          ...payload,
+        }
+      })
+
+      const log = await this.operationLogService.create(
+        {
+          operationType: OperationTypesEnum.UPDATE,
+          collectionName: CollectionsEnum.TASKS,
+          entitiesBefore: tasksBefore,
+          entitiesAfter: tasksAfter,
+          dependencies: [],
+          status: OperationLogStatusesEnum.PENDING,
+        },
+        userId,
+        session,
+      )
+
+      return {
+        data: [],
+        logId: log.id,
       }
     }
 
@@ -478,13 +541,21 @@ export class TaskService extends BaseService<
       sideEffects.push(this.reorderService.reorder('category', tasksToReorder, userId, session))
     }
 
+    const projectedUpdatedTasks = updatedTasks.map(
+      (t) =>
+        projectProperties<ITask>(
+          [t],
+          taskPayloads.find((p) => p.id.toString() === t.id.toString())!,
+        )[0],
+    )
+
     /** LOGGING */
     const logPromise = this.operationLogService.create(
       {
         operationType: OperationTypesEnum.UPDATE,
         collectionName: CollectionsEnum.TASKS,
         entitiesBefore: tasksBefore,
-        entitiesAfter: updatedTasks,
+        entitiesAfter: projectedUpdatedTasks,
         dependencies: [],
       },
       userId,
@@ -512,14 +583,21 @@ export class TaskService extends BaseService<
     data: TaskEditDTO[],
     user: IUser,
     externalSession?: ClientSession,
+    isDryRun: boolean = false,
   ): Promise<IResponseWithLog<ITaskPopulated[]>> {
     const userId = user.id
 
     if (externalSession) {
-      return this._executeEditManyTransaction(data, userId, externalSession, user.timezone)
+      return this._executeEditManyTransaction(
+        data,
+        userId,
+        externalSession,
+        user.timezone,
+        isDryRun,
+      )
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeEditManyTransaction(data, userId, session, user.timezone),
+        this._executeEditManyTransaction(data, userId, session, user.timezone, isDryRun),
       )
     }
   }
@@ -606,12 +684,23 @@ export class TaskService extends BaseService<
     criteria: ITaskCriteria,
     userId: Types.ObjectId,
     session: ClientSession,
-  ): Promise<void> {
+  ): Promise<IResponseWithLog<null>> {
     const tasksToDelete = await this.repository.findByCriteria(criteria, session, undefined, userId)
 
     if (tasksToDelete.length === 0) {
       throw new NotFoundError('Задачи для удаления не найдены.')
     }
+
+    const log = await this.operationLogService.create(
+      {
+        operationType: OperationTypesEnum.CREATE,
+        collectionName: CollectionsEnum.TASKS,
+        entitiesBefore: tasksToDelete,
+        dependencies: [],
+      },
+      userId,
+      session,
+    )
 
     const uniqueCategoryIds = [...new Set(tasksToDelete.map((t) => t.category.toString()))].map(
       (id) => new Types.ObjectId(id),
@@ -626,13 +715,18 @@ export class TaskService extends BaseService<
 
       this.reorderService.reorderByParentIds(uniqueCategoryIds, 'category', userId, session),
     ])
+
+    return {
+      data: null,
+      logId: log.id,
+    }
   }
 
   public async delete(
     criteria: ITaskCriteria,
     user: IUser,
     externalSession?: ClientSession,
-  ): Promise<void> {
+  ): Promise<IResponseWithLog<null>> {
     const userId = user.id
 
     if (externalSession) {
@@ -948,7 +1042,7 @@ export class TaskService extends BaseService<
         workspace: categoryData.workspaceId,
         createdAt: undefined,
         updatedAt: undefined,
-        _id: undefined,
+        id: undefined,
       }
     })
 
@@ -992,15 +1086,16 @@ export class TaskService extends BaseService<
     return await this.repository.updateManyByCriteria(criteria, data, session, userId)
   }
 
-  private async prepareTaskCreationPayload(
+  public async prepareTaskCreationPayload(
     data: TaskDTO,
     userId: Types.ObjectId,
     timezone: string,
     session?: ClientSession,
+    isEmbeddingsNeeded = true,
   ): Promise<ITaskCreatePayload> {
     const taskName = data.name.trim()
 
-    const embeddings = await this.embeddingService.getEmbeddings(taskName)
+    const embeddings = isEmbeddingsNeeded ? await this.embeddingService.getEmbeddings(taskName) : []
 
     const taskPayload: ITaskCreatePayload = {
       name: taskName,
@@ -1008,7 +1103,12 @@ export class TaskService extends BaseService<
       dueDate: data.dueDate || '',
       dueHours: data.dueHours,
       dueMinutes: data.dueMinutes,
-      color: data.color,
+      color: data.color
+        ? {
+            value: data.color.value,
+            tone: data.color.tone,
+          }
+        : undefined,
       isCompleted: data.isCompleted,
       workspace: Types.ObjectId.createFromHexString(data.workspaceId),
       board: Types.ObjectId.createFromHexString(data.boardId),
@@ -1035,11 +1135,12 @@ export class TaskService extends BaseService<
     return taskPayload
   }
 
-  private async prepareTasksCreationPayload(
+  public async prepareTasksCreationPayload(
     data: TaskDTO[],
     userId: Types.ObjectId,
     timezone: string,
     session?: ClientSession,
+    isDryRun = false,
   ): Promise<ITaskCreatePayload[]> {
     const tasksPayloads: ITaskCreatePayload[] = []
     const tasksGroupedByCategory: { [key: string]: TaskDTO[] } = {}
@@ -1061,11 +1162,14 @@ export class TaskService extends BaseService<
     )
 
     const taskNames = Array.from(new Set(data.map((task) => task.name.trim())))
-    const embeddingsArray = await this.embeddingService.getEmbeddingsForMultipleTexts(taskNames)
     const embeddingsMap: { [key: string]: number[] } = {}
-    taskNames.forEach((name, index) => {
-      embeddingsMap[name] = embeddingsArray[index]
-    })
+
+    if (!isDryRun) {
+      const embeddingsArray = await this.embeddingService.getEmbeddingsForMultipleTexts(taskNames)
+      taskNames.forEach((name, index) => {
+        embeddingsMap[name] = embeddingsArray[index]
+      })
+    }
 
     const countMap = new Map(
       grouppedTasksCount.map((entry) => [entry._id.toString(), entry.lastOrder]),
@@ -1080,12 +1184,18 @@ export class TaskService extends BaseService<
         const orderToSave = task.order ?? ++currentOrder
 
         const taskPayload: ITaskCreatePayload = {
+          id: task.id,
           name: taskName,
           description: task.description ?? '',
           dueDate: task.dueDate ?? '',
           dueHours: task.dueHours,
           dueMinutes: task.dueMinutes,
-          color: task.color,
+          color: task.color
+            ? {
+                value: task.color.value,
+                tone: task.color.tone,
+              }
+            : undefined,
           isCompleted: task.isCompleted,
 
           workspace: new Types.ObjectId(task.workspaceId),
@@ -1108,15 +1218,11 @@ export class TaskService extends BaseService<
     return tasksPayloads
   }
 
-  private prepareTaskMainFields(
-    data: TaskDTO | TaskEditDTO,
-    taskPayload: ITaskCreatePayload | SingleUpdateDTO<SafeUpdateData<ITask>>,
+  public prepareTaskMainFields(
+    data: TaskDTO | Omit<TaskEditDTO, 'id'>,
+    taskPayload: ITaskCreatePayload | SafeUpdateData<ITask>,
     timezone: string,
   ) {
-    if (data.color && TASK_COLORS_MAP[data.color]) {
-      taskPayload.colorName = TASK_COLORS_MAP[data.color]
-    }
-
     const isDueDateProvided = data.dueDate != null || taskPayload.dueDate != null
     const dueDate = data.dueDate || taskPayload.dueDate || dayjs().tz(timezone).format('YYYY-MM-DD')
 
@@ -1130,19 +1236,13 @@ export class TaskService extends BaseService<
     }
   }
 
-  private async prepareTaskEditPayload(
-    data: TaskEditDTO,
+  private async _prepareMainEditFields(
+    data: Omit<TaskEditDTO, 'id'>,
+    taskPayload: SafeUpdateData<ITask>,
     tasksToUpdate: ITask[],
     timezone: string,
-  ): Promise<SingleUpdateDTO<SafeUpdateData<ITask>>> {
-    const { id, ...rest } = data
-
-    const taskPayload: SingleUpdateDTO<SafeUpdateData<ITask>> = {
-      ...rest,
-
-      id: new Types.ObjectId(id),
-    }
-
+    isDryRun: boolean = false,
+  ) {
     if (data.categoryId) {
       taskPayload.category = Types.ObjectId.createFromHexString(data.categoryId)
     }
@@ -1157,7 +1257,7 @@ export class TaskService extends BaseService<
 
     this.prepareTaskMainFields(data, taskPayload, timezone)
 
-    if (data.name && tasksToUpdate.length > 0) {
+    if (!isDryRun && data.name && tasksToUpdate.length > 0) {
       const needEmbeddingsUpdate = tasksToUpdate.some(
         (ws) => data.name && ws.name.trim() !== data.name.trim(),
       )
@@ -1170,24 +1270,39 @@ export class TaskService extends BaseService<
         taskPayload.embeddings = embeddings
       }
     }
+  }
+
+  public async prepareTaskEditPayload(
+    data: Omit<TaskEditDTO, 'id'>,
+    tasksToUpdate: ITask[],
+    timezone: string,
+  ): Promise<SafeUpdateData<ITask>> {
+    const taskPayload: SafeUpdateData<ITask> = {
+      ...data,
+    }
+
+    await this._prepareMainEditFields(data, taskPayload, tasksToUpdate, timezone)
 
     return taskPayload
   }
 
-  public getNearestColor(hexColor: string) {
-    let closestColor: (typeof TASK_COLORS)[number] | (typeof TASK_COLORS)[number] = BASE_COLORS[3]
-    let minDistance = Infinity
+  public async prepareTaskEditManyPayload(
+    data: TaskEditDTO,
+    tasksToUpdate: ITask[],
+    timezone: string,
+    isDryRun: boolean = false,
+  ): Promise<SingleUpdateDTO<SafeUpdateData<ITask>>> {
+    const { id, ...rest } = data
 
-    for (const colorValue in TASK_COLORS_MAP) {
-      const distance = chroma.distance(hexColor, colorValue)
+    const taskPayload: SingleUpdateDTO<SafeUpdateData<ITask>> = {
+      ...rest,
 
-      if (distance < minDistance) {
-        minDistance = distance
-        closestColor = colorValue as (typeof TASK_COLORS)[number]
-      }
+      id: new Types.ObjectId(id),
     }
 
-    return closestColor
+    await this._prepareMainEditFields(rest, taskPayload, tasksToUpdate, timezone, isDryRun)
+
+    return taskPayload
   }
 
   private _updateTasksParentCountersWithOld(

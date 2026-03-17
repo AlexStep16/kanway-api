@@ -98,9 +98,9 @@ export abstract class BaseController<
   public delete = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const criteria = { id: req.params.id } as TCriteria
-      await this.service.delete(criteria, req.user as IUser)
+      const result = await this.service.delete(criteria, req.user as IUser)
 
-      res.status(200).json(new SuccessResponse(null))
+      res.status(200).json(new SuccessResponse(result))
     } catch (error) {
       next(error)
     }

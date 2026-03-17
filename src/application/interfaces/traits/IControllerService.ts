@@ -1,18 +1,19 @@
 import { IUser } from '@/domain/entities/IUser.ts'
 import { ClientSession, FilterQuery, Types } from 'mongoose'
+import { IResponseWithLog } from '../IResponseWithLog.ts'
 
 export interface IControllerService<
   TEntity,
   TCriteria,
   TCreateDTO,
   TEditDTO,
-  TResult = Record<string, any>
+  TResult = Record<string, any>,
 > {
   getCount(criteria: TCriteria, userId: Types.ObjectId, session?: ClientSession): Promise<number>
   getByCriteria(
     criteria: TCriteria,
     userId: Types.ObjectId,
-    session?: ClientSession
+    session?: ClientSession,
   ): Promise<TResult[]>
   getByFilter(filter: FilterQuery<TEntity>, session?: ClientSession): Promise<any>
 
@@ -23,11 +24,15 @@ export interface IControllerService<
     data: TEditDTO,
     criteria: TCriteria,
     user: IUser,
-    externalSession?: ClientSession
+    externalSession?: ClientSession,
   ): Promise<any>
   editMany(data: TEditDTO[], user: IUser, externalSession?: ClientSession): Promise<any>
 
-  delete(criteria: TCriteria, user: IUser, externalSession?: ClientSession): Promise<any>
+  delete(
+    criteria: TCriteria,
+    user: IUser,
+    externalSession?: ClientSession,
+  ): Promise<IResponseWithLog<null>>
 
   archive(criteria: TCriteria, user: IUser, externalSession?: ClientSession): Promise<any>
   recover(criteria: TCriteria, user: IUser, externalSession?: ClientSession): Promise<any>

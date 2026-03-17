@@ -6,6 +6,10 @@ export const AgentStateAnnotation = Annotation.Root({
     reducer: messagesStateReducer,
     default: () => [],
   }),
+  executor_messages: Annotation<BaseMessage[]>({
+    reducer: messagesStateReducer,
+    default: () => [],
+  }),
   relevant_tools: Annotation<string[]>({
     reducer: (_, y) => y,
     default: () => [],
@@ -24,14 +28,6 @@ export const AgentStateAnnotation = Annotation.Root({
   }),
   plan: Annotation<string[]>({
     reducer: (_, y) => y,
-    default: () => [],
-  }),
-  plan_hash: Annotation<string>({
-    reducer: (x, y) => y ?? x,
-    default: () => '',
-  }),
-  rag_rules: Annotation<string[]>({
-    reducer: (x, y) => y ?? x,
     default: () => [],
   }),
   rag_tool_names: Annotation<string[]>({
@@ -55,6 +51,14 @@ export const AgentStateAnnotation = Annotation.Root({
     default: () => false,
   }),
   summary: Annotation<string>({
+    reducer: (x, y) => y ?? x,
+    default: () => '',
+  }),
+  skills: Annotation<string[]>({
+    reducer: (x, y) => y ?? x,
+    default: () => [],
+  }),
+  planner_reasoning: Annotation<string>({
     reducer: (x, y) => y ?? x,
     default: () => '',
   }),

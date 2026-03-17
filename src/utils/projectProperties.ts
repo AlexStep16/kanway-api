@@ -1,8 +1,19 @@
 export function projectProperties<T extends Record<string, any>>(
   sourceArray: T[],
-  targetObject: Record<string, any>
-): Partial<T>[] {
-  const keysToKeep = Object.keys(targetObject)
+  targetObject: Record<string, any>,
+): (Partial<T> & {
+  id: string
+})[] {
+  const keysToKeep = Object.keys(targetObject).concat([
+    'id',
+    'category',
+    'board',
+    'workspace',
+    'name',
+    'dueDate',
+    'dueHours',
+    'dueMinutes',
+  ])
 
   return sourceArray.map((sourceItem) => {
     const result: Partial<T> = {}
@@ -13,6 +24,6 @@ export function projectProperties<T extends Record<string, any>>(
       }
     }
 
-    return result as Partial<T>
+    return result as Partial<T> & { id: string }
   })
 }

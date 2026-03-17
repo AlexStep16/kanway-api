@@ -1,5 +1,6 @@
 import { model, Schema } from 'mongoose'
 import { ITaskRaw } from '@entities/ITaskRaw.ts'
+import { TASK_COLORS_TITLES } from '@/constants/TASK_COLORS.ts'
 
 export const TaskSchema = new Schema<ITaskRaw>(
   {
@@ -65,16 +66,22 @@ export const TaskSchema = new Schema<ITaskRaw>(
       type: Number,
     },
     color: {
-      type: String,
-    },
-    color_name: {
-      type: String,
+      type: {
+        value: {
+          type: String,
+          enum: TASK_COLORS_TITLES,
+        },
+        tone: {
+          type: String,
+          enum: ['light', 'medium', 'dark'],
+        },
+      },
     },
     deleted_time: {
       type: Date,
     },
   },
-  { timestamps: true }
+  { timestamps: true },
 )
 
 const Task = model<ITaskRaw>('Task', TaskSchema)

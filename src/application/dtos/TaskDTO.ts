@@ -1,4 +1,4 @@
-import { TASK_COLORS } from '@/constants/TASK_COLORS.ts'
+import { TASK_COLORS_TITLES } from '@/constants/TASK_COLORS.ts'
 import { ErrorMessages } from '@/enums/ErrorMessages.ts'
 import { z } from 'zod'
 
@@ -18,7 +18,7 @@ export const TaskDTOSchema = z
       .max(100, ErrorMessages.TASK_NAME_MORE_THAN_100),
     description: z
       .string(ErrorMessages.TASK_DESCRIPTION_INVALID)
-      .max(300, ErrorMessages.TASK_DESCRIPTION_MORE_THAN_300)
+      .max(1000, ErrorMessages.TASK_DESCRIPTION_MORE_THAN_1000)
       .optional(),
     dueDate: z.iso.date(ErrorMessages.TASK_DUE_DATE_INVALID).optional(),
     dueHours: z.number(ErrorMessages.TASK_DUE_TIME_INVALID).min(0).max(23).optional(),
@@ -48,11 +48,19 @@ export const TaskDTOSchema = z
       })
       .regex(objectIdRegex, ErrorMessages.WORKSPACE_ID_INVALID),
     color: z
-      .enum(TASK_COLORS, {
-        error: (iss) =>
-          iss.input === undefined
-            ? ErrorMessages.TASK_COLOR_REQUIRED
-            : 'Неверное значение для цвета.',
+      .object({
+        value: z.enum(TASK_COLORS_TITLES, {
+          error: (iss) =>
+            iss.input === undefined
+              ? ErrorMessages.TASK_COLOR_REQUIRED
+              : 'Неверное значение для цвета.',
+        }),
+        tone: z.enum(['light', 'medium', 'dark'], {
+          error: (iss) =>
+            iss.input === undefined
+              ? ErrorMessages.TASK_COLOR_REQUIRED
+              : 'Неверное значение для цвета.',
+        }),
       })
       .optional(),
     tags: z.array(z.string(), ErrorMessages.TASK_TAGS_INVALID_TYPE).optional(),

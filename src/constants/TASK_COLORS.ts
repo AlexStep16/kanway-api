@@ -1,44 +1,147 @@
 export const TASK_COLORS_MAP = {
-  '#ffa2a2': 'Red',
-  '#ff6467': 'Red',
-  '#e7000b': 'Red',
+  '#ffa2a2': {
+    name: 'red',
+    tone: 'light',
+  },
+  '#ff6467': {
+    name: 'red',
+    tone: 'medium',
+  },
+  '#e7000b': {
+    name: 'red',
+    tone: 'dark',
+  },
 
-  '#8ec5ff': 'Blue',
-  '#3b82f6': 'Blue',
-  '#155dfc': 'Blue',
+  '#8ec5ff': {
+    name: 'blue',
+    tone: 'light',
+  },
+  '#3b82f6': {
+    name: 'blue',
+    tone: 'medium',
+  },
+  '#155dfc': {
+    name: 'blue',
+    tone: 'dark',
+  },
 
-  '#ffdf20': 'Yellow',
-  '#f0b100': 'Yellow',
-  '#d08700': 'Yellow',
+  '#ffdf20': {
+    name: 'yellow',
+    tone: 'light',
+  },
+  '#f0b100': {
+    name: 'yellow',
+    tone: 'medium',
+  },
+  '#d08700': {
+    name: 'yellow',
+    tone: 'dark',
+  },
 
-  '#dab2ff': 'Purple',
-  '#ad46ff': 'Purple',
-  '#9810fa': 'Purple',
+  '#dab2ff': {
+    name: 'purple',
+    tone: 'light',
+  },
+  '#ad46ff': {
+    name: 'purple',
+    tone: 'medium',
+  },
+  '#9810fa': {
+    name: 'purple',
+    tone: 'dark',
+  },
 
-  '#ffb86a': 'Orange',
-  '#ff6900': 'Orange',
-  '#f54a00': 'Orange',
+  '#ffb86a': {
+    name: 'orange',
+    tone: 'light',
+  },
+  '#ff6900': {
+    name: 'orange',
+    tone: 'medium',
+  },
+  '#f54a00': {
+    name: 'orange',
+    tone: 'dark',
+  },
 
-  '#7bf1a8': 'Green',
-  '#00c951': 'Green',
-  '#00a63e': 'Green',
+  '#7bf1a8': {
+    name: 'green',
+    tone: 'light',
+  },
+  '#00c951': {
+    name: 'green',
+    tone: 'medium',
+  },
+  '#00a63e': {
+    name: 'green',
+    tone: 'dark',
+  },
 
-  '#bbf451': 'Lime',
-  '#7ccf00': 'Lime',
-  '#5ea500': 'Lime',
+  '#bbf451': {
+    name: 'lime',
+    tone: 'light',
+  },
+  '#7ccf00': {
+    name: 'lime',
+    tone: 'medium',
+  },
+  '#5ea500': {
+    name: 'lime',
+    tone: 'dark',
+  },
 
-  '#fda5d6': 'Pink',
-  '#f6339a': 'Pink',
-  '#e60076': 'Pink',
+  '#fda5d6': {
+    name: 'pink',
+    tone: 'light',
+  },
+  '#f6339a': {
+    name: 'pink',
+    tone: 'medium',
+  },
+  '#e60076': {
+    name: 'pink',
+    tone: 'dark',
+  },
 
-  '#d4d4d4': 'Neutral',
-  '#737373': 'Neutral',
-  '#525252': 'Neutral',
+  '#d4d4d4': {
+    name: 'neutral',
+    tone: 'light',
+  },
+  '#737373': {
+    name: 'neutral',
+    tone: 'medium',
+  },
+  '#525252': {
+    name: 'neutral',
+    tone: 'dark',
+  },
 
-  '#d1d5dc': 'Gray',
-  '#6a7282': 'Gray',
-  '#4a5565': 'Gray',
+  '#d1d5dc': {
+    name: 'gray',
+    tone: 'light',
+  },
+  '#6a7282': {
+    name: 'gray',
+    tone: 'medium',
+  },
+  '#4a5565': {
+    name: 'gray',
+    tone: 'dark',
+  },
 }
+
+export const TASK_COLORS_TITLES = [
+  'red',
+  'blue',
+  'yellow',
+  'purple',
+  'orange',
+  'green',
+  'lime',
+  'pink',
+  'neutral',
+  'gray',
+] as const
 
 export const TASK_COLORS = [
   '#ffa2a2',

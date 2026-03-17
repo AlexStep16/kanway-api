@@ -1,0 +1,214 @@
+import { Worker } from 'bullmq'
+import { RemoveMessage } from '@langchain/core/messages'
+import { RunnableConfig } from '@langchain/core/runnables'
+
+import type { Job } from 'bullmq'
+import connectToDatabase from '@db/connectToDatabase.ts'
+import { getAgent } from '@/infrastructure/ai/getAgent.ts'
+import { CustomEvents } from '@/enums/CustomEventsNew.ts'
+import { initializeDependencies } from '../di/initializeDependencies.ts'
+
+import utc from 'dayjs/plugin/utc.js'
+import timezone from 'dayjs/plugin/timezone.js'
+import duration from 'dayjs/plugin/duration.js'
+import customParseFormat from 'dayjs/plugin/customParseFormat.js'
+import dayjs from 'dayjs'
+import { Configurable } from '@/application/ai/interfaces/Configurable.ts'
+import { Types } from 'mongoose'
+
+import * as Sentry from '@sentry/node'
+import { Command, CompiledStateGraph } from '@langchain/langgraph'
+import getLastHumanMessage from '@application/ai/helpers/getLastHumanMessage.ts'
+import { langgraphQueue } from '../queues/index.ts'
+import { AgentStateAnnotation } from '@/application/aiNew/agent/AgentStateAnnotation.ts'
+import { BullMQCallbackHandler } from '@/application/ai/callbacks/BullMQCallbackHandler.ts'
+
+const dependencies = initializeDependencies()
+
+Sentry.init({
+  dsn: 'https://2aa4717bdc17380896b4b44e49d09363@o4510595293249536.ingest.de.sentry.io/4510595296264272',
+
+  // Send structured logs to Sentry
+  enableLogs: true,
+  // Setting this option to true will send default PII data to Sentry.
+  // For example, automatic IP address collection on events
+  sendDefaultPii: true,
+})
+
+await connectToDatabase()
+
+dayjs.locale('ru')
+dayjs.extend(utc)
+dayjs.extend(timezone)
+dayjs.extend(duration)
+dayjs.extend(customParseFormat)
+
+async function cleanupLastIteration(agent: CompiledStateGraph<any, any>, config: RunnableConfig) {
+  const currentState = await agent.getState(config)
+  const messages = currentState.values.messages || []
+
+  if (messages.length === 0) {
+    throw new Error('History is empty, cannot retry.')
+  }
+
+  // 4. Ищем последнее сообщение пользователя
+  const lastHumanMessage = getLastHumanMessage(messages)
+
+  if (!lastHumanMessage) {
+    throw new Error('No user message found to retry from.')
+  }
+
+  const lastHumanIndex = messages.findIndex((msg: any) => msg.id === lastHumanMessage.id)
+
+  // 5. Определяем "мусор", который нужно удалить
+  // Это всё, что идет ПОСЛЕ последнего сообщения юзера (ToolCalls, ToolMessages, Partial AI responses)
+  const messagesToDelete = messages.slice(lastHumanIndex + 1)
+
+  // 6. Удаляем мусор из стейта LangGraph
+  if (messagesToDelete.length > 0) {
+    const removeRequests = messagesToDelete.map((msg: any) => new RemoveMessage({ id: msg.id }))
+
+    // updateState применяет изменения к текущему треду
+    const updateData: Partial<typeof AgentStateAnnotation.State> = {
+      messages: removeRequests,
+    }
+    await agent.updateState(config, updateData)
+  }
+}
+
+export const RunAgentWorker = new Worker(
+  'langgraph-tasks',
+  async (
+    job: Job<{
+      payload: Partial<typeof AgentStateAnnotation.State> | Command
+      config: RunnableConfig
+      isRetry: boolean
+    }>,
+  ) => {
+    if (!job.data || !job.data.payload || !job.data.config) {
+      throw new Error('Invalid job data')
+    }
+
+    const controller = new AbortController()
+
+    const { payload, config, isRetry } = job.data
+
+    const configurable = config.configurable as Configurable
+
+    if (config.configurable && typeof config.configurable.user.id === 'string') {
+      configurable.user.id = new Types.ObjectId(configurable.user.id)
+    }
+
+    const checkInterval = setInterval(async () => {
+      try {
+        // Получаем СВЕЖУЮ версию джобы из Redis
+        const freshJob = await langgraphQueue.getJob(job.id || '')
+
+        // Если в данных появился наш флаг — рубим процесс
+        if (freshJob && freshJob.data && freshJob.data.__abortSignal) {
+          controller.abort()
+          clearInterval(checkInterval)
+        }
+      } catch (err) {
+        Sentry.captureException(err, { extra: { jobId: job.id } })
+      }
+    }, 500)
+
+    const stepsMessage = await dependencies.services.chatMessageService.getByCriteria(
+      { id: configurable.stepMessageId },
+      configurable.user.id,
+    )
+
+    const bullMQHandler = new BullMQCallbackHandler(
+      job,
+      dependencies.services.chatMessageService,
+      configurable,
+      stepsMessage[0],
+    )
+
+    try {
+      // Используем streamEvents v2
+      const agent = await getAgent(dependencies)
+
+      if (isRetry) {
+        await cleanupLastIteration(agent, config)
+      }
+
+      const stream: any = agent.streamEvents(payload, {
+        ...config,
+        version: 'v2',
+        callbacks: [bullMQHandler],
+        signal: controller.signal,
+      })
+
+      let accumulatedContent = ''
+
+      for await (const event of stream) {
+        const eventType = event.event
+
+        if (event.name === CustomEvents.AMBIGUITY_RESOLUTION) {
+          const eventData = event.data
+
+          await bullMQHandler.createResolveAmbiguousMessage(eventData)
+
+          break
+        }
+
+        if (!bullMQHandler.isSynthesizeStarted) continue
+
+        if (eventType === 'on_chat_model_stream') {
+          const chunk = event.data.chunk
+
+          if (chunk.content && typeof chunk.content === 'string') {
+            accumulatedContent += chunk.content
+
+            if (bullMQHandler.aiMessage)
+              await job.updateProgress({
+                role: CustomEvents.UPDATE_MESSAGE,
+                data: {
+                  ...bullMQHandler.aiMessage,
+                  content: accumulatedContent,
+                },
+              })
+          }
+        }
+      }
+
+      return { status: 'completed', message: 'Агент завершил свою работу.' }
+    } catch (error: any) {
+      console.error('Error in RunAgentWorker:', error)
+
+      bullMQHandler.failSteps()
+
+      if (error.name === 'AbortError' || controller.signal.aborted) {
+        const agent = await getAgent(dependencies)
+
+        await cleanupLastIteration(agent, config)
+
+        throw error
+      }
+
+      //Sentry.captureException(error, { extra: { jobId: job.id, chatId: configurable?.chatId } })
+
+      try {
+        await bullMQHandler.createErrorMessage(error)
+      } catch (dbError) {
+        Sentry.captureException(dbError, {
+          extra: { jobId: job.id, chatId: configurable?.chatId },
+        })
+      }
+
+      throw error
+    } finally {
+      clearInterval(checkInterval)
+
+      await bullMQHandler.updateStepsMessage()
+    }
+  },
+  {
+    connection: {
+      host: process.env.REDIS_HOST || 'localhost',
+      port: Number(process.env.REDIS_PORT) || 6379,
+    },
+  },
+)

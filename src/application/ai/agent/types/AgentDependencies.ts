@@ -3,11 +3,13 @@ import { ContextExternalFetchService } from '@application/ai/services/ContextExt
 import { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import { VectorSearchService } from '@/application/services/VectorSearchService.ts'
 import { UserService } from '@/application/services/UserService.ts'
+import { AgentSkillService } from '@/application/services/AgentSkillService.ts'
 
 export interface AgentDependencies {
   services: {
     toolExecutorService: ToolExecutorService
     contextExternalFetchService: ContextExternalFetchService
+    agentSkillService: AgentSkillService
     vectorSearchService: VectorSearchService
     userService: UserService
   }

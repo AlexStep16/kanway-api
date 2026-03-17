@@ -2,16 +2,6 @@ import { BoardService } from '@application/services/BoardService.ts'
 import { CategoryService } from '@application/services/CategoryService.ts'
 import { WorkspaceService } from '@application/services/WorkspaceService.ts'
 import { TaskService } from '@application/services/TaskService.ts'
-import {
-  BoardCreateDTO,
-  CategoryCreateDTO,
-  EditBoardsDTO,
-  EditCategoriesDTO,
-  EditTasksDTO,
-  EditWorkspacesDTO,
-  TaskCreateDTO,
-  WorkspaceCreateDTO,
-} from '@application/ai/tools/toolSchemes.ts'
 import { ToolCall } from '@langchain/core/messages'
 import { RunnableConfig } from '@langchain/core/runnables'
 import { Configurable } from '../interfaces/Configurable.ts'
@@ -20,6 +10,10 @@ import { Types } from 'mongoose'
 import { ITaskPopulated } from '@/application/interfaces/ITaskPopulated.ts'
 import { ICategoryPopulated } from '@/application/interfaces/ICategoryPopulated.ts'
 import { IBoardPopulated } from '@/application/interfaces/IBoardPopulated.ts'
+import { TaskCreateDTO } from '../tools/schemes/create/taskCreateSchema.ts'
+import { CategoryCreateDTO } from '../tools/schemes/create/categoryCreateSchema.ts'
+import { BoardCreateDTO } from '../tools/schemes/create/boardCreateSchema.ts'
+import { WorkspaceCreateDTO } from '../tools/schemes/create/workspaceCreateSchema.ts'
 
 interface BaseExternalParams {
   toolCall: ToolCall
@@ -116,7 +110,7 @@ export class ContextExternalFetchService {
     const categoryDtosWithId = args.categories as (CategoryCreateDTO['categories'][0] & {
       tempId: string
     })[]
-    const allBoardIds: string[] = args.categories.map((t) => t.boardId)
+    const allBoardIds: string[] = args.categories.map((c) => c.boardId)
 
     const boards = await this.boardService.getByCriteria(
       { ids: allBoardIds },
@@ -163,7 +157,7 @@ export class ContextExternalFetchService {
   public async createBoards({ toolCall, config }: BaseExternalParams) {
     const args = toolCall.args as BoardCreateDTO
     const boardDtosWithId = args.boards as (BoardCreateDTO['boards'][0] & { tempId: string })[]
-    const allWorkspaceIds: string[] = args.boards.map((t) => t.workspaceId)
+    const allWorkspaceIds: string[] = args.boards.map((b) => b.workspaceId)
 
     const workspaces = await this.workspaceService.getByCriteria(
       { ids: allWorkspaceIds },
@@ -204,7 +198,7 @@ export class ContextExternalFetchService {
     }
   }
 
-  public async createWorkspaces({ toolCall }: BaseExternalParams) {
+  public createWorkspaces({ toolCall }: BaseExternalParams) {
     const args = toolCall.args as WorkspaceCreateDTO
     const workspaceDtosWithId = args.workspaces as (WorkspaceCreateDTO['workspaces'][0] & {
       tempId: string
@@ -236,28 +230,28 @@ export class ContextExternalFetchService {
   }
 
   public async editTasks({ toolCall, config }: BaseExternalParams) {
-    const args = toolCall.args as EditTasksDTO
+    const args = toolCall.args as { filter: { ids: string[] } }
     const ids: string[] = args.filter.ids || []
 
     return this.taskService.getByCriteria({ ids }, config.configurable?.user?.id)
   }
 
   public async editCategories({ toolCall, config }: BaseExternalParams) {
-    const args = toolCall.args as EditCategoriesDTO
+    const args = toolCall.args as { filter: { ids: string[] } }
     const ids: string[] = args.filter.ids || []
 
     return this.categoryService.getByCriteria({ ids }, config.configurable?.user?.id)
   }
 
   public async editBoards({ toolCall, config }: BaseExternalParams) {
-    const args = toolCall.args as EditBoardsDTO
+    const args = toolCall.args as { filter: { ids: string[] } }
     const ids: string[] = args.filter.ids || []
 
     return this.boardService.getByCriteria({ ids }, config.configurable?.user?.id)
   }
 
   public async editWorkspaces({ toolCall, config }: BaseExternalParams) {
-    const args = toolCall.args as EditWorkspacesDTO
+    const args = toolCall.args as { filter: { ids: string[] } }
     const ids: string[] = args.filter.ids || []
 
     return this.workspaceService.getByCriteria({ ids }, config.configurable?.user?.id)

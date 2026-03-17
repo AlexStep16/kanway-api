@@ -20,7 +20,8 @@ export default (controller: ChatController): Router => {
   )
   router.post('/retry', aiLimiter, controller.retry.bind(controller))
   router.get('/stream/:jobId/status', controller.streamStatus.bind(controller))
-  router.post('/tools/approve', aiLimiter, controller.approveToolCall.bind(controller))
+  router.post('/log/approve', aiLimiter, controller.approveLog.bind(controller))
+  router.post('/tools/resolve-ambiguous', aiLimiter, controller.resolveAmbiguous.bind(controller))
   router.post('/:jobId/stop', controller.stopAgent.bind(controller))
 
   return router

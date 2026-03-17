@@ -1,1 +1,1 @@
-export type IChatMessageRoles = 'user' | 'assistant' | 'preview' | 'error' | 'actions' | 'steps'
+export type IChatMessageRoles = 'user' | 'assistant' | 'error' | 'operation' | 'steps' | 'ambiguous'

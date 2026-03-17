@@ -1,3 +1,4 @@
+import { TASK_COLORS_TITLES } from '@/constants/TASK_COLORS.ts'
 import { Types } from 'mongoose'
 
 export interface ITaskRaw {
@@ -12,14 +13,16 @@ export interface ITaskRaw {
   is_completed: boolean
   tags: Array<string>
   user_id: Types.ObjectId
-  embeddings: Array<Number>
+  embeddings: Array<number>
   deleted_time?: Date | null
   description?: string
   due_date?: string
   due_hours?: number
   due_minutes?: number
-  color?: string
-  color_name?: string
+  color?: {
+    value: (typeof TASK_COLORS_TITLES)[number]
+    tone: 'light' | 'medium' | 'dark'
+  }
   createdAt: Date
   updatedAt: Date
 }

@@ -1,7 +1,8 @@
 import { Types } from 'mongoose'
-import { TASK_COLORS } from '@constants/TASK_COLORS.ts'
+import { TASK_COLORS_TITLES } from '@constants/TASK_COLORS.ts'
 
 export interface ITaskCreatePayload {
+  id?: string
   name: string
   workspace: Types.ObjectId
   board: Types.ObjectId
@@ -18,7 +19,9 @@ export interface ITaskCreatePayload {
   dueDate?: string
   dueHours?: number
   dueMinutes?: number
-  color?: (typeof TASK_COLORS)[number]
-  colorName?: string
+  color?: {
+    value: (typeof TASK_COLORS_TITLES)[number]
+    tone: 'light' | 'medium' | 'dark'
+  }
   tempClientId?: string
 }

@@ -5,7 +5,7 @@ const objectIdRegex = /^[0-9a-fA-F]{24}$/
 
 export const CategoryDTOSchema = z
   .object({
-    id: z.string(ErrorMessages.TASK_ID_INVALID).optional(),
+    id: z.string(ErrorMessages.CATEGORY_ID_INVALID).optional(),
     name: z
       .string({
         error: (iss) =>

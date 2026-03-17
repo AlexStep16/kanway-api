@@ -1,5 +1,5 @@
 import { Worker } from 'bullmq'
-import { BaseMessage, RemoveMessage } from '@langchain/core/messages'
+import { RemoveMessage } from '@langchain/core/messages'
 import { RunnableConfig } from '@langchain/core/runnables'
 
 import type { Job } from 'bullmq'
@@ -10,7 +10,6 @@ import { BullMQCallbackHandler } from '@application/ai/callbacks/BullMQCallbackH
 import { CustomEvents } from '@/enums/CustomEvents.ts'
 import { initializeDependencies } from '../di/initializeDependencies.ts'
 import { ChatMessageDTO } from '@/application/dtos/ChatMessageDTO.ts'
-import { AgentStateAnnotation } from '@application/ai/agent/AgentStateAnnotation.ts'
 
 import utc from 'dayjs/plugin/utc.js'
 import timezone from 'dayjs/plugin/timezone.js'
@@ -29,6 +28,7 @@ import { IUser } from '@/domain/entities/IUser.ts'
 import { langgraphQueue } from '../queues/index.ts'
 import { IChatMessageCriteria } from '@/application/interfaces/criterias/IChatMessageCriteria.ts'
 import { IChatMessage } from '@/domain/entities/IChatMessage.ts'
+import { AgentStateAnnotation } from '@/application/aiNew/agent/AgentStateAnnotation.ts'
 
 const dependencies = initializeDependencies()
 
@@ -105,21 +105,8 @@ async function cleanupLastIteration(agent: CompiledStateGraph<any, any>, config:
     const removeRequests = messagesToDelete.map((msg: any) => new RemoveMessage({ id: msg.id }))
 
     // updateState применяет изменения к текущему треду
-    const updateData: typeof AgentStateAnnotation.State = {
-      messages: removeRequests,
-      relevant_tools: [],
-      tools_cancelled: [],
-      tools_validation_errors: [],
-      prepared_confirmations: [],
-      is_confirmation_needed: false,
-      cancelled_entity_ids: [],
-      validation_failed: false,
-      planner_has_error: false,
-      plan_hash: '',
-      rag_rules: [],
-      rag_tool_names: [],
-      summary: '',
-      plan: [],
+    const updateData: Partial<typeof AgentStateAnnotation.State> = {
+      enricher_messages: removeRequests,
     }
     await agent.updateState(config, updateData)
   }
@@ -129,7 +116,7 @@ export const RunAgentWorker = new Worker(
   'langgraph-tasks',
   async (
     job: Job<{
-      payload: { messages: BaseMessage[] } | Command
+      payload: Partial<typeof AgentStateAnnotation.State> | Command
       config: RunnableConfig
       isRetry: boolean
     }>,
@@ -357,6 +344,7 @@ export const RunAgentWorker = new Worker(
 
       return { status: 'completed', message: 'Агент завершил свою работу.' }
     } catch (error: any) {
+      console.error('Error in RunAgentWorker:', error)
       for (const step of steps) {
         if (step.state === 'in_progress') {
           step.state = 'failed'
@@ -405,16 +393,17 @@ export const RunAgentWorker = new Worker(
     } finally {
       clearInterval(checkInterval)
 
-      editChatMessage(
-        {
-          content: steps,
-        },
-        {
-          id: stepsMessage.id.toString(),
-        },
-        configurable?.user,
-        job,
-      )
+      if (stepsMessage)
+        editChatMessage(
+          {
+            content: steps,
+          },
+          {
+            id: stepsMessage.id.toString(),
+          },
+          configurable?.user,
+          job,
+        )
     }
   },
   {

@@ -23,7 +23,7 @@ export default class ChatController {
     }
   }
 
-  public async streamStatus(req: Request, res: Response) {
+  public streamStatus(req: Request, res: Response) {
     res.setHeader('Content-Type', 'text/event-stream')
     res.setHeader('Cache-Control', 'no-cache')
     res.setHeader('Connection', 'keep-alive')
@@ -85,9 +85,19 @@ export default class ChatController {
     }
   }
 
-  public async approveToolCall(req: Request, res: Response, next: NextFunction) {
+  public async approveLog(req: Request, res: Response, next: NextFunction) {
     try {
-      const result = await this.service.approveToolCall(req.body, req.user!)
+      const result = await this.service.approveLog(req.body, req.user!)
+
+      return res.status(200).json(new SuccessResponse(result))
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  public async resolveAmbiguous(req: Request, res: Response, next: NextFunction) {
+    try {
+      const result = await this.service.resolveAmbiguous(req.body, req.user!)
 
       return res.status(200).json(new SuccessResponse(result))
     } catch (error) {

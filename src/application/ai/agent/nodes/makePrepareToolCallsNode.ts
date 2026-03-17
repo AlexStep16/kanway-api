@@ -57,7 +57,7 @@ export const makePrepareToolCallsNode = (deps: AgentDependencies): any => {
 
     if (validationErrors.length > 0) {
       return {
-        messages: validationErrors,
+        executor_messages: validationErrors,
         validation_failed: true,
       }
     }
@@ -94,13 +94,13 @@ export const makePrepareToolCallsNode = (deps: AgentDependencies): any => {
       })
 
       expandedConfirmations.forEach((conf) => {
-        conf.data?.forEach((entity: any) => {
+        conf.data.forEach((entity: any) => {
           entity.isSelected = true
         })
       })
 
       return {
-        messages: [
+        executor_messages: [
           {
             ...lastMessage,
           },

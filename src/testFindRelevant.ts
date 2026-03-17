@@ -16,13 +16,14 @@ dayjs.extend(timezone)
 dayjs.extend(duration)
 
 async function test() {
-  const tasks = await dependencies.services.vectorSearchService.similaritySearchTasks(
-    ['погулять'],
-    Types.ObjectId.createFromHexString('67da84f0a2e3729760781559'),
-    30,
+  const workspaces = await dependencies.services.vectorSearchService.similaritySearchWorkspaces(
+    ['Маркетинг 2'],
+    new Types.ObjectId('67da84f0a2e3729760781559'),
+    5,
+    true,
   )
 
-  console.log('Tasks:', tasks)
+  console.log('Workspaces:', workspaces)
 }
 
 test()

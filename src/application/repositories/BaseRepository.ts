@@ -43,7 +43,10 @@ export abstract class BaseRepository<
     data: TCreatePayload,
     session: ClientSession | null = null,
   ): Promise<TEntity> {
-    const mongoData = toMongoCaseKeys<Partial<TRawEntity>>(data)
+    const mongoData = {
+      ...toMongoCaseKeys<Partial<TRawEntity>>(data),
+      _id: undefined,
+    }
     const [newDoc] = await this.model.create([mongoData], { session })
     const newDocObj = newDoc.toObject() as TRawEntity
     delete (newDocObj as any).embeddings
@@ -55,7 +58,10 @@ export abstract class BaseRepository<
     data: TCreatePayload[],
     session: ClientSession | null = null,
   ): Promise<TEntity[]> {
-    const mongoData = data.map((item) => toMongoCaseKeys<Partial<TRawEntity>>(item))
+    const mongoData = data.map((item) => ({
+      ...toMongoCaseKeys<Partial<TRawEntity>>(item),
+      _id: undefined,
+    }))
     const options: CreateOptions = { session }
 
     if (session) {
@@ -93,6 +99,7 @@ export abstract class BaseRepository<
     Object.entries(mongoData).forEach(([key, value]) => {
       if (value === null || value === undefined) {
         unset[key] = true
+        // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
         delete mongoData[key as keyof typeof mongoData]
       }
     })
@@ -165,11 +172,11 @@ export abstract class BaseRepository<
     return this.model.bulkWrite(validOps, { session })
   }
 
-  public async bulkUpdateOrders(
+  public bulkUpdateOrders(
     updates: IReordable[],
     userId: Types.ObjectId,
     session?: ClientSession,
-  ): Promise<MongooseBulkWriteResult | null> {
+  ): Promise<MongooseBulkWriteResult> | null {
     if (updates.length === 0) return null
 
     const bulkOperations = updates.map((item) => ({
@@ -201,6 +208,7 @@ export abstract class BaseRepository<
       limit?: number
       populate?: PopulateOptions | (string | PopulateOptions)[]
       sort?: Record<string, 1 | -1>
+      isMongoCase?: boolean
     } = {},
   ): Promise<TFindResult[]> {
     const { projection = null, limit = 1000, populate, sort = { created_at: -1 } } = options
@@ -213,7 +221,9 @@ export abstract class BaseRepository<
 
     const result = await query.lean()
 
-    return result.map(toServerCaseKeys<TFindResult>)
+    return options.isMongoCase
+      ? (result as TFindResult[])
+      : result.map(toServerCaseKeys<TFindResult>)
   }
 
   public async findByCriteria<TFindResult = TEntity>(
@@ -224,6 +234,7 @@ export abstract class BaseRepository<
       limit?: number
       populate?: PopulateOptions | (string | PopulateOptions)[]
       sort?: Record<string, 1 | -1>
+      isMongoCase?: boolean
     } = {},
     userId?: Types.ObjectId,
   ): Promise<TFindResult[]> {
@@ -240,6 +251,7 @@ export abstract class BaseRepository<
       limit?: number
       populate?: PopulateOptions | (string | PopulateOptions)[]
       sort?: Record<string, 1 | -1>
+      isMongoCase?: boolean
     } = {},
   ): Promise<TFindResult[]> {
     return this.find<TFindResult>(filter, session, options)
@@ -252,6 +264,13 @@ export abstract class BaseRepository<
   ): Promise<number> {
     const filter = this.buildFilter(criteria, userId)
 
+    return await this.model.countDocuments(filter).session(session)
+  }
+
+  public async getCountByFilter(
+    filter: FilterQuery<TRawEntity>,
+    session: ClientSession | null = null,
+  ): Promise<number> {
     return await this.model.countDocuments(filter).session(session)
   }
 

@@ -1,5 +1,6 @@
 import { Types } from 'mongoose'
 import { OperationTypesEnum } from '@domain/enums/OperationTypesEnum.ts'
+import { OperationLogStatusesEnum } from '../enums/OperationLogStatusesEnum.ts'
 
 export interface IOperationLogRaw {
   _id: Types.ObjectId
@@ -7,10 +8,11 @@ export interface IOperationLogRaw {
   collection_name: string
   entities_before?: any[]
   entities_after?: any[]
+  status: OperationLogStatusesEnum
+  selected_ids: string[]
   is_undone: boolean
   user_id: Types.ObjectId
   dependencies: Types.ObjectId[]
-  thread_id?: string
   createdAt: Date
   updatedAt: Date
 }

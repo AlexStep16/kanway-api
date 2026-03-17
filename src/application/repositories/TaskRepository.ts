@@ -16,8 +16,12 @@ export default class TaskRepository extends BaseRepository<
     super(TaskModel)
   }
 
-  public buildFilter(criteria: ITaskCriteria, userId: Types.ObjectId): FilterQuery<ITaskRaw> {
-    const filter: FilterQuery<ITaskRaw> = { user_id: userId }
+  public buildFilter(criteria: ITaskCriteria, userId?: Types.ObjectId): FilterQuery<ITaskRaw> {
+    const filter: FilterQuery<ITaskRaw> = {}
+
+    if (userId) {
+      filter.user_id = userId
+    }
 
     if (criteria.id) {
       filter._id = criteria.id

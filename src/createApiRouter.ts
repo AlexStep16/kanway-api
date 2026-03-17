@@ -19,6 +19,7 @@ import { initializeDependencies } from '@infrastructure/di/initializeDependencie
 import supportRoutes from './infrastructure/routes/supportRoutes.ts'
 import paymentNotificationRoutes from './infrastructure/routes/paymentNotificationRoutes.ts'
 import { authLimiter } from '@/limiters.ts'
+import sandboxRoutes from './infrastructure/routes/sandboxRoutes.ts'
 
 export const createApiRouter = (): Router => {
   const apiRouter = Router()
@@ -53,6 +54,8 @@ export const createApiRouter = (): Router => {
     operationLogRoutes(dependencies.controllers.operationLogController),
   )
   apiRouter.use('/me', userRoutes(dependencies.controllers.userController))
+
+  apiRouter.use('/sandbox', sandboxRoutes(dependencies.controllers.sandboxController))
 
   return apiRouter
 }

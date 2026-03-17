@@ -1,6 +1,7 @@
 import { Types } from 'mongoose'
 import { z } from 'zod'
 import { OperationTypesEnum } from '@domain/enums/OperationTypesEnum.ts'
+import { OperationLogStatusesEnum } from '@/domain/enums/OperationLogStatusesEnum.ts'
 
 const objectIdRegex = /^[0-9a-fA-F]{24}$/
 
@@ -12,7 +13,8 @@ export const OperationLogCreationSchema = z.object({
   dependencies: z.array(z.string().regex(objectIdRegex)).transform((ids: string[]) => {
     return ids.map((id) => new Types.ObjectId(id))
   }),
-  threadId: z.string().optional(),
+  status: z.enum(OperationLogStatusesEnum).optional(),
+  selectedIds: z.array(z.string()).optional(),
 })
 
 export type OperationLogCreationDTO = z.infer<typeof OperationLogCreationSchema>

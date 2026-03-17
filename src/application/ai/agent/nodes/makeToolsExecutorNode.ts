@@ -10,7 +10,7 @@ export const makeToolsExecutorNode = (deps: AgentDependencies) => {
     const { toolExecutorService } = deps.services
     const configurable = config.configurable as Configurable
 
-    const lastMessage = state.messages.at(-1) as AIMessage
+    const lastMessage = state.executor_messages.at(-1) as AIMessage
 
     let toolCalls = lastMessage.tool_calls || []
 
@@ -55,8 +55,11 @@ export const makeToolsExecutorNode = (deps: AgentDependencies) => {
       )
     }
 
+    const allToolMessages = [...executionResults, ...cancelMessages, ...cancelledEntityMessages]
+
     return {
-      messages: [...executionResults, ...cancelMessages, ...cancelledEntityMessages],
+      executor_messages: allToolMessages,
+      messages: allToolMessages,
       tools_cancelled: [],
       cancelled_entity_ids: [],
       prepared_confirmations: [],

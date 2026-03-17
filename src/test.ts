@@ -1,17 +1,30 @@
-import connectToDatabase from '@infrastructure/db/connectToDatabase.ts'
 import { initializeDependencies } from './infrastructure/di/initializeDependencies.ts'
-import { Types } from 'mongoose'
-
-await connectToDatabase()
+import connectToDatabase from './infrastructure/db/connectToDatabase.ts'
+import utc from 'dayjs/plugin/utc.js'
+import timezone from 'dayjs/plugin/timezone.js'
+import duration from 'dayjs/plugin/duration.js'
+import dayjs from 'dayjs'
 
 const dependencies = initializeDependencies()
 
+await connectToDatabase()
+
+dayjs.locale('ru')
+dayjs.extend(utc)
+dayjs.extend(timezone)
+dayjs.extend(duration)
+
 async function test() {
-  await dependencies.services.baseService.similaritySearchBoards(
-    'работа',
-    Types.ObjectId.createFromHexString('67da84f0a2e3729760781559'),
-    30
-  )
+  const user = await dependencies.services.userService.getById('67da84f0a2e3729760781559')
+  const oldTasks = await dependencies.services.taskService.getByCriteria({})
+  const updatedTasks = oldTasks.map((task) => {
+    return {
+      id: task.id.toString(),
+      color: null,
+    }
+  })
+
+  await dependencies.services.taskService.editMany(updatedTasks, user!)
 }
 
 test()

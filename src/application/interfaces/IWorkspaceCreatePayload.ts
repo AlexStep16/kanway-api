@@ -1,9 +1,10 @@
 import { Types } from 'mongoose'
 
 export interface IWorkspaceCreatePayload {
+  id?: string
   name: string
   userId: Types.ObjectId
-  embeddings: Array<Number>
+  embeddings: Array<number>
   color: string
   colorName: string
   order: number

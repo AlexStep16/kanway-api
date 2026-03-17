@@ -12,7 +12,7 @@ export interface IWorkspaceRaw {
   order: number
   color: (typeof BASE_COLORS)[number]
   color_name: string
-  embeddings: Array<Number>
+  embeddings: Array<number>
   is_deleted: boolean
   deleted_time?: Date | null
   createdAt: Date

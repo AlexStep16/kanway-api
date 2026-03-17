@@ -1,6 +1,7 @@
 import { Schema, model } from 'mongoose'
 import { IOperationLogRaw } from '@entities/IOperationLogRaw.ts'
 import { OperationTypesEnum } from '@domain/enums/OperationTypesEnum.ts'
+import { OperationLogStatusesEnum } from '../enums/OperationLogStatusesEnum.ts'
 
 export const OperationLogSchema = new Schema<IOperationLogRaw>(
   {
@@ -19,6 +20,15 @@ export const OperationLogSchema = new Schema<IOperationLogRaw>(
     entities_after: {
       type: [Schema.Types.Mixed],
     },
+    status: {
+      type: Number,
+      enum: OperationLogStatusesEnum,
+      default: OperationLogStatusesEnum.SUCCESS,
+    },
+    selected_ids: {
+      type: [String],
+      default: [],
+    },
     is_undone: {
       type: Boolean,
       default: false,
@@ -32,11 +42,8 @@ export const OperationLogSchema = new Schema<IOperationLogRaw>(
       type: [Schema.Types.ObjectId],
       default: [],
     },
-    thread_id: {
-      type: String,
-    },
   },
-  { timestamps: true }
+  { timestamps: true },
 )
 
 const OperationLogModel = model<IOperationLogRaw>('OperationLog', OperationLogSchema)

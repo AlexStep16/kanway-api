@@ -14,6 +14,6 @@ export interface ConfirmationContextConfig {
       toolCall: ToolCall
       state: typeof AgentStateAnnotation.State
       config: RunnableConfig
-    }) => Promise<any>
+    }) => any
   }
 }

@@ -4,6 +4,7 @@ import { z } from 'zod'
 const objectIdRegex = /^[0-9a-fA-F]{24}$/
 
 export const BoardDTOSchema = z.object({
+  id: z.string(ErrorMessages.BOARD_ID_INVALID).optional(),
   name: z
     .string({
       error: (iss) =>

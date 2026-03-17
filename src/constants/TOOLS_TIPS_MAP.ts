@@ -5,20 +5,39 @@ export const TOOLS_TIPS_MAP = new Map<string, string>([
   ['createWorkspaces', 'Создаю пространства'],
 
   // --- Операции редактирования (Edit Operations) ---
-  ['editTasks', 'Редактирую задачи'],
-  ['editCategories', 'Редактирую категории'],
-  ['editBoards', 'Редактирую доски'],
-  ['editWorkspaces', 'Редактирую пространства'],
+  ['updateTasksName', 'Редактирую названия задач'],
+  ['updateCategoriesName', 'Редактирую названия категорий'],
+  ['updateBoardsName', 'Редактирую названия досок'],
+  ['updateWorkspacesName', 'Редактирую названия пространств'],
+
+  ['updateTasksDescription', 'Редактирую описания задач'],
+  ['updateTasksDueDate', 'Редактирую дедлайны задач'],
+  ['updateTasksDueTime', 'Редактирую время задач'],
+  ['updateTasksTags', 'Редактирую теги задач'],
+  ['updateTasksColor', 'Редактирую цвет задач'],
+  ['completeTasks', 'Изменяю статус выполнения задач'],
+
+  ['updateTasksOrder', 'Изменяю порядок задач'],
+  ['updateCategoriesOrder', 'Изменяю порядок категорий'],
+  ['updateBoardsOrder', 'Изменяю порядок досок'],
+  ['updateWorkspacesOrder', 'Изменяю порядок пространств'],
+
+  ['moveTasks', 'Перемещаю задачи'],
+  ['moveCategories', 'Перемещаю категории'],
+  ['moveBoards', 'Перемещаю доски'],
+  ['moveWorkspaces', 'Перемещаю пространства'],
+
+  ['updateWorkspacesColor', 'Редактирую цвет пространств'],
+
+  ['favoriteBoards', 'Изменяю статус избранного у досок'],
+  ['favoriteWorkspaces', 'Изменяю статус избранного у пространств'],
 
   // --- Операции поиска (Find Operations) ---
-  ['findRelevantTasks', 'Ищу задачи'],
-  ['findTasksByFilter', 'Ищу задачи'],
-  ['findRelevantCategories', 'Ищу категории'],
-  ['findCategoriesByFilter', 'Ищу категории'],
-  ['findRelevantBoards', 'Ищу доски'],
-  ['findBoardsByFilter', 'Ищу доски'],
-  ['findRelevantWorkspaces', 'Ищу пространства'],
-  ['findWorkspacesByFilter', 'Ищу пространства'],
+  ['searchRelevantTasks', 'Ищу задачи'],
+  ['searchRelevantCategories', 'Ищу категории'],
+  ['searchRelevantBoards', 'Ищу доски'],
+  ['searchRelevantWorkspaces', 'Ищу пространства'],
+  ['searchEntities', 'Выполняю поиск'],
 
   // --- Операции архивирования (Archive Operations) ---
   ['archiveTasks', 'Архивирую задачи'],

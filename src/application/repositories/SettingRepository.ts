@@ -14,8 +14,15 @@ export default class SettingRepository extends BaseRepository<
     super(SettingModel)
   }
 
-  public buildFilter(criteria: ISettingCriteria, userId: Types.ObjectId): FilterQuery<ISettingRaw> {
-    const filter: FilterQuery<ISettingRaw> = { user_id: userId }
+  public buildFilter(
+    criteria: ISettingCriteria,
+    userId?: Types.ObjectId,
+  ): FilterQuery<ISettingRaw> {
+    const filter: FilterQuery<ISettingRaw> = {}
+
+    if (userId) {
+      filter.user_id = userId
+    }
 
     if (criteria.id) {
       filter._id = criteria.id

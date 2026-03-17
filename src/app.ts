@@ -10,7 +10,7 @@ import timezone from 'dayjs/plugin/timezone.js'
 //import { initSubscriptions } from './initSubscriptions.ts'
 import { initializeTools } from './infrastructure/ai/initializeTools.ts'
 import * as Sentry from '@sentry/node'
-import { initializeAgentInstructions } from '@infrastructure/ai/initializeAgentInstructions.ts'
+import { initializeAgentSkills } from '@infrastructure/ai/initializeAgentSkills.ts'
 import customParseFormat from 'dayjs/plugin/customParseFormat.js'
 import path from 'path'
 import cookieParser from 'cookie-parser'
@@ -64,9 +64,7 @@ app.set('trust proxy', 1) // Enable if behind a proxy (e.g., Heroku, Nginx)
 
 app.use('/api', apiRouter)
 
-app.listen(3333, () => {
-  console.log('Application listening on port 3333!')
-})
+app.listen(3333, '0.0.0.0')
 
 startOpenAIProxy(8080)
 
@@ -74,4 +72,4 @@ app.use(globalErrorHandler)
 
 //initSubscriptions() //mock
 initializeTools()
-initializeAgentInstructions()
+initializeAgentSkills()

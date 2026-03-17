@@ -3,16 +3,24 @@ import { initializeDependencies } from '@infrastructure/di/initializeDependencie
 
 const dependencies = initializeDependencies()
 
-export function initializeTools() {
+export async function initializeTools() {
+  console.log('Initializing tools...')
+
   const tools = createTools(
     dependencies.adapters.baseToolAdapter,
-    dependencies.adapters.taskToolAdapter,
-    dependencies.adapters.boardToolAdapter,
-    dependencies.adapters.categoryToolAdapter,
-    dependencies.adapters.workspaceToolAdapter
+    dependencies.adapters.taskBaseToolAdapter,
+    dependencies.adapters.taskEditToolAdapter,
+    dependencies.adapters.boardBaseToolAdapter,
+    dependencies.adapters.boardEditToolAdapter,
+    dependencies.adapters.categoryBaseToolAdapter,
+    dependencies.adapters.categoryEditToolAdapter,
+    dependencies.adapters.workspaceBaseToolAdapter,
+    dependencies.adapters.workspaceEditToolAdapter,
   )
 
   for (const tool of tools.allTools) {
-    dependencies.services.toolService.save(tool)
+    await dependencies.services.toolService.save(tool)
   }
+
+  console.log('Tools initialized')
 }

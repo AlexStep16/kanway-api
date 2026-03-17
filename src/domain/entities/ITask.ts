@@ -1,10 +1,10 @@
 import { Types } from 'mongoose'
-import { TASK_COLORS } from '@constants/TASK_COLORS.ts'
+import { TASK_COLORS_TITLES } from '@constants/TASK_COLORS.ts'
 
 export interface ITask<
   TBoard = Types.ObjectId,
   TCategory = Types.ObjectId,
-  TWorkspace = Types.ObjectId
+  TWorkspace = Types.ObjectId,
 > {
   id: Types.ObjectId
   name: string
@@ -22,8 +22,10 @@ export interface ITask<
   dueDate?: string
   dueHours?: number
   dueMinutes?: number
-  color?: (typeof TASK_COLORS)[number]
-  colorName?: string
+  color?: {
+    value: (typeof TASK_COLORS_TITLES)[number]
+    tone: 'light' | 'medium' | 'dark'
+  }
   embeddings?: number[]
   tempClientId?: string
   createdAt: Date

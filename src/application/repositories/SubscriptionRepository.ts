@@ -16,9 +16,13 @@ export default class SubscriptionRepository extends BaseRepository<
 
   public buildFilter(
     criteria: ISubscriptionCriteria,
-    userId: Types.ObjectId
+    userId?: Types.ObjectId,
   ): FilterQuery<ISubscriptionRaw> {
-    const filter: FilterQuery<ISubscriptionRaw> = { user_id: userId }
+    const filter: FilterQuery<ISubscriptionRaw> = {}
+
+    if (userId) {
+      filter.user_id = userId
+    }
 
     if (criteria.id) {
       filter._id = criteria.id

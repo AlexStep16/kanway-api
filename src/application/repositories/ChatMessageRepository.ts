@@ -16,9 +16,13 @@ export default class ChatMessageRepository extends BaseRepository<
 
   public buildFilter(
     criteria: IChatMessageCriteria,
-    userId: Types.ObjectId,
+    userId?: Types.ObjectId,
   ): FilterQuery<IChatMessageRaw> {
-    const filter: FilterQuery<IChatMessageRaw> = { user_id: userId }
+    const filter: FilterQuery<IChatMessageRaw> = {}
+
+    if (userId) {
+      filter.user_id = userId
+    }
 
     if (criteria.id) {
       filter._id = criteria.id
@@ -36,6 +40,18 @@ export default class ChatMessageRepository extends BaseRepository<
       filter.thread_id = criteria.threadId
     } else if (criteria.threadIds) {
       filter.thread_id = { $in: criteria.threadIds }
+    }
+
+    if (criteria.role) {
+      filter.role = criteria.role
+    } else if (criteria.roles) {
+      filter.role = { $in: criteria.roles }
+    }
+
+    if (criteria.pendingToolCallId) {
+      filter.pending_tool_call_id = criteria.pendingToolCallId
+    } else if (criteria.pendingToolCallIds) {
+      filter.pending_tool_call_id = { $in: criteria.pendingToolCallIds }
     }
 
     return filter

@@ -8,6 +8,7 @@ export default (controller: OperationLogController): Router => {
 
   router.use(jwtAuthMiddleware)
 
+  router.get('/:id', controller.getById)
   router.patch('/:id/undo', patchEntitiesLimiter, controller.undoOperations)
 
   return router

@@ -1,6 +1,5 @@
 import { AgentDependencies } from '@/application/ai/agent/types/AgentDependencies.ts'
 import { AgentStateAnnotation } from '@/application/ai/agent/AgentStateAnnotation.ts'
-import { HumanMessage } from '@langchain/core/messages'
 import { RunnableConfig } from '@langchain/core/runnables'
 import { ChatPromptTemplate } from '@langchain/core/prompts'
 import { ChatbotPrompt } from '@application/ai/prompts/ChatbotPrompt.ts'
@@ -25,26 +24,23 @@ export const makeChatbotNode = (deps: AgentDependencies) => {
 
     const configurable = config.configurable as Configurable
 
-    const activeBoardId = configurable?.activeBoardId
-    const activeWorkspaceId = configurable?.activeWorkspaceId
+    const activeBoardName = configurable?.activeBoardName
+    const activeWorkspaceName = configurable?.activeWorkspaceName
     const currentDate = configurable?.currentDate
 
     const lastMessage = state.messages.at(-1)
 
-    if (!lastMessage || !(lastMessage instanceof HumanMessage))
-      throw new Error('Last message is not a human message.')
+    if (!lastMessage) throw new Error('Chat history is empty.')
 
     // Создаем системный промпт для чатбота
     const chatHistory = getLastChatHistory(state.messages)
 
-    let dynamicSystemPrompt =
+    const dynamicSystemPrompt =
       ChatbotPrompt +
       `\n\n### SYSTEM CONTEXT:
-    - Active Board ID: {boardId}
-    - Active Workspace ID: {workspaceId}
-    - Current Date: {currentDate}
-    - Default category for new tasks is "{defaultCategoryName}"
-    - Default board for new categories is "{defaultBoardName}"`
+    - Active Board Name: {boardName}
+    - Active Workspace Name: {workspaceName}
+    - Current Date: {currentDate}`
 
     const prompt = ChatPromptTemplate.fromMessages([
       ['system', dynamicSystemPrompt],
@@ -55,12 +51,10 @@ export const makeChatbotNode = (deps: AgentDependencies) => {
     const chain = prompt.pipe(agentModel)
 
     const response = await chain.invoke({
-      boardId: activeBoardId,
-      workspaceId: activeWorkspaceId,
+      boardName: activeBoardName,
+      workspaceName: activeWorkspaceName,
       currentDate: currentDate,
       aiName: configurable?.aiName || 'Kanbar',
-      defaultCategoryName: configurable?.defaultCategoryName || '',
-      defaultBoardName: configurable?.defaultBoardName || '',
     })
 
     await dispatchCustomEvent(CustomEvents.STEP_UPDATE, {

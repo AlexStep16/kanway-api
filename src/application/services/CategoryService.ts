@@ -32,6 +32,7 @@ import { BaseService } from '@application/services/BaseService.ts'
 import { ICategoryPopulated } from '@interfaces/ICategoryPopulated.ts'
 import { ICategoryCreatePayload } from '@interfaces/ICategoryCreatePayload.ts'
 import { SafeUpdateData } from '@/infrastructure/types/SafeUpdateData.ts'
+import { OperationLogStatusesEnum } from '@/domain/enums/OperationLogStatusesEnum.ts'
 
 const MAX_RETRIES = 3
 
@@ -202,8 +203,33 @@ export class CategoryService extends BaseService<
     data: CategoryDTO[],
     userId: Types.ObjectId,
     session: ClientSession,
+    isDryRun: boolean = false,
   ): Promise<IResponseWithLog<ICategoryPopulated[]>> {
-    const categoriesPayload = await this.prepareCategoriesCreationPayload(data, userId, session)
+    const categoriesPayload = await this.prepareCategoriesCreationPayload(
+      data,
+      userId,
+      session,
+      isDryRun,
+    )
+
+    if (isDryRun) {
+      const log = await this.operationLogService.create(
+        {
+          operationType: OperationTypesEnum.CREATE,
+          collectionName: CollectionsEnum.CATEGORIES,
+          entitiesAfter: categoriesPayload,
+          dependencies: [],
+          status: OperationLogStatusesEnum.PENDING,
+        },
+        userId,
+        session,
+      )
+
+      return {
+        data: [],
+        logId: log.id,
+      }
+    }
 
     /* CREATE */
     const newCategories = await this.repository.createMany(categoriesPayload, session)
@@ -274,20 +300,21 @@ export class CategoryService extends BaseService<
     data: CategoryDTO[],
     user: IUser,
     externalSession?: ClientSession,
+    isDryRun: boolean = false,
   ): Promise<IResponseWithLog<ICategoryPopulated[]>> {
     const userId = user.id
 
     if (externalSession) {
-      return this._executeCreateManyTransaction(data, userId, externalSession)
+      return this._executeCreateManyTransaction(data, userId, externalSession, isDryRun)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeCreateManyTransaction(data, userId, session),
+        this._executeCreateManyTransaction(data, userId, session, isDryRun),
       )
     }
   }
 
   private async _executeEditTransaction(
-    data: CategoryEditDTO,
+    data: Omit<CategoryEditDTO, 'id'>,
     criteria: ICategoryCriteria,
     userId: Types.ObjectId,
     session: ClientSession,
@@ -401,7 +428,7 @@ export class CategoryService extends BaseService<
         operationType: OperationTypesEnum.UPDATE,
         collectionName: CollectionsEnum.CATEGORIES,
         entitiesBefore: categoriesBefore,
-        entitiesAfter: updatedCategories,
+        entitiesAfter: projectProperties(updatedCategories, categoryPayload),
         dependencies: [],
       },
       userId,
@@ -423,7 +450,7 @@ export class CategoryService extends BaseService<
   }
 
   public async edit(
-    data: CategoryEditDTO,
+    data: Omit<CategoryEditDTO, 'id'>,
     criteria: ICategoryCriteria,
     user: IUser,
     externalSession?: ClientSession,
@@ -443,6 +470,7 @@ export class CategoryService extends BaseService<
     data: CategoryEditDTO[],
     userId: Types.ObjectId,
     session: ClientSession,
+    isDryRun: boolean = false,
   ): Promise<IResponseWithLog<ICategoryPopulated[]>> {
     const categoryIds = data.map((d) => d.id)
 
@@ -460,7 +488,7 @@ export class CategoryService extends BaseService<
     const existingMap = new Map(existingCategories.map((c) => [c.id.toString(), c]))
 
     const categoryPayloads: SingleUpdateDTO<SafeUpdateData<ICategory>>[] = []
-    const categoriesBefore: Partial<ICategory>[] = []
+    const categoriesBefore: (Partial<ICategory> & { id: Types.ObjectId })[] = []
     const movedCategoryIds: string[] = []
     const reorderCategoryIds = new Set<string>()
     const moveToEndIds = new Set<string>()
@@ -469,9 +497,11 @@ export class CategoryService extends BaseService<
       const category = existingMap.get(dto.id)
       if (!category) continue
 
-      const categoryPayload = await this.prepareCategoryEditPayload(dto, [category])
+      const categoryPayload = await this.prepareCategoryEditManyPayload(dto, [category], isDryRun)
 
-      categoriesBefore.push(projectProperties<ICategory>([category], categoryPayload)[0])
+      const categoryBefore = projectProperties<ICategory>([category], categoryPayload)[0]
+
+      categoriesBefore.push(categoryBefore)
       categoryPayloads.push(categoryPayload)
 
       const isMoving = dto.boardId !== undefined && category.board.toString() !== dto.boardId
@@ -484,6 +514,37 @@ export class CategoryService extends BaseService<
       } else if (dto.order == null && isMoving) {
         reorderCategoryIds.add(dto.id)
         moveToEndIds.add(dto.id)
+      }
+    }
+
+    if (isDryRun) {
+      const categoriesAfter = categoriesBefore.map((c) => {
+        const payload = categoryPayloads.find((p) => p.id.toString() === c.id.toString())
+
+        if (!payload) return c
+
+        return {
+          ...c,
+          ...payload,
+        }
+      })
+
+      const log = await this.operationLogService.create(
+        {
+          operationType: OperationTypesEnum.UPDATE,
+          collectionName: CollectionsEnum.CATEGORIES,
+          entitiesBefore: categoriesBefore,
+          entitiesAfter: categoriesAfter,
+          dependencies: [],
+          status: OperationLogStatusesEnum.PENDING,
+        },
+        userId,
+        session,
+      )
+
+      return {
+        data: [],
+        logId: log.id,
       }
     }
 
@@ -558,13 +619,21 @@ export class CategoryService extends BaseService<
       sideEffects.push(this.reorderService.reorder('board', categoriesToReorder, userId, session))
     }
 
+    const projectedUpdatedCategories = updatedCategories.map(
+      (c) =>
+        projectProperties<ICategory>(
+          [c],
+          categoryPayloads.find((p) => p.id.toString() === c.id.toString())!,
+        )[0],
+    )
+
     /** LOGGING */
     const logPromise = this.operationLogService.create(
       {
         operationType: OperationTypesEnum.UPDATE,
         collectionName: CollectionsEnum.CATEGORIES,
         entitiesBefore: categoriesBefore,
-        entitiesAfter: updatedCategories,
+        entitiesAfter: projectedUpdatedCategories,
         dependencies: [],
       },
       userId,
@@ -592,14 +661,15 @@ export class CategoryService extends BaseService<
     data: CategoryEditDTO[],
     user: IUser,
     externalSession?: ClientSession,
+    isDryRun: boolean = false,
   ): Promise<IResponseWithLog<ICategoryPopulated[]>> {
     const userId = user.id
 
     if (externalSession) {
-      return this._executeEditManyTransaction(data, userId, externalSession)
+      return this._executeEditManyTransaction(data, userId, externalSession, isDryRun)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeEditManyTransaction(data, userId, session),
+        this._executeEditManyTransaction(data, userId, session, isDryRun),
       )
     }
   }
@@ -652,7 +722,7 @@ export class CategoryService extends BaseService<
     criteria: ICategoryCriteria,
     userId: Types.ObjectId,
     session: ClientSession,
-  ): Promise<void> {
+  ): Promise<IResponseWithLog<null>> {
     const categoriesToDelete = await this.repository.findByCriteria(
       criteria,
       session,
@@ -663,6 +733,17 @@ export class CategoryService extends BaseService<
     if (categoriesToDelete.length === 0) {
       throw new NotFoundError('Категории для удаления не найдены.')
     }
+
+    const log = await this.operationLogService.create(
+      {
+        operationType: OperationTypesEnum.CREATE,
+        collectionName: CollectionsEnum.CATEGORIES,
+        entitiesBefore: categoriesToDelete,
+        dependencies: [],
+      },
+      userId,
+      session,
+    )
 
     const uniqueBoardIds = [...new Set(categoriesToDelete.map((t) => t.board.toString()))].map(
       (id) => new Types.ObjectId(id),
@@ -681,13 +762,18 @@ export class CategoryService extends BaseService<
 
       this.reorderService.reorderByParentIds(uniqueBoardIds, 'board', userId, session),
     ])
+
+    return {
+      data: null,
+      logId: log.id,
+    }
   }
 
   public async delete(
     criteria: ICategoryCriteria,
     user: IUser,
     externalSession?: ClientSession,
-  ): Promise<void> {
+  ): Promise<IResponseWithLog<null>> {
     const userId = user.id
 
     if (externalSession) {
@@ -1052,7 +1138,7 @@ export class CategoryService extends BaseService<
         ...category,
         board: boardData.boardId,
         workspace: boardData.workspaceId,
-        _id: undefined,
+        id: undefined,
       }
     })
 
@@ -1136,6 +1222,7 @@ export class CategoryService extends BaseService<
     data: CategoryDTO[],
     userId: Types.ObjectId,
     session?: ClientSession,
+    isDryRun: boolean = false,
   ): Promise<ICategoryCreatePayload[]> {
     const categoriesPayloads: ICategoryCreatePayload[] = []
     const categoriesGroupedByBoard: { [key: string]: CategoryDTO[] } = {}
@@ -1156,12 +1243,16 @@ export class CategoryService extends BaseService<
       session,
     )
 
-    const categoryNames = Array.from(new Set(data.map((category) => category.name.trim())))
-    const embeddingsArray = await this.embeddingService.getEmbeddingsForMultipleTexts(categoryNames)
     const embeddingsMap: { [key: string]: number[] } = {}
-    categoryNames.forEach((name, index) => {
-      embeddingsMap[name] = embeddingsArray[index]
-    })
+
+    if (!isDryRun) {
+      const categoryNames = Array.from(new Set(data.map((category) => category.name.trim())))
+      const embeddingsArray =
+        await this.embeddingService.getEmbeddingsForMultipleTexts(categoryNames)
+      categoryNames.forEach((name, index) => {
+        embeddingsMap[name] = embeddingsArray[index]
+      })
+    }
 
     const countMap = new Map(
       grouppedCategoriesCount.map((entry) => [entry._id.toString(), entry.lastOrder]),
@@ -1176,6 +1267,7 @@ export class CategoryService extends BaseService<
         const orderToSave = category.order ?? ++currentLastOrder
 
         categoriesPayloads.push({
+          id: category.id,
           name: categoryName,
           workspace: new Types.ObjectId(category.workspaceId),
           board: new Types.ObjectId(category.boardId),
@@ -1189,18 +1281,12 @@ export class CategoryService extends BaseService<
     return categoriesPayloads
   }
 
-  private async prepareCategoryEditPayload(
-    data: CategoryEditDTO,
+  private async _prepareMainEditFields(
+    data: Omit<CategoryEditDTO, 'id'>,
+    categoryPayload: SafeUpdateData<ICategory>,
     categoriesToUpdate: ICategory[],
-  ): Promise<SingleUpdateDTO<SafeUpdateData<ICategory>>> {
-    const { id, ...rest } = data
-
-    const categoryPayload: SingleUpdateDTO<SafeUpdateData<ICategory>> = {
-      ...rest,
-
-      id: new Types.ObjectId(id),
-    }
-
+    isDryRun: boolean = false,
+  ) {
     if (data.boardId) {
       categoryPayload.board = Types.ObjectId.createFromHexString(data.boardId)
     }
@@ -1208,7 +1294,7 @@ export class CategoryService extends BaseService<
       categoryPayload.workspace = Types.ObjectId.createFromHexString(data.workspaceId)
     }
 
-    if (data.name && categoriesToUpdate.length > 0) {
+    if (!isDryRun && data.name && categoriesToUpdate.length > 0) {
       const needEmbeddingsUpdate = categoriesToUpdate.some(
         (ws) => data.name && ws.name.trim() !== data.name.trim(),
       )
@@ -1221,6 +1307,35 @@ export class CategoryService extends BaseService<
         categoryPayload.embeddings = embeddings
       }
     }
+  }
+
+  private async prepareCategoryEditPayload(
+    data: Omit<CategoryEditDTO, 'id'>,
+    categoriesToUpdate: ICategory[],
+  ): Promise<SafeUpdateData<ICategory>> {
+    const categoryPayload: SafeUpdateData<ICategory> = {
+      ...data,
+    }
+
+    await this._prepareMainEditFields(data, categoryPayload, categoriesToUpdate)
+
+    return categoryPayload
+  }
+
+  private async prepareCategoryEditManyPayload(
+    data: CategoryEditDTO,
+    categoriesToUpdate: ICategory[],
+    isDryRun: boolean = false,
+  ): Promise<SingleUpdateDTO<SafeUpdateData<ICategory>>> {
+    const { id, ...rest } = data
+
+    const categoryPayload: SingleUpdateDTO<SafeUpdateData<ICategory>> = {
+      ...rest,
+
+      id: new Types.ObjectId(id),
+    }
+
+    await this._prepareMainEditFields(rest, categoryPayload, categoriesToUpdate, isDryRun)
 
     return categoryPayload
   }

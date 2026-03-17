@@ -19,6 +19,10 @@ export enum ErrorMessages {
   WORKSPACE_NAME_MORE_THAN_100 = 'Название пространства не должно превышать 100 символов.',
   WORKSPACE_COLOR_REQUIRED = 'Требуется цвет пространства.',
   WORKSPACE_ORDER_TYPE_INVALID = 'Неверный порядок пространства.',
+  WORKSPACE_IS_FAVORITE_TYPE_INVALID = 'Неверное значение у рабочего пространства для добавления в избранное.',
+  WORKSPACE_BULK_UPDATE_INVALID = 'Неверные данные для массового обновления рабочих пространств.',
+  MULTIPLE_WORKSPACES_FOUND = 'Найдено несколько рабочих пространств с похожим названием. Выберите одно из них.',
+  NO_WORKSPACES_BY_NAME_FOUND = 'Рабочее пространство с таким названием не найдено.',
 
   BOARD_NAME_REQUIRED = 'Требуется название доски.',
   BOARD_NAME_INVALID = 'Неверное название доски.',
@@ -26,6 +30,9 @@ export enum ErrorMessages {
   BOARD_NAME_MORE_THAN_100 = 'Название доски не должно превышать 100 символов.',
   BOARD_ORDER_TYPE_INVALID = 'Неверный порядок доски.',
   BOARD_IS_FAVORITE_TYPE_INVALID = 'Неверное значение у доски для добавления в избранное.',
+  BOARDS_BULK_UPDATE_INVALID = 'Неверные данные для массового обновления досок.',
+  MULTIPLE_BOARDS_FOUND = 'Найдено несколько досок с похожим названием. Выберите одно из них.',
+  NO_BOARDS_BY_NAME_FOUND = 'Доска с таким названием не найдена.',
 
   CATEGORY_NAME_REQUIRED = 'Требуется название категории.',
   CATEGORY_NAME_INVALID = 'Неверное название категории.',
@@ -35,6 +42,8 @@ export enum ErrorMessages {
   CATEGORY_ID_REQUIRED = 'Требуется идентификатор категории.',
   CATEGORY_ID_INVALID = 'Неверный идентификатор категории.',
   CATEGORIES_BULK_UPDATE_INVALID = 'Неверные данные для массового обновления категорий.',
+  MULTIPLE_CATEGORIES_FOUND = 'Найдено несколько категорий с похожим названием. Выберите одно из них.',
+  NO_CATEGORIES_BY_NAME_FOUND = 'Категория с таким названием не найдена.',
 
   TASK_ID_INVALID = 'Неверный идентификатор задачи.',
   TASK_NAME_REQUIRED = 'Требуется название задачи.',
@@ -43,7 +52,7 @@ export enum ErrorMessages {
   TASK_NAME_MORE_THAN_100 = 'Название задачи не должно превышать 100 символов.',
   TASK_DESCRIPTION_INVALID = 'Неверное описание задачи.',
   TASK_DESCRIPTION_LESS_THAN_1 = 'Описание задачи не должно быть пустым.',
-  TASK_DESCRIPTION_MORE_THAN_300 = 'Описание задачи не должно превышать 300 символов.',
+  TASK_DESCRIPTION_MORE_THAN_1000 = 'Описание задачи не должно превышать 1000 символов.',
   TASK_DUE_DATE_INVALID = 'Неверная дата выполнения задачи.',
   TASK_DUE_TIME_INVALID = 'Неверное время выполнения задачи.',
   TASK_COLOR_REQUIRED = 'Требуется цвет задачи.',
@@ -51,6 +60,8 @@ export enum ErrorMessages {
   TASK_ORDER_TYPE_INVALID = 'Неверный порядок задачи.',
   TASK_IS_COMPLETED_INVALID = 'Неверное значение для статуса задачи.',
   TASKS_BULK_UPDATE_INVALID = 'Неверные данные для массового обновления задач.',
+  MULTIPLE_TASKS_FOUND = 'Найдено несколько задач с похожим названием. Выберите одно из них.',
+  NO_TASKS_BY_NAME_FOUND = 'Задача с таким названием не найдена.',
 
   USER_ID_INVALID = 'Неверный идентификатор пользователя.',
   USERNAME_TOO_SHORT = 'Имя пользователя должно содержать не менее 1 символа.',
@@ -112,7 +123,7 @@ export enum ErrorMessages {
   SUBSCRIPTION_PLAN_NOT_FOUND = 'План подписки не найден. Обратитесь в поддержку.',
   SUBSCRIPTION_PLAN_INVALID = 'Неверный план подписки.',
   INVALID_ID_FORMAT = 'Неверный формат идентификатора.',
-  JOB_ID_INVALID = 'Неверный идентификатор задачи.',
+  JOB_ID_INVALID = 'Неверный идентификатор задачи вокера.',
   WORKSPACE_ID_INVALID = 'Неверный идентификатор рабочего пространства.',
   WORKSPACE_ID_REQUIRED = 'Требуется идентификатор рабочего пространства.',
   BOARD_ID_INVALID = 'Неверный идентификатор доски.',
@@ -120,5 +131,5 @@ export enum ErrorMessages {
   EMAIL_REQUIRED = 'Требуется электронная почта.',
   PASSWORD_REQUIRED = 'Требуется пароль.',
   INVALID_PASSWORD_FORMAT = 'Неверный формат пароля.',
-  THREAD_ID_INVALID = 'Неверный идентификатор чата.',
+  THREAD_ID_INVALID = 'Неверный внутренний идентификатор чата.',
 }

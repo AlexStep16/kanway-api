@@ -6,7 +6,9 @@ export interface Configurable {
   user: IUser
   chatId: string
   activeBoardId?: string
+  activeBoardName?: string
   activeWorkspaceId: string
+  activeWorkspaceName?: string
   currentDate: string
   timezone: string
 
@@ -14,4 +16,5 @@ export interface Configurable {
   aiConfirmationType: AiConfirmationTypeEnum
   defaultCategoryName: string
   defaultBoardName: string
+  stepMessageId: string
 }

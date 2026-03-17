@@ -8,7 +8,7 @@ export class ReorderService<
   TRawEntity,
   TCriteria,
   TResult = TEntity,
-  TCreatePayload = Partial<TEntity>
+  TCreatePayload = Partial<TEntity>,
 > extends BaseService<TRawEntity, TEntity, TCriteria, TResult, TCreatePayload> {
   protected repository: BaseRepository<TRawEntity, TEntity, TCriteria, TCreatePayload>
 
@@ -21,7 +21,7 @@ export class ReorderService<
   private async _baseReorderLogic(
     entities: IReordable[],
     userId: Types.ObjectId,
-    session?: ClientSession
+    session?: ClientSession,
   ): Promise<TResult[]> {
     const entitiesToUpdate: IReordable[] = []
 
@@ -40,7 +40,7 @@ export class ReorderService<
       const updatedEntities = await this.getByCriteria(
         { ids: entitiesToUpdate.map((e) => e.id) } as TCriteria,
         userId,
-        session
+        session,
       )
 
       return updatedEntities
@@ -53,7 +53,7 @@ export class ReorderService<
     parentIdKey: keyof TEntity,
     newEntities: TEntity[],
     userId: Types.ObjectId,
-    session?: ClientSession
+    session?: ClientSession,
   ): Promise<TResult[]> {
     const allUpdatedEntities: TResult[] = []
     const groupedEntities = newEntities.reduce((map, entity) => {
@@ -64,19 +64,19 @@ export class ReorderService<
       return map
     }, new Map<string, TEntity[]>())
 
-    for (let [parentId, newItems] of groupedEntities.entries()) {
+    for (const [parentId, newItems] of groupedEntities.entries()) {
       const newEntitiesIds = newItems.map((e) => e.id.toString())
       const entities: IReordable[] = await this.repository.getAllToOrder(
         new Types.ObjectId(parentId),
         parentIdKey as string,
         userId,
-        session
+        session,
       )
       const entitiesOld = entities.filter((e) => !newEntitiesIds.includes(e.id.toString()))
 
       newItems.sort((a, b) => a.order - b.order)
 
-      for (let newEntity of newItems) {
+      for (const newEntity of newItems) {
         const newIndex = newEntity.order - 1
 
         entitiesOld.splice(newIndex, 0, newEntity)
@@ -93,19 +93,19 @@ export class ReorderService<
     parentIds: Types.ObjectId[],
     parentField: keyof TEntity,
     userId: Types.ObjectId,
-    session?: ClientSession
+    session?: ClientSession,
   ): Promise<TResult[]> {
     const uniqueParentIds = Array.from(new Set(parentIds.map((id) => id.toHexString()))).map(
-      (id) => new Types.ObjectId(id)
+      (id) => new Types.ObjectId(id),
     )
     const allUpdatedEntities: TResult[] = []
 
-    for (let parentId of uniqueParentIds) {
+    for (const parentId of uniqueParentIds) {
       const entities: IReordable[] = await this.repository.getAllToOrder(
         parentId,
         parentField as string,
         userId,
-        session
+        session,
       )
 
       const updatedEntities = await this._baseReorderLogic(entities, userId, session)

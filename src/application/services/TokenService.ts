@@ -64,7 +64,7 @@ export class TokenService {
       })
 
       return tokenModel
-    } catch (error) {
+    } catch {
       throw new TokenGenerationError()
     }
   }
@@ -82,7 +82,7 @@ export class TokenService {
       })
 
       return tokenModel
-    } catch (error) {
+    } catch {
       throw new TokenGenerationError()
     }
   }
@@ -94,7 +94,7 @@ export class TokenService {
       })
 
       return token
-    } catch (error) {
+    } catch {
       throw new TokenGenerationError()
     }
   }

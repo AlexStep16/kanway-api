@@ -16,8 +16,12 @@ export default class BoardRepository extends BaseRepository<
     super(BoardModel)
   }
 
-  public buildFilter(criteria: IBoardCriteria, userId: Types.ObjectId): FilterQuery<IBoardRaw> {
-    const filter: FilterQuery<IBoardRaw> = { user_id: userId }
+  public buildFilter(criteria: IBoardCriteria, userId?: Types.ObjectId): FilterQuery<IBoardRaw> {
+    const filter: FilterQuery<IBoardRaw> = {}
+
+    if (userId) {
+      filter.user_id = userId
+    }
 
     if (criteria.id) {
       filter._id = criteria.id

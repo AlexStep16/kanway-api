@@ -13,7 +13,9 @@ const ChatMessageSchema = new Schema<IChatMessageRaw>(
     },
     list_type: {
       type: String,
-      required: false,
+    },
+    pending_tool_call_id: {
+      type: String,
     },
     chat_id: {
       type: Schema.Types.ObjectId,

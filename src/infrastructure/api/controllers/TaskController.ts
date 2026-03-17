@@ -16,10 +16,6 @@ export default class TaskController extends BaseController<
   TaskEditDTO,
   ITaskPopulated
 > {
-  constructor(serviceInstance: TaskService) {
-    super(serviceInstance)
-  }
-
   public override getAll = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const criteria: ITaskCriteria = {

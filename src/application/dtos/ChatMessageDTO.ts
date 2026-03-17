@@ -5,6 +5,7 @@ export interface ChatMessageDTO {
   role: IChatMessageRoles
   content: any
   listType?: string
+  pendingToolCallId?: string
   threadId: string
   chatId: Types.ObjectId
   isResolved?: boolean

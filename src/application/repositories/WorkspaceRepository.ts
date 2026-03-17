@@ -18,9 +18,13 @@ export default class WorkspaceRepository extends BaseRepository<
 
   public buildFilter(
     criteria: IWorkspaceCriteria,
-    userId: Types.ObjectId
+    userId?: Types.ObjectId,
   ): FilterQuery<IWorkspaceRaw> {
-    const filter: FilterQuery<IWorkspaceRaw> = { user_id: userId }
+    const filter: FilterQuery<IWorkspaceRaw> = {}
+
+    if (userId) {
+      filter.user_id = userId
+    }
 
     if (criteria.id) {
       filter._id = criteria.id

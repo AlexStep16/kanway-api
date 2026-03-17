@@ -1,7 +1,6 @@
 import { AgentStateAnnotation } from '@/application/ai/agent/AgentStateAnnotation.ts'
 import { dispatchCustomEvent } from '@langchain/core/callbacks/dispatch'
 import { CustomEvents } from '@/enums/CustomEvents.ts'
-import { getLastIterationHistory } from '@application/ai/helpers/getLastIterationHistory.ts'
 import { SynthesizePrompt } from '@/application/ai/prompts/SynthesizePrompt.ts'
 import { ChatPromptTemplate } from '@langchain/core/prompts'
 import { AgentDependencies } from '@application/ai/agent/types/AgentDependencies.ts'
@@ -9,6 +8,7 @@ import { AIMessage, AIMessageChunk, BaseMessage, RemoveMessage } from '@langchai
 import { Configurable } from '../../interfaces/Configurable.ts'
 import { RunnableConfig } from '@langchain/core/runnables'
 import { Types } from 'mongoose'
+import { getLastChatHistory } from '../../helpers/getLastChatHistory.ts'
 
 export const makeSynthesizeNode = (deps: AgentDependencies) => {
   return async (state: typeof AgentStateAnnotation.State, config: RunnableConfig) => {
@@ -26,26 +26,30 @@ export const makeSynthesizeNode = (deps: AgentDependencies) => {
     const lastMessage = state.messages.at(-1)
 
     const messages: BaseMessage[] = []
+    const executorMessages: BaseMessage[] = state.executor_messages || []
 
     const { synthesizerModel } = deps.models
 
-    let chatHistory = getLastIterationHistory(state.messages)
+    let chatHistory = getLastChatHistory(state.messages)
 
     if (!chatHistory) {
       // Handle case where there is no user message
       return {}
     }
 
-    chatHistory = chatHistory.filter((m) => m.id !== lastMessage?.id)
-
     if (lastMessage instanceof AIMessage || lastMessage instanceof AIMessageChunk) {
       const toolCalls = lastMessage?.tool_calls || []
-      const finishResponseCall = toolCalls.find((tc) => tc.name === 'finishResponse')
+      const finishResponseCall = toolCalls.find((tc) =>
+        ['finishResponse', 'responseToUser'].includes(tc.name),
+      )
 
       if (finishResponseCall) {
         const removedMessage = new RemoveMessage({
           id: lastMessage?.id || '',
         })
+
+        chatHistory = chatHistory.filter((m) => m.id !== lastMessage?.id)
+        chatHistory.push(new AIMessage(lastMessage.content))
 
         messages.push(removedMessage)
       }
@@ -68,6 +72,7 @@ export const makeSynthesizeNode = (deps: AgentDependencies) => {
 
     return {
       messages,
+      executor_messages: executorMessages.map((m) => new RemoveMessage({ id: m.id! })),
     }
   }
 }

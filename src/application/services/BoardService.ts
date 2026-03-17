@@ -32,6 +32,7 @@ import { IBoardPopulated } from '../interfaces/IBoardPopulated.ts'
 import { IBoardCreatePayload } from '../interfaces/IBoardCreatePayload.ts'
 import { SafeUpdateData } from '@/infrastructure/types/SafeUpdateData.ts'
 import { LimitService } from './LimitService.ts'
+import { OperationLogStatusesEnum } from '@/domain/enums/OperationLogStatusesEnum.ts'
 
 const MAX_RETRIES = 3
 
@@ -193,6 +194,7 @@ export class BoardService extends BaseService<
     data: BoardDTO[],
     user: IUser,
     session: ClientSession,
+    isDryRun: boolean = false,
   ): Promise<IResponseWithLog<IBoardPopulated[]>> {
     const uniqueWorkspaceIds = [...new Set(data.map((board) => board.workspaceId))]
 
@@ -209,7 +211,26 @@ export class BoardService extends BaseService<
       session,
     )
 
-    const boardsPayload = await this.prepareBoardsCreationPayload(data, user.id, session)
+    const boardsPayload = await this.prepareBoardsCreationPayload(data, user.id, session, isDryRun)
+
+    if (isDryRun) {
+      const log = await this.operationLogService.create(
+        {
+          operationType: OperationTypesEnum.CREATE,
+          collectionName: CollectionsEnum.BOARDS,
+          entitiesAfter: boardsPayload,
+          dependencies: [],
+          status: OperationLogStatusesEnum.PENDING,
+        },
+        user.id,
+        session,
+      )
+
+      return {
+        data: [],
+        logId: log.id,
+      }
+    }
 
     /* CREATE */
     const newBoards = await this.repository.createMany(boardsPayload, session)
@@ -265,18 +286,19 @@ export class BoardService extends BaseService<
     data: BoardDTO[],
     user: IUser,
     externalSession?: ClientSession,
+    isDryRun: boolean = false,
   ): Promise<IResponseWithLog<IBoardPopulated[]>> {
     if (externalSession) {
-      return this._executeCreateManyTransaction(data, user, externalSession)
+      return this._executeCreateManyTransaction(data, user, externalSession, isDryRun)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeCreateManyTransaction(data, user, session),
+        this._executeCreateManyTransaction(data, user, session, isDryRun),
       )
     }
   }
 
   private async _executeEditTransaction(
-    data: BoardEditDTO,
+    data: Omit<BoardEditDTO, 'id'>,
     criteria: IBoardCriteria,
     userId: Types.ObjectId,
     session: ClientSession,
@@ -396,7 +418,7 @@ export class BoardService extends BaseService<
         operationType: OperationTypesEnum.UPDATE,
         collectionName: CollectionsEnum.BOARDS,
         entitiesBefore: boardsBefore,
-        entitiesAfter: updatedBoards,
+        entitiesAfter: projectProperties<IBoard>(updatedBoards, boardPayload),
         dependencies: [],
       },
       userId,
@@ -418,7 +440,7 @@ export class BoardService extends BaseService<
   }
 
   public async edit(
-    data: BoardEditDTO,
+    data: Omit<BoardEditDTO, 'id'>,
     criteria: IBoardCriteria,
     user: IUser,
     externalSession?: ClientSession,
@@ -438,6 +460,7 @@ export class BoardService extends BaseService<
     data: BoardEditDTO[],
     userId: Types.ObjectId,
     session: ClientSession,
+    isDryRun: boolean = false,
   ): Promise<IResponseWithLog<IBoardPopulated[]>> {
     const boardIds = data.map((d) => d.id)
 
@@ -455,7 +478,7 @@ export class BoardService extends BaseService<
     const existingMap = new Map(existingBoards.map((b) => [b.id.toString(), b]))
 
     const boardPayloads: SingleUpdateDTO<SafeUpdateData<IBoard>>[] = []
-    const boardsBefore: Partial<IBoard>[] = []
+    const boardsBefore: (Partial<IBoard> & { id: Types.ObjectId })[] = []
     const movedBoardIds: string[] = []
     const reorderBoardIds = new Set<string>()
     const moveToEndIds = new Set<string>()
@@ -464,9 +487,11 @@ export class BoardService extends BaseService<
       const board = existingMap.get(dto.id)
       if (!board) continue
 
-      const boardPayload = await this.prepareBoardEditPayload(dto, [board])
+      const boardPayload = await this.prepareBoardEditManyPayload(dto, [board], isDryRun)
 
-      boardsBefore.push(projectProperties<IBoard>([board], boardPayload)[0])
+      const boardBefore = projectProperties<IBoard>([board], boardPayload)[0]
+
+      boardsBefore.push(boardBefore)
       boardPayloads.push(boardPayload)
 
       const isMoving =
@@ -480,6 +505,37 @@ export class BoardService extends BaseService<
       } else if (dto.order == null && isMoving) {
         reorderBoardIds.add(dto.id)
         moveToEndIds.add(dto.id)
+      }
+    }
+
+    if (isDryRun) {
+      const boardsAfter = boardsBefore.map((b) => {
+        const payload = boardPayloads.find((p) => p.id.toString() === b.id.toString())
+
+        if (!payload) return b
+
+        return {
+          ...b,
+          ...payload,
+        }
+      })
+
+      const log = await this.operationLogService.create(
+        {
+          operationType: OperationTypesEnum.UPDATE,
+          collectionName: CollectionsEnum.BOARDS,
+          entitiesBefore: boardsBefore,
+          entitiesAfter: boardsAfter,
+          dependencies: [],
+          status: OperationLogStatusesEnum.PENDING,
+        },
+        userId,
+        session,
+      )
+
+      return {
+        data: [],
+        logId: log.id,
       }
     }
 
@@ -560,13 +616,21 @@ export class BoardService extends BaseService<
       sideEffects.push(this.reorderService.reorder('workspace', boardsToReorder, userId, session))
     }
 
+    const projectedUpdatedBoards = updatedBoards.map(
+      (b) =>
+        projectProperties<IBoard>(
+          [b],
+          boardPayloads.find((p) => p.id.toString() === b.id.toString())!,
+        )[0],
+    )
+
     /** LOGGING */
     const logPromise = this.operationLogService.create(
       {
         operationType: OperationTypesEnum.UPDATE,
         collectionName: CollectionsEnum.BOARDS,
         entitiesBefore: boardsBefore,
-        entitiesAfter: updatedBoards,
+        entitiesAfter: projectedUpdatedBoards,
         dependencies: [],
       },
       userId,
@@ -590,14 +654,15 @@ export class BoardService extends BaseService<
     data: BoardEditDTO[],
     user: IUser,
     externalSession?: ClientSession,
+    isDryRun: boolean = false,
   ): Promise<IResponseWithLog<IBoardPopulated[]>> {
     const userId = user.id
 
     if (externalSession) {
-      return this._executeEditManyTransaction(data, userId, externalSession)
+      return this._executeEditManyTransaction(data, userId, externalSession, isDryRun)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeEditManyTransaction(data, userId, session),
+        this._executeEditManyTransaction(data, userId, session, isDryRun),
       )
     }
   }
@@ -606,7 +671,7 @@ export class BoardService extends BaseService<
     criteria: IBoardCriteria,
     userId: Types.ObjectId,
     session: ClientSession,
-  ): Promise<void> {
+  ): Promise<IResponseWithLog<null>> {
     const boardsToDelete = await this.repository.findByCriteria(
       criteria,
       session,
@@ -617,6 +682,17 @@ export class BoardService extends BaseService<
     if (boardsToDelete.length === 0) {
       throw new NotFoundError('Доски для удаления не найдены.')
     }
+
+    const log = await this.operationLogService.create(
+      {
+        operationType: OperationTypesEnum.CREATE,
+        collectionName: CollectionsEnum.BOARDS,
+        entitiesBefore: boardsToDelete,
+        dependencies: [],
+      },
+      userId,
+      session,
+    )
 
     const uniqueWorkspaceIds = [...new Set(boardsToDelete.map((t) => t.workspace.toString()))].map(
       (id) => new Types.ObjectId(id),
@@ -640,13 +716,18 @@ export class BoardService extends BaseService<
 
       this.reorderService.reorderByParentIds(uniqueWorkspaceIds, 'workspace', userId, session),
     ])
+
+    return {
+      data: null,
+      logId: log.id,
+    }
   }
 
   public async delete(
     criteria: IBoardCriteria,
     user: IUser,
     externalSession?: ClientSession,
-  ): Promise<void> {
+  ): Promise<IResponseWithLog<null>> {
     const userId = user.id
 
     if (externalSession) {
@@ -1017,7 +1098,7 @@ export class BoardService extends BaseService<
       return {
         ...board,
         workspace: workpsaceData.workspaceId,
-        _id: undefined,
+        id: undefined,
       }
     })
 
@@ -1098,6 +1179,7 @@ export class BoardService extends BaseService<
     data: BoardDTO[],
     userId: Types.ObjectId,
     session?: ClientSession,
+    isDryRun: boolean = false,
   ): Promise<IBoardCreatePayload[]> {
     const boardsPayloads: IBoardCreatePayload[] = []
     const boardsGroupedByWorkspace: { [key: string]: BoardDTO[] } = {}
@@ -1118,12 +1200,15 @@ export class BoardService extends BaseService<
       session,
     )
 
-    const boardNames = Array.from(new Set(data.map((board) => board.name.trim())))
-    const embeddingsArray = await this.embeddingService.getEmbeddingsForMultipleTexts(boardNames)
     const embeddingsMap: { [key: string]: number[] } = {}
-    boardNames.forEach((name, index) => {
-      embeddingsMap[name] = embeddingsArray[index]
-    })
+
+    if (!isDryRun) {
+      const boardNames = Array.from(new Set(data.map((board) => board.name.trim())))
+      const embeddingsArray = await this.embeddingService.getEmbeddingsForMultipleTexts(boardNames)
+      boardNames.forEach((name, index) => {
+        embeddingsMap[name] = embeddingsArray[index]
+      })
+    }
 
     const countMap = new Map(
       grouppedBoardsCount.map((entry) => [entry._id.toString(), entry.lastOrder]),
@@ -1138,6 +1223,7 @@ export class BoardService extends BaseService<
         const orderToSave = board.order ?? ++currentOrder
 
         boardsPayloads.push({
+          id: board.id,
           name: boardName,
           workspace: new Types.ObjectId(board.workspaceId),
           order: orderToSave,
@@ -1150,23 +1236,17 @@ export class BoardService extends BaseService<
     return boardsPayloads
   }
 
-  private async prepareBoardEditPayload(
-    data: BoardEditDTO,
+  private async _prepareMainEditFields(
+    data: Omit<BoardEditDTO, 'id'>,
+    boardPayload: SafeUpdateData<IBoard>,
     boardsToUpdate: IBoard[],
-  ): Promise<SingleUpdateDTO<SafeUpdateData<IBoard>>> {
-    const { id, ...rest } = data
-
-    const boardPayload: SingleUpdateDTO<SafeUpdateData<IBoard>> = {
-      ...rest,
-
-      id: new Types.ObjectId(id),
-    }
-
+    isDryRun: boolean = false,
+  ) {
     if (data.workspaceId) {
       boardPayload.workspace = Types.ObjectId.createFromHexString(data.workspaceId)
     }
 
-    if (data.name && boardsToUpdate.length > 0) {
+    if (!isDryRun && data.name && boardsToUpdate.length > 0) {
       const needEmbeddingsUpdate = boardsToUpdate.some(
         (ws) => data.name && ws.name.trim() !== data.name.trim(),
       )
@@ -1179,6 +1259,35 @@ export class BoardService extends BaseService<
         boardPayload.embeddings = embeddings
       }
     }
+  }
+
+  private async prepareBoardEditPayload(
+    data: Omit<BoardEditDTO, 'id'>,
+    boardsToUpdate: IBoard[],
+  ): Promise<SafeUpdateData<IBoard>> {
+    const boardPayload: SafeUpdateData<IBoard> = {
+      ...data,
+    }
+
+    await this._prepareMainEditFields(data, boardPayload, boardsToUpdate)
+
+    return boardPayload
+  }
+
+  private async prepareBoardEditManyPayload(
+    data: BoardEditDTO,
+    boardsToUpdate: IBoard[],
+    isDryRun: boolean = false,
+  ): Promise<SingleUpdateDTO<SafeUpdateData<IBoard>>> {
+    const { id, ...rest } = data
+
+    const boardPayload: SingleUpdateDTO<SafeUpdateData<IBoard>> = {
+      ...rest,
+
+      id: new Types.ObjectId(id),
+    }
+
+    await this._prepareMainEditFields(rest, boardPayload, boardsToUpdate, isDryRun)
 
     return boardPayload
   }

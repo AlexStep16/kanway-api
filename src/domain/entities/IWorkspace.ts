@@ -12,7 +12,7 @@ export interface IWorkspace {
   order: number
   color: (typeof BASE_COLORS)[number]
   colorName: string
-  embeddings: Array<Number>
+  embeddings: Array<number>
   isDeleted: boolean
   deletedTime?: Date
   createdAt: Date

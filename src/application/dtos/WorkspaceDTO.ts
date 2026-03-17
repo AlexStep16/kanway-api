@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { BASE_COLORS } from '@constants/BASE_COLORS.ts'
 
 export const WorkspaceDTOSchema = z.object({
+  id: z.string(ErrorMessages.WORKSPACE_ID_INVALID).optional(),
   name: z
     .string({
       error: (iss) =>

@@ -1,5 +1,5 @@
 import { MongoDBSaver } from '@langchain/langgraph-checkpoint-mongodb'
-import { createReActAgent } from '@application/ai/agent/createReActAgent.ts'
+import { createReActAgent } from '@application/aiNew/agent/createReActAgent.ts'
 import { MongoClient } from 'mongodb'
 import { ChatFireworks } from '@langchain/community/chat_models/fireworks'
 import { CompiledStateGraph } from '@langchain/langgraph' // Тип скомпилированного графа
@@ -35,17 +35,15 @@ export async function getAgent(dependencies: any) {
   // 5. Инициализируем модели
   // Выносим параметры в конфиг или ENV для гибкости
   const agentModel = new ChatFireworks({
-    model: 'accounts/fireworks/models/deepseek-v3p1',
-    temperature: 0,
+    model: 'accounts/fireworks/models/gpt-oss-120b',
   })
 
   const synthesizerModel = new ChatFireworks({
-    model: 'accounts/fireworks/models/deepseek-v3p1',
-    temperature: 0,
+    model: 'accounts/fireworks/models/gpt-oss-120b',
   })
 
   const summarizerModel = new ChatFireworks({
-    model: 'accounts/fireworks/models/gpt-oss-20b',
+    model: 'accounts/fireworks/models/gpt-oss-120b',
     temperature: 0,
   })
 
@@ -53,15 +51,16 @@ export async function getAgent(dependencies: any) {
   agentInstance = createReActAgent(
     {
       services: {
-        toolExecutorService: dependencies.services.toolExecutorService,
-        contextExternalFetchService: dependencies.services.contextExternalFetchService,
-        vectorSearchService: dependencies.services.vectorSearchService,
-        userService: dependencies.services.userService,
+        toolDispatcherService: dependencies.services.toolDispatcherService,
+        agentSkillService: dependencies.services.agentSkillService,
+        //contextExternalFetchService: dependencies.services.contextExternalFetchService,
+        //vectorSearchService: dependencies.services.vectorSearchService,
+        //userService: dependencies.services.userService,
       },
       models: {
         agentModel,
-        synthesizerModel,
-        summarizerModel,
+        //synthesizerModel,
+        //summarizerModel,
       },
     },
     checkpointer,

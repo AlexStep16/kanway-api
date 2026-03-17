@@ -28,6 +28,7 @@ import { BaseService } from '@application/services/BaseService.ts'
 import { IWorkspaceCreatePayload } from '@interfaces/IWorkspaceCreatePayload.ts'
 import { SafeUpdateData } from '@/infrastructure/types/SafeUpdateData.ts'
 import { LimitService } from './LimitService.ts'
+import { OperationLogStatusesEnum } from '@/domain/enums/OperationLogStatusesEnum.ts'
 
 const MAX_RETRIES = 3
 
@@ -170,11 +171,36 @@ export class WorkspaceService extends BaseService<
     data: WorkspaceDTO[],
     user: IUser,
     session: ClientSession,
+    isDryRun: boolean = false,
   ): Promise<IResponseWithLog<IWorkspace[]>> {
     /** LIMITS CHECK */
     await this.limitService.checkWorkspacesLimit(user, session)
 
-    const workspacesPayload = await this.prepareWorkspacesCreationPayload(data, user.id, session)
+    const workspacesPayload = await this.prepareWorkspacesCreationPayload(
+      data,
+      user.id,
+      session,
+      isDryRun,
+    )
+
+    if (isDryRun) {
+      const log = await this.operationLogService.create(
+        {
+          operationType: OperationTypesEnum.CREATE,
+          collectionName: CollectionsEnum.WORKSPACES,
+          entitiesAfter: workspacesPayload,
+          dependencies: [],
+          status: OperationLogStatusesEnum.PENDING,
+        },
+        user.id,
+        session,
+      )
+
+      return {
+        data: [],
+        logId: log.id,
+      }
+    }
 
     /* CREATE */
     const newWorkspaces = await this.repository.createMany(workspacesPayload, session)
@@ -220,18 +246,19 @@ export class WorkspaceService extends BaseService<
     data: WorkspaceDTO[],
     user: IUser,
     externalSession?: ClientSession,
+    isDryRun: boolean = false,
   ): Promise<IResponseWithLog<IWorkspace[]>> {
     if (externalSession) {
-      return this._executeCreateManyTransaction(data, user, externalSession)
+      return this._executeCreateManyTransaction(data, user, externalSession, isDryRun)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeCreateManyTransaction(data, user, session),
+        this._executeCreateManyTransaction(data, user, session, isDryRun),
       )
     }
   }
 
   private async _executeEditTransaction(
-    data: WorkspaceEditDTO,
+    data: Omit<WorkspaceEditDTO, 'id'>,
     criteria: IWorkspaceCriteria,
     userId: Types.ObjectId,
     session: ClientSession,
@@ -286,7 +313,7 @@ export class WorkspaceService extends BaseService<
         operationType: OperationTypesEnum.UPDATE,
         collectionName: CollectionsEnum.WORKSPACES,
         entitiesBefore: workspacesBefore,
-        entitiesAfter: updatedWorkspaces,
+        entitiesAfter: projectProperties<IWorkspace>(updatedWorkspaces, workspacePayload),
         dependencies: [],
       },
       userId,
@@ -306,7 +333,7 @@ export class WorkspaceService extends BaseService<
   }
 
   public async edit(
-    data: WorkspaceEditDTO,
+    data: Omit<WorkspaceEditDTO, 'id'>,
     criteria: IWorkspaceCriteria,
     user: IUser,
     externalSession?: ClientSession,
@@ -326,6 +353,7 @@ export class WorkspaceService extends BaseService<
     data: WorkspaceEditDTO[],
     userId: Types.ObjectId,
     session: ClientSession,
+    isDryRun: boolean = false,
   ): Promise<IResponseWithLog<IWorkspace[]>> {
     const workspaceIds = data.map((d) => d.id)
 
@@ -343,20 +371,57 @@ export class WorkspaceService extends BaseService<
     const existingMap = new Map(existingWorkspaces.map((w) => [w.id.toString(), w]))
 
     const workspacePayloads: SingleUpdateDTO<SafeUpdateData<IWorkspace>>[] = []
-    const workspacesBefore: Partial<IWorkspace>[] = []
+    const workspacesBefore: (Partial<IWorkspace> & { id: Types.ObjectId })[] = []
     const reorderWorkspaceIds = new Set<string>()
 
     for (const dto of data) {
       const workspace = existingMap.get(dto.id)
       if (!workspace) continue
 
-      const workspacePayload = await this.prepareWorkspaceEditPayload(dto, [workspace])
+      const workspacePayload = await this.prepareWorkspaceEditManyPayload(
+        dto,
+        [workspace],
+        isDryRun,
+      )
 
-      workspacesBefore.push(projectProperties<IWorkspace>([workspace], workspacePayload)[0])
+      const workspaceBefore = projectProperties<IWorkspace>([workspace], workspacePayload)[0]
+
+      workspacesBefore.push(workspaceBefore)
       workspacePayloads.push(workspacePayload)
 
       if (dto.order !== undefined && workspace.order !== dto.order) {
         reorderWorkspaceIds.add(dto.id)
+      }
+    }
+
+    if (isDryRun) {
+      const workspacesAfter = workspacesBefore.map((w) => {
+        const payload = workspacePayloads.find((p) => p.id.toString() === w.id.toString())
+
+        if (!payload) return w
+
+        return {
+          ...w,
+          ...payload,
+        }
+      })
+
+      const log = await this.operationLogService.create(
+        {
+          operationType: OperationTypesEnum.UPDATE,
+          collectionName: CollectionsEnum.WORKSPACES,
+          entitiesBefore: workspacesBefore,
+          entitiesAfter: workspacesAfter,
+          dependencies: [],
+          status: OperationLogStatusesEnum.PENDING,
+        },
+        userId,
+        session,
+      )
+
+      return {
+        data: [],
+        logId: log.id,
       }
     }
 
@@ -388,13 +453,21 @@ export class WorkspaceService extends BaseService<
       sideEffects.push(this.reorderService.reorder('userId', workspacesToReorder, userId, session))
     }
 
+    const projectedUpdatedWorkspaces = updatedWorkspaces.map(
+      (w) =>
+        projectProperties<IWorkspace>(
+          [w],
+          workspacePayloads.find((p) => p.id.toString() === w.id.toString())!,
+        )[0],
+    )
+
     /** LOGGING */
     const logPromise = this.operationLogService.create(
       {
         operationType: OperationTypesEnum.UPDATE,
         collectionName: CollectionsEnum.WORKSPACES,
         entitiesBefore: workspacesBefore,
-        entitiesAfter: updatedWorkspaces,
+        entitiesAfter: projectedUpdatedWorkspaces,
         dependencies: [],
       },
       userId,
@@ -416,14 +489,15 @@ export class WorkspaceService extends BaseService<
     data: WorkspaceEditDTO[],
     user: IUser,
     externalSession?: ClientSession,
+    isDryRun: boolean = false,
   ): Promise<IResponseWithLog<IWorkspace[]>> {
     const userId = user.id
 
     if (externalSession) {
-      return this._executeEditManyTransaction(data, userId, externalSession)
+      return this._executeEditManyTransaction(data, userId, externalSession, isDryRun)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeEditManyTransaction(data, userId, session),
+        this._executeEditManyTransaction(data, userId, session, isDryRun),
       )
     }
   }
@@ -432,7 +506,7 @@ export class WorkspaceService extends BaseService<
     criteria: IWorkspaceCriteria,
     userId: Types.ObjectId,
     session: ClientSession,
-  ): Promise<void> {
+  ): Promise<IResponseWithLog<null>> {
     const workspacesToDelete = await this.repository.findByCriteria(
       criteria,
       session,
@@ -443,6 +517,17 @@ export class WorkspaceService extends BaseService<
     if (workspacesToDelete.length === 0) {
       throw new NotFoundError('Рабочие пространства для удаления не найдены.')
     }
+
+    const log = await this.operationLogService.create(
+      {
+        operationType: OperationTypesEnum.CREATE,
+        collectionName: CollectionsEnum.WORKSPACES,
+        entitiesBefore: workspacesToDelete,
+        dependencies: [],
+      },
+      userId,
+      session,
+    )
 
     const uniqueWorkspaceIds = [...new Set(workspacesToDelete.map((t) => t.id.toString()))].map(
       (id) => new Types.ObjectId(id),
@@ -459,13 +544,18 @@ export class WorkspaceService extends BaseService<
 
       this.reorderService.reorderByParentIds(uniqueWorkspaceIds, 'userId', userId, session),
     ])
+
+    return {
+      data: null,
+      logId: log.id,
+    }
   }
 
   public async delete(
     criteria: IWorkspaceCriteria,
     user: IUser,
     externalSession?: ClientSession,
-  ): Promise<void> {
+  ): Promise<IResponseWithLog<null>> {
     const userId = user.id
 
     if (externalSession) {
@@ -630,7 +720,7 @@ export class WorkspaceService extends BaseService<
       userId,
     )
 
-    let lastOrderGroupped = await this.repository.getLastOrderGroupedByParents(
+    const lastOrderGroupped = await this.repository.getLastOrderGroupedByParents(
       [userId],
       'user_id',
       userId,
@@ -807,6 +897,7 @@ export class WorkspaceService extends BaseService<
     data: WorkspaceDTO[],
     userId: Types.ObjectId,
     session?: ClientSession,
+    isDryRun: boolean = false,
   ): Promise<IWorkspaceCreatePayload[]> {
     const lastOrderGroupped = await this.repository.getLastOrderGroupedByParents(
       [userId],
@@ -814,20 +905,28 @@ export class WorkspaceService extends BaseService<
       userId,
       session,
     )
-    let lastOrder = lastOrderGroupped.length > 0 ? lastOrderGroupped[0].lastOrder : 0
+    const lastOrder = lastOrderGroupped.length > 0 ? lastOrderGroupped[0].lastOrder : 0
     let newOrder = lastOrder + 1
 
-    const workspaceNames = data.map((workspace) => workspace.name.trim())
-    const embeddingsArray =
-      await this.embeddingService.getEmbeddingsForMultipleTexts(workspaceNames)
+    const embeddingsMap: { [key: string]: number[] } = {}
 
-    const workspacePayloads: IWorkspaceCreatePayload[] = data.map((dto, index) => {
+    if (!isDryRun) {
+      const workspaceNames = Array.from(new Set(data.map((workspace) => workspace.name.trim())))
+      const embeddingsArray =
+        await this.embeddingService.getEmbeddingsForMultipleTexts(workspaceNames)
+      workspaceNames.forEach((name, index) => {
+        embeddingsMap[name] = embeddingsArray[index]
+      })
+    }
+
+    const workspacePayloads: IWorkspaceCreatePayload[] = data.map((dto) => {
       const payload = {
+        id: dto.id,
         name: dto.name.trim(),
         order: dto.order || 1,
         color: dto.color,
         colorName: '',
-        embeddings: embeddingsArray[index],
+        embeddings: embeddingsMap[dto.name.trim()],
         userId,
       }
 
@@ -846,16 +945,13 @@ export class WorkspaceService extends BaseService<
     return workspacePayloads
   }
 
-  private async prepareWorkspaceEditPayload(
-    data: WorkspaceEditDTO,
+  private async _prepareMainEditFields(
+    data: Omit<WorkspaceEditDTO, 'id'>,
+    workspacePayload: SafeUpdateData<IWorkspace>,
     workspacesToUpdate: IWorkspace[],
-  ): Promise<SingleUpdateDTO<SafeUpdateData<IWorkspace>>> {
-    const workspacePayload: SingleUpdateDTO<Partial<IWorkspace>> = {
-      ...data,
-      id: Types.ObjectId.createFromHexString(data.id),
-    }
-
-    if (data.name && workspacesToUpdate.length > 0) {
+    isDryRun: boolean = false,
+  ) {
+    if (!isDryRun && data.name && workspacesToUpdate.length > 0) {
       const needEmbeddingsUpdate = workspacesToUpdate.some(
         (ws) => data.name && ws.name.trim() !== data.name.trim(),
       )
@@ -868,6 +964,35 @@ export class WorkspaceService extends BaseService<
         workspacePayload.embeddings = embeddings
       }
     }
+  }
+
+  private async prepareWorkspaceEditPayload(
+    data: Omit<WorkspaceEditDTO, 'id'>,
+    workspacesToUpdate: IWorkspace[],
+  ): Promise<SafeUpdateData<IWorkspace>> {
+    const workspacePayload: SafeUpdateData<IWorkspace> = {
+      ...data,
+    }
+
+    await this._prepareMainEditFields(data, workspacePayload, workspacesToUpdate)
+
+    return workspacePayload
+  }
+
+  private async prepareWorkspaceEditManyPayload(
+    data: WorkspaceEditDTO,
+    workspacesToUpdate: IWorkspace[],
+    isDryRun: boolean = false,
+  ): Promise<SingleUpdateDTO<SafeUpdateData<IWorkspace>>> {
+    const { id, ...rest } = data
+
+    const workspacePayload: SingleUpdateDTO<SafeUpdateData<IWorkspace>> = {
+      ...rest,
+
+      id: new Types.ObjectId(id),
+    }
+
+    await this._prepareMainEditFields(rest, workspacePayload, workspacesToUpdate, isDryRun)
 
     return workspacePayload
   }

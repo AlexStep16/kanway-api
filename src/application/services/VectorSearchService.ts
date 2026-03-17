@@ -8,7 +8,7 @@ import { EmbeddingService } from '@infrastructure/services/EmbeddingService.ts'
 import { MongoDBAtlasVectorSearch } from '@langchain/mongodb'
 import { MongoClient } from 'mongodb'
 import { Types } from 'mongoose'
-import { IAgentInstruction } from '@/domain/entities/IAgentInstruction.ts'
+import { IAgentSkill } from '@/domain/entities/IAgentSkill.ts'
 
 export class VectorSearchService {
   protected embeddingService: EmbeddingService
@@ -26,10 +26,20 @@ export class VectorSearchService {
     count: number
     filter?: any
     textKey?: string
+    isOnlyRelevant?: boolean
 
     mapResult: (doc: Document) => any
   }): Promise<T[]> {
-    const { collectionName, indexName, query, count, filter, mapResult, textKey = 'name' } = params
+    const {
+      collectionName,
+      indexName,
+      query,
+      count,
+      filter,
+      mapResult,
+      textKey = 'name',
+      isOnlyRelevant,
+    } = params
 
     const collection = this.mongoClient.db(process.env.DATABASE_NAME).collection(collectionName)
 
@@ -57,6 +67,15 @@ export class VectorSearchService {
     const maxScore = documents.length > 0 ? documents[0][1] : 0
 
     for (const [doc, score] of documents) {
+      if (isOnlyRelevant) {
+        if (score > maxScore - 0.07 && score > 0.82) {
+          const mappedItem = mapResult(doc)
+          results.push(mappedItem)
+        }
+
+        continue
+      }
+
       if ((score > maxScore - 0.2 && score > 0.42) || score > 0.52) {
         const mappedItem = mapResult(doc)
         results.push(mappedItem)
@@ -94,6 +113,7 @@ export class VectorSearchService {
     userId: Types.ObjectId,
     count: number,
     boardIds?: Array<Types.ObjectId>,
+    isOnlyRelevant?: boolean,
   ): Promise<ICategory[]> {
     const filter: any = { user_id: { $eq: userId }, is_deleted: { $eq: false } }
     if (boardIds?.length) filter.board = { $in: boardIds }
@@ -105,6 +125,7 @@ export class VectorSearchService {
       query,
       count,
       filter,
+      isOnlyRelevant,
       mapResult: (doc) => ({
         ...doc.metadata,
         name: doc.pageContent,
@@ -117,6 +138,7 @@ export class VectorSearchService {
     userId: Types.ObjectId,
     count: number,
     workspaceIds?: Array<Types.ObjectId>,
+    isOnlyRelevant?: boolean,
   ): Promise<IBoard[]> {
     const filter: any = { user_id: { $eq: userId }, is_deleted: { $eq: false } }
     if (workspaceIds?.length) filter.workspace = { $in: workspaceIds }
@@ -128,6 +150,7 @@ export class VectorSearchService {
       query,
       count,
       filter,
+      isOnlyRelevant,
       mapResult: (doc) => ({
         ...doc.metadata,
         name: doc.pageContent,
@@ -139,6 +162,7 @@ export class VectorSearchService {
     query: string[],
     userId: Types.ObjectId,
     count: number,
+    isOnlyRelevant?: boolean,
   ): Promise<IWorkspace[]> {
     const filter: any = { user_id: { $eq: userId }, is_deleted: { $eq: false } }
 
@@ -149,6 +173,7 @@ export class VectorSearchService {
       query,
       count,
       filter,
+      isOnlyRelevant,
       mapResult: (doc) => ({
         ...doc.metadata,
         name: doc.pageContent,
@@ -180,7 +205,7 @@ export class VectorSearchService {
 
     const tools = []
 
-    for (const [doc, _] of accDocuments) {
+    for (const [doc] of accDocuments) {
       const tool = {
         name: doc.metadata.name,
         description: doc.pageContent,
@@ -192,13 +217,11 @@ export class VectorSearchService {
     return tools
   }
 
-  public async similaritySearchAgentInstructions(
+  public async similaritySearchAgentSkills(
     query: string,
     topK: number = 2,
-  ): Promise<Array<IAgentInstruction>> {
-    const collection = this.mongoClient
-      .db(process.env.DATABASE_NAME)
-      .collection('agentinstructions')
+  ): Promise<Array<IAgentSkill>> {
+    const collection = this.mongoClient.db(process.env.DATABASE_NAME).collection('agentskills')
 
     const vectorstore = new MongoDBAtlasVectorSearch(this.embeddingService.getEmbeddingModel(), {
       collection,
@@ -210,17 +233,17 @@ export class VectorSearchService {
     const queryEmbedding = await this.embeddingService.getEmbeddings(query.trim().toLowerCase())
     const documents = await vectorstore.similaritySearchVectorWithScore(queryEmbedding, topK)
 
-    const agentInstructions = []
+    const agentSkills = []
 
-    for (const [doc, _] of documents) {
-      const agentInstruction = {
+    for (const [doc] of documents) {
+      const agentSkill = {
         ...doc.metadata,
         example: doc.pageContent,
       }
 
-      agentInstructions.push(toServerCaseKeys<IAgentInstruction>(agentInstruction))
+      agentSkills.push(toServerCaseKeys<IAgentSkill>(agentSkill))
     }
 
-    return agentInstructions
+    return agentSkills
   }
 }

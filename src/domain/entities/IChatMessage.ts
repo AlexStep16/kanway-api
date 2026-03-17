@@ -6,6 +6,7 @@ export interface IChatMessage {
   role: IChatMessageRoles
   content: any
   listType?: string
+  pendingToolCallId?: string
   userId: Types.ObjectId
   chatId: Types.ObjectId
   threadId: string

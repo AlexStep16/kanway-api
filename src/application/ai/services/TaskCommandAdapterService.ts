@@ -1,5 +1,4 @@
 import { TaskService } from '@application/services/TaskService.ts'
-import { EditTasksDTO } from '@application/ai/tools/toolSchemes.ts'
 import { ClientSession, Types } from 'mongoose'
 import { IResponseWithLog } from '@interfaces/IResponseWithLog.ts'
 import { TaskEditDTO } from '@dtos/TaskEditDTO.ts'
@@ -8,8 +7,16 @@ import { VectorSearchService } from '@/application/services/VectorSearchService.
 import { AISemanticService } from '@application/services/AISemanticService.ts'
 import { IUser } from '@domain/entities/IUser.ts'
 import { CategoryService } from '@application/services/CategoryService.ts'
-import { NotFoundError } from '@/domain/errors/NotFound.ts'
 import { ITaskPopulated } from '@/application/interfaces/ITaskPopulated.ts'
+import {
+  DateModificationDTO,
+  TagsModificationDTO,
+  TimeModificationDTO,
+  StringModificationDTO,
+} from '../tools/schemes/baseSchemes.ts'
+import { getColorByNameAndTone } from '@/utils/getColorByNameAndTone.ts'
+import { NotFoundError } from '@/domain/errors/NotFound.ts'
+import { EditTasksColorDTO } from '../tools/schemes/update/taskEditSchemes.ts'
 
 export class TaskCommandAdapterService {
   protected taskService: TaskService
@@ -39,13 +46,99 @@ export class TaskCommandAdapterService {
       .tz(timezone)
   }
 
-  public async translateAndExecute(
+  private _getTransformedTasksForStringModification(
+    tasks: ITaskPopulated[],
+    field: 'name' | 'description',
+  ): { id: Types.ObjectId; text: string }[] {
+    return tasks.map((task) => ({
+      id: task.id,
+      text: task[field] || '',
+    }))
+  }
+
+  public async translateEditStringAndExecute(
     taskIds: string[],
-    changes: EditTasksDTO['changes'],
+    dto: StringModificationDTO | null,
+    field: 'name' | 'description',
+    user: IUser,
+    session?: ClientSession,
+  ): Promise<IResponseWithLog<ITaskPopulated[]>> {
+    if (typeof dto === 'undefined') {
+      return {
+        data: [],
+        logId: null,
+      }
+    }
+
+    const tasksToUpdate: TaskEditDTO[] = []
+
+    const existingTasks = await this.taskService.getByCriteria({ ids: taskIds }, user.id, session)
+    const transformedTasks = this._getTransformedTasksForStringModification(existingTasks, field)
+
+    let updatedTexts: { id: Types.ObjectId; text: string | null }[] = []
+
+    if (dto === null) {
+      updatedTexts = transformedTasks.map((task) => ({
+        id: task.id,
+        text: null,
+      }))
+    } else if (dto.set) {
+      updatedTexts = this.aiSemanticService.buildTextForEntities(
+        transformedTasks,
+        String(dto.set),
+        'set',
+      )
+    } else if (dto.append) {
+      updatedTexts = this.aiSemanticService.buildTextForEntities(
+        updatedTexts.length > 0 ? updatedTexts : transformedTasks,
+        String(dto.append),
+        'append',
+      )
+    } else if (dto.prepend) {
+      updatedTexts = this.aiSemanticService.buildTextForEntities(
+        updatedTexts.length > 0 ? updatedTexts : transformedTasks,
+        String(dto.prepend),
+        'prepend',
+      )
+    } else if (dto.replace_part) {
+      updatedTexts = this.aiSemanticService.buildTextForEntities(
+        updatedTexts.length > 0 ? updatedTexts : transformedTasks,
+        String(dto.replace_part.replace_with),
+        'replace',
+        String(dto.replace_part.find),
+      )
+    }
+
+    tasksToUpdate.push(
+      ...updatedTexts.map((data) => ({ id: data.id.toString(), [field]: data.text })),
+    )
+
+    for (const updatedTask of tasksToUpdate) {
+      const updatedTextData = updatedTexts.find((data) => data.id.equals(updatedTask.id))
+
+      if (updatedTextData) {
+        if (field !== 'name') updatedTask[field] = updatedTextData.text
+        else updatedTask.name = 'Без названия'
+      }
+    }
+
+    return await this.taskService.editMany(tasksToUpdate, user, session)
+  }
+
+  public async translateEditDateAndExecute(
+    taskIds: string[],
+    dto: DateModificationDTO | null,
     timezone: string,
     user: IUser,
     session?: ClientSession,
   ): Promise<IResponseWithLog<ITaskPopulated[]>> {
+    if (typeof dto === 'undefined' || (dto && Object.keys(dto).length === 0)) {
+      return {
+        data: [],
+        logId: null,
+      }
+    }
+
     const tasksToUpdate: TaskEditDTO[] = []
 
     const existingTasks = await this.taskService.getByCriteria({ ids: taskIds }, user.id, session)
@@ -55,202 +148,184 @@ export class TaskCommandAdapterService {
         id: task.id.toString(),
       } as TaskEditDTO
 
-      if (typeof changes.categoryId !== 'undefined' && typeof changes.categoryId === 'string') {
-        updatedTask.categoryId = changes.categoryId
-
-        const categoryCount = await this.categoryService.getCount(
-          { id: changes.categoryId },
-          user.id,
-          session,
-        )
-
-        if (categoryCount === 0) {
-          throw new NotFoundError(`Category with id ${changes.categoryId} not found`)
+      if (dto === null) {
+        updatedTask.dueDate = null
+        updatedTask.dueHours = null
+        updatedTask.dueMinutes = null
+      } else {
+        if (dto.set) {
+          updatedTask.dueDate = dayjs
+            .tz(dto.set.split('T')[0].split('Z')[0], timezone)
+            .format('YYYY-MM-DD')
         }
-      }
 
-      if (typeof changes.order !== 'undefined') {
-        if (typeof changes.order === 'string') updatedTask.order = parseInt(changes.order, 10)
-        else if (typeof changes.order === 'number') updatedTask.order = changes.order
-      }
+        if (dto.shift) {
+          const baseDate = this._getCollectedTaskDateTime(task, timezone)
+          const shiftedDate = baseDate.add(dto.shift.value, dto.shift.unit)
 
-      if (typeof changes.color !== 'undefined') {
-        if (typeof changes.color === 'string') {
-          updatedTask.color = this.taskService.getNearestColor(changes.color)
-        } else {
-          updatedTask.color = null
-        }
-      }
-
-      if (typeof changes.isCompleted !== 'undefined') {
-        updatedTask.isCompleted = Boolean(changes.isCompleted)
-      }
-
-      if (typeof changes.tags !== 'undefined') {
-        const valueTyped = changes.tags
-
-        if (valueTyped === null) updatedTask.tags = []
-        else {
-          if (typeof valueTyped.set !== 'undefined') updatedTask.tags = valueTyped.set
-          if (typeof valueTyped.add !== 'undefined')
-            updatedTask.tags = [...new Set([...(updatedTask.tags || []), ...valueTyped.add])]
-          if (typeof valueTyped.remove !== 'undefined')
-            updatedTask.tags = (updatedTask.tags || []).filter(
-              (tag) => !valueTyped.remove!.includes(String(tag)),
-            )
-        }
-      }
-
-      if (typeof changes.dueDate !== 'undefined') {
-        if (changes.dueDate === null) {
-          updatedTask.dueDate = null
-          updatedTask.dueHours = null
-          updatedTask.dueMinutes = null
-        } else {
-          const valueTyped = changes.dueDate
-
-          if (valueTyped.set) {
-            updatedTask.dueDate = dayjs
-              .tz(valueTyped.set.split('T')[0].split('Z')[0], timezone)
-              .format('YYYY-MM-DD')
-          }
-
-          if (valueTyped.shift) {
-            const baseDate = this._getCollectedTaskDateTime(task, timezone)
-            const shiftedDate = baseDate.add(valueTyped.shift.value, valueTyped.shift.unit)
-
-            updatedTask.dueDate = shiftedDate.format('YYYY-MM-DD')
-            updatedTask.dueHours = shiftedDate.hour()
-            updatedTask.dueMinutes = shiftedDate.minute()
-          }
-        }
-      }
-
-      if (typeof changes.dueTime !== 'undefined') {
-        if (changes.dueTime === null) {
-          updatedTask.dueHours = null
-          updatedTask.dueMinutes = null
-        } else {
-          const valueTyped = changes.dueTime
-
-          if (valueTyped.set) {
-            const [hours, minutes] = valueTyped.set.split(':').map(Number)
-            updatedTask.dueHours = hours
-            updatedTask.dueMinutes = minutes
-
-            if (!updatedTask.dueDate) {
-              updatedTask.dueDate = dayjs().tz(timezone).format('YYYY-MM-DD')
-            }
-          }
-
-          if (valueTyped.shift) {
-            const baseDate = this._getCollectedTaskDateTime(task, timezone)
-            const shiftedDate = baseDate.add(valueTyped.shift.value, valueTyped.shift.unit)
-
-            updatedTask.dueDate = shiftedDate.format('YYYY-MM-DD')
-            updatedTask.dueHours = shiftedDate.hour()
-            updatedTask.dueMinutes = shiftedDate.minute()
-          }
+          updatedTask.dueDate = shiftedDate.format('YYYY-MM-DD')
+          updatedTask.dueHours = shiftedDate.hour()
+          updatedTask.dueMinutes = shiftedDate.minute()
         }
       }
 
       tasksToUpdate.push(updatedTask)
     }
 
-    if (tasksToUpdate.length === 0)
+    return await this.taskService.editMany(tasksToUpdate, user, session)
+  }
+
+  public async translateEditTimeAndExecute(
+    taskIds: string[],
+    dto: TimeModificationDTO | null,
+    timezone: string,
+    user: IUser,
+    session?: ClientSession,
+  ): Promise<IResponseWithLog<ITaskPopulated[]>> {
+    if (typeof dto === 'undefined' || (dto && Object.keys(dto).length === 0)) {
       return {
         data: [],
         logId: null,
       }
+    }
 
-    if (typeof changes.name !== 'undefined') {
-      let updatedNames: { id: Types.ObjectId; name: string }[] = []
+    const tasksToUpdate: TaskEditDTO[] = []
 
-      if (changes.name.set) {
-        updatedNames = await this.aiSemanticService.buildNamesForEntities(
-          existingTasks,
-          String(changes.name.set),
-          'set',
-        )
-      }
-      if (changes.name.append) {
-        updatedNames = await this.aiSemanticService.buildNamesForEntities(
-          updatedNames.length > 0 ? updatedNames : existingTasks,
-          String(changes.name.append),
-          'append',
-        )
-      }
-      if (changes.name.prepend) {
-        updatedNames = await this.aiSemanticService.buildNamesForEntities(
-          updatedNames.length > 0 ? updatedNames : existingTasks,
-          String(changes.name.prepend),
-          'prepend',
-        )
-      }
-      if (changes.name.replace_part) {
-        updatedNames = await this.aiSemanticService.buildNamesForEntities(
-          updatedNames.length > 0 ? updatedNames : existingTasks,
-          String(changes.name.replace_part.replace_with),
-          'replace',
-          String(changes.name.replace_part.find),
-        )
-      }
+    const existingTasks = await this.taskService.getByCriteria({ ids: taskIds }, user.id, session)
 
-      for (const updatedTask of tasksToUpdate) {
-        const updatedNameData = updatedNames.find((data) => data.id.equals(updatedTask.id))
+    for (const task of existingTasks) {
+      const updatedTask = {
+        id: task.id.toString(),
+      } as TaskEditDTO
 
-        if (updatedNameData) {
-          updatedTask.name = updatedNameData.name
+      if (dto === null) {
+        updatedTask.dueHours = null
+        updatedTask.dueMinutes = null
+      } else {
+        if (dto.set) {
+          const [hours, minutes] = dto.set.split(':').map(Number)
+          updatedTask.dueHours = hours
+          updatedTask.dueMinutes = minutes
+
+          if (!updatedTask.dueDate) {
+            updatedTask.dueDate = dayjs().tz(timezone).format('YYYY-MM-DD')
+          }
         }
+
+        if (dto.shift) {
+          const baseDate = this._getCollectedTaskDateTime(task, timezone)
+          const shiftedDate = baseDate.add(dto.shift.value, dto.shift.unit)
+
+          updatedTask.dueDate = shiftedDate.format('YYYY-MM-DD')
+          updatedTask.dueHours = shiftedDate.hour()
+          updatedTask.dueMinutes = shiftedDate.minute()
+        }
+      }
+
+      tasksToUpdate.push(updatedTask)
+    }
+
+    return await this.taskService.editMany(tasksToUpdate, user, session)
+  }
+
+  public async translateEditArrayAndExecute(
+    taskIds: string[],
+    dto: TagsModificationDTO | null,
+    field: 'tags',
+    user: IUser,
+    session?: ClientSession,
+  ): Promise<IResponseWithLog<ITaskPopulated[]>> {
+    if (typeof dto === 'undefined' || (dto && Object.keys(dto).length === 0)) {
+      return {
+        data: [],
+        logId: null,
       }
     }
 
-    if (changes.description === null) {
-      for (const task of tasksToUpdate) {
-        task.description = null
-      }
-    } else if (typeof changes.description !== 'undefined') {
-      let updatedDescriptions: { id: Types.ObjectId; description: string }[] = []
+    const tasksToUpdate: TaskEditDTO[] = []
 
-      if (changes.description.set) {
-        updatedDescriptions = await this.aiSemanticService.buildDescriptionsForEntities(
-          existingTasks,
-          String(changes.description.set),
-          'set',
-        )
-      }
-      if (changes.description.append) {
-        updatedDescriptions = await this.aiSemanticService.buildDescriptionsForEntities(
-          updatedDescriptions.length > 0 ? updatedDescriptions : existingTasks,
-          String(changes.description.append),
-          'append',
-        )
-      }
-      if (changes.description.prepend) {
-        updatedDescriptions = await this.aiSemanticService.buildDescriptionsForEntities(
-          updatedDescriptions.length > 0 ? updatedDescriptions : existingTasks,
-          String(changes.description.prepend),
-          'prepend',
-        )
-      }
-      if (changes.description.replace_part) {
-        updatedDescriptions = await this.aiSemanticService.buildDescriptionsForEntities(
-          updatedDescriptions.length > 0 ? updatedDescriptions : existingTasks,
-          String(changes.description.replace_part.replace_with),
-          'replace',
-          String(changes.description.replace_part.find),
-        )
+    const existingTasks = await this.taskService.getByCriteria({ ids: taskIds }, user.id, session)
+
+    for (const task of existingTasks) {
+      const updatedTask = {
+        id: task.id.toString(),
+      } as TaskEditDTO
+
+      if (dto === null) updatedTask[field] = []
+      else {
+        if (typeof dto.set !== 'undefined') updatedTask[field] = dto.set
+        if (typeof dto.add !== 'undefined')
+          updatedTask[field] = [...new Set([...(task[field] || []), ...dto.add])]
+        if (typeof dto.remove !== 'undefined')
+          updatedTask[field] = (task[field] || []).filter(
+            (tag) => !dto.remove!.includes(String(tag)),
+          )
       }
 
-      for (const updatedTask of tasksToUpdate) {
-        const updatedDescriptionData = updatedDescriptions.find((data) =>
-          data.id.equals(updatedTask.id),
-        )
+      tasksToUpdate.push(updatedTask)
+    }
 
-        if (updatedDescriptionData) {
-          updatedTask.description = updatedDescriptionData.description
-        }
+    return await this.taskService.editMany(tasksToUpdate, user, session)
+  }
+
+  public async translateEditColorAndExecute(
+    taskIds: string[],
+    dto: EditTasksColorDTO['update'] | null,
+    user: IUser,
+    session?: ClientSession,
+  ): Promise<IResponseWithLog<ITaskPopulated[]>> {
+    if (typeof dto === 'undefined' || (dto && Object.keys(dto).length === 0)) {
+      return {
+        data: [],
+        logId: null,
       }
+    }
+
+    const updateDTO: Omit<TaskEditDTO, 'id'> = {}
+
+    if (dto === null) updateDTO.color = null
+    else {
+      updateDTO.color = getColorByNameAndTone(dto.color, dto.tone || 'medium')
+    }
+
+    return await this.taskService.edit(updateDTO, { ids: taskIds }, user, session)
+  }
+
+  public async translateEditCategoryAndExecute(
+    taskIds: string[],
+    categoryId: string,
+    user: IUser,
+    session?: ClientSession,
+  ): Promise<IResponseWithLog<ITaskPopulated[]>> {
+    if (!categoryId) {
+      return {
+        data: [],
+        logId: null,
+      }
+    }
+
+    const tasksToUpdate: TaskEditDTO[] = []
+
+    const existingTasks = await this.taskService.getByCriteria({ ids: taskIds }, user.id, session)
+
+    for (const task of existingTasks) {
+      const updatedTask = {
+        id: task.id.toString(),
+      } as TaskEditDTO
+
+      updatedTask.categoryId = categoryId
+
+      const categoryCount = await this.categoryService.getCount(
+        { id: categoryId },
+        user.id,
+        session,
+      )
+
+      if (categoryCount === 0) {
+        throw new NotFoundError(`Category with id ${categoryId} not found`)
+      }
+
+      tasksToUpdate.push(updatedTask)
     }
 
     return await this.taskService.editMany(tasksToUpdate, user, session)

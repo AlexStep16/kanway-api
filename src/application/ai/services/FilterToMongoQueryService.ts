@@ -3,58 +3,11 @@ import { CategoryService } from '@/application/services/CategoryService.ts'
 import { TaskService } from '@/application/services/TaskService.ts'
 import dayjs from 'dayjs'
 import { FilterQuery, Types } from 'mongoose'
+import { getColorByNameAndTone } from '@/utils/getColorByNameAndTone.ts'
+import { SearchEntitiesDTO } from '../tools/schemes/search/searchEntitiesSchema.ts'
 
-type DateAndNumberOperators = 'eq' | 'gt' | 'gte' | 'lt' | 'lte'
-type StringOperators = 'equal' | 'contains' | 'starts_with' | 'ends_with'
-type ArrayOperators = 'equal' | 'contains_all' | 'contains_any'
-
-interface DateFilter {
-  value: string
-  operator: DateAndNumberOperators
-  isNegated?: boolean
-}
-
-interface ArrayFilter {
-  value: string[]
-  operator: ArrayOperators
-  isNegated?: boolean
-}
-
-interface NumberFilter {
-  value: number
-  operator: DateAndNumberOperators
-  isNegated?: boolean
-}
-
-interface StringFilter {
-  value: string
-  operator: StringOperators
-  isNegated?: boolean
-}
-
-interface Filter {
-  ids?: string[]
-  name?: StringFilter
-  description?: StringFilter
-  dueDate?: DateFilter
-  dueTime?: DateFilter
-  isCompleted?: boolean
-  isArchived?: boolean
-  categoryIds?: string[]
-  boardIds?: string[]
-  workspaceIds?: string[]
-  tasksCount?: NumberFilter
-  categoriesCount?: NumberFilter
-  boardsCount?: NumberFilter
-  tags?: ArrayFilter
-  color?: ArrayFilter
-  order?: NumberFilter
-
-  AND?: Array<any>
-  and?: Array<any>
-  OR?: Array<any>
-  or?: Array<any>
-}
+type DateAndNumberOperators = 'eq' | 'neq' | 'gt' | 'gte' | 'lt' | 'lte' | 'in' | 'nin'
+type ArrayOperators = 'eq' | 'neq' | 'cont' | 'contany' | 'notcont'
 
 export class FilterToMongoQueryService {
   protected taskService: TaskService
@@ -74,41 +27,35 @@ export class FilterToMongoQueryService {
   // ===================================================================
   // ОСНОВНАЯ ФУНКЦИЯ ТРАНСФОРМАЦИИ
   // ===================================================================
-  private _getStringProcessedValue(operator: string, value: string, isNegated: boolean = false) {
-    if (operator === 'equal') {
-      const regex = new RegExp(value, 'i')
-
-      if (isNegated) {
-        return { $ne: value }
-      }
-
-      return regex
-    } else if (operator === 'contains') {
-      const regex = new RegExp(value, 'i')
-
-      if (isNegated) {
-        return { $not: regex }
-      }
-
-      return regex
-    } else if (operator === 'starts_with') {
-      const regex = new RegExp('^' + value, 'i')
-
-      if (isNegated) {
-        return { $not: regex }
-      }
-
-      return regex
-    } else if (operator === 'ends_with') {
-      const regex = new RegExp(value + '$', 'i')
-
-      if (isNegated) {
-        return { $not: regex }
-      }
-
-      return regex
+  private _getStringFilter(field: string, operator: string, value: string): any {
+    if (operator === 'eq') {
+      return { $eq: value }
+    } else if (operator === 'cont') {
+      return { $regex: new RegExp(value, 'i') }
+    } else if (operator === 'notcont') {
+      return { $not: new RegExp(value, 'i') }
+    } else if (operator === 'neq') {
+      return { $ne: value }
+    } else if (operator === 'in') {
+      return { $in: value }
+    } else if (operator === 'nin') {
+      return { $nin: value }
     } else {
-      throw new Error(`Unsupported string operator: ${operator}`)
+      throw new Error(`Unsupported operator for '${field}' field: ${operator}`)
+    }
+  }
+
+  private _getIdFilter(field: string, operator: string, value: Types.ObjectId): any {
+    if (operator === 'eq') {
+      return { $eq: value }
+    } else if (operator === 'neq') {
+      return { $ne: value }
+    } else if (operator === 'in') {
+      return { $in: value }
+    } else if (operator === 'nin') {
+      return { $nin: value }
+    } else {
+      throw new Error(`Unsupported operator for '${field}' field: ${operator}`)
     }
   }
 
@@ -117,133 +64,145 @@ export class FilterToMongoQueryService {
    * @param input - Объект, соответствующий FindTasksSchema.
    * @returns - Объект, готовый для передачи в Mongoose `find()`.
    */
-  public async prepare(
-    input: Filter,
+  public prepare(
+    dto: SearchEntitiesDTO,
     timezone: string,
     userId: Types.ObjectId,
-    activeWorkspaceId?: string,
-  ): Promise<FilterQuery<any>> {
+  ): FilterQuery<any> {
     const currentAndConditions: any[] = []
-    const currentOrConditions: any[] = []
+    let isArchviedFilterPresent = false
 
     try {
-      if (input.AND !== undefined || input.and !== undefined) {
-        const conditionsArray = input.AND || input.and || []
-        for (const condition of conditionsArray) {
-          const subQuery = await this.prepare(condition, timezone, userId)
-          if (Object.keys(subQuery).length > 0) {
-            currentAndConditions.push(subQuery)
+      for (const filter of dto.filters) {
+        const { field, operator, value } = filter
+
+        if (field === 'id') {
+          if (operator === 'eq') {
+            currentAndConditions.push({
+              _id: Types.ObjectId.createFromHexString(value),
+            })
+          } else if (operator === 'neq') {
+            currentAndConditions.push({
+              _id: { $ne: Types.ObjectId.createFromHexString(value) },
+            })
+          } else if (operator === 'in') {
+            currentAndConditions.push({
+              _id: { $in: value.map((id: string) => Types.ObjectId.createFromHexString(id)) },
+            })
+          } else if (operator === 'nin') {
+            currentAndConditions.push({
+              _id: { $nin: value.map((id: string) => Types.ObjectId.createFromHexString(id)) },
+            })
+          } else {
+            throw new Error(`Unsupported operator for 'id' field: ${operator}`)
           }
         }
-      }
 
-      if (input.OR !== undefined || input.or !== undefined) {
-        const conditionsArray = input.OR || input.or || []
-        for (const condition of conditionsArray) {
-          const subQuery = await this.prepare(condition, timezone, userId)
-          if (Object.keys(subQuery).length > 0) {
-            currentOrConditions.push(subQuery)
+        if (field === 'name') {
+          currentAndConditions.push({
+            name: this._getStringFilter('name', operator, value),
+          })
+        }
+
+        if (field === 'description') {
+          currentAndConditions.push({
+            description: this._getStringFilter('description', operator, value),
+          })
+        }
+
+        if (field === 'dueDate') {
+          currentAndConditions.push(
+            this._getDateQuery(value, operator as DateAndNumberOperators, timezone),
+          )
+        }
+
+        if (field === 'dueTime') {
+          currentAndConditions.push(
+            this._getTimeQuery(value, operator as DateAndNumberOperators, timezone),
+          )
+        }
+
+        if (field === 'tags') {
+          currentAndConditions.push(this._getArrayQuery('tags', value, operator as ArrayOperators))
+        }
+
+        if (field === 'order') {
+          currentAndConditions.push(
+            this._getNumberQuery('order', value, operator as DateAndNumberOperators),
+          )
+        }
+
+        if (field === 'color') {
+          const colorName = value.color
+          const tone = value.tone
+
+          if (!colorName) throw new Error(`Color value is required for 'color' field`)
+
+          const color = getColorByNameAndTone(colorName, tone)
+
+          currentAndConditions.push({
+            name: this._getStringFilter('color', operator, color),
+          })
+        }
+
+        if (field === 'isCompleted') {
+          if (operator === 'eq' || operator === 'neq') {
+            currentAndConditions.push({ is_completed: !!value })
           }
         }
+
+        if (field === 'isArchived') {
+          if (operator === 'eq' || operator === 'neq') {
+            currentAndConditions.push({ is_deleted: !!value })
+
+            isArchviedFilterPresent = true
+          }
+        }
+
+        if (field === 'isFavorite') {
+          if (operator === 'eq' || operator === 'neq') {
+            currentAndConditions.push({ is_favorite: !!value })
+          }
+        }
+
+        if (field === 'categoryId') {
+          currentAndConditions.push({
+            category: this._getIdFilter(
+              'category',
+              operator,
+              Types.ObjectId.createFromHexString(value),
+            ),
+          })
+        }
+
+        if (field === 'boardId') {
+          currentAndConditions.push({
+            board: this._getIdFilter('board', operator, Types.ObjectId.createFromHexString(value)),
+          })
+        }
+
+        if (field === 'workspaceId') {
+          currentAndConditions.push({
+            workspace: this._getIdFilter(
+              'workspace',
+              operator,
+              Types.ObjectId.createFromHexString(value),
+            ),
+          })
+        }
+
+        if (field === 'tasksCount' || field === 'categoriesCount' || field === 'boardsCount') {
+          currentAndConditions.push(
+            this._getNumberQuery(field, value, operator as DateAndNumberOperators),
+          )
+        }
+
+        currentAndConditions.push({ user_id: userId })
       }
 
-      if (input.ids !== undefined && input.ids.length > 0) {
-        currentAndConditions.push({
-          _id: { $in: input.ids.map((id) => Types.ObjectId.createFromHexString(id)) },
-        })
-      }
-
-      if (input.isCompleted !== undefined) {
-        currentAndConditions.push({ is_completed: input.isCompleted })
-      }
-
-      if (input.isArchived === true) {
-        currentAndConditions.push({ is_deleted: true, is_deleted_external: false })
-      } else {
+      if (!isArchviedFilterPresent) {
         currentAndConditions.push({ is_deleted: false })
       }
-
-      if (input.categoryIds !== undefined && input.categoryIds.length > 0) {
-        currentAndConditions.push({
-          category: {
-            $in: input.categoryIds.map((id) => Types.ObjectId.createFromHexString(id)),
-          },
-        })
-      }
-
-      if (input.boardIds !== undefined && input.boardIds.length > 0) {
-        currentAndConditions.push({
-          board: { $in: input.boardIds.map((id) => Types.ObjectId.createFromHexString(id)) },
-        })
-      }
-
-      if (input.workspaceIds !== undefined && input.workspaceIds.length > 0) {
-        currentAndConditions.push({
-          workspace: {
-            $in: input.workspaceIds.map((id) => Types.ObjectId.createFromHexString(id)),
-          },
-        })
-      } else if (activeWorkspaceId) {
-        currentAndConditions.push({
-          workspace: Types.ObjectId.createFromHexString(activeWorkspaceId),
-        })
-      }
-
-      if (input.name !== undefined) {
-        const { operator, value, isNegated } = input.name as StringFilter
-
-        currentAndConditions.push({
-          name: this._getStringProcessedValue(operator, value, isNegated),
-        })
-      }
-
-      if (input.description !== undefined) {
-        const { operator, value, isNegated } = input.description as StringFilter
-
-        currentAndConditions.push({
-          description: this._getStringProcessedValue(operator, value, isNegated),
-        })
-      }
-
-      if (input.dueDate !== undefined) {
-        const { operator, value, isNegated } = input.dueDate as DateFilter
-
-        currentAndConditions.push(this._getDateQuery(value, operator, timezone, isNegated))
-      }
-
-      if (input.dueTime !== undefined) {
-        const { value, operator, isNegated } = input.dueTime as DateFilter
-
-        currentAndConditions.push(this._getTimeQuery(value, operator, timezone, isNegated))
-      }
-
-      if (input.tags !== undefined) {
-        const { value, operator, isNegated } = input.tags as ArrayFilter
-
-        currentAndConditions.push(this._getArrayQuery('tags', value, operator, isNegated))
-      }
-
-      if (input.order !== undefined) {
-        const { value, operator, isNegated } = input.order as NumberFilter
-
-        currentAndConditions.push(this._getNumberQuery('order', value, operator, isNegated))
-      }
-
-      if (input.color !== undefined) {
-        const { value, operator, isNegated } = input.color as ArrayFilter
-
-        const normalizedColors = value.map((color) => this.taskService.getNearestColor(color) || '')
-
-        currentAndConditions.push(
-          this._getArrayQuery('color', normalizedColors, operator, isNegated),
-        )
-      }
-
-      if (currentOrConditions.length > 0) {
-        currentAndConditions.push({ $or: currentOrConditions })
-      }
-
-      currentAndConditions.push({ user_id: userId })
 
       if (currentAndConditions.length === 1) {
         return currentAndConditions[0]
@@ -261,60 +220,41 @@ export class FilterToMongoQueryService {
     field: string,
     value: number,
     operator: DateAndNumberOperators,
-    isNegated: boolean = false,
   ): FilterQuery<any> {
     if (operator === 'eq') {
-      if (isNegated) {
-        return {
-          [field]: { $ne: value },
-        }
-      }
-
       return {
         [field]: { $eq: value },
       }
-    } else if (operator === 'gt') {
-      if (isNegated) {
-        return {
-          [field]: { $lte: value },
-        }
+    } else if (operator === 'neq') {
+      return {
+        [field]: { $ne: value },
       }
-
+    } else if (operator === 'in') {
+      return {
+        [field]: { $in: value },
+      }
+    } else if (operator === 'nin') {
+      return {
+        [field]: { $nin: value },
+      }
+    } else if (operator === 'gt') {
       return {
         [field]: { $gt: value },
       }
     } else if (operator === 'gte') {
-      if (isNegated) {
-        return {
-          [field]: { $lt: value },
-        }
-      }
-
       return {
         [field]: { $gte: value },
       }
     } else if (operator === 'lt') {
-      if (isNegated) {
-        return {
-          [field]: { $gte: value },
-        }
-      }
-
       return {
         [field]: { $lt: value },
       }
     } else if (operator === 'lte') {
-      if (isNegated) {
-        return {
-          [field]: { $gt: value },
-        }
-      }
-
       return {
         [field]: { $lte: value },
       }
     } else {
-      throw new Error(`Unsupported operator: ${operator}`)
+      throw new Error(`Unsupported operator for '${field}' field: ${operator}`)
     }
   }
 
@@ -324,26 +264,23 @@ export class FilterToMongoQueryService {
     operator: ArrayOperators,
     isNegated: boolean = false,
   ): FilterQuery<any> {
-    if (operator === 'equal') {
-      if (isNegated) {
-        return {
-          [field]: { $ne: values },
-        }
-      }
-
-      return {
-        [field]: { $eq: values },
-      }
-    } else if (operator === 'contains_all') {
-      if (isNegated) {
-        return {
-          [field]: { $not: { $all: values } },
-        }
-      }
+    if (operator === 'eq') {
       return {
         [field]: { $all: values },
       }
-    } else if (operator === 'contains_any') {
+    } else if (operator === 'neq') {
+      return {
+        [field]: { $not: { $all: values } },
+      }
+    } else if (operator === 'cont') {
+      return {
+        [field]: { $all: values },
+      }
+    } else if (operator === 'notcont') {
+      return {
+        [field]: { $not: { $all: values } },
+      }
+    } else if (operator === 'contany') {
       if (isNegated) {
         return {
           [field]: { $not: { $in: values } },
@@ -353,7 +290,7 @@ export class FilterToMongoQueryService {
         [field]: { $in: values },
       }
     } else {
-      throw new Error(`Unsupported array operator: ${operator}`)
+      throw new Error(`Unsupported array operator for '${field}' field: ${operator}`)
     }
   }
 
@@ -361,7 +298,6 @@ export class FilterToMongoQueryService {
     value: string,
     operator: DateAndNumberOperators,
     userTimezone: string,
-    isNegated: boolean = false,
   ): FilterQuery<any> {
     const dateStr = value.split('T')[0]
 
@@ -426,37 +362,40 @@ export class FilterToMongoQueryService {
           { $lt: [constructedDateExpr, nextDayStart] },
         ],
       }
-      return isNegated ? { $expr: { $not: condition } } : { $expr: condition }
+      return { $expr: condition }
+    } else if (operator === 'neq') {
+      // Попадает в интервал [startOfDay, nextDayStart)
+      const condition = {
+        $or: [
+          { $lt: [constructedDateExpr, startOfDay] },
+          { $gte: [constructedDateExpr, nextDayStart] },
+        ],
+      }
+      return { $expr: condition }
     } else if (operator === 'gt') {
-      const val = isNegated ? nextDayStart : nextDayStart
-      const op = isNegated ? '$lt' : '$gte'
+      const val = nextDayStart
+      const op = '$gt'
       return { $expr: { [op]: [constructedDateExpr, val] } }
     } else if (operator === 'gte') {
-      const val = isNegated ? startOfDay : startOfDay
-      const op = isNegated ? '$lt' : '$gte'
+      const val = startOfDay
+      const op = '$gte'
       return { $expr: { [op]: [constructedDateExpr, val] } }
     } else if (operator === 'lt') {
-      const val = isNegated ? startOfDay : startOfDay
-      const op = isNegated ? '$gte' : '$lt'
+      const val = startOfDay
+      const op = '$lt'
       return { $expr: { [op]: [constructedDateExpr, val] } }
     } else if (operator === 'lte') {
-      const val = isNegated ? nextDayStart : nextDayStart
-      const op = isNegated ? '$gte' : '$lt'
+      const val = nextDayStart
+      const op = '$lte'
       return { $expr: { [op]: [constructedDateExpr, val] } }
     } else {
-      throw new Error(`Unsupported operator: ${operator}`)
+      throw new Error(`Unsupported operator for 'dueDate' field: ${operator}`)
     }
   }
 
-  private _getTimeQuery(
-    value: string,
-    operator: DateAndNumberOperators,
-    timezone: string,
-    isNegated: boolean = false,
-  ): any {
-    value = value.toString().padStart(5, '0') // Гарантируем формат "HH:mm"
+  private _getTimeQuery(value: string, operator: DateAndNumberOperators, timezone: string): any {
+    value = value.toString().padStart(5, '0')
 
-    // Если приходит field 'time', мы ищем по due_hours и due_minutes
     let hour: string | number = value.split(':')[0]
     let minute: string | number = value.split(':')[1]
 
@@ -472,81 +411,29 @@ export class FilterToMongoQueryService {
     hour = parseInt(dateUtc.format('H'))
     minute = parseInt(dateUtc.format('m'))
 
-    // Для 'equal' и 'not_equal' мы можем использовать прямые сравнения
     if (operator === 'eq') {
-      if (isNegated) {
-        // Логика "не равно" для часа и минуты: (час НЕ РАВЕН ИЛИ минута НЕ РАВНА)
-        // То есть, если час не тот, или час тот, но минута не та.
-        return {
-          $or: [{ due_hours: { $ne: hour } }, { due_minutes: { $ne: minute } }],
-        }
-      }
-
       return {
         $and: [{ due_hours: hour }, { due_minutes: minute }],
       }
-    }
-    // Обработка диапазонов времени (greater_than, less_than и т.д.)
-    // Это сложнее, так как требуется комбинировать due_hours и due_minutes
-    // Например, "больше 14:30"
-    // (due_hours > 14) ИЛИ (due_hours = 14 И due_minutes > 30)
-    else if (operator === 'gt' || operator === 'gte') {
+    } else if (operator === 'gt' || operator === 'gte') {
       const mongoOperator = operator === 'gt' ? '$gt' : '$gte'
-
-      if (isNegated) {
-        // Логика "не больше" для часа и минуты:
-        // То есть, если час меньше, или час равен, но минута меньше/равна.
-        const negatedMongoOperator = operator === 'gt' ? '$lt' : '$lte'
-
-        return {
-          $or: [
-            { due_hours: { $lt: hour } },
-            {
-              $and: [{ due_hours: hour }, { due_minutes: { [negatedMongoOperator]: minute } }],
-            },
-          ],
-        }
-      }
 
       return {
         $or: [
-          { due_hours: { $gt: hour } }, // Если час больше
+          { due_hours: { $gt: hour } },
           {
-            $and: [
-              // Или если час равен, но минута больше/равна
-              { due_hours: hour },
-              { due_minutes: { [mongoOperator]: minute } },
-            ],
+            $and: [{ due_hours: hour }, { due_minutes: { [mongoOperator]: minute } }],
           },
         ],
       }
     } else if (operator === 'lt' || operator === 'lte') {
       const mongoOperator = operator === 'lt' ? '$lt' : '$lte'
 
-      if (isNegated) {
-        // Логика "не меньше" для часа и минуты:
-        // То есть, если час больше, или час равен, но минута больше/равна.
-        const negatedMongoOperator = operator === 'lt' ? '$gt' : '$gte'
-
-        return {
-          $or: [
-            { due_hours: { $gt: hour } },
-            {
-              $and: [{ due_hours: hour }, { due_minutes: { [negatedMongoOperator]: minute } }],
-            },
-          ],
-        }
-      }
-
       return {
         $or: [
-          { due_hours: { $lt: hour } }, // Если час меньше
+          { due_hours: { $lt: hour } },
           {
-            $and: [
-              // Или если час равен, но минута меньше/равна
-              { due_hours: hour },
-              { due_minutes: { [mongoOperator]: minute } },
-            ],
+            $and: [{ due_hours: hour }, { due_minutes: { [mongoOperator]: minute } }],
           },
         ],
       }

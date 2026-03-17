@@ -18,9 +18,13 @@ export default class CategoryRepository extends BaseRepository<
 
   public buildFilter(
     criteria: ICategoryCriteria,
-    userId: Types.ObjectId
+    userId?: Types.ObjectId,
   ): FilterQuery<ICategoryRaw> {
-    const filter: FilterQuery<ICategoryRaw> = { user_id: userId }
+    const filter: FilterQuery<ICategoryRaw> = {}
+
+    if (userId) {
+      filter.user_id = userId
+    }
 
     if (criteria.id) {
       filter._id = criteria.id
@@ -37,7 +41,7 @@ export default class CategoryRepository extends BaseRepository<
     }
 
     if (criteria.name) {
-      filter.name = { $regex: criteria.name, $options: 'i' }
+      filter.name = { $regex: new RegExp(criteria.name, 'i') }
     }
 
     if (criteria.boardId) {

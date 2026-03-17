@@ -16,10 +16,6 @@ export default class BoardController extends BaseController<
   BoardEditDTO,
   IBoardPopulated
 > {
-  constructor(serviceInstance: BoardService) {
-    super(serviceInstance)
-  }
-
   public override getAll = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const criteria: IBoardCriteria = {

@@ -2,7 +2,7 @@ import { AgentStateAnnotation } from '@/application/ai/agent/AgentStateAnnotatio
 import { interrupt } from '@langchain/langgraph'
 
 export const makeHumanApprovalNode = () => {
-  return async (state: typeof AgentStateAnnotation.State) => {
+  return (state: typeof AgentStateAnnotation.State) => {
     const confirmations = state.prepared_confirmations || []
 
     const review = interrupt({

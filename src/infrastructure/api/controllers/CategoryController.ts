@@ -16,10 +16,6 @@ export default class CategoryController extends BaseController<
   CategoryEditDTO,
   ICategoryPopulated
 > {
-  constructor(serviceInstance: CategoryService) {
-    super(serviceInstance)
-  }
-
   public override getAll = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const criteria: ICategoryCriteria = {

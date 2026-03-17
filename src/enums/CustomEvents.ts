@@ -1,10 +1,7 @@
 export enum CustomEvents {
-  TOOLS_RETRIEVING = 'tools_retrieving',
   CALLING_TOOLS = 'calling_tools_start',
-  HISTORY_RETRIEVING = 'history_retrieving',
   SYNTHESIZE_START = 'synthesize_start',
   STEP_ADD = 'step_add',
-  STEP_UPDATE = 'step_update',
   INTEGRATION = 'integration',
   PREVIEW = 'preview',
   UNDO = 'undo',

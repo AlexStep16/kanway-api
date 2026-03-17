@@ -8,7 +8,7 @@ export interface ICategoryRaw {
   user_id: Types.ObjectId
   tasks_count: number
   order: number
-  embeddings: Array<Number>
+  embeddings: Array<number>
   is_deleted: boolean
   is_deleted_external: boolean
   deleted_time?: Date | null

@@ -1,12 +1,12 @@
 import { RedisStore, type RedisReply } from 'rate-limit-redis'
 import { Redis } from 'ioredis'
-import { Request, Response } from 'express'
+import { NextFunction, Request, Response } from 'express'
 import { rateLimit, ipKeyGenerator } from 'express-rate-limit'
 import { AppError } from './domain/errors/AppError.ts'
 
 const redis = new Redis()
 
-const baseHandler = (req: Request, _res: Response, next: Function) => {
+const baseHandler = (req: Request, _res: Response, next: NextFunction) => {
   if (req.rateLimit) {
     const retryAfter = req.rateLimit.resetTime
       ? Math.ceil((req.rateLimit.resetTime.getTime() - Date.now()) / 1000)

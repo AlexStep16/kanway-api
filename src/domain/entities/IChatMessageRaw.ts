@@ -6,6 +6,7 @@ export interface IChatMessageRaw {
   role: IChatMessageRoles
   content: any
   list_type?: string
+  pending_tool_call_id?: string
   chat_id: Types.ObjectId
   user_id: Types.ObjectId
   thread_id: string

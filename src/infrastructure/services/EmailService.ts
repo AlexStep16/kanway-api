@@ -47,7 +47,7 @@ export class EmailService {
     try {
       const templatePath = path.resolve('email-templates/verify-email.html')
 
-      let htmlContent = await fs.promises.readFile(templatePath, 'utf8')
+      const htmlContent = await fs.promises.readFile(templatePath, 'utf8')
 
       const inputBody = {
         message: {
@@ -115,7 +115,7 @@ export class EmailService {
     try {
       const templatePath = path.resolve('email-templates/password-recovery.html')
 
-      let htmlContent = await fs.promises.readFile(templatePath, 'utf8')
+      const htmlContent = await fs.promises.readFile(templatePath, 'utf8')
 
       const inputBody = {
         message: {
@@ -181,7 +181,7 @@ export class EmailService {
     try {
       const templatePath = path.resolve('email-templates/support.html')
 
-      let htmlContent = await fs.promises.readFile(templatePath, 'utf8')
+      const htmlContent = await fs.promises.readFile(templatePath, 'utf8')
 
       const inputBody = {
         message: {
@@ -234,7 +234,7 @@ export class EmailService {
   public async sendPaymentFailedEmail(user: IUser, amount: string, days: string) {
     const templatePath = path.resolve('email-templates/payment-failed.html')
 
-    let htmlContent = await fs.promises.readFile(templatePath, 'utf8')
+    const htmlContent = await fs.promises.readFile(templatePath, 'utf8')
 
     const inputBody = {
       message: {
@@ -281,7 +281,7 @@ export class EmailService {
   public async sendPaymentFinalFailedEmail(user: IUser) {
     const templatePath = path.resolve('email-templates/payment-failed-final.html')
 
-    let htmlContent = await fs.promises.readFile(templatePath, 'utf8')
+    const htmlContent = await fs.promises.readFile(templatePath, 'utf8')
 
     const inputBody = {
       message: {
@@ -332,7 +332,7 @@ export class EmailService {
   ) {
     const templatePath = path.resolve('email-templates/payment-success.html')
 
-    let htmlContent = await fs.promises.readFile(templatePath, 'utf8')
+    const htmlContent = await fs.promises.readFile(templatePath, 'utf8')
 
     const date = dayjs(data.date).format('DD.MM.YYYY HH:mm')
     const nextBillingDate = dayjs(data.next_billing_date).format('DD.MM.YYYY 00:00')

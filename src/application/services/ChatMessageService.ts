@@ -25,7 +25,7 @@ export class ChatMessageService extends BaseService<
 
   constructor(
     chatMessageRepository: ChatMessageRepository,
-    operationLogService: OperationLogService
+    operationLogService: OperationLogService,
   ) {
     super(chatMessageRepository)
 
@@ -60,7 +60,7 @@ export class ChatMessageService extends BaseService<
     }
     throw new AppError(
       'Произошла ошибка при выполнении операции после максимального количества попыток.',
-      500
+      500,
     )
   }
 
@@ -68,7 +68,7 @@ export class ChatMessageService extends BaseService<
     data: Partial<ChatMessageDTO>,
     criteria: IChatMessageCriteria,
     userId: Types.ObjectId,
-    session: ClientSession
+    session: ClientSession,
   ): Promise<IChatMessage> {
     const chatMessagesCount = await this.repository.getCount(criteria, session, userId)
 
@@ -78,7 +78,7 @@ export class ChatMessageService extends BaseService<
       criteria,
       data,
       session,
-      userId
+      userId,
     )
 
     if (updateChatMessagesResult.modifiedCount === 0) {
@@ -97,18 +97,19 @@ export class ChatMessageService extends BaseService<
   private async _executeCreateTransaction(
     data: ChatMessageDTO,
     user: IUser,
-    session: ClientSession
+    session: ClientSession,
   ): Promise<IResponseWithLog<IChatMessage[]>> {
     const chatMessage = await this.repository.create(
       {
         role: data.role,
         content: data.content,
         listType: data.listType,
+        pendingToolCallId: data.pendingToolCallId,
         userId: user.id,
         chatId: data.chatId,
         threadId: data.threadId,
       },
-      session
+      session,
     )
 
     const log = await this.operationLogService.create(
@@ -119,7 +120,7 @@ export class ChatMessageService extends BaseService<
         dependencies: [],
       },
       user.id,
-      session
+      session,
     )
 
     return {
@@ -131,13 +132,13 @@ export class ChatMessageService extends BaseService<
   public async create(
     data: ChatMessageDTO,
     user: IUser,
-    externalSession?: ClientSession
+    externalSession?: ClientSession,
   ): Promise<IResponseWithLog<IChatMessage[]>> {
     if (externalSession) {
       return this._executeCreateTransaction(data, user, externalSession)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeCreateTransaction(data, user, session)
+        this._executeCreateTransaction(data, user, session),
       )
     }
   }
@@ -146,7 +147,7 @@ export class ChatMessageService extends BaseService<
     data: Partial<ChatMessageDTO>,
     criteria: IChatMessageCriteria,
     user: IUser,
-    externalSession?: ClientSession
+    externalSession?: ClientSession,
   ): Promise<IChatMessage> {
     const userId = user.id
 
@@ -154,7 +155,7 @@ export class ChatMessageService extends BaseService<
       return this._executeEditTransaction(data, criteria, userId, externalSession)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeEditTransaction(data, criteria, userId, session)
+        this._executeEditTransaction(data, criteria, userId, session),
       )
     }
   }
@@ -162,7 +163,7 @@ export class ChatMessageService extends BaseService<
   private async _executeDeleteTransaction(
     criteria: IChatMessageCriteria,
     userId: Types.ObjectId,
-    session: ClientSession
+    session: ClientSession,
   ): Promise<void> {
     await this.repository.deleteMany(criteria, userId, session)
   }
@@ -170,7 +171,7 @@ export class ChatMessageService extends BaseService<
   public async delete(
     criteria: IChatMessageCriteria,
     user: IUser,
-    externalSession?: ClientSession
+    externalSession?: ClientSession,
   ): Promise<void> {
     const userId = user.id
 
@@ -178,7 +179,7 @@ export class ChatMessageService extends BaseService<
       return this._executeDeleteTransaction(criteria, userId, externalSession)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeDeleteTransaction(criteria, userId, session)
+        this._executeDeleteTransaction(criteria, userId, session),
       )
     }
   }
