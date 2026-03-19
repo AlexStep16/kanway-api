@@ -5,6 +5,7 @@ import { validationMiddleware } from '@/infrastructure/middlewares/validations/v
 import { BoardDTOSchema } from '@dtos/BoardDTO.ts'
 import { BoardEditDTOSchema } from '@dtos/BoardEditDTO.ts'
 import { patchEntitiesLimiter, postEntitiesLimiter } from '@/limiters.ts'
+import { BoardMoveDTOSchema } from '@/application/dtos/BoardMoveDTO.ts'
 
 interface IBoardRawController extends BoardController {}
 
@@ -18,6 +19,12 @@ export default (controller: IBoardRawController): Router => {
   router.get('/:id', controller.getById)
 
   router.post('/', postEntitiesLimiter, validationMiddleware(BoardDTOSchema), controller.create)
+  router.patch(
+    '/move',
+    patchEntitiesLimiter,
+    validationMiddleware(BoardMoveDTOSchema),
+    controller.move,
+  )
   router.patch(
     '/:id',
     patchEntitiesLimiter,

@@ -1,4 +1,4 @@
-import { ToolDispatcherService } from '@/application/aiNew/services/ToolDispatcherService.ts'
+import { ToolDispatcherService } from '@/application/ai/services/ToolDispatcherService.ts'
 import SuccessResponse from '@/application/services/SuccessResponse.ts'
 import { NextFunction, Request, Response } from 'express'
 
@@ -14,7 +14,12 @@ export default class SandboxController {
       const userId = req.body.user_id as string
       const config = req.body.config as Record<string, any>
 
-      const result = await this.toolDispatcherService.dispatch(req.body, userId, config)
+      const result = await this.toolDispatcherService.dispatch({
+        toolCall: req.body,
+        userId,
+        config,
+        tempToRealIdMap: {}, // Initialize an empty map for this execution context
+      })
 
       return res.status(200).json(new SuccessResponse(result))
     } catch (error) {
@@ -29,33 +34,69 @@ export default class SandboxController {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           code: `
-# Search for the task with the given title
-search_result = search_tasks(
-    mongo_filter={"is_deleted": {"$ne": True}, "is_deleted_external": {"$ne": True}},
-    search_query="поехать в театр"
+board_id = "69b9757502918145c4e83247"
+
+# Поиск категории "спорт"
+sport_candidates = search_categories(
+    search_query="спорт",
+    mongo_filter={"board": board_id}
 )
-tasks = search_result.get("tasks", [])
-if not tasks:
-    print("Task titled 'поехать в театр' was not found.")
-    raise Exception("Task not found")
 
-# Resolve ambiguity if multiple tasks match the title
-if len(tasks) > 1:
-    task_ids = [t["_id"] for t in tasks]
-    selected_ids = resolve_ambiguous(
-        entity_type="task",
-        ids=task_ids,
-        min_select=1,
-        max_select=1,
-        id="resolve_task_tag_change"
-    )
-    task_id = selected_ids[0]
+if not sport_candidates:
+    print("Категория «спорт» не найдена на доске.")
 else:
-    task_id = tasks[0]["_id"]
+    # Получаем ID категории, учитывая возможный тип элемента
+    if len(sport_candidates) == 1:
+        candidate = sport_candidates[0]
+        sport_id = candidate["_id"] if isinstance(candidate, dict) else candidate
+    else:
+        sport_ids = [
+            c["_id"] if isinstance(c, dict) else c
+            for c in sport_candidates
+        ]
+        resolved = resolve_ambiguous(
+            entity_type="category",
+            ids=sport_ids,
+            min_select=1,
+            max_select=1,
+            id="move_category_sport"
+        )
+        sport_id = resolved[0]
 
-# Update the tags of the selected task
-update_tasks([{"_id": task_id, "tags": ["срочно"]}])
-print("Tags for task 'поехать в театр' have been changed to ['срочно'].")`,
+    # Поиск категории "бэклог"
+    backlog_candidates = search_categories(
+        search_query="бэклог",
+        mongo_filter={"board": board_id}
+    )
+
+    if not backlog_candidates:
+        print("Категория «бэклог» не найдена на доске.")
+    else:
+        if len(backlog_candidates) == 1:
+            candidate = backlog_candidates[0]
+            backlog_id = candidate["_id"] if isinstance(candidate, dict) else candidate
+        else:
+            backlog_ids = [
+                c["_id"] if isinstance(c, dict) else c
+                for c in backlog_candidates
+            ]
+            resolved = resolve_ambiguous(
+                entity_type="category",
+                ids=backlog_ids,
+                min_select=1,
+                max_select=1,
+                id="move_category_backlog"
+            )
+            backlog_id = resolved[0]
+
+        # Перемещение категории "спорт" перед "бэклог"
+        moved_category = move_category(
+            id=sport_id,
+            before_category_id=backlog_id,
+            after_category_id=None,
+            new_board_id=None
+        )
+        print("Категория перемещена:", moved_category)`,
           config: {},
           user_id: '67da84f0a2e3729760781559',
         }),

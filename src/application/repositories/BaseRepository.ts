@@ -1,4 +1,3 @@
-import { IReordable } from '@/domain/entities/IReordable.ts'
 import {
   ClientSession,
   CreateOptions,
@@ -172,24 +171,6 @@ export abstract class BaseRepository<
     return this.model.bulkWrite(validOps, { session })
   }
 
-  public bulkUpdateOrders(
-    updates: IReordable[],
-    userId: Types.ObjectId,
-    session?: ClientSession,
-  ): Promise<MongooseBulkWriteResult> | null {
-    if (updates.length === 0) return null
-
-    const bulkOperations = updates.map((item) => ({
-      updateOne: {
-        filter: { _id: item.id, user_id: userId },
-        update: { $set: { order: item.order } },
-        options: { runValidators: false },
-      },
-    })) as any
-
-    return this.model.bulkWrite(bulkOperations, { session }) as any
-  }
-
   public async deleteMany(
     criteria: TCriteria,
     userId?: Types.ObjectId,
@@ -274,32 +255,6 @@ export abstract class BaseRepository<
     return await this.model.countDocuments(filter).session(session)
   }
 
-  public async getLastOrderGroupedByParents(
-    parentIds: Types.ObjectId[],
-    parentField: keyof TRawEntity,
-    userId: Types.ObjectId,
-    session?: ClientSession,
-  ): Promise<{ _id: Types.ObjectId; lastOrder: number }[]> {
-    return await this.model
-      .aggregate([
-        {
-          $match: {
-            [parentField]: { $in: parentIds },
-            user_id: userId,
-            is_deleted: false,
-          },
-        },
-
-        {
-          $group: {
-            _id: `$${String(parentField)}`,
-            lastOrder: { $max: '$order' },
-          },
-        },
-      ])
-      .session(session || null)
-  }
-
   public async getCountGroupedByParents(
     parentIds: Types.ObjectId[],
     parentField: keyof TRawEntity,
@@ -334,20 +289,41 @@ export abstract class BaseRepository<
     return await this.model.aggregate(pipeline).session(session).exec()
   }
 
-  public async getAllToOrder(
-    parentId: Types.ObjectId,
-    parentField: string,
-    userId?: Types.ObjectId,
-    session?: ClientSession,
-  ): Promise<TEntity[]> {
-    const result = await this.model
-      .find({ [parentField]: parentId, user_id: userId, is_deleted: false })
-      .session(session || null)
-      .select('_id order')
-      .sort({ order: 1 })
-      .lean()
+  public async getLastRanksByParents(
+    parentIds: Types.ObjectId[],
+    parentField: keyof TRawEntity,
+    userId: Types.ObjectId,
+    session: ClientSession | null = null,
+  ): Promise<{ parentId: string; rank: string }[]> {
+    if (!parentIds.length) return []
 
-    return result.map(toServerCaseKeys<TEntity>)
+    const pipeline = [
+      {
+        $match: {
+          [parentField]: { $in: parentIds },
+          user_id: userId,
+          is_deleted: false,
+        },
+      },
+      {
+        $sort: { rank: -1 as const },
+      },
+      {
+        $group: {
+          _id: `$${String(parentField)}`,
+          rank: { $first: '$rank' },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          parentId: { $toString: '$_id' },
+          rank: 1,
+        },
+      },
+    ]
+
+    return await this.model.aggregate(pipeline).session(session).exec()
   }
 
   public async decrementFieldByCriteria(

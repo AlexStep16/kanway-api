@@ -41,9 +41,9 @@ export const TaskSchema = new Schema<ITaskRaw>(
       type: Boolean,
       default: false,
     },
-    order: {
-      type: Number,
-      default: 1,
+    rank: {
+      type: String,
+      required: true,
     },
     is_completed: {
       type: Boolean,

@@ -10,6 +10,8 @@ export interface Configurable {
   activeWorkspaceId: string
   activeWorkspaceName?: string
   currentDate: string
+  categoriesList: string
+  tagsList: string
   timezone: string
 
   aiName: string

@@ -1,129 +1,86 @@
-import { AgentSkill } from '../../interfaces/AgentSkill.ts'
+import { AgentSkill } from '@/application/ai/interfaces/AgentSkill.ts'
 
-export const MoveCategories: AgentSkill = {
-  name: 'MoveCategories',
-  description: 'Move categories between boards and workspaces.',
-  rule: `*** RULE: MOVING CATEGORIES ***
-    User wants to move a category. It could be to another board OR another workspace.
+export const CategoriesReadSkill: AgentSkill = {
+  name: 'CategoriesRead',
+  description:
+    'Skill for reading and understanding categories. Use this skill to extract key information from categories, such as objectives, requirements, and constraints.',
+  content: `
+    ### SKILL: CategoriesRead
 
-    Procedure:
-    1. Extract the destination context (e.g., "to board 'Done'", "to workspace 'Marketing'").
-    2. Determine if the destination is a BOARD or a WORKSPACE.
-      - Look for keywords like "board", "workspace", "project".
-      - If ambiguous ("move it here"), try to resolve context first.
+    This skill allows you to find categories using either strict criteria, fuzzy text search, or both.
 
-    If Destination is a BOARD (on the current workspace):
-    1. Find the target 'boardId' using 'searchEntities'.
-    2. Use 'editCategories' with the found 'boardId'.
-
-    If Destination is a WORKSPACE:
-    1. Find the target WORKSPACE ID using 'searchEntities' by name.
-    2. Find a suitable 'boardId' ON THE TARGET WORKSPACE using 'searchEntities' (filter by target workspaceId).
-    3. Use 'editCategories' with the resolved 'boardId'.
-
-    NEVER create or delete categories for moving. ALWAYS use 'editCategories'.
-    `,
-  suggestedTools: ['moveCategories', 'searchEntities'],
+    ### SCRIPT LOGIC (MUST BE IN A SINGLE SCRIPT):
+    - **Hybrid Search:** If the user says "Find archived categories called backlog", use BOTH arguments:
+      - 'mongo_filter={"is_deleted": True}' (Strict)
+      - 'search_query="backlog"' (Fuzzy)
+    - **Pure Fuzzy:** If the user says "Search for 'project alpha'", use ONLY 'search_query="project alpha"'.
+    - **Pure Strict:** If the user says "Show all archived categories", use ONLY 'mongo_filter={"is_deleted": True}'.
+  `,
+  relatedTools: ['search_categories', 'display_to_user'],
+  relatedEntities: ['category'],
 }
 
-export const CloneCategories: AgentSkill = {
-  name: 'CloneCategories',
-  description: 'Create a duplicate of an existing category.',
-  rule: `*** RULE: CLONING CATEGORIES ***
-    Goal: Create a duplicate of an existing category.
+export const CategoriesCreateSkill: AgentSkill = {
+  name: 'CategoriesCreate',
+  description: 'Skill for creating categories. Use this skill to add new categories.',
+  content: `
+    ### SKILL: CategoriesCreate
 
-    RULES:
-    1. Identify the category ID(s) to be cloned.
-    2. Call 'cloneCategories' with the identified ID(s).
-    3. If the user mentions any changes to the cloned category (e.g., different name, board), use 'editCategories' after cloning to apply those changes.
+    This skill allows you to create new categories. You must resolve Workspace and Board names to IDs before creation.
 
-    EXECUTION:
-    - Call 'cloneCategories' with the identified ID(s).
-    `,
-  suggestedTools: ['cloneCategories', 'editCategories', 'searchEntities'],
+    ### SCRIPT LOGIC (MUST BE IN A SINGLE SCRIPT):
+    - When generating your code, structure it as follows:
+    - Workspace Resolution: First, query for the workspace. If the result is ambiguous (len > 1), call resolve_ambiguous. If not, save the workspace id to a variable.
+    - Board Resolution: Next, query for the board. If the result is ambiguous (len > 1), call resolve_ambiguous. If not, save the board id to a variable.
+    - Creation: Finally, use the resolved variables to call create_categories at the end of the script.
+  `,
+  relatedTools: ['create_categories', 'search_boards', 'search_workspaces', 'resolve_ambiguous'],
+  relatedEntities: ['category', 'board', 'workspace'],
 }
 
-export const CreateCategories: AgentSkill = {
-  name: 'CreateCategories',
-  description: 'Create a new category (column) on a board.',
-  rule: `*** RULE: CREATING CATEGORIES (COLUMNS) ***
-    Goal: Create a new vertical categories/lists on a board.
+export const CategoriesUpdateSkill: AgentSkill = {
+  name: 'CategoriesUpdate',
+  description: 'Skill for updating categories. Use this skill to modify existing categories.',
+  content: `
+    ### SKILL: CategoriesUpdate
 
-    IF user does not have a active board, you MUST create a new board autonomously using the 'createBoards' tool and the Relevant board name.
+    This skill allows you to update existing categories. You must resolve Workspace, Board, and Category names to IDs before updating.
 
-    Procedure:
-    1. Extract the category 'name' from user input.
-
-    2. If NO name is provided (e.g., just "Create a category"), ask the user for a name.
-    3. If Board name is not provided, do not set boardName when creating the category. The system will use the active or default board.
-    4. If Workspace name is not provided, do not set workspaceName when creating the category. The system will use the active workspace by default.
-    5. If you know any ids from the context (e.g., boardId, workspaceId) that can help the creation, use them. The system will prioritize them over names.
-
-    EXECUTION:
-      - Call 'createCategories' with the 'name' and other relevant fields.
-    `,
-  suggestedTools: ['createCategories', 'searchEntities'],
+    ### SCRIPT LOGIC (MUST BE IN A SINGLE SCRIPT):
+    - When generating your code, structure it as follows:
+    - Workspace Resolution: First, query for the workspace. If the result is ambiguous (len > 1), call resolve_ambiguous. If not, save the workspace id to a variable.
+    - Board Resolution: Next, query for the board. If the result is ambiguous (len > 1), call resolve_ambiguous. If not, save the board id to a variable.
+    - Category Resolution: Next, in the same script, query for the category. Handle ambiguity the same way.
+    - Update: Finally, use the resolved variables to call update_categories at the end of the script.
+  `,
+  relatedTools: [
+    'update_categories',
+    'search_categories',
+    'search_workspaces',
+    'search_boards',
+    'resolve_ambiguous',
+  ],
+  relatedEntities: ['category', 'board', 'workspace'],
 }
 
-export const UpdateCategoriesName: AgentSkill = {
-  name: 'UpdateCategoriesName',
-  description: 'Modify the name of an existing category.',
-  rule: `*** RULE: UPDATING CATEGORIES NAME ***
-    Goal: Modify the name of an existing category.
-    
-    Procedure:
-    1. If 'categoryId' is not clear from context, search for the categories using 'searchEntities'.
-    2. Call 'updateCategoriesName' with 'categoryId' and the new name.`,
-  suggestedTools: ['updateCategoriesName', 'searchEntities'],
-}
+export const CategoryMoveSkill: AgentSkill = {
+  name: 'CategoryMove',
+  description:
+    'Skill for moving category. Use this skill to change the position of existing category.',
+  content: `
+    ### SKILL: CategoryMove
 
-export const UpdateCategoriesOrder: AgentSkill = {
-  name: 'UpdateCategoriesOrder',
-  description: 'Modify the order of an existing category.',
-  rule: `*** RULE: UPDATING CATEGORIES ORDER ***
-    Goal: Modify the order of an existing category.
-    
-    Procedure:
-    1. If 'categoryId' is not clear from context, search for the categories using 'searchEntities'.
-    2. Call 'updateCategoriesOrder' with 'categoryId' and the new order.`,
-  suggestedTools: ['updateCategoriesOrder', 'searchEntities'],
-}
+    This skill allows you to move existing category. You must resolve Category name to ID before moving and determine the new position based on user input. Before and after category IDs are optional.
+    If the user says "Move category A to the start of the board", then find the first category in the board by sorting by rank and use its ID as beforeCategoryId, leaving afterCategoryId null.
+    By default category will be moved to the bottom of the board.
 
-export const CategoryLifecycle: AgentSkill = {
-  name: 'CategoryLifecycle',
-  description: 'Change the existence state of a category (archive, recover, delete).',
-  rule: `*** RULE: CATEGORY LIFECYCLE (ARCHIVE / DELETE / RECOVER) ***
-    Goal: Change the existence state of a Category (Column).
-
-    1. ARCHIVE (Soft Delete):
-      - Tool: 'archiveCategories'.
-      - Use for "remove", "hide", "archive".
-
-    2. RECOVER (Restore):
-      - Tool: 'recoverCategories'.
-
-    3. DELETE (Permanent):
-      - Tool: 'deleteCategories'.
-      - WARNING: Deleting a category usually deletes/archives all tasks inside it.
-
-    Procedure:
-    1. Identify Category IDs using 'searchEntities' with isArchived flag or context.
-    2. Call tool with {{ ids: ["..."] }}.`,
-  suggestedTools: ['archiveCategories', 'recoverCategories', 'deleteCategories', 'searchEntities'],
-}
-
-export const SearchRelevantCategories: AgentSkill = {
-  name: 'SearchRelevantCategories',
-  description: 'Search and Retrieve categories based on similarity search by names.',
-  rule: `*** RULE: SEARCHING RELEVANT CATEGORIES ***
-    Goal: Search and Retrieve categories based on similarity search by names.
-    
-    Procedure:
-    1. Analyze the user request to extract category names to search.
-    2. Call 'searchRelevantCategories' with the extracted category names.
-     - If multiple categories are found and the user request is ambiguous, use 'showEntitiesToUser' to present the options and ask for clarification.
-     - If no categories are found, DON'T LOOP, use 'responseToUser' to inform the user and ask for clarification or alternative input.
-    3. Present results to the user using 'showEntitiesToUser' (if applicable).
-    `,
-  suggestedTools: ['searchRelevantCategories', 'showEntitiesToUser'],
+    ### SCRIPT LOGIC (MUST BE IN A SINGLE SCRIPT):
+    - When generating your code, structure it as follows:
+    - Category Resolution: First, query for the category. If the result is ambiguous (len > 1), call resolve_ambiguous. If not, save the category id to a variable.
+    - Next, in the same script, determine the new position of the category by identifying the beforeCategoryId and afterCategoryId. If the user says "Move category A before category B", then beforeCategoryId is the ID of category B and afterCategoryId is null. If the user says "Move category A after category C", then afterCategoryId is the ID of category C and beforeCategoryId is null. If the user says "Move category A between category B and category C", then beforeCategoryId is the ID of category B and afterCategoryId is the ID of category C.
+    - If the user says "Move category A to board D", resolve board D by 'search_boards' to get newBoardId.
+    - Move the category using the resolved variables to call move_category at the end of the script.
+  `,
+  relatedTools: ['move_category', 'search_categories', 'search_boards', 'resolve_ambiguous'],
+  relatedEntities: ['category', 'board'],
 }

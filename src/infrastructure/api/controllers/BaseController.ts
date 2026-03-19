@@ -6,11 +6,12 @@ import { IBaseCriteria } from '@/application/interfaces/criterias/IBaseCriteria.
 
 export abstract class BaseController<
   TEntity,
-  TService extends IControllerService<TEntity, TCriteria, TCreateDTO, TEditDTO, TResult>,
+  TService extends IControllerService<TEntity, TCriteria, TCreateDTO, TEditDTO, TResult, TMoveDTO>,
   TCriteria extends IBaseCriteria,
   TCreateDTO,
   TEditDTO,
   TResult = Record<string, any>,
+  TMoveDTO = Record<string, any>,
 > {
   constructor(protected service: TService) {}
 
@@ -52,6 +53,17 @@ export abstract class BaseController<
       const entities = await this.service.getByCriteria(criteria, req.user!.id)
 
       res.status(200).json(new SuccessResponse(entities))
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  public move = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const payload = req.body as TMoveDTO
+      const result = await this.service.move(payload, req.user as IUser)
+
+      res.status(200).json(new SuccessResponse(result))
     } catch (error) {
       next(error)
     }

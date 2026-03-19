@@ -183,6 +183,19 @@ export class BullMQCallbackHandler extends BaseCallbackHandler {
       )
     }
 
+    if (event === CustomEvents.DISPLAY) {
+      this.aiMessage = await this.createChatMessage(
+        {
+          role: 'display',
+          content: data,
+          threadId: this.configurable.thread_id,
+          chatId: new Types.ObjectId(this.configurable.chatId),
+        },
+        this.configurable.user,
+        this.job,
+      )
+    }
+
     if (event === CustomEvents.STEP_ADD) {
       const stepData = data
 

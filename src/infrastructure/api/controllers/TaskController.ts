@@ -7,6 +7,7 @@ import { Request, Response, NextFunction } from 'express'
 import SuccessResponse from '@application/services/SuccessResponse.ts'
 import { TaskEditDTO } from '@dtos/TaskEditDTO.ts'
 import { ITaskPopulated } from '@/application/interfaces/ITaskPopulated.ts'
+import { TaskMoveDTO } from '@/application/dtos/TaskMoveDTO.ts'
 
 export default class TaskController extends BaseController<
   ITask,
@@ -14,7 +15,8 @@ export default class TaskController extends BaseController<
   ITaskCriteria,
   TaskDTO,
   TaskEditDTO,
-  ITaskPopulated
+  ITaskPopulated,
+  TaskMoveDTO
 > {
   public override getAll = async (req: Request, res: Response, next: NextFunction) => {
     try {

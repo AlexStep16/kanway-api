@@ -7,7 +7,7 @@ export interface ICategoryCreatePayload {
   board: Types.ObjectId
   userId: Types.ObjectId
   embeddings: Array<number>
-  order: number
+  rank: string
   isDeleted?: boolean
   isDeletedExternal?: boolean
   deletedTime?: Date

@@ -13,7 +13,7 @@ export interface ITask<
   category: TCategory
   isDeleted: boolean
   isDeletedExternal: boolean
-  order: number
+  rank: string
   isCompleted: boolean
   tags: Array<string>
   userId: Types.ObjectId

@@ -9,7 +9,7 @@ export interface IWorkspace {
   tasksCount: number
   categoriesCount: number
   boardsCount: number
-  order: number
+  rank: string
   color: (typeof BASE_COLORS)[number]
   colorName: string
   embeddings: Array<number>

@@ -39,15 +39,15 @@ export const CategorySchema = new Schema<ICategoryRaw>(
       required: true,
       select: false,
     },
-    order: {
-      type: Number,
-      default: 1,
+    rank: {
+      type: String,
+      required: true,
     },
     deleted_time: {
       type: Date,
     },
   },
-  { timestamps: true }
+  { timestamps: true },
 )
 
 const Category = model<ICategoryRaw>('Category', CategorySchema)

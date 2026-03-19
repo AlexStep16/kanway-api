@@ -13,7 +13,6 @@ import { IBoardCriteria } from '@criterias/IBoardCriteria.ts'
 import { OperationLogService } from '@application/services/OperationLogService.ts'
 import { OperationTypesEnum } from '@domain/enums/OperationTypesEnum.ts'
 import { CollectionsEnum } from '@domain/enums/CollectionsEnum.ts'
-import { ReorderService } from '@application/services/ReorderService.ts'
 import { BoardEditDTO } from '@dtos/BoardEditDTO.ts'
 import { CategoryService } from '@application/services/CategoryService.ts'
 import { NotFoundError } from '@errors/NotFound.ts'
@@ -33,16 +32,10 @@ import { IBoardCreatePayload } from '../interfaces/IBoardCreatePayload.ts'
 import { SafeUpdateData } from '@/infrastructure/types/SafeUpdateData.ts'
 import { LimitService } from './LimitService.ts'
 import { OperationLogStatusesEnum } from '@/domain/enums/OperationLogStatusesEnum.ts'
+import { LexoRank } from 'lexorank'
+import { BoardMoveDTO } from '../dtos/BoardMoveDTO.ts'
 
 const MAX_RETRIES = 3
-
-type ReorderServiceType = ReorderService<
-  IBoard,
-  IBoardRaw,
-  IBoardCriteria,
-  IBoardPopulated,
-  IBoardCreatePayload
->
 
 export class BoardService extends BaseService<
   IBoardRaw,
@@ -54,7 +47,6 @@ export class BoardService extends BaseService<
   protected repository: BoardRepository
   protected embeddingService: EmbeddingService
   protected operationLogService: OperationLogService
-  protected reorderService: ReorderServiceType
   protected workspaceService: WorkspaceService
   protected categoryService: CategoryService
   protected taskService: TaskService
@@ -64,7 +56,6 @@ export class BoardService extends BaseService<
     boardRepository: BoardRepository,
     embeddingService: EmbeddingService,
     operationLogService: OperationLogService,
-    reorderService: ReorderServiceType,
     workspaceService: WorkspaceService,
     categoryService: CategoryService,
     taskService: TaskService,
@@ -75,7 +66,6 @@ export class BoardService extends BaseService<
     this.repository = boardRepository
     this.embeddingService = embeddingService
     this.operationLogService = operationLogService
-    this.reorderService = reorderService
     this.workspaceService = workspaceService
     this.categoryService = categoryService
     this.taskService = taskService
@@ -131,11 +121,6 @@ export class BoardService extends BaseService<
 
     /* CREATE */
     const newBoard = await this.repository.create(boardPayload, session)
-
-    /* REORDER */
-    if (data.order !== undefined) {
-      sideEffects.push(this.reorderService.reorder('workspace', [newBoard], user.id, session))
-    }
 
     /* UPDATE COUNTERS */
     sideEffects.push(
@@ -236,12 +221,6 @@ export class BoardService extends BaseService<
     const newBoards = await this.repository.createMany(boardsPayload, session)
 
     const sideEffects: Promise<any>[] = []
-
-    /* REORDER */
-    const isReorderNeeded = data.some((ws) => ws.order !== undefined)
-    if (isReorderNeeded) {
-      sideEffects.push(this.reorderService.reorder('workspace', newBoards, user.id, session))
-    }
 
     /** UPDATE COUNTERS */
     sideEffects.push(
@@ -386,32 +365,6 @@ export class BoardService extends BaseService<
       )
     }
 
-    /* REORDER */
-    const boardsToReorder = boardsToUpdate.filter(
-      (b) => data.order !== undefined && b.order !== data.order,
-    )
-
-    const boardsToMoveToEnd = boardsToUpdate.filter(
-      (b) => data.order == null && boardsToMove.includes(b),
-    )
-
-    if (boardsToReorder.length > 0 || boardsToMoveToEnd.length > 0) {
-      sideEffects.push(
-        this.reorderService.reorder(
-          'workspace',
-          [
-            ...boardsToReorder,
-            ...boardsToMoveToEnd.map((b) => ({
-              ...b,
-              order: b.order + 99999,
-            })),
-          ],
-          userId,
-          session,
-        ),
-      )
-    }
-
     /* LOG */
     const logPromise = this.operationLogService.create(
       {
@@ -480,8 +433,6 @@ export class BoardService extends BaseService<
     const boardPayloads: SingleUpdateDTO<SafeUpdateData<IBoard>>[] = []
     const boardsBefore: (Partial<IBoard> & { id: Types.ObjectId })[] = []
     const movedBoardIds: string[] = []
-    const reorderBoardIds = new Set<string>()
-    const moveToEndIds = new Set<string>()
 
     for (const dto of data) {
       const board = existingMap.get(dto.id)
@@ -498,13 +449,6 @@ export class BoardService extends BaseService<
         dto.workspaceId !== undefined && board.workspace.toString() !== dto.workspaceId
       if (isMoving) {
         movedBoardIds.push(dto.id)
-      }
-
-      if (dto.order !== undefined && board.order !== dto.order) {
-        reorderBoardIds.add(dto.id)
-      } else if (dto.order == null && isMoving) {
-        reorderBoardIds.add(dto.id)
-        moveToEndIds.add(dto.id)
       }
     }
 
@@ -602,20 +546,6 @@ export class BoardService extends BaseService<
       )
     }
 
-    /** REORDER */
-    if (reorderBoardIds.size > 0) {
-      const boardsToReorder = updatedBoards
-        .filter((b) => reorderBoardIds.has(b.id.toString()))
-        .map((b) => {
-          if (moveToEndIds.has(b.id.toString())) {
-            return { ...b, order: b.order + 99999 } // Сдвигаем виртуально
-          }
-          return b
-        })
-
-      sideEffects.push(this.reorderService.reorder('workspace', boardsToReorder, userId, session))
-    }
-
     const projectedUpdatedBoards = updatedBoards.map(
       (b) =>
         projectProperties<IBoard>(
@@ -694,10 +624,6 @@ export class BoardService extends BaseService<
       session,
     )
 
-    const uniqueWorkspaceIds = [...new Set(boardsToDelete.map((t) => t.workspace.toString()))].map(
-      (id) => new Types.ObjectId(id),
-    )
-
     await this.repository.deleteMany(criteria, userId, session)
 
     await Promise.all([
@@ -713,8 +639,6 @@ export class BoardService extends BaseService<
       ),
 
       ...this._updateBoardsParentCounters(boardsToDelete, userId, session),
-
-      this.reorderService.reorderByParentIds(uniqueWorkspaceIds, 'workspace', userId, session),
     ])
 
     return {
@@ -794,16 +718,6 @@ export class BoardService extends BaseService<
       ...board,
       isDeleted: data.isDeleted,
     }))
-
-    /* REORDER */
-    sideEffects.push(
-      this.reorderService.reorderByParentIds(
-        boardsToProcess.map((b) => b.workspace),
-        'workspace',
-        userId,
-        session,
-      ),
-    )
 
     /** UPDATE COUNTERS */
     sideEffects.push(...this._updateBoardsParentCounters(boardsToProcess, userId, session))
@@ -906,14 +820,23 @@ export class BoardService extends BaseService<
     for (const [workspaceId, boards] of boardsGroupedByWorkspace) {
       const workspaceBoards = boardsToClone.filter((b) => b.workspace.toString() === workspaceId)
 
-      let currentMaxOrder = workspaceBoards.reduce((max, t) => (t.order > max ? t.order : max), 0)
+      const lastBoard = workspaceBoards.sort((a, b) => (a.rank > b.rank ? -1 : 1))[0]
+      let lastRank = LexoRank.middle()
+
+      if (lastBoard) {
+        lastRank = LexoRank.parse(lastBoard.rank)
+      }
 
       for (const board of boards) {
+        const newRank = lastRank.genNext()
+
         const cleanBoard = {
           ...board,
           id: undefined,
-          order: ++currentMaxOrder,
+          rank: newRank.toString(),
         }
+
+        lastRank = newRank
 
         transformedBoards.push(cleanBoard)
       }
@@ -943,14 +866,6 @@ export class BoardService extends BaseService<
     )
 
     if (cloneCategoriesResult.logId) dependencies.push(cloneCategoriesResult.logId)
-
-    /* REORDER */
-    await this.reorderService.reorderByParentIds(
-      clonedBoards.map((b) => b.workspace),
-      'workspace',
-      userId,
-      session,
-    )
 
     /* LOG */
     const logPromise = this.operationLogService.create(
@@ -996,6 +911,140 @@ export class BoardService extends BaseService<
       return await this._retryExecutor((session: ClientSession) =>
         this._executeCloneTransaction(criteria, userId, session),
       )
+    }
+  }
+
+  public async move(
+    dto: BoardMoveDTO,
+    user: IUser,
+    externalSession?: ClientSession,
+    isDryRun: boolean = false,
+  ): Promise<IResponseWithLog<IBoardPopulated[]>> {
+    if (externalSession) {
+      return this._executeMoveTransaction(dto, user, externalSession, isDryRun)
+    } else {
+      return await this._retryExecutor((session: ClientSession) =>
+        this._executeMoveTransaction(dto, user, session, isDryRun),
+      )
+    }
+  }
+
+  private async _executeMoveTransaction(
+    dto: BoardMoveDTO,
+    user: IUser,
+    session: ClientSession,
+    isDryRun: boolean = false,
+  ): Promise<IResponseWithLog<IBoardPopulated[]>> {
+    const { beforeBoardId, afterBoardId, id, newWorkspaceId } = dto
+
+    const criteria: IBoardCriteria = {
+      ids: [id, beforeBoardId, afterBoardId].filter((id): id is string => !!id),
+    }
+
+    const updateData: SafeUpdateData<IBoard> = {}
+
+    const boards = await this.repository.findByCriteria(criteria, session, undefined, user.id)
+    const board = boards.find((t) => t.id.toString() === id)
+    const beforeBoard = boards.find((t) => t.id.toString() === beforeBoardId)
+    const afterBoard = boards.find((t) => t.id.toString() === afterBoardId)
+
+    if (!board) {
+      throw new NotFoundError('Доска для перемещения не найдена.')
+    }
+    if (beforeBoardId && !beforeBoard) {
+      throw new NotFoundError('Доска перед указанной не найдена.')
+    }
+    if (afterBoardId && !afterBoard) {
+      throw new NotFoundError('Доска после указанной не найдена.')
+    }
+
+    if (newWorkspaceId) {
+      const workspace = await this.workspaceService.getByCriteria(
+        { id: newWorkspaceId },
+        user.id,
+        session,
+      )
+
+      if (!workspace.length) {
+        throw new NotFoundError('Рабочее пространство для перемещения не найдено.')
+      }
+    }
+
+    let newRank = LexoRank.middle()
+
+    if (beforeBoard && afterBoard) {
+      const beforeRank = LexoRank.parse(beforeBoard.rank)
+      const afterRank = LexoRank.parse(afterBoard.rank)
+
+      newRank = beforeRank.between(afterRank)
+    } else if (beforeBoard) {
+      const beforeRank = LexoRank.parse(beforeBoard.rank)
+
+      newRank = beforeRank.genPrev()
+    } else if (afterBoard) {
+      const afterRank = LexoRank.parse(afterBoard.rank)
+
+      newRank = afterRank.genNext()
+    } else {
+      newRank = LexoRank.middle()
+    }
+
+    updateData.rank = newRank.toString()
+
+    if (newWorkspaceId) {
+      updateData.workspace = new Types.ObjectId(newWorkspaceId)
+    } else if (beforeBoard && beforeBoard.workspace.toString() !== board.workspace.toString()) {
+      updateData.workspace = beforeBoard.workspace
+    } else if (afterBoard && afterBoard.workspace.toString() !== board.workspace.toString()) {
+      updateData.workspace = afterBoard.workspace
+    }
+
+    const boardsBefore = projectProperties<IBoard>([board], updateData)
+    const boardsAfter = boardsBefore.map((b) => ({
+      ...b,
+      ...updateData,
+    }))
+
+    if (isDryRun) {
+      const log = await this.operationLogService.create(
+        {
+          operationType: OperationTypesEnum.UPDATE,
+          collectionName: CollectionsEnum.BOARDS,
+          entitiesBefore: boardsBefore,
+          entitiesAfter: boardsAfter,
+          dependencies: [],
+          status: OperationLogStatusesEnum.PENDING,
+        },
+        user.id,
+        session,
+      )
+
+      return {
+        data: [],
+        logId: log.id,
+      }
+    }
+
+    await this.repository.updateManyByCriteria({ id }, updateData, session, user.id)
+
+    const log = await this.operationLogService.create(
+      {
+        operationType: OperationTypesEnum.UPDATE,
+        collectionName: CollectionsEnum.BOARDS,
+        entitiesBefore: boardsBefore,
+        entitiesAfter: boardsAfter,
+        dependencies: [],
+        status: OperationLogStatusesEnum.SUCCESS,
+      },
+      user.id,
+      session,
+    )
+
+    const updatedBoards = await this.getByCriteria({ id }, user.id, session)
+
+    return {
+      data: updatedBoards,
+      logId: log.id,
     }
   }
 
@@ -1154,22 +1203,28 @@ export class BoardService extends BaseService<
 
     const embeddings = await this.embeddingService.getEmbeddings(boardName)
 
+    let boardRank = LexoRank.middle().toString()
+
+    /* RANKING */
+    const lastBoardsInWorkspace = await this.repository.findByCriteria(
+      { workspaceId: data.workspaceId },
+      session,
+      { sort: { rank: -1 }, limit: 1 },
+      userId,
+    )
+    if (lastBoardsInWorkspace.length > 0) {
+      const lastBoard = lastBoardsInWorkspace[0]
+      const lastRank = LexoRank.parse(lastBoard.rank)
+
+      boardRank = lastRank.genNext().toString()
+    }
+
     const boardPayload: IBoardCreatePayload = {
       name: boardName,
       workspace: Types.ObjectId.createFromHexString(data.workspaceId),
-      order: data.order || 1,
+      rank: boardRank,
       embeddings,
       userId,
-    }
-
-    if (data.order === undefined) {
-      const lastOrder = await this.repository.getLastOrderGroupedByParents(
-        [Types.ObjectId.createFromHexString(data.workspaceId)],
-        'workspace',
-        userId,
-        session,
-      )
-      boardPayload.order = lastOrder.length > 0 ? lastOrder[0].lastOrder + 1 : 1
     }
 
     return boardPayload
@@ -1183,6 +1238,9 @@ export class BoardService extends BaseService<
   ): Promise<IBoardCreatePayload[]> {
     const boardsPayloads: IBoardCreatePayload[] = []
     const boardsGroupedByWorkspace: { [key: string]: BoardDTO[] } = {}
+    const uniqueWorkspaceIds = Array.from(
+      new Set(data.map((board) => new Types.ObjectId(board.workspaceId))),
+    )
 
     data.forEach((board) => {
       const wsId = board.workspaceId
@@ -1192,13 +1250,6 @@ export class BoardService extends BaseService<
 
       boardsGroupedByWorkspace[wsId].push(board)
     })
-
-    const grouppedBoardsCount = await this.repository.getLastOrderGroupedByParents(
-      Object.keys(boardsGroupedByWorkspace).map((id) => Types.ObjectId.createFromHexString(id)),
-      'workspace',
-      userId,
-      session,
-    )
 
     const embeddingsMap: { [key: string]: number[] } = {}
 
@@ -1210,26 +1261,35 @@ export class BoardService extends BaseService<
       })
     }
 
-    const countMap = new Map(
-      grouppedBoardsCount.map((entry) => [entry._id.toString(), entry.lastOrder]),
+    const lastRanksByWorkspaces = await this.repository.getLastRanksByParents(
+      uniqueWorkspaceIds,
+      'workspace',
+      userId,
+      session,
     )
 
     for (const [wsId, boards] of Object.entries(boardsGroupedByWorkspace)) {
-      let currentOrder = countMap.get(wsId) || 1
+      let lastRank = LexoRank.middle()
+
+      const lastRankData = lastRanksByWorkspaces.find((r) => r.parentId.toString() === wsId)
+      if (lastRankData) {
+        lastRank = LexoRank.parse(lastRankData.rank)
+      }
 
       for (const board of boards) {
         const boardName = board.name.trim()
-
-        const orderToSave = board.order ?? ++currentOrder
+        const newRank = lastRank.genNext()
 
         boardsPayloads.push({
           id: board.id,
           name: boardName,
           workspace: new Types.ObjectId(board.workspaceId),
-          order: orderToSave,
+          rank: newRank.toString(),
           embeddings: embeddingsMap[boardName],
           userId,
         })
+
+        lastRank = newRank
       }
     }
 

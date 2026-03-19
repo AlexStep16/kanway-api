@@ -19,14 +19,6 @@ export const WorkspaceDTOSchema = z.object({
         ? ErrorMessages.WORKSPACE_COLOR_REQUIRED
         : 'Неверное значение для цвета. Допустимы: ' + BASE_COLORS.join(', '),
   }),
-  order: z
-    .number({
-      error: (iss) =>
-        iss.input === undefined
-          ? ErrorMessages.WORKSPACE_ORDER_TYPE_INVALID
-          : ErrorMessages.WORKSPACE_ORDER_TYPE_INVALID,
-    })
-    .optional(),
   isFavorite: z.boolean(ErrorMessages.BOARD_IS_FAVORITE_TYPE_INVALID).optional(),
   threadId: z.string(ErrorMessages.THREAD_ID_INVALID).nullable().optional(),
 })

@@ -8,7 +8,7 @@ export interface ITaskCreatePayload {
   board: Types.ObjectId
   category: Types.ObjectId
   userId: Types.ObjectId
-  order: number
+  rank: string
   tags: Array<string>
   embeddings: number[]
   isCompleted?: boolean

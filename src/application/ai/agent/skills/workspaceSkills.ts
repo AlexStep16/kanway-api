@@ -1,123 +1,75 @@
-import { AgentSkill } from '../../interfaces/AgentSkill.ts'
+import { AgentSkill } from '@/application/ai/interfaces/AgentSkill.ts'
 
-export const CloneWorkspaces: AgentSkill = {
-  name: 'CloneWorkspaces',
-  description: 'Create a duplicate of an existing workspace.',
-  rule: `*** RULE: CLONING WORKSPACES ***
-    Goal: Create a duplicate of an existing workspace.
+export const WorkspacesReadSkill: AgentSkill = {
+  name: 'WorkspacesRead',
+  description:
+    'Skill for reading and understanding workspaces. Use this skill to extract key information from workspaces, such as objectives, requirements, and constraints.',
+  content: `
+    ### SKILL: WorkspacesRead
 
-    RULES:
-    1. Identify the workspace ID(s) to be cloned.
-    2. Call 'cloneWorkspaces' with the identified ID(s).
-    3. If the user mentions any changes to the cloned workspace (e.g., different name), use 'update workspace tools' after cloning to apply those changes.
+    This skill allows you to find workspaces using either strict criteria, fuzzy text search, or both.
 
-    EXECUTION:
-    - Call 'cloneWorkspaces' with the identified ID(s).
-    `,
-  suggestedTools: [
-    'cloneWorkspaces',
-    'updateWorkspacesName',
-    'updateWorkspacesColor',
-    'updateWorkspacesOrder',
-    'favoriteWorkspaces',
-    'searchEntities',
-  ],
+    ### SCRIPT LOGIC (MUST BE IN A SINGLE SCRIPT):
+    - **Hybrid Search:** If the user says "Find favorite workspaces called Personal", use BOTH arguments:
+      - 'mongo_filter={"is_favorite": True}' (Strict)
+      - 'search_query="Personal"' (Fuzzy)
+    - **Pure Fuzzy:** If the user says "Search for 'workspace Personal'", use ONLY 'search_query="workspace Personal"'.
+    - **Pure Strict:** If the user says "Show all archived workspaces", use ONLY 'mongo_filter={"is_deleted": True}'.
+  `,
+  relatedTools: ['search_workspaces', 'display_to_user'],
+  relatedEntities: ['workspace'],
 }
 
-export const CreateWorkspaces: AgentSkill = {
-  name: 'CreateWorkspaces',
-  description: 'Create a new workspace (Organization/Team Space).',
-  rule: `*** RULE: CREATING WORKSPACES ***
-    Goal: Create a new Workspaces (Organization/Team Space).
+export const WorkspacesCreateSkill: AgentSkill = {
+  name: 'WorkspacesCreate',
+  description: 'Skill for creating workspaces. Use this skill to add new workspaces.',
+  content: `
+    ### SKILL: WorkspacesCreate
 
-    Procedure:
-    1. Extract the workspace 'name' from user input.
-    2. If NO name is provided, generate a sensible default (e.g. "My Workspace") or ask the user.
+    This skill allows you to create new workspaces.
 
-    EXECUTION:
-    - Call 'createWorkspaces' with the extracted 'name'.
-    
-    Note: Creating a workspace usually creates a clean slate. The user might need to create boards inside it afterwards.`,
-
-  suggestedTools: ['createWorkspaces'],
+    ### SCRIPT LOGIC (MUST BE IN A SINGLE SCRIPT):
+    - When generating your code, structure it as follows:
+    - Creation: Use 'create_workspaces' with appropriate arguments.
+  `,
+  relatedTools: ['create_workspaces', 'search_workspaces', 'resolve_ambiguous'],
+  relatedEntities: ['workspace'],
 }
 
-export const WorkspaceLifecycle: AgentSkill = {
-  name: 'WorkspaceLifecycle',
-  description: 'Manage Workspace existence (archive, recover, delete).',
-  rule: `*** RULE: WORKSPACE LIFECYCLE ***
-    Goal: Manage Workspace existence.
+export const WorkspacesUpdateSkill: AgentSkill = {
+  name: 'WorkspacesUpdate',
+  description: 'Skill for updating workspaces. Use this skill to modify existing workspaces.',
+  content: `
+    ### SKILL: WorkspacesUpdate
 
-    1. ARCHIVE: 'archiveWorkspaces'.
-    2. RECOVER: 'recoverWorkspaces'.
-    3. DELETE: 'deleteWorkspaces'.
+    This skill allows you to update existing workspaces.
 
-    Procedure:
-    1. Identify Workspace IDs using 'searchEntities' with isArchived flag or context.
-    2. Call tool with {{ ids: ["..."] }}.`,
-  suggestedTools: ['archiveWorkspaces', 'recoverWorkspaces', 'deleteWorkspaces', 'searchEntities'],
+    ### SCRIPT LOGIC (MUST BE IN A SINGLE SCRIPT):
+    - When generating your code, structure it as follows:
+    - Workspace Resolution: First, query for the workspace. If the result is ambiguous (len > 1), call resolve_ambiguous. If not, save the workspace_id to a variable.
+    - Update: Finally, use the resolved variables to call update_workspaces at the end of the script.
+  `,
+  relatedTools: ['update_workspaces', 'search_workspaces', 'resolve_ambiguous'],
+  relatedEntities: ['workspace'],
 }
 
-export const UpdateWorkspacesName: AgentSkill = {
-  name: 'UpdateWorkspacesName',
-  description: 'Modify the name of an existing workspace.',
-  rule: `*** RULE: UPDATING WORKSPACES NAME ***
-    Goal: Modify the name of an existing workspace.
-    
-    Procedure:
-    1. If 'workspaceId' is not clear from context, search for the workspaces using 'searchEntities'.
-    2. Call 'updateWorkspacesName' with 'workspaceId' and the new name.`,
-  suggestedTools: ['updateWorkspacesName', 'searchEntities'],
-}
+export const WorkspaceMoveSkill: AgentSkill = {
+  name: 'WorkspaceMove',
+  description:
+    'Skill for moving workspace. Use this skill to change the position of existing workspace.',
+  content: `
+    ### SKILL: WorkspaceMove
 
-export const UpdateWorkspacesOrder: AgentSkill = {
-  name: 'UpdateWorkspacesOrder',
-  description: 'Modify the order of an existing workspace.',
-  rule: `*** RULE: UPDATING WORKSPACES ORDER ***
-    Goal: Modify the order of an existing workspace.
-    
-    Procedure:
-    1. If 'workspaceId' is not clear from context, search for the workspaces using 'searchEntities'.
-    2. Call 'updateWorkspacesOrder' with 'workspaceId' and the new order.`,
-  suggestedTools: ['updateWorkspacesOrder', 'searchEntities'],
-}
+    This skill allows you to move existing workspace. You must resolve Workspace name to ID before moving and determine the new position based on user input. Before and after workspace IDs are optional.
+    If the user says "Move workspace A to the start of the workspace list", then find the first workspace by sorting by rank and use its ID as beforeWorkspaceId, leaving afterWorkspaceId null.
+    By default workspace will be moved to the bottom of the list.
 
-export const FavoriteWorkspaces: AgentSkill = {
-  name: 'FavoriteWorkspaces',
-  description: 'Mark or unmark a workspace as favorite.',
-  rule: `*** RULE: FAVORITING WORKSPACES ***
-    Goal: Mark or unmark a workspace as favorite.
-    
-    Procedure:
-    1. If 'workspaceId' is not clear from context, search for the workspaces using 'searchEntities'.
-    2. Call 'favoriteWorkspaces' with 'workspaceId' and the new favorite status.`,
-  suggestedTools: ['favoriteWorkspaces', 'searchEntities'],
-}
-
-export const UpdateWorkspacesColor: AgentSkill = {
-  name: 'UpdateWorkspacesColor',
-  description: 'Change the color of a workspace.',
-  rule: `*** RULE: UPDATING WORKSPACES COLOR ***
-    Goal: Change the color of a workspace.
-    
-    Procedure:
-    1. If 'workspaceId' is not clear from context, search for the workspaces using 'searchEntities'.
-    2. Call 'updateWorkspacesColor' with 'workspaceId' and the new color.`,
-  suggestedTools: ['updateWorkspacesColor', 'searchEntities'],
-}
-
-export const SearchRelevantWorkspaces: AgentSkill = {
-  name: 'SearchRelevantWorkspaces',
-  description: 'Search and Retrieve workspaces based on similarity search by names.',
-  rule: `*** RULE: SEARCHING RELEVANT WORKSPACES ***
-    Goal: Search and Retrieve workspaces based on similarity search by names.
-    
-    Procedure:
-    1. Analyze the user request to extract workspace names to search.
-    2. Call 'searchRelevantWorkspaces' with the extracted workspace names.
-     - If multiple workspaces are found and the user request is ambiguous, use 'showEntitiesToUser' to present the options and ask for clarification.
-     - If no workspaces are found, DON'T LOOP, use 'responseToUser' to inform the user and ask for clarification or alternative input.
-    3. Present results to the user using 'showEntitiesToUser' (if applicable).
-    `,
-  suggestedTools: ['searchRelevantWorkspaces', 'showEntitiesToUser'],
+    ### SCRIPT LOGIC (MUST BE IN A SINGLE SCRIPT):
+    - When generating your code, structure it as follows:
+    - Workspace Resolution: First, query for the workspace. If the result is ambiguous (len > 1), call resolve_ambiguous. If not, save the workspace id to a variable.
+    - Next, in the same script, determine the new position of the workspace by identifying the beforeWorkspaceId and afterWorkspaceId. If the user says "Move workspace A before workspace B", then beforeWorkspaceId is the ID of workspace B and afterWorkspaceId is null. If the user says "Move workspace A after workspace C", then afterWorkspaceId is the ID of workspace C and beforeWorkspaceId is null. If the user says "Move workspace A between workspace B and workspace C", then beforeWorkspaceId is the ID of workspace B and afterWorkspaceId is the ID of workspace C.
+    - Move the workspace using the resolved variables to call move_workspace at the end of the script.
+  `,
+  relatedTools: ['move_workspace', 'search_workspaces', 'resolve_ambiguous'],
+  relatedEntities: ['workspace'],
 }

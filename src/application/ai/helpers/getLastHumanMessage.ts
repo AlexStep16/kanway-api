@@ -1,6 +1,6 @@
-import { HumanMessage } from '@langchain/core/messages'
+import { BaseMessage, HumanMessage } from '@langchain/core/messages'
 
-export default function getLastHumanMessage(messages: any[]) {
+export default function getLastHumanMessage(messages: BaseMessage[]) {
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i]
     if (m instanceof HumanMessage) {

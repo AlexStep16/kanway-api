@@ -9,12 +9,12 @@ import { OperationTypesEnum } from '@domain/enums/OperationTypesEnum.ts'
 import { CollectionsEnum } from '@domain/enums/CollectionsEnum.ts'
 import { IUser } from '@entities/IUser.ts'
 import { ITask } from '@entities/ITask.ts'
-import { ReorderService } from '@application/services/ReorderService.ts'
 import { TaskEditDTO } from '@dtos/TaskEditDTO.ts'
 import { NotFoundError } from '@errors/NotFound.ts'
 import { CategoryService } from '@application/services/CategoryService.ts'
 
 import dayjs from 'dayjs'
+import { LexoRank } from 'lexorank'
 import { SingleUpdateDTO } from '../dtos/SingleUpdateDTO.ts'
 import { projectProperties } from '@/utils/projectProperties.ts'
 import { IResponseWithLog } from '../interfaces/IResponseWithLog.ts'
@@ -29,16 +29,9 @@ import { BaseService } from '@application/services/BaseService.ts'
 import { SafeUpdateData } from '@/infrastructure/types/SafeUpdateData.ts'
 import { ITaskCreatePayload } from '../interfaces/ITaskCreatePayload.ts'
 import { OperationLogStatusesEnum } from '@/domain/enums/OperationLogStatusesEnum.ts'
+import { TaskMoveDTO } from '../dtos/TaskMoveDTO.ts'
 
 const MAX_RETRIES = 3
-
-type ReorderServiceType = ReorderService<
-  ITask,
-  ITaskRaw,
-  ITaskCriteria,
-  ITaskPopulated,
-  ITaskCreatePayload
->
 
 export class TaskService extends BaseService<
   ITaskRaw,
@@ -50,7 +43,6 @@ export class TaskService extends BaseService<
   protected repository: TaskRepository
   protected embeddingService: EmbeddingService
   protected operationLogService: OperationLogService
-  protected reorderService: ReorderServiceType
   protected categoryService: CategoryService
   protected boardService: BoardService
   protected workspaceService: WorkspaceService
@@ -59,7 +51,6 @@ export class TaskService extends BaseService<
     taskRepository: TaskRepository,
     embeddingService: EmbeddingService,
     operationLogService: OperationLogService,
-    reorderService: ReorderServiceType,
     categoryService: CategoryService,
     boardService: BoardService,
     workspaceService: WorkspaceService,
@@ -69,7 +60,6 @@ export class TaskService extends BaseService<
     this.repository = taskRepository
     this.embeddingService = embeddingService
     this.operationLogService = operationLogService
-    this.reorderService = reorderService
     this.categoryService = categoryService
     this.boardService = boardService
     this.workspaceService = workspaceService
@@ -130,11 +120,6 @@ export class TaskService extends BaseService<
     const newTask = await this.repository.create(taskPayload, session)
 
     const sideEffects: Promise<any>[] = []
-
-    /* REORDER */
-    if (data.order !== undefined) {
-      sideEffects.push(this.reorderService.reorder('category', [newTask], userId, session))
-    }
 
     sideEffects.push(...this._updateTasksParentCounters([newTask], userId, session))
 
@@ -201,6 +186,8 @@ export class TaskService extends BaseService<
       isDryRun,
     )
 
+    /* RANKING */
+
     if (isDryRun) {
       const log = await this.operationLogService.create(
         {
@@ -224,12 +211,6 @@ export class TaskService extends BaseService<
     const newTasks = await this.repository.createMany(tasksPayload, session)
 
     const sideEffects: Promise<any>[] = []
-
-    /* REORDER */
-    const isReorderNeeded = data.some((ws) => ws.order !== undefined)
-    if (isReorderNeeded) {
-      sideEffects.push(this.reorderService.reorder('category', newTasks, userId, session))
-    }
 
     const newTasksPopulated = await this.getByCriteria(
       { ids: newTasks.map((t) => t.id.toString()) },
@@ -348,32 +329,6 @@ export class TaskService extends BaseService<
       )
     }
 
-    /* REORDER */
-    const tasksToReorder = tasksToUpdate.filter(
-      (t) => data.order !== undefined && t.order !== data.order,
-    )
-
-    const tasksToMoveToEnd = tasksToUpdate.filter(
-      (t) => data.order == null && tasksToMove.includes(t),
-    )
-
-    if (tasksToReorder.length > 0 || tasksToMoveToEnd.length > 0) {
-      sideEffects.push(
-        this.reorderService.reorder(
-          'category',
-          [
-            ...tasksToReorder,
-            ...tasksToMoveToEnd.map((t) => ({
-              ...t,
-              order: t.order + 99999,
-            })),
-          ],
-          userId,
-          session,
-        ),
-      )
-    }
-
     /* LOG */
     const logPromise = this.operationLogService.create(
       {
@@ -443,8 +398,6 @@ export class TaskService extends BaseService<
     const taskPayloads: SingleUpdateDTO<SafeUpdateData<ITask>>[] = []
     const tasksBefore: (Partial<ITask> & { id: Types.ObjectId })[] = []
     const movedTaskIds: string[] = []
-    const reorderTaskIds = new Set<string>()
-    const moveToEndIds = new Set<string>()
 
     for (const dto of data) {
       const task = existingMap.get(dto.id)
@@ -459,13 +412,6 @@ export class TaskService extends BaseService<
       const isMoving = dto.categoryId !== undefined && task.category.toString() !== dto.categoryId
       if (isMoving) {
         movedTaskIds.push(dto.id)
-      }
-
-      if (dto.order !== undefined && task.order !== dto.order) {
-        reorderTaskIds.add(dto.id)
-      } else if (dto.order == null && isMoving) {
-        reorderTaskIds.add(dto.id)
-        moveToEndIds.add(dto.id)
       }
     }
 
@@ -525,20 +471,6 @@ export class TaskService extends BaseService<
       sideEffects.push(
         ...this._updateTasksParentCountersWithOld(tasksToMove, tasksAfterMove, userId, session),
       )
-    }
-
-    /** REORDER */
-    if (reorderTaskIds.size > 0) {
-      const tasksToReorder = updatedTasks
-        .filter((t) => reorderTaskIds.has(t.id.toString()))
-        .map((t) => {
-          if (moveToEndIds.has(t.id.toString())) {
-            return { ...t, order: t.order + 99999 }
-          }
-          return t
-        })
-
-      sideEffects.push(this.reorderService.reorder('category', tasksToReorder, userId, session))
     }
 
     const projectedUpdatedTasks = updatedTasks.map(
@@ -702,19 +634,11 @@ export class TaskService extends BaseService<
       session,
     )
 
-    const uniqueCategoryIds = [...new Set(tasksToDelete.map((t) => t.category.toString()))].map(
-      (id) => new Types.ObjectId(id),
-    )
-
     await this.repository.deleteMany(criteria, userId, session)
 
     const updateCountersPromises = this._updateTasksParentCounters(tasksToDelete, userId, session)
 
-    await Promise.all([
-      ...updateCountersPromises,
-
-      this.reorderService.reorderByParentIds(uniqueCategoryIds, 'category', userId, session),
-    ])
+    await Promise.all(updateCountersPromises)
 
     return {
       data: null,
@@ -773,16 +697,6 @@ export class TaskService extends BaseService<
       throw new AppError('Не удалось обновить задачи.', 500)
 
     const sideEffects: Promise<any>[] = []
-
-    /* REORDER */
-    sideEffects.push(
-      this.reorderService.reorderByParentIds(
-        tasksToProcess.map((c) => c.board),
-        'category',
-        userId,
-        session,
-      ),
-    )
 
     /** UPDATE COUNTERS */
     sideEffects.push(...this._updateTasksParentCounters(tasksToProcess, userId, session))
@@ -887,29 +801,30 @@ export class TaskService extends BaseService<
     for (const [categoryId, tasks] of tasksGrouppedByCategory) {
       const categoryTasks = tasksToClone.filter((t) => t.category.toString() === categoryId)
 
-      let currentMaxOrder = categoryTasks.reduce((max, t) => (t.order > max ? t.order : max), 9999)
+      const lastTask = categoryTasks.sort((a, b) => (a.rank > b.rank ? -1 : 1))[0]
+      let lastRank = LexoRank.middle()
+
+      if (lastTask) {
+        lastRank = LexoRank.parse(lastTask.rank)
+      }
 
       for (const task of tasks) {
+        const newRank = lastRank.genNext()
+
         const cleanTask = {
           ...task,
           id: undefined,
-          order: ++currentMaxOrder,
           name: `${task?.name}`,
+          rank: newRank.toString(),
         }
+
+        lastRank = newRank
 
         transformedTasks.push(cleanTask)
       }
     }
 
     const newTasks = await this.repository.createMany(transformedTasks, session)
-
-    /* REORDER */
-    await this.reorderService.reorderByParentIds(
-      newTasks.map((t) => t.category),
-      'category',
-      userId,
-      session,
-    )
 
     /* LOG */
     const logPromise = this.operationLogService.create(
@@ -952,6 +867,149 @@ export class TaskService extends BaseService<
       return await this._retryExecutor((session: ClientSession) =>
         this._executeCloneTransaction(criteria, userId, session),
       )
+    }
+  }
+
+  public async move(
+    dto: TaskMoveDTO,
+    user: IUser,
+    externalSession?: ClientSession,
+    isDryRun: boolean = false,
+  ): Promise<IResponseWithLog<ITaskPopulated[]>> {
+    if (externalSession) {
+      return this._executeMoveTransaction(dto, user, externalSession, isDryRun)
+    } else {
+      return await this._retryExecutor((session: ClientSession) =>
+        this._executeMoveTransaction(dto, user, session, isDryRun),
+      )
+    }
+  }
+
+  private async _executeMoveTransaction(
+    dto: TaskMoveDTO,
+    user: IUser,
+    session: ClientSession,
+    isDryRun: boolean = false,
+  ): Promise<IResponseWithLog<ITaskPopulated[]>> {
+    const { beforeTaskId, afterTaskId, id, newCategoryId } = dto
+
+    const criteria: ITaskCriteria = {
+      ids: [id, beforeTaskId, afterTaskId].filter((id): id is string => !!id),
+    }
+
+    const updateData: SafeUpdateData<ITask> = {}
+
+    const tasks = await this.repository.findByCriteria(criteria, session, undefined, user.id)
+    const task = tasks.find((t) => t.id.toString() === id)
+    const beforeTask = tasks.find((t) => t.id.toString() === beforeTaskId)
+    const afterTask = tasks.find((t) => t.id.toString() === afterTaskId)
+    let isParentChanged = false
+
+    if (!task) {
+      throw new NotFoundError('Задача для перемещения не найдена.')
+    }
+    if (beforeTaskId && !beforeTask) {
+      throw new NotFoundError('Задача перед указанной не найдена.')
+    }
+    if (afterTaskId && !afterTask) {
+      throw new NotFoundError('Задача после указанной не найдена.')
+    }
+
+    if (newCategoryId) {
+      const category = await this.categoryService.getByCriteria(
+        { id: newCategoryId },
+        user.id,
+        session,
+      )
+
+      if (!category.length) {
+        throw new NotFoundError('Категория для перемещения не найдена.')
+      }
+    }
+
+    let newRank = LexoRank.middle()
+
+    if (beforeTask && afterTask) {
+      const beforeRank = LexoRank.parse(beforeTask.rank)
+      const afterRank = LexoRank.parse(afterTask.rank)
+
+      newRank = beforeRank.between(afterRank)
+    } else if (beforeTask) {
+      const beforeRank = LexoRank.parse(beforeTask.rank)
+      newRank = beforeRank.genPrev()
+    } else if (afterTask) {
+      const afterRank = LexoRank.parse(afterTask.rank)
+      newRank = afterRank.genNext()
+    } else {
+      newRank = LexoRank.middle()
+    }
+
+    updateData.rank = newRank.toString()
+
+    if (newCategoryId) {
+      updateData.category = new Types.ObjectId(newCategoryId)
+
+      isParentChanged = true
+    } else if (beforeTask && beforeTask.category.toString() !== task.category.toString()) {
+      updateData.category = beforeTask.category
+
+      isParentChanged = true
+    } else if (afterTask && afterTask.category.toString() !== task.category.toString()) {
+      updateData.category = afterTask.category
+
+      isParentChanged = true
+    }
+
+    const tasksBefore = projectProperties<ITask>([task], updateData)
+    const tasksAfter = tasksBefore.map((t) => ({
+      ...t,
+      ...updateData,
+    }))
+
+    if (isDryRun) {
+      const log = await this.operationLogService.create(
+        {
+          operationType: OperationTypesEnum.UPDATE,
+          collectionName: CollectionsEnum.TASKS,
+          entitiesBefore: tasksBefore,
+          entitiesAfter: tasksAfter,
+          dependencies: [],
+          status: OperationLogStatusesEnum.PENDING,
+        },
+        user.id,
+        session,
+      )
+
+      return {
+        data: [],
+        logId: log.id,
+      }
+    }
+
+    await this.repository.updateManyByCriteria({ id }, updateData, session, user.id)
+
+    if (isParentChanged) {
+      await this.regenerateReferencesByCategories([id], user.id, session)
+    }
+
+    const log = await this.operationLogService.create(
+      {
+        operationType: OperationTypesEnum.UPDATE,
+        collectionName: CollectionsEnum.TASKS,
+        entitiesBefore: tasksBefore,
+        entitiesAfter: tasksAfter,
+        dependencies: [],
+        status: OperationLogStatusesEnum.SUCCESS,
+      },
+      user.id,
+      session,
+    )
+
+    const updatedTasks = await this.getByCriteria({ id }, user.id, session)
+
+    return {
+      data: updatedTasks,
+      logId: log.id,
     }
   }
 
@@ -1097,6 +1155,22 @@ export class TaskService extends BaseService<
 
     const embeddings = isEmbeddingsNeeded ? await this.embeddingService.getEmbeddings(taskName) : []
 
+    let taskRank = LexoRank.middle().toString()
+
+    /* RANKING */
+    const lastTasksInCategory = await this.repository.findByCriteria(
+      { categoryId: data.categoryId },
+      session,
+      { sort: { rank: -1 }, limit: 1 },
+      userId,
+    )
+    if (lastTasksInCategory.length > 0) {
+      const lastTask = lastTasksInCategory[0]
+      const lastRank = LexoRank.parse(lastTask.rank)
+
+      taskRank = lastRank.genNext().toString()
+    }
+
     const taskPayload: ITaskCreatePayload = {
       name: taskName,
       description: data.description || '',
@@ -1114,23 +1188,12 @@ export class TaskService extends BaseService<
       board: Types.ObjectId.createFromHexString(data.boardId),
       category: Types.ObjectId.createFromHexString(data.categoryId),
       tags: data.tags ? data.tags.map((tag) => tag.toString()) : [],
-      order: data.order || 1,
+      rank: taskRank,
       embeddings,
       userId,
     }
 
     this.prepareTaskMainFields(data, taskPayload, timezone)
-
-    if (data.order === undefined) {
-      const lastOrderGroupped = await this.repository.getLastOrderGroupedByParents(
-        [Types.ObjectId.createFromHexString(data.categoryId)],
-        'category',
-        userId,
-        session,
-      )
-
-      taskPayload.order = lastOrderGroupped.length > 0 ? lastOrderGroupped[0].lastOrder + 1 : 1
-    }
 
     return taskPayload
   }
@@ -1144,6 +1207,9 @@ export class TaskService extends BaseService<
   ): Promise<ITaskCreatePayload[]> {
     const tasksPayloads: ITaskCreatePayload[] = []
     const tasksGroupedByCategory: { [key: string]: TaskDTO[] } = {}
+    const uniqueCategoryIds = Array.from(
+      new Set(data.map((task) => new Types.ObjectId(task.categoryId))),
+    )
 
     data.forEach((task) => {
       const categoryId = task.categoryId
@@ -1153,13 +1219,6 @@ export class TaskService extends BaseService<
 
       tasksGroupedByCategory[categoryId].push(task)
     })
-
-    const grouppedTasksCount = await this.repository.getLastOrderGroupedByParents(
-      Object.keys(tasksGroupedByCategory).map(Types.ObjectId.createFromHexString),
-      'category',
-      userId,
-      session,
-    )
 
     const taskNames = Array.from(new Set(data.map((task) => task.name.trim())))
     const embeddingsMap: { [key: string]: number[] } = {}
@@ -1171,17 +1230,24 @@ export class TaskService extends BaseService<
       })
     }
 
-    const countMap = new Map(
-      grouppedTasksCount.map((entry) => [entry._id.toString(), entry.lastOrder]),
+    const lastRanksByCategories = await this.repository.getLastRanksByParents(
+      uniqueCategoryIds,
+      'category',
+      userId,
+      session,
     )
 
     for (const [categoryId, tasks] of Object.entries(tasksGroupedByCategory)) {
-      let currentOrder = countMap.get(categoryId) || 1
+      let lastRank = LexoRank.middle()
+
+      const lastRankData = lastRanksByCategories.find((r) => r.parentId.toString() === categoryId)
+      if (lastRankData) {
+        lastRank = LexoRank.parse(lastRankData.rank)
+      }
 
       for (const task of tasks) {
         const taskName = task.name.trim()
-
-        const orderToSave = task.order ?? ++currentOrder
+        const newRank = lastRank.genNext()
 
         const taskPayload: ITaskCreatePayload = {
           id: task.id,
@@ -1204,10 +1270,12 @@ export class TaskService extends BaseService<
 
           tags: task.tags?.map((tag) => tag.toString()) ?? [],
 
-          order: orderToSave,
+          rank: newRank.toString(),
           embeddings: embeddingsMap[taskName],
           userId,
         }
+
+        lastRank = newRank
 
         this.prepareTaskMainFields(task, taskPayload, timezone)
 

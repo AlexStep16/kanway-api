@@ -5,6 +5,7 @@ import { validationMiddleware } from '@/infrastructure/middlewares/validations/v
 import { WorkspaceDTOSchema } from '@dtos/WorkspaceDTO.ts'
 import { WorkspaceEditDTOSchema } from '@dtos/WorkspaceEditDTO.ts'
 import { patchEntitiesLimiter, postEntitiesLimiter } from '@/limiters.ts'
+import { WorkspaceMoveDTOSchema } from '@/application/dtos/WorkspaceMoveDTO.ts'
 
 interface IWorkspaceRawController extends WorkspaceController {}
 
@@ -18,6 +19,12 @@ export default (controller: IWorkspaceRawController): Router => {
   router.get('/:id', controller.getById)
 
   router.post('/', postEntitiesLimiter, validationMiddleware(WorkspaceDTOSchema), controller.create)
+  router.patch(
+    '/move',
+    patchEntitiesLimiter,
+    validationMiddleware(WorkspaceMoveDTOSchema),
+    controller.move,
+  )
   router.patch(
     '/:id',
     patchEntitiesLimiter,

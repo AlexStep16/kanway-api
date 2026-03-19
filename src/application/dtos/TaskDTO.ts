@@ -65,14 +65,6 @@ export const TaskDTOSchema = z
       .optional(),
     tags: z.array(z.string(), ErrorMessages.TASK_TAGS_INVALID_TYPE).optional(),
     isCompleted: z.boolean(ErrorMessages.TASK_IS_COMPLETED_INVALID).optional(),
-    order: z
-      .number({
-        error: (iss) =>
-          iss.input === undefined
-            ? ErrorMessages.TASK_ORDER_TYPE_INVALID
-            : ErrorMessages.TASK_ORDER_TYPE_INVALID,
-      })
-      .optional(),
   })
   .strict()
 

@@ -18,8 +18,7 @@ import { langgraphQueue } from '@/infrastructure/queues/index.ts'
 import { ApproveLogDTO } from '@dtos/ApproveLogDTO.ts'
 import { Command } from '@langchain/langgraph'
 import { SettingService } from '@application/services/SettingService.ts'
-import { ContextExternalFetchService } from '@application/ai/services/ContextExternalFetchService.ts'
-import { Configurable } from '@application/ai/interfaces/Configurable.ts'
+import { Configurable } from '@/application/ai/interfaces/Configurable.ts'
 import { RetryAgentDTO } from '@dtos/RetryAgentDTO.ts'
 import { StopAgentDTO } from '@dtos/StopAgentDTO.ts'
 import { NotFoundError } from '@errors/NotFound.ts'
@@ -29,9 +28,12 @@ import { IChatRaw } from '@entities/IChatRaw.ts'
 import { IChatMessage } from '@/domain/entities/IChatMessage.ts'
 import { BoardService } from './BoardService.ts'
 import { WorkspaceService } from './WorkspaceService.ts'
-import { AgentStateAnnotation } from '../aiNew/agent/AgentStateAnnotation.ts'
+import { AgentStateAnnotation } from '../ai/agent/AgentStateAnnotation.ts'
 import { ResolveAmbiguousDTO } from '../dtos/ResolveAmbiguousDTO.ts'
 import { OperationLogStatusesEnum } from '@/domain/enums/OperationLogStatusesEnum.ts'
+import { getDefaultState } from '../ai/helpers/getDefaultState.ts'
+import { TaskService } from './TaskService.ts'
+import { CategoryService } from './CategoryService.ts'
 
 const MAX_RETRIES = 3
 
@@ -40,18 +42,20 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
   protected operationLogService: OperationLogService
   protected chatMessageService: ChatMessageService
   protected settingService: SettingService
+  protected taskService: TaskService
+  protected categoryService: CategoryService
   protected boardService: BoardService
   protected workspaceService: WorkspaceService
-  protected contextExternalFetchService: ContextExternalFetchService
 
   constructor(
     chatRepository: ChatRepository,
     operationLogService: OperationLogService,
     chatMessageService: ChatMessageService,
     settingService: SettingService,
+    taskService: TaskService,
+    categoryService: CategoryService,
     boardService: BoardService,
     workspaceService: WorkspaceService,
-    contextExternalFetchService: ContextExternalFetchService,
   ) {
     super(chatRepository)
 
@@ -59,9 +63,10 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     this.operationLogService = operationLogService
     this.chatMessageService = chatMessageService
     this.settingService = settingService
+    this.taskService = taskService
+    this.categoryService = categoryService
     this.boardService = boardService
     this.workspaceService = workspaceService
-    this.contextExternalFetchService = contextExternalFetchService
   }
 
   private async _getConfigurableFromUserSetting(
@@ -97,6 +102,24 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       activeWorkspaceName = activeWorkspace[0].name
     }
 
+    const categories = await this.categoryService.getByCriteria(
+      { boardId: data.boardId, isDeleted: false, isDeletedExternal: false },
+      user.id,
+    )
+    const categoriesList = categories
+      .map((category) => `${category.name} (${category.id})`)
+      .join(', ')
+
+    const tasks = await this.taskService.getByCriteria(
+      { boardId: data.boardId, isDeleted: false, isDeletedExternal: false },
+      user.id,
+    )
+    const tagsSet = new Set<string>()
+    tasks.forEach((task) => {
+      task.tags.forEach((tag) => tagsSet.add(tag))
+    })
+    const tagsList = Array.from(tagsSet).join(', ')
+
     const config: RunnableConfig<Configurable> = {
       recursionLimit: 25,
       configurable: {
@@ -108,6 +131,8 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
         activeWorkspaceId: data.workspaceId,
         activeWorkspaceName,
         currentDate: dayjs.tz(dayjs(), data.timezone).toISOString(),
+        categoriesList: categoriesList.length > 0 ? categoriesList : 'No categories',
+        tagsList: tagsList.length > 0 ? tagsList : 'No tags',
         timezone: data.timezone,
 
         aiName: userSetting.aiName || 'Kanbar',
@@ -257,11 +282,15 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       stepMessageId: stepsMessage.data[0].id.toHexString(),
     })
 
+    const payload = getDefaultState()
+
+    payload.messages = messages
+
     const jobPayload: {
       payload: Partial<typeof AgentStateAnnotation.State> | Command
       config: RunnableConfig<Configurable>
     } = {
-      payload: { messages: messages },
+      payload,
       config,
     }
 
@@ -383,8 +412,10 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       stepMessageId: lastStepperMessageId || '',
     })
 
+    const payload = getDefaultState()
+
     const jobPayload = {
-      payload: { messages: [] },
+      payload,
       config,
       isRetry: true,
     }

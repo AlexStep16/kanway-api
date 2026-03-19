@@ -11,7 +11,6 @@ import WorkspaceRepository from '@repositories/WorkspaceRepository.ts'
 import { EmbeddingService } from '@infrastructure/services/EmbeddingService.ts'
 import { OperationLogService } from '@application/services/OperationLogService.ts'
 import OperationLogRepository from '@repositories/OperationLogRepository.ts'
-import { ReorderService } from '@application/services/ReorderService.ts'
 import { BoardService } from '@application/services/BoardService.ts'
 import BoardRepository from '@repositories/BoardRepository.ts'
 import BoardController from '@controllers/BoardController.ts'
@@ -21,10 +20,6 @@ import CategoryController from '@controllers/CategoryController.ts'
 import TaskRepository from '@application/repositories/TaskRepository.ts'
 import { TaskService } from '@application/services/TaskService.ts'
 import TaskController from '@controllers/TaskController.ts'
-import { ITaskRaw } from '@entities/ITaskRaw.ts'
-import { ICategoryRaw } from '@entities/ICategoryRaw.ts'
-import { IBoardRaw } from '@entities/IBoardRaw.ts'
-import { IWorkspaceRaw } from '@entities/IWorkspaceRaw.ts'
 import ArchiveController from '@controllers/ArchiveController.ts'
 import { UserController } from '@controllers/UserController.ts'
 import SettingRepository from '@repositories/SettingRepository.ts'
@@ -42,59 +37,26 @@ import { PaymentMethodService } from '@application/services/PaymentMethodService
 import { PaymentMethodController } from '@controllers/PaymentMethodController.ts'
 import { IRevertableService } from '@interfaces/traits/IRevertableService.ts'
 import { OperationLogController } from '@controllers/OperationLogController.ts'
-import { TaskBaseToolAdapter } from '@/application/ai/tools/adapters/tasks/TaskBaseToolAdapter.ts'
 import { VectorSearchService } from '@/application/services/VectorSearchService.ts'
 import { MongoClient } from 'mongodb'
-import { TaskCommandAdapterService } from '@/application/ai/services/TaskCommandAdapterService.ts'
-import { AISemanticService } from '@application/services/AISemanticService.ts'
-import { FilterToMongoQueryService } from '@application/ai/services/FilterToMongoQueryService.ts'
-import { CategoryCommandAdapterService } from '@application/ai/services/CategoryCommandAdapterService.ts'
-import { BoardCommandAdapterService } from '@application/ai/services/BoardCommandAdapterService.ts'
-import { BoardBaseToolAdapter } from '@/application/ai/tools/adapters/boards/BoardBaseToolAdapter.ts'
-import { WorkspaceCommandAdapterService } from '@application/ai/services/WorkspaceCommandAdapterService.ts'
-import { ContextExternalFetchService } from '@application/ai/services/ContextExternalFetchService.ts'
 import { ChatMessageService } from '@application/services/ChatMessageService.ts'
 import { ChatService } from '@application/services/ChatService.ts'
 import ChatRepository from '@application/repositories/ChatRepository.ts'
 import ChatController from '@controllers/ChatController.ts'
 import ChatMessageController from '@controllers/ChatMessageController.ts'
-import { ToolService } from '@application/services/ToolService.ts'
-import ToolRepository from '@repositories/ToolRepository.ts'
 import AgentSkillRepository from '@repositories/AgentSkillRepository.ts'
 import { AgentSkillService } from '@application/services/AgentSkillService.ts'
-import { BaseToolAdapter } from '@/application/ai/tools/adapters/BaseToolAdapter.ts'
-import { ITask } from '@/domain/entities/ITask.ts'
-import { ICategory } from '@/domain/entities/ICategory.ts'
-import { IBoard } from '@/domain/entities/IBoard.ts'
-import { IWorkspace } from '@/domain/entities/IWorkspace.ts'
-import { ITaskCriteria } from '@/application/interfaces/criterias/ITaskCriteria.ts'
-import { ICategoryCriteria } from '@/application/interfaces/criterias/ICategoryCriteria.ts'
-import { IBoardCriteria } from '@/application/interfaces/criterias/IBoardCriteria.ts'
-import { IWorkspaceCriteria } from '@/application/interfaces/criterias/IWorkspaceCriteria.ts'
-import { ITaskPopulated } from '@/application/interfaces/ITaskPopulated.ts'
-import { ITaskCreatePayload } from '@/application/interfaces/ITaskCreatePayload.ts'
-import { ICategoryPopulated } from '@/application/interfaces/ICategoryPopulated.ts'
-import { ICategoryCreatePayload } from '@/application/interfaces/ICategoryCreatePayload.ts'
-import { IBoardPopulated } from '@/application/interfaces/IBoardPopulated.ts'
-import { IBoardCreatePayload } from '@/application/interfaces/IBoardCreatePayload.ts'
-import { IWorkspaceCreatePayload } from '@/application/interfaces/IWorkspaceCreatePayload.ts'
 import SupportController from '../api/controllers/SupportController.ts'
 import SupportRepository from '@/application/repositories/SupportRepository.ts'
 import { BaseService } from '@/application/services/BaseService.ts'
 import { LimitService } from '@/application/services/LimitService.ts'
-import { TaskEditToolAdapter } from '@/application/ai/tools/adapters/tasks/TaskEditToolAdapter.ts'
-import { CategoryBaseToolAdapter } from '@/application/ai/tools/adapters/categories/CategoryBaseToolAdapter.ts'
-import { CategoryEditToolAdapter } from '@/application/ai/tools/adapters/categories/CategoryEditToolAdapter.ts'
-import { BoardEditToolAdapter } from '@/application/ai/tools/adapters/boards/BoardEditToolAdapter.ts'
-import { WorkspaceBaseToolAdapter } from '@/application/ai/tools/adapters/workspaces/WorkspaceBaseToolAdapter.ts'
-import { WorkspaceEditToolAdapter } from '@/application/ai/tools/adapters/workspaces/WorkspaceEditToolAdapter.ts'
 import SandboxController from '../api/controllers/SandboxController.ts'
-import { ToolDispatcherService } from '@/application/aiNew/services/ToolDispatcherService.ts'
-import { CategoryToolsExecutorService } from '@/application/aiNew/services/CategoryToolsExecutorService.ts'
-import { TaskToolsExecutorService } from '@/application/aiNew/services/TaskToolsExecutorService.ts'
-import { BoardToolsExecutorService } from '@/application/aiNew/services/BoardToolsExecutorService.ts'
-import { WorkspaceToolsExecutorService } from '@/application/aiNew/services/WorkspaceToolsExecutorService.ts'
-import { GeneralToolsExecutor } from '@/application/aiNew/services/GeneralToolsExecutor.ts'
+import { ToolDispatcherService } from '@/application/ai/services/ToolDispatcherService.ts'
+import { CategoryToolsExecutorService } from '@/application/ai/services/CategoryToolsExecutorService.ts'
+import { TaskToolsExecutorService } from '@/application/ai/services/TaskToolsExecutorService.ts'
+import { BoardToolsExecutorService } from '@/application/ai/services/BoardToolsExecutorService.ts'
+import { WorkspaceToolsExecutorService } from '@/application/ai/services/WorkspaceToolsExecutorService.ts'
+import { GeneralToolsExecutor } from '@/application/ai/services/GeneralToolsExecutor.ts'
 
 export function initializeDependencies() {
   const mongoClient = new MongoClient(process.env.MONGODB_URI || '')
@@ -112,7 +74,6 @@ export function initializeDependencies() {
   const paymentMethodRepository = new PaymentMethodRepository()
   const chatMessageRepository = new ChatMessageRepository()
   const chatRespository = new ChatRepository()
-  const toolRepository = new ToolRepository()
   const agentSkillRepository = new AgentSkillRepository()
   const supportRepository = new SupportRepository()
 
@@ -167,18 +128,10 @@ export function initializeDependencies() {
   /* PAYMENT SERVICES END */
 
   /* TASK SERVICES START */
-  const taskReorderService = new ReorderService<
-    ITask,
-    ITaskRaw,
-    ITaskCriteria,
-    ITaskPopulated,
-    ITaskCreatePayload
-  >(taskRepository)
   const taskService = new TaskService(
     taskRepository,
     embeddingService,
     operationLogService,
-    taskReorderService,
     mockCategoryService,
     mockBoardService,
     mockWorkspaceService,
@@ -186,18 +139,10 @@ export function initializeDependencies() {
   /* TASK SERVICES END */
 
   /* CATEGORY SERVICES START */
-  const categoryReorderService = new ReorderService<
-    ICategory,
-    ICategoryRaw,
-    ICategoryCriteria,
-    ICategoryPopulated,
-    ICategoryCreatePayload
-  >(categoryRepository)
   const categoryService = new CategoryService(
     categoryRepository,
     embeddingService,
     operationLogService,
-    categoryReorderService,
     mockWorkspaceService,
     mockBoardService,
     taskService,
@@ -205,18 +150,10 @@ export function initializeDependencies() {
   /* CATEGORY SERVICES END */
 
   /* BOARD SERVICES START */
-  const boardReorderService = new ReorderService<
-    IBoard,
-    IBoardRaw,
-    IBoardCriteria,
-    IBoardPopulated,
-    IBoardCreatePayload
-  >(boardRepository)
   const boardService = new BoardService(
     boardRepository,
     embeddingService,
     operationLogService,
-    boardReorderService,
     mockWorkspaceService,
     categoryService,
     taskService,
@@ -225,18 +162,10 @@ export function initializeDependencies() {
   /* BOARD SERVICES END */
 
   /* WORKSPACE SERVICES START */
-  const workspaceReorderService = new ReorderService<
-    IWorkspace,
-    IWorkspaceRaw,
-    IWorkspaceCriteria,
-    IWorkspace,
-    IWorkspaceCreatePayload
-  >(workspaceRepository)
   const workspaceService = new WorkspaceService(
     workspaceRepository,
     embeddingService,
     operationLogService,
-    workspaceReorderService,
     boardService,
     categoryService,
     taskService,
@@ -312,129 +241,19 @@ export function initializeDependencies() {
   Object.assign(mockWorkspaceService, workspaceService)
 
   /** AI SERVICES START */
-  const aiSemanticService = new AISemanticService()
-  const filterToMongoQueryService = new FilterToMongoQueryService(
-    taskService,
-    categoryService,
-    boardService,
-  )
-  const contextExternalFetchService = new ContextExternalFetchService(
-    taskService,
-    categoryService,
-    boardService,
-    workspaceService,
-  )
   const chatMessageService = new ChatMessageService(chatMessageRepository, operationLogService)
   const chatService = new ChatService(
     chatRespository,
     operationLogService,
     chatMessageService,
     settingService,
+    taskService,
+    categoryService,
     boardService,
     workspaceService,
-    contextExternalFetchService,
   )
-  const toolService = new ToolService(toolRepository, embeddingService)
   const agentSkillService = new AgentSkillService(agentSkillRepository, embeddingService)
   /** AI SERVICES END */
-
-  /** TOOLS ADAPTERS START */
-  const taskCommandAdapter = new TaskCommandAdapterService(
-    taskService,
-    categoryService,
-    vectorSearchService,
-    aiSemanticService,
-  )
-  const baseToolAdapter = new BaseToolAdapter(
-    vectorSearchService,
-    operationLogService,
-    taskService,
-    categoryService,
-    boardService,
-    workspaceService,
-    filterToMongoQueryService,
-  )
-
-  const taskBaseToolAdapter = new TaskBaseToolAdapter(
-    vectorSearchService,
-    operationLogService,
-    taskService,
-    categoryService,
-    boardService,
-    workspaceService,
-    filterToMongoQueryService,
-  )
-
-  const taskEditToolAdapter = new TaskEditToolAdapter(
-    taskService,
-    categoryService,
-    taskCommandAdapter,
-  )
-
-  const categoryCommandAdapter = new CategoryCommandAdapterService(
-    categoryService,
-    boardService,
-    vectorSearchService,
-    aiSemanticService,
-  )
-  const categoryBaseToolAdapter = new CategoryBaseToolAdapter(
-    vectorSearchService,
-    operationLogService,
-    taskService,
-    categoryService,
-    boardService,
-    workspaceService,
-    filterToMongoQueryService,
-  )
-
-  const categoryEditToolAdapter = new CategoryEditToolAdapter(
-    categoryService,
-    boardService,
-    categoryCommandAdapter,
-  )
-
-  const boardCommandAdapter = new BoardCommandAdapterService(
-    boardService,
-    workspaceService,
-    vectorSearchService,
-    aiSemanticService,
-  )
-  const boardBaseToolAdapter = new BoardBaseToolAdapter(
-    vectorSearchService,
-    operationLogService,
-    taskService,
-    categoryService,
-    boardService,
-    workspaceService,
-    filterToMongoQueryService,
-  )
-
-  const boardEditToolAdapter = new BoardEditToolAdapter(
-    boardService,
-    workspaceService,
-    boardCommandAdapter,
-  )
-
-  const workspaceCommandAdapter = new WorkspaceCommandAdapterService(
-    workspaceService,
-    vectorSearchService,
-    aiSemanticService,
-  )
-  const workspaceBaseToolAdapter = new WorkspaceBaseToolAdapter(
-    vectorSearchService,
-    operationLogService,
-    taskService,
-    categoryService,
-    boardService,
-    workspaceService,
-    filterToMongoQueryService,
-  )
-
-  const workspaceEditToolAdapter = new WorkspaceEditToolAdapter(
-    workspaceService,
-    workspaceCommandAdapter,
-  )
-  /** TOOLS ADAPTERS END */
 
   const taskToolsExecutorService = new TaskToolsExecutorService(
     taskRepository,
@@ -517,14 +336,11 @@ export function initializeDependencies() {
       taskService,
       settingService,
       subscriptionService,
-      filterToMongoQueryService,
       paymentService,
       paymentMethodService,
       operationLogService,
       toolDispatcherService,
       chatMessageService,
-      toolService,
-      contextExternalFetchService,
       chatService,
       agentSkillService,
     },
@@ -545,17 +361,6 @@ export function initializeDependencies() {
       chatMessageController,
       supportController,
       sandboxController,
-    },
-    adapters: {
-      baseToolAdapter,
-      taskBaseToolAdapter,
-      taskEditToolAdapter,
-      categoryBaseToolAdapter,
-      categoryEditToolAdapter,
-      boardBaseToolAdapter,
-      boardEditToolAdapter,
-      workspaceBaseToolAdapter,
-      workspaceEditToolAdapter,
     },
   }
 }

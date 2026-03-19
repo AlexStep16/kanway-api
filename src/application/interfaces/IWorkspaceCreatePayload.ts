@@ -7,7 +7,7 @@ export interface IWorkspaceCreatePayload {
   embeddings: Array<number>
   color: string
   colorName: string
-  order: number
+  rank: string
   isFavorite?: boolean
   isDeleted?: boolean
   isDeletedExternal?: boolean

@@ -6,6 +6,7 @@ import { CategoryDTOSchema } from '@dtos/CategoryDTO.ts'
 import { CategoryEditDTOSchema } from '@dtos/CategoryEditDTO.ts'
 import { CategoryEditManyDTOSchema } from '@dtos/CategoryEditManyDTO.ts'
 import { patchEntitiesLimiter, postEntitiesLimiter } from '@/limiters.ts'
+import { CategoryMoveDTOSchema } from '@/application/dtos/CategoryMoveDTO.ts'
 
 interface ICategoryRawController extends CategoryController {}
 
@@ -18,6 +19,12 @@ export default (controller: ICategoryRawController): Router => {
   router.get('/:id', controller.getById)
 
   router.post('/', postEntitiesLimiter, validationMiddleware(CategoryDTOSchema), controller.create)
+  router.patch(
+    '/move',
+    patchEntitiesLimiter,
+    validationMiddleware(CategoryMoveDTOSchema),
+    controller.move,
+  )
   router.patch(
     '/bulk',
     patchEntitiesLimiter,

@@ -31,7 +31,6 @@ export const CategoryDTOSchema = z
             : ErrorMessages.WORKSPACE_ID_INVALID,
       })
       .regex(objectIdRegex, ErrorMessages.WORKSPACE_ID_INVALID),
-    order: z.number(ErrorMessages.CATEGORY_ORDER_TYPE_INVALID).optional(),
   })
   .strict()
 

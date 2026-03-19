@@ -8,7 +8,7 @@ export interface ITaskRawString {
   category: string
   is_deleted: boolean
   is_deleted_external: boolean
-  order: number
+  rank: string
   is_completed: boolean
   tags: Array<string>
   user_id: string

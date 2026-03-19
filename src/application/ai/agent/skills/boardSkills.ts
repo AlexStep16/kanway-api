@@ -1,131 +1,77 @@
-import { AgentSkill } from '../../interfaces/AgentSkill.ts'
+import { AgentSkill } from '@/application/ai/interfaces/AgentSkill.ts'
 
-export const MoveBoards: AgentSkill = {
-  name: 'MoveBoards',
-  description: 'Move one or more boards to a different workspace.',
-  rule: `*** RULE: MOVING BOARDS ***
-    1. Find the target 'workspaceId' using 'searchEntities'.
-    2. Use 'moveBoards' with the found 'workspaceId'.
+export const BoardsReadSkill: AgentSkill = {
+  name: 'BoardsRead',
+  description:
+    'Skill for reading and understanding boards. Use this skill to extract key information from boards, such as objectives, requirements, and constraints.',
+  content: `
+    ### SKILL: BoardsRead
 
-    NEVER create or delete boards for moving. ALWAYS use 'moveBoards'.
-    `,
-  suggestedTools: ['moveBoards', 'searchEntities'],
-}
+    This skill allows you to find boards using either strict criteria, fuzzy text search, or both.
 
-export const CloneBoards: AgentSkill = {
-  name: 'CloneBoards',
-  description: 'Create a duplicate of an existing board.',
-  rule: `*** RULE: CLONING BOARDS ***
-    Goal: Create a duplicate of an existing board.
-
-    RULES:
-    1. Identify the board ID(s) to be cloned.
-    2. Call 'cloneBoards' with the identified ID(s).
-    3. If the user mentions any changes to the cloned board (e.g., different name, workspace), use 'update tools' after cloning to apply those changes.
-
-    EXECUTION:
-    - Call 'cloneBoards' with the identified ID(s).
-    `,
-  suggestedTools: [
-    'cloneBoards',
-    'updateBoardsOrder',
-    'updateBoardsName',
-    'favoriteBoards',
-    'searchEntities',
-  ],
-}
-
-export const CreateBoards: AgentSkill = {
-  name: 'CreateBoards',
-  description: 'Create new boards in a specified workspace.',
-  rule: `*** RULE: CREATING BOARDS ***
-    Goal: Create new boards.
-
-    Procedure:
-    1. Extract the board 'name' from user input.
-    2. If NO name is provided (e.g., just "Create a board"), ask the user for a name.
-    3. If workspace name is not provided, do not set workspaceName when creating the board. The system will use the active workspace by default.
-    4. If you know any ids from the context (e.g., workspaceId) that can help the creation, use them. The system will prioritize them over names.
-
-    EXECUTION:
-    - Call 'createBoards' with the extracted names and other relevant parameters.
+    ### SCRIPT LOGIC (MUST BE IN A SINGLE SCRIPT):
+    - **Hybrid Search:** If the user says "Find favorite boards called work", use BOTH arguments:
+      - 'mongo_filter={"is_favorite": True}' (Strict)
+      - 'search_query="work"' (Fuzzy)
+    - **Pure Fuzzy:** If the user says "Search for 'board Life'", use ONLY 'search_query="board Life"'.
+    - **Pure Strict:** If the user says "Show all archived boards", use ONLY 'mongo_filter={"is_deleted": True}'.
   `,
-
-  suggestedTools: ['createBoards', 'searchEntities'],
+  relatedTools: ['search_boards', 'display_to_user'],
+  relatedEntities: ['board'],
 }
 
-export const UpdateBoardsName: AgentSkill = {
-  name: 'UpdateBoardsName',
-  description: 'Modify the name of an existing board.',
-  rule: `*** RULE: UPDATING BOARDS NAME ***
-    Goal: Modify the name of an existing board.
-    
-    Procedure:
-    1. If 'boardId' is not clear from context, search for the boards using 'searchEntities'.
-    2. Call 'updateBoardsName' with 'boardId' and the new name.`,
-  suggestedTools: ['updateBoardsName', 'searchEntities'],
+export const BoardsCreateSkill: AgentSkill = {
+  name: 'BoardsCreate',
+  description: 'Skill for creating boards. Use this skill to add new boards.',
+  content: `
+    ### SKILL: BoardsCreate
+
+    This skill allows you to create new boards. You must resolve Workspace names to IDs before creation.
+
+    ### SCRIPT LOGIC (MUST BE IN A SINGLE SCRIPT):
+    - When generating your code, structure it as follows:
+    - Workspace Resolution: First, query for the workspace. If the result is ambiguous (len > 1), call resolve_ambiguous. If not, save the workspace_id to a variable.
+    - Creation: Finally, use the resolved variables to call create_boards at the end of the script.
+  `,
+  relatedTools: ['create_boards', 'search_boards', 'search_workspaces', 'resolve_ambiguous'],
+  relatedEntities: ['board', 'workspace'],
 }
 
-export const UpdateBoardsOrder: AgentSkill = {
-  name: 'UpdateBoardsOrder',
-  description: 'Modify the order of an existing board.',
-  rule: `*** RULE: UPDATING BOARDS ORDER ***
-    Goal: Modify the order of an existing board.
-    
-    Procedure:
-    1. If 'boardId' is not clear from context, search for the boards using 'searchEntities'.
-    2. Call 'updateBoardsOrder' with 'boardId' and the new order.`,
-  suggestedTools: ['updateBoardsOrder', 'searchEntities'],
+export const BoardsUpdateSkill: AgentSkill = {
+  name: 'BoardsUpdate',
+  description: 'Skill for updating boards. Use this skill to modify existing boards.',
+  content: `
+    ### SKILL: BoardsUpdate
+
+    This skill allows you to update existing boards. You must resolve Workspace and Board names to IDs before updating.
+
+    ### SCRIPT LOGIC (MUST BE IN A SINGLE SCRIPT):
+    - When generating your code, structure it as follows:
+    - Workspace Resolution: First, query for the workspace. If the result is ambiguous (len > 1), call resolve_ambiguous. If not, save the workspace_id to a variable.
+    - Board Resolution: Next, in the same script, query for the board. Handle ambiguity the same way.
+    - Update: Finally, use the resolved variables to call update_boards at the end of the script.
+  `,
+  relatedTools: ['update_boards', 'search_boards', 'search_workspaces', 'resolve_ambiguous'],
+  relatedEntities: ['board', 'workspace'],
 }
 
-export const FavoriteBoards: AgentSkill = {
-  name: 'FavoriteBoards',
-  description: 'Mark or unmark a board as favorite.',
-  rule: `*** RULE: FAVORITING BOARDS ***
-    Goal: Mark or unmark a board as favorite.
-    
-    Procedure:
-    1. If 'boardId' is not clear from context, search for the boards using 'searchEntities'.
-    2. Call 'favoriteBoards' with 'boardId' and the new favorite status.`,
-  suggestedTools: ['favoriteBoards', 'searchEntities'],
-}
+export const BoardMoveSkill: AgentSkill = {
+  name: 'BoardMove',
+  description: 'Skill for moving board. Use this skill to change the position of existing board.',
+  content: `
+    ### SKILL: BoardMove
 
-export const BoardLifecycle: AgentSkill = {
-  name: 'BoardLifecycle',
-  description: 'Manage the lifecycle of a board (archive, recover, delete).',
-  rule: `*** RULE: BOARD LIFECYCLE (ARCHIVE / DELETE / RECOVER) ***
-    Goal: Change the existence state of a Board.
+    This skill allows you to move existing board. You must resolve Board name to ID before moving and determine the new position based on user input. Before and after board IDs are optional.
+    If the user says "Move board A to the start of the workspace", then find the first board in the workspace by sorting by rank and use its ID as beforeBoardId, leaving afterBoardId null.
+    By default board will be moved to the bottom of the workspace.
 
-    1. ARCHIVE (Close/Soft Delete):
-      - Tool: 'archiveBoards'.
-      - Use for "close project", "archive board", "remove".
-
-    2. RECOVER (Reopen):
-      - Tool: 'recoverBoards'.
-      - Use for "reopen", "restore".
-
-    3. DELETE (Permanent):
-      - Tool: 'deleteBoards'.
-      - WARNING: Destroys all categories and tasks inside. Use ONLY for explicit "delete forever" requests.
-
-    Procedure:
-    1. Identify Board IDs using 'searchEntities' with isArchived flag or context.
-    2. Call tool with {{ ids: ["..."] }}.`,
-  suggestedTools: ['archiveBoards', 'recoverBoards', 'deleteBoards', 'searchEntities'],
-}
-
-export const SearchRelevantBoards: AgentSkill = {
-  name: 'SearchRelevantBoards',
-  description: 'Search and Retrieve boards based on similarity search by names.',
-  rule: `*** RULE: SEARCHING RELEVANT BOARDS ***
-    Goal: Search and Retrieve boards based on similarity search by names.
-    
-    Procedure:
-    1. Analyze the user request to extract boards names to search.
-    2. Call 'searchRelevantBoards' with the extracted board names.
-     - If multiple boards are found and the user request is ambiguous, use 'showEntitiesToUser' to present the options and ask for clarification.
-     - If no boards are found, DON'T LOOP, use 'responseToUser' to inform the user and ask for clarification or alternative input.
-    3. Present results to the user using 'showEntitiesToUser' (if applicable).
-    `,
-  suggestedTools: ['searchRelevantBoards', 'showEntitiesToUser'],
+    ### SCRIPT LOGIC (MUST BE IN A SINGLE SCRIPT):
+    - When generating your code, structure it as follows:
+    - Board Resolution: First, query for the board. If the result is ambiguous (len > 1), call resolve_ambiguous. If not, save the board id to a variable.
+    - Next, in the same script, determine the new position of the board by identifying the beforeBoardId and afterBoardId. If the user says "Move board A before board B", then beforeBoardId is the ID of board B and afterBoardId is null. If the user says "Move board A after board C", then afterBoardId is the ID of board C and beforeBoardId is null. If the user says "Move board A between board B and board C", then beforeBoardId is the ID of board B and afterBoardId is the ID of board C.
+    - If the user says "Move board A to workspace D", resolve workspace D by 'search_workspaces' to get newWorkspaceId.
+    - Move the board using the resolved variables to call move_board at the end of the script.
+  `,
+  relatedTools: ['move_board', 'search_boards', 'search_workspaces', 'resolve_ambiguous'],
+  relatedEntities: ['board', 'workspace'],
 }

@@ -1,5 +1,5 @@
 import { MongoDBSaver } from '@langchain/langgraph-checkpoint-mongodb'
-import { createReActAgent } from '@application/aiNew/agent/createReActAgent.ts'
+import { createReActAgent } from '@/application/ai/agent/createReActAgent.ts'
 import { MongoClient } from 'mongodb'
 import { ChatFireworks } from '@langchain/community/chat_models/fireworks'
 import { CompiledStateGraph } from '@langchain/langgraph' // Тип скомпилированного графа

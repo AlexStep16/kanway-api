@@ -8,7 +8,7 @@ export interface IWorkspaceRawString {
   tasks_count: number
   categories_count: number
   boards_count: number
-  order: number
+  rank: string
   color: (typeof BASE_COLORS)[number]
   color_name: string
   embeddings: Array<number>

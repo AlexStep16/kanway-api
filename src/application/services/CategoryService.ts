@@ -13,7 +13,6 @@ import { ICategoryCriteria } from '@criterias/ICategoryCriteria.ts'
 import { OperationLogService } from '@application/services/OperationLogService.ts'
 import { OperationTypesEnum } from '@domain/enums/OperationTypesEnum.ts'
 import { CollectionsEnum } from '@domain/enums/CollectionsEnum.ts'
-import { ReorderService } from '@application/services/ReorderService.ts'
 import { CategoryEditDTO } from '@dtos/CategoryEditDTO.ts'
 import { NotFoundError } from '@errors/NotFound.ts'
 import { TaskService } from '@application/services/TaskService.ts'
@@ -33,16 +32,10 @@ import { ICategoryPopulated } from '@interfaces/ICategoryPopulated.ts'
 import { ICategoryCreatePayload } from '@interfaces/ICategoryCreatePayload.ts'
 import { SafeUpdateData } from '@/infrastructure/types/SafeUpdateData.ts'
 import { OperationLogStatusesEnum } from '@/domain/enums/OperationLogStatusesEnum.ts'
+import { LexoRank } from 'lexorank'
+import { CategoryMoveDTO } from '../dtos/CategoryMoveDTO.ts'
 
 const MAX_RETRIES = 3
-
-type ReorderServiceType = ReorderService<
-  ICategory,
-  ICategoryRaw,
-  ICategoryCriteria,
-  ICategoryPopulated,
-  ICategoryCreatePayload
->
 
 export class CategoryService extends BaseService<
   ICategoryRaw,
@@ -54,7 +47,6 @@ export class CategoryService extends BaseService<
   protected repository: CategoryRepository
   protected embeddingService: EmbeddingService
   protected operationLogService: OperationLogService
-  protected reorderService: ReorderServiceType
   protected workspaceService: WorkspaceService
   protected boardService: BoardService
   protected taskService: TaskService
@@ -63,7 +55,6 @@ export class CategoryService extends BaseService<
     categoryRepository: CategoryRepository,
     embeddingService: EmbeddingService,
     operationLogService: OperationLogService,
-    reorderService: ReorderServiceType,
     workspaceService: WorkspaceService,
     boardService: BoardService,
     taskService: TaskService,
@@ -73,7 +64,6 @@ export class CategoryService extends BaseService<
     this.repository = categoryRepository
     this.embeddingService = embeddingService
     this.operationLogService = operationLogService
-    this.reorderService = reorderService
     this.workspaceService = workspaceService
     this.boardService = boardService
     this.taskService = taskService
@@ -132,11 +122,6 @@ export class CategoryService extends BaseService<
 
     /* CREATE */
     const newCategory = await this.repository.create(categoryPayload, session)
-
-    /* REORDER */
-    if (data.order !== undefined) {
-      sideEffects.push(this.reorderService.reorder('board', [newCategory], userId, session))
-    }
 
     sideEffects.push(
       this.boardService.updateCategoriesCount(
@@ -235,12 +220,6 @@ export class CategoryService extends BaseService<
     const newCategories = await this.repository.createMany(categoriesPayload, session)
 
     const sideEffects: Promise<any>[] = []
-
-    /* REORDER */
-    const isReorderNeeded = data.some((ws) => ws.order !== undefined)
-    if (isReorderNeeded) {
-      sideEffects.push(this.reorderService.reorder('board', newCategories, userId, session))
-    }
 
     const newCategoriesPopulated = await this.getByCriteria(
       { ids: newCategories.map((t) => t.id.toString()) },
@@ -396,32 +375,6 @@ export class CategoryService extends BaseService<
       )
     }
 
-    /* REORDER */
-    const categoriesToReorder = categoriesToUpdate.filter(
-      (c) => data.order !== undefined && c.order !== data.order,
-    )
-
-    const categoriesToMoveToEnd = categoriesToUpdate.filter(
-      (c) => data.order == null && categoriesToMove.includes(c),
-    )
-
-    if (categoriesToReorder.length > 0 || categoriesToMoveToEnd.length > 0) {
-      sideEffects.push(
-        this.reorderService.reorder(
-          'board',
-          [
-            ...categoriesToReorder,
-            ...categoriesToMoveToEnd.map((c) => ({
-              ...c,
-              order: c.order + 99999,
-            })),
-          ],
-          userId,
-          session,
-        ),
-      )
-    }
-
     /* LOG */
     const logPromise = this.operationLogService.create(
       {
@@ -490,8 +443,6 @@ export class CategoryService extends BaseService<
     const categoryPayloads: SingleUpdateDTO<SafeUpdateData<ICategory>>[] = []
     const categoriesBefore: (Partial<ICategory> & { id: Types.ObjectId })[] = []
     const movedCategoryIds: string[] = []
-    const reorderCategoryIds = new Set<string>()
-    const moveToEndIds = new Set<string>()
 
     for (const dto of data) {
       const category = existingMap.get(dto.id)
@@ -507,13 +458,6 @@ export class CategoryService extends BaseService<
       const isMoving = dto.boardId !== undefined && category.board.toString() !== dto.boardId
       if (isMoving) {
         movedCategoryIds.push(dto.id)
-      }
-
-      if (dto.order !== undefined && category.order !== dto.order) {
-        reorderCategoryIds.add(dto.id)
-      } else if (dto.order == null && isMoving) {
-        reorderCategoryIds.add(dto.id)
-        moveToEndIds.add(dto.id)
       }
     }
 
@@ -603,20 +547,6 @@ export class CategoryService extends BaseService<
           session,
         ),
       )
-    }
-
-    /** REORDER */
-    if (reorderCategoryIds.size > 0) {
-      const categoriesToReorder = updatedCategories
-        .filter((c) => reorderCategoryIds.has(c.id.toString()))
-        .map((c) => {
-          if (moveToEndIds.has(c.id.toString())) {
-            return { ...c, order: c.order + 99999 } // Сдвигаем виртуально
-          }
-          return c
-        })
-
-      sideEffects.push(this.reorderService.reorder('board', categoriesToReorder, userId, session))
     }
 
     const projectedUpdatedCategories = updatedCategories.map(
@@ -745,10 +675,6 @@ export class CategoryService extends BaseService<
       session,
     )
 
-    const uniqueBoardIds = [...new Set(categoriesToDelete.map((t) => t.board.toString()))].map(
-      (id) => new Types.ObjectId(id),
-    )
-
     await this.repository.deleteMany(criteria, userId, session)
 
     await Promise.all([
@@ -759,8 +685,6 @@ export class CategoryService extends BaseService<
         userId,
         session,
       ),
-
-      this.reorderService.reorderByParentIds(uniqueBoardIds, 'board', userId, session),
     ])
 
     return {
@@ -833,16 +757,6 @@ export class CategoryService extends BaseService<
       ...category,
       isDeleted: data.isDeleted,
     }))
-
-    /* REORDER */
-    sideEffects.push(
-      this.reorderService.reorderByParentIds(
-        categoriesToProcess.map((c) => c.board),
-        'board',
-        userId,
-        session,
-      ),
-    )
 
     /** UPDATE COUNTERS */
     sideEffects.push(...this._updateCategoriesParentCounters(categoriesToProcess, userId, session))
@@ -946,14 +860,23 @@ export class CategoryService extends BaseService<
     for (const [boardId, categories] of categoriesGroupedByBoard) {
       const boardCategories = categoriesToClone.filter((c) => c.board.toString() === boardId)
 
-      let currentMaxOrder = boardCategories.reduce((max, t) => (t.order > max ? t.order : max), 0)
+      const lastCategory = boardCategories.sort((a, b) => (a.rank > b.rank ? -1 : 1))[0]
+      let lastRank = LexoRank.middle()
+
+      if (lastCategory) {
+        lastRank = LexoRank.parse(lastCategory.rank)
+      }
 
       for (const category of categories) {
+        const newRank = lastRank.genNext()
+
         const cleanCategory = {
           ...category,
           id: undefined,
-          order: ++currentMaxOrder,
+          rank: newRank.toString(),
         }
+
+        lastRank = newRank
 
         transformedCategories.push(cleanCategory)
       }
@@ -985,14 +908,6 @@ export class CategoryService extends BaseService<
     )
 
     if (cloneTasksResult.logId) dependencies.push(cloneTasksResult.logId)
-
-    /* REORDER */
-    await this.reorderService.reorderByParentIds(
-      clonedCategories.map((c) => c.board),
-      'board',
-      userId,
-      session,
-    )
 
     /* LOG */
     const logPromise = this.operationLogService.create(
@@ -1038,6 +953,145 @@ export class CategoryService extends BaseService<
       return await this._retryExecutor((session: ClientSession) =>
         this._executeCloneTransaction(criteria, userId, session),
       )
+    }
+  }
+
+  public async move(
+    dto: CategoryMoveDTO,
+    user: IUser,
+    externalSession?: ClientSession,
+    isDryRun: boolean = false,
+  ): Promise<IResponseWithLog<ICategoryPopulated[]>> {
+    if (externalSession) {
+      return this._executeMoveTransaction(dto, user, externalSession, isDryRun)
+    } else {
+      return await this._retryExecutor((session: ClientSession) =>
+        this._executeMoveTransaction(dto, user, session, isDryRun),
+      )
+    }
+  }
+
+  private async _executeMoveTransaction(
+    dto: CategoryMoveDTO,
+    user: IUser,
+    session: ClientSession,
+    isDryRun: boolean = false,
+  ): Promise<IResponseWithLog<ICategoryPopulated[]>> {
+    const { beforeCategoryId, afterCategoryId, id, newBoardId } = dto
+
+    const criteria: ICategoryCriteria = {
+      ids: [id, beforeCategoryId, afterCategoryId].filter((id): id is string => !!id),
+    }
+
+    const updateData: SafeUpdateData<ICategory> = {}
+
+    const categories = await this.repository.findByCriteria(criteria, session, undefined, user.id)
+    const category = categories.find((t) => t.id.toString() === id)
+    const beforeCategory = categories.find((t) => t.id.toString() === beforeCategoryId)
+    const afterCategory = categories.find((t) => t.id.toString() === afterCategoryId)
+    let isParentChanged = false
+
+    if (!category) {
+      throw new NotFoundError('Категория для перемещения не найдена.')
+    }
+    if (beforeCategoryId && !beforeCategory) {
+      throw new NotFoundError('Категория перед указанной не найдена.')
+    }
+    if (afterCategoryId && !afterCategory) {
+      throw new NotFoundError('Категория после указанной не найдена.')
+    }
+
+    if (newBoardId) {
+      const board = await this.boardService.getByCriteria({ id: newBoardId }, user.id, session)
+
+      if (!board.length) {
+        throw new NotFoundError('Доска для перемещения не найдена.')
+      }
+    }
+
+    let newRank = LexoRank.middle()
+
+    if (beforeCategory && afterCategory) {
+      const beforeRank = LexoRank.parse(beforeCategory.rank)
+      const afterRank = LexoRank.parse(afterCategory.rank)
+
+      newRank = beforeRank.between(afterRank)
+    } else if (beforeCategory) {
+      const beforeRank = LexoRank.parse(beforeCategory.rank)
+      newRank = beforeRank.genPrev()
+    } else if (afterCategory) {
+      const afterRank = LexoRank.parse(afterCategory.rank)
+      newRank = afterRank.genNext()
+    } else {
+      newRank = LexoRank.middle()
+    }
+
+    updateData.rank = newRank.toString()
+
+    if (newBoardId) {
+      updateData.board = new Types.ObjectId(newBoardId)
+
+      isParentChanged = true
+    } else if (beforeCategory && beforeCategory.board.toString() !== category.board.toString()) {
+      updateData.board = beforeCategory.board
+
+      isParentChanged = true
+    } else if (afterCategory && afterCategory.board.toString() !== category.board.toString()) {
+      updateData.board = afterCategory.board
+
+      isParentChanged = true
+    }
+
+    const categoriesBefore = projectProperties<ICategory>([category], updateData)
+    const categoriesAfter = categoriesBefore.map((c) => ({
+      ...c,
+      ...updateData,
+    }))
+
+    if (isDryRun) {
+      const log = await this.operationLogService.create(
+        {
+          operationType: OperationTypesEnum.UPDATE,
+          collectionName: CollectionsEnum.CATEGORIES,
+          entitiesBefore: categoriesBefore,
+          entitiesAfter: categoriesAfter,
+          dependencies: [],
+          status: OperationLogStatusesEnum.PENDING,
+        },
+        user.id,
+        session,
+      )
+
+      return {
+        data: [],
+        logId: log.id,
+      }
+    }
+
+    await this.repository.updateManyByCriteria({ id }, updateData, session, user.id)
+
+    if (isParentChanged) {
+      await this.regenerateReferencesByBoards([id], user.id, session)
+    }
+
+    const log = await this.operationLogService.create(
+      {
+        operationType: OperationTypesEnum.UPDATE,
+        collectionName: CollectionsEnum.CATEGORIES,
+        entitiesBefore: categoriesBefore,
+        entitiesAfter: categoriesAfter,
+        dependencies: [],
+        status: OperationLogStatusesEnum.SUCCESS,
+      },
+      user.id,
+      session,
+    )
+
+    const updatedCategories = await this.getByCriteria({ id }, user.id, session)
+
+    return {
+      data: updatedCategories,
+      logId: log.id,
     }
   }
 
@@ -1196,23 +1250,29 @@ export class CategoryService extends BaseService<
 
     const embeddings = await this.embeddingService.getEmbeddings(categoryName)
 
+    let categoryRank = LexoRank.middle().toString()
+
+    /* RANKING */
+    const lastCategoriesInBoard = await this.repository.findByCriteria(
+      { boardId: data.boardId },
+      session,
+      { sort: { rank: -1 }, limit: 1 },
+      userId,
+    )
+    if (lastCategoriesInBoard.length > 0) {
+      const lastCategory = lastCategoriesInBoard[0]
+      const lastRank = LexoRank.parse(lastCategory.rank)
+
+      categoryRank = lastRank.genNext().toString()
+    }
+
     const categoryPayload: ICategoryCreatePayload = {
       name: categoryName,
       workspace: Types.ObjectId.createFromHexString(data.workspaceId),
       board: Types.ObjectId.createFromHexString(data.boardId),
-      order: data.order || 1,
+      rank: categoryRank,
       embeddings,
       userId,
-    }
-
-    if (data.order === undefined) {
-      const lastOrder = await this.repository.getLastOrderGroupedByParents(
-        [Types.ObjectId.createFromHexString(data.boardId)],
-        'board',
-        userId,
-        session,
-      )
-      categoryPayload.order = lastOrder.length > 0 ? lastOrder[0].lastOrder + 1 : 1
     }
 
     return categoryPayload
@@ -1226,6 +1286,9 @@ export class CategoryService extends BaseService<
   ): Promise<ICategoryCreatePayload[]> {
     const categoriesPayloads: ICategoryCreatePayload[] = []
     const categoriesGroupedByBoard: { [key: string]: CategoryDTO[] } = {}
+    const uniqueBoardIds = Array.from(
+      new Set(data.map((category) => new Types.ObjectId(category.boardId))),
+    )
 
     data.forEach((category) => {
       const boardId = category.boardId
@@ -1235,13 +1298,6 @@ export class CategoryService extends BaseService<
 
       categoriesGroupedByBoard[boardId].push(category)
     })
-
-    const grouppedCategoriesCount = await this.repository.getLastOrderGroupedByParents(
-      Object.keys(categoriesGroupedByBoard).map((id) => Types.ObjectId.createFromHexString(id)),
-      'board',
-      userId,
-      session,
-    )
 
     const embeddingsMap: { [key: string]: number[] } = {}
 
@@ -1254,27 +1310,36 @@ export class CategoryService extends BaseService<
       })
     }
 
-    const countMap = new Map(
-      grouppedCategoriesCount.map((entry) => [entry._id.toString(), entry.lastOrder]),
+    const lastRanksByBoards = await this.repository.getLastRanksByParents(
+      uniqueBoardIds,
+      'board',
+      userId,
+      session,
     )
 
     for (const [boardId, categories] of Object.entries(categoriesGroupedByBoard)) {
-      let currentLastOrder = countMap.get(boardId) || 1
+      let lastRank = LexoRank.middle()
+
+      const lastRankData = lastRanksByBoards.find((r) => r.parentId.toString() === boardId)
+      if (lastRankData) {
+        lastRank = LexoRank.parse(lastRankData.rank)
+      }
 
       for (const category of categories) {
+        const newRank = lastRank.genNext()
         const categoryName = category.name.trim()
-
-        const orderToSave = category.order ?? ++currentLastOrder
 
         categoriesPayloads.push({
           id: category.id,
           name: categoryName,
           workspace: new Types.ObjectId(category.workspaceId),
           board: new Types.ObjectId(category.boardId),
-          order: orderToSave,
+          rank: newRank.toString(),
           embeddings: embeddingsMap[categoryName],
           userId,
         })
+
+        lastRank = newRank
       }
     }
 

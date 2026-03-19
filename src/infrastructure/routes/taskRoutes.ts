@@ -6,6 +6,7 @@ import { TaskDTOSchema } from '@dtos/TaskDTO.ts'
 import { TaskEditDTOSchema } from '@dtos/TaskEditDTO.ts'
 import { TaskEditManyDTOSchema } from '@dtos/TaskEditManyDTO.ts'
 import { patchTasksLimiter, postTasksLimiter } from '@/limiters.ts'
+import { TaskMoveDTOSchema } from '@/application/dtos/TaskMoveDTO.ts'
 
 interface ITaskRawController extends TaskController {}
 
@@ -18,6 +19,7 @@ export default (controller: ITaskRawController): Router => {
   router.get('/:id', controller.getById)
 
   router.post('/', postTasksLimiter, validationMiddleware(TaskDTOSchema), controller.create)
+  router.patch('/move', patchTasksLimiter, validationMiddleware(TaskMoveDTOSchema), controller.move)
   router.patch(
     '/bulk',
     patchTasksLimiter,

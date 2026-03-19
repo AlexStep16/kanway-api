@@ -1,21 +1,13 @@
-import { ToolExecutorService } from '@application/ai/services/ToolExecutorService.ts'
-import { ContextExternalFetchService } from '@application/ai/services/ContextExternalFetchService.ts'
-import { BaseChatModel } from '@langchain/core/language_models/chat_models'
-import { VectorSearchService } from '@/application/services/VectorSearchService.ts'
-import { UserService } from '@/application/services/UserService.ts'
 import { AgentSkillService } from '@/application/services/AgentSkillService.ts'
+import { BaseChatModel } from '@langchain/core/language_models/chat_models'
+import { ToolDispatcherService } from '../../services/ToolDispatcherService.ts'
 
 export interface AgentDependencies {
   services: {
-    toolExecutorService: ToolExecutorService
-    contextExternalFetchService: ContextExternalFetchService
     agentSkillService: AgentSkillService
-    vectorSearchService: VectorSearchService
-    userService: UserService
+    toolDispatcherService: ToolDispatcherService
   }
   models: {
     agentModel: BaseChatModel
-    synthesizerModel: BaseChatModel
-    summarizerModel: BaseChatModel
   }
 }

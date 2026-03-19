@@ -7,7 +7,7 @@ export interface ICategoryRaw {
   board: Types.ObjectId
   user_id: Types.ObjectId
   tasks_count: number
-  order: number
+  rank: string
   embeddings: Array<number>
   is_deleted: boolean
   is_deleted_external: boolean

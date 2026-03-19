@@ -42,15 +42,15 @@ export const BoardSchema = new Schema<IBoardRaw>(
       required: true,
       select: false,
     },
-    order: {
-      type: Number,
-      default: 1,
+    rank: {
+      type: String,
+      required: true,
     },
     deleted_time: {
       type: Date,
     },
   },
-  { timestamps: true }
+  { timestamps: true },
 )
 
 const Board = model<IBoardRaw>('Board', BoardSchema)

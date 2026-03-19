@@ -8,9 +8,7 @@ import dayjs from 'dayjs'
 import utc from 'dayjs/plugin/utc.js'
 import timezone from 'dayjs/plugin/timezone.js'
 //import { initSubscriptions } from './initSubscriptions.ts'
-import { initializeTools } from './infrastructure/ai/initializeTools.ts'
 import * as Sentry from '@sentry/node'
-import { initializeAgentSkills } from '@infrastructure/ai/initializeAgentSkills.ts'
 import customParseFormat from 'dayjs/plugin/customParseFormat.js'
 import path from 'path'
 import cookieParser from 'cookie-parser'
@@ -71,5 +69,3 @@ startOpenAIProxy(8080)
 app.use(globalErrorHandler)
 
 //initSubscriptions() //mock
-initializeTools()
-initializeAgentSkills()

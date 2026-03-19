@@ -22,7 +22,6 @@ export const BoardDTOSchema = z.object({
           : ErrorMessages.WORKSPACE_ID_INVALID,
     })
     .regex(objectIdRegex, ErrorMessages.WORKSPACE_ID_INVALID),
-  order: z.number(ErrorMessages.BOARD_ORDER_TYPE_INVALID).optional(),
   isFavorite: z.boolean(ErrorMessages.BOARD_IS_FAVORITE_TYPE_INVALID).optional(),
 })
 

@@ -8,7 +8,6 @@ import { IWorkspaceCriteria } from '@criterias/IWorkspaceCriteria.ts'
 import { OperationLogService } from '@application/services/OperationLogService.ts'
 import { OperationTypesEnum } from '@domain/enums/OperationTypesEnum.ts'
 import { CollectionsEnum } from '@domain/enums/CollectionsEnum.ts'
-import { ReorderService } from '@application/services/ReorderService.ts'
 import { WorkspaceEditDTO } from '@dtos/WorkspaceEditDTO.ts'
 import { NotFoundError } from '@errors/NotFound.ts'
 import { BoardService } from '@application/services/BoardService.ts'
@@ -29,16 +28,10 @@ import { IWorkspaceCreatePayload } from '@interfaces/IWorkspaceCreatePayload.ts'
 import { SafeUpdateData } from '@/infrastructure/types/SafeUpdateData.ts'
 import { LimitService } from './LimitService.ts'
 import { OperationLogStatusesEnum } from '@/domain/enums/OperationLogStatusesEnum.ts'
+import { LexoRank } from 'lexorank'
+import { WorkspaceMoveDTO } from '../dtos/WorkspaceMoveDTO.ts'
 
 const MAX_RETRIES = 3
-
-type ReorderServiceType = ReorderService<
-  IWorkspace,
-  IWorkspaceRaw,
-  IWorkspaceCriteria,
-  IWorkspace,
-  IWorkspaceCreatePayload
->
 
 export class WorkspaceService extends BaseService<
   IWorkspaceRaw,
@@ -50,7 +43,6 @@ export class WorkspaceService extends BaseService<
   protected repository: WorkspaceRepository
   protected embeddingService: EmbeddingService
   protected operationLogService: OperationLogService
-  protected reorderService: ReorderServiceType
   protected boardService: BoardService
   protected categoryService: CategoryService
   protected taskService: TaskService
@@ -60,7 +52,6 @@ export class WorkspaceService extends BaseService<
     workspaceRepository: WorkspaceRepository,
     embeddingService: EmbeddingService,
     operationLogService: OperationLogService,
-    reorderService: ReorderServiceType,
     boardService: BoardService,
     categoryService: CategoryService,
     taskService: TaskService,
@@ -71,7 +62,6 @@ export class WorkspaceService extends BaseService<
     this.repository = workspaceRepository
     this.embeddingService = embeddingService
     this.operationLogService = operationLogService
-    this.reorderService = reorderService
     this.boardService = boardService
     this.categoryService = categoryService
     this.taskService = taskService
@@ -123,11 +113,6 @@ export class WorkspaceService extends BaseService<
     const newWorkspace = await this.repository.create(workspacePayload, session)
 
     const sideEffects: Promise<any>[] = []
-
-    /* REORDER */
-    if (data.order !== undefined) {
-      sideEffects.push(this.reorderService.reorder('userId', [newWorkspace], user.id, session))
-    }
 
     /* LOG */
     const logPromise = this.operationLogService.create(
@@ -207,17 +192,6 @@ export class WorkspaceService extends BaseService<
 
     const sideEffects: Promise<any>[] = []
 
-    /* REORDER */
-    const isReorderNeeded = data.some((ws) => ws.order !== undefined)
-
-    if (isReorderNeeded) {
-      const workspacesToReorder = newWorkspaces.filter((_, index) => {
-        return data[index].order !== undefined
-      })
-
-      sideEffects.push(this.reorderService.reorder('userId', workspacesToReorder, user.id, session))
-    }
-
     /* LOG */
     const logPromise = this.operationLogService.create(
       {
@@ -296,17 +270,6 @@ export class WorkspaceService extends BaseService<
 
     const sideEffects: Promise<any>[] = []
 
-    /* REORDER */
-    const workspacesToReorder = workspacesToUpdate.filter(
-      (b) => data.order !== undefined && b.order !== data.order,
-    )
-
-    if (workspacesToReorder.length > 0) {
-      sideEffects.push(
-        this.reorderService.reorder('userId', [...workspacesToReorder], userId, session),
-      )
-    }
-
     /* LOG */
     const logPromise = this.operationLogService.create(
       {
@@ -372,7 +335,6 @@ export class WorkspaceService extends BaseService<
 
     const workspacePayloads: SingleUpdateDTO<SafeUpdateData<IWorkspace>>[] = []
     const workspacesBefore: (Partial<IWorkspace> & { id: Types.ObjectId })[] = []
-    const reorderWorkspaceIds = new Set<string>()
 
     for (const dto of data) {
       const workspace = existingMap.get(dto.id)
@@ -388,10 +350,6 @@ export class WorkspaceService extends BaseService<
 
       workspacesBefore.push(workspaceBefore)
       workspacePayloads.push(workspacePayload)
-
-      if (dto.order !== undefined && workspace.order !== dto.order) {
-        reorderWorkspaceIds.add(dto.id)
-      }
     }
 
     if (isDryRun) {
@@ -443,15 +401,6 @@ export class WorkspaceService extends BaseService<
     )
 
     const sideEffects: Promise<any>[] = []
-
-    /** REORDER */
-    if (reorderWorkspaceIds.size > 0) {
-      const workspacesToReorder = updatedWorkspaces.filter((w) =>
-        reorderWorkspaceIds.has(w.id.toString()),
-      )
-
-      sideEffects.push(this.reorderService.reorder('userId', workspacesToReorder, userId, session))
-    }
 
     const projectedUpdatedWorkspaces = updatedWorkspaces.map(
       (w) =>
@@ -529,10 +478,6 @@ export class WorkspaceService extends BaseService<
       session,
     )
 
-    const uniqueWorkspaceIds = [...new Set(workspacesToDelete.map((t) => t.id.toString()))].map(
-      (id) => new Types.ObjectId(id),
-    )
-
     await this.repository.deleteMany(criteria, userId, session)
 
     const workspacesCriteria = { workspaceIds: workspacesToDelete.map((ws) => ws.id.toString()) }
@@ -541,8 +486,6 @@ export class WorkspaceService extends BaseService<
       this.taskService.deleteTasksByCriteria(workspacesCriteria, userId),
       this.categoryService.deleteCategoriesByCriteria(workspacesCriteria, userId),
       this.boardService.deleteBoardsByCriteria(workspacesCriteria, userId),
-
-      this.reorderService.reorderByParentIds(uniqueWorkspaceIds, 'userId', userId, session),
     ])
 
     return {
@@ -623,9 +566,6 @@ export class WorkspaceService extends BaseService<
 
     const sideEffects: Promise<any>[] = []
 
-    /* REORDER */
-    sideEffects.push(this.reorderService.reorderByParentIds([userId], 'userId', userId, session))
-
     const entitiesAfter = workspacesToProcess.map((workspace) => ({
       ...workspace,
       isDeleted: data.isDeleted,
@@ -704,6 +644,25 @@ export class WorkspaceService extends BaseService<
     }
   }
 
+  private async _getLastRank(userId: Types.ObjectId, session?: ClientSession): Promise<LexoRank> {
+    const lastWorkspaces = await this.repository.findByCriteria(
+      {},
+      session,
+      {
+        sort: { rank: -1 },
+        limit: 1,
+      },
+      userId,
+    )
+    const lastWorkspace = lastWorkspaces[0]
+
+    if (!lastWorkspace) {
+      return LexoRank.middle()
+    }
+
+    return LexoRank.parse(lastWorkspace.rank)
+  }
+
   private async _executeCloneTransaction(
     criteria: IWorkspaceCriteria,
     userId: Types.ObjectId,
@@ -720,13 +679,7 @@ export class WorkspaceService extends BaseService<
       userId,
     )
 
-    const lastOrderGroupped = await this.repository.getLastOrderGroupedByParents(
-      [userId],
-      'user_id',
-      userId,
-      session,
-    )
-    let lastOrder = lastOrderGroupped.length > 0 ? lastOrderGroupped[0].lastOrder : 0
+    let lastRank = await this._getLastRank(userId, session)
 
     if (workspacesToClone.length === 0)
       throw new NotFoundError('Пространства для клонирования не найдены.')
@@ -734,11 +687,15 @@ export class WorkspaceService extends BaseService<
     const transformedWorkspaces: Omit<IWorkspace, 'id'>[] = []
 
     for (const workspace of workspacesToClone) {
+      const newRank = lastRank.genNext()
+
       const cleanWorkspace = {
         ...workspace,
         id: undefined,
-        order: ++lastOrder,
+        rank: newRank.toString(),
       }
+
+      lastRank = newRank
 
       transformedWorkspaces.push(cleanWorkspace)
     }
@@ -767,14 +724,6 @@ export class WorkspaceService extends BaseService<
     )
 
     if (cloneBoardsResult.logId) dependencies.push(cloneBoardsResult.logId)
-
-    /* REORDER */
-    await this.reorderService.reorderByParentIds(
-      newWorkspaces.map((b) => b.userId),
-      'userId',
-      userId,
-      session,
-    )
 
     /* LOG */
     const log = await this.operationLogService.create(
@@ -807,6 +756,120 @@ export class WorkspaceService extends BaseService<
       return await this._retryExecutor((session: ClientSession) =>
         this._executeCloneTransaction(criteria, userId, session),
       )
+    }
+  }
+
+  public async move(
+    dto: WorkspaceMoveDTO,
+    user: IUser,
+    externalSession?: ClientSession,
+    isDryRun: boolean = false,
+  ): Promise<IResponseWithLog<IWorkspace[]>> {
+    if (externalSession) {
+      return this._executeMoveTransaction(dto, user, externalSession, isDryRun)
+    } else {
+      return await this._retryExecutor((session: ClientSession) =>
+        this._executeMoveTransaction(dto, user, session, isDryRun),
+      )
+    }
+  }
+
+  private async _executeMoveTransaction(
+    dto: WorkspaceMoveDTO,
+    user: IUser,
+    session: ClientSession,
+    isDryRun: boolean = false,
+  ): Promise<IResponseWithLog<IWorkspace[]>> {
+    const { beforeWorkspaceId, afterWorkspaceId, id } = dto
+
+    const criteria: IWorkspaceCriteria = {
+      ids: [id, beforeWorkspaceId, afterWorkspaceId].filter((id): id is string => !!id),
+    }
+
+    const updateData: SafeUpdateData<IWorkspace> = {}
+
+    const workspaces = await this.repository.findByCriteria(criteria, session, undefined, user.id)
+    const workspace = workspaces.find((t) => t.id.toString() === id)
+    const beforeWorkspace = workspaces.find((t) => t.id.toString() === beforeWorkspaceId)
+    const afterWorkspace = workspaces.find((t) => t.id.toString() === afterWorkspaceId)
+
+    if (!workspace) {
+      throw new NotFoundError('Рабочее пространство для перемещения не найдено.')
+    }
+    if (beforeWorkspaceId && !beforeWorkspace) {
+      throw new NotFoundError('Рабочее пространство перед указанным не найдено.')
+    }
+    if (afterWorkspaceId && !afterWorkspace) {
+      throw new NotFoundError('Рабочее пространство после указанного не найдено.')
+    }
+
+    let newRank = LexoRank.middle()
+
+    if (beforeWorkspace && afterWorkspace) {
+      const beforeRank = LexoRank.parse(beforeWorkspace.rank)
+      const afterRank = LexoRank.parse(afterWorkspace.rank)
+
+      newRank = beforeRank.between(afterRank)
+    } else if (beforeWorkspace) {
+      const beforeRank = LexoRank.parse(beforeWorkspace.rank)
+
+      newRank = beforeRank.genPrev()
+    } else if (afterWorkspace) {
+      const afterRank = LexoRank.parse(afterWorkspace.rank)
+
+      newRank = afterRank.genNext()
+    } else {
+      newRank = LexoRank.middle()
+    }
+
+    updateData.rank = newRank.toString()
+
+    const workspacesBefore = projectProperties<IWorkspace>([workspace], updateData)
+    const workspacesAfter = workspacesBefore.map((w) => ({
+      ...w,
+      ...updateData,
+    }))
+
+    if (isDryRun) {
+      const log = await this.operationLogService.create(
+        {
+          operationType: OperationTypesEnum.UPDATE,
+          collectionName: CollectionsEnum.WORKSPACES,
+          entitiesBefore: workspacesBefore,
+          entitiesAfter: workspacesAfter,
+          dependencies: [],
+          status: OperationLogStatusesEnum.PENDING,
+        },
+        user.id,
+        session,
+      )
+
+      return {
+        data: [],
+        logId: log.id,
+      }
+    }
+
+    await this.repository.updateManyByCriteria({ id }, updateData, session, user.id)
+
+    const log = await this.operationLogService.create(
+      {
+        operationType: OperationTypesEnum.UPDATE,
+        collectionName: CollectionsEnum.WORKSPACES,
+        entitiesBefore: workspacesBefore,
+        entitiesAfter: workspacesAfter,
+        dependencies: [],
+        status: OperationLogStatusesEnum.SUCCESS,
+      },
+      user.id,
+      session,
+    )
+
+    const updatedWorkspaces = await this.getByCriteria({ id }, user.id, session)
+
+    return {
+      data: updatedWorkspaces,
+      logId: log.id,
     }
   }
 
@@ -867,9 +930,11 @@ export class WorkspaceService extends BaseService<
 
     const embeddings = await this.embeddingService.getEmbeddings(workspaceName)
 
+    const lastRank = await this._getLastRank(userId, session)
+
     const workspacePayload: IWorkspaceCreatePayload = {
       name: workspaceName,
-      order: data.order || 1,
+      rank: lastRank.toString(),
       color: data.color,
       colorName: '',
       embeddings,
@@ -878,16 +943,6 @@ export class WorkspaceService extends BaseService<
 
     if (data.color && BASE_COLORS_MAP[data.color]) {
       workspacePayload.colorName = BASE_COLORS_MAP[data.color]
-    }
-
-    if (data.order === undefined) {
-      const lastOrderGroupped = await this.repository.getLastOrderGroupedByParents(
-        [userId],
-        'user_id',
-        userId,
-        session,
-      )
-      workspacePayload.order = lastOrderGroupped.length > 0 ? lastOrderGroupped[0].lastOrder + 1 : 1
     }
 
     return workspacePayload
@@ -899,14 +954,7 @@ export class WorkspaceService extends BaseService<
     session?: ClientSession,
     isDryRun: boolean = false,
   ): Promise<IWorkspaceCreatePayload[]> {
-    const lastOrderGroupped = await this.repository.getLastOrderGroupedByParents(
-      [userId],
-      'user_id',
-      userId,
-      session,
-    )
-    const lastOrder = lastOrderGroupped.length > 0 ? lastOrderGroupped[0].lastOrder : 0
-    let newOrder = lastOrder + 1
+    let lastRank = await this._getLastRank(userId, session)
 
     const embeddingsMap: { [key: string]: number[] } = {}
 
@@ -920,23 +968,22 @@ export class WorkspaceService extends BaseService<
     }
 
     const workspacePayloads: IWorkspaceCreatePayload[] = data.map((dto) => {
+      const newRank = lastRank.genNext()
+
       const payload = {
         id: dto.id,
         name: dto.name.trim(),
-        order: dto.order || 1,
+        rank: newRank.toString(),
         color: dto.color,
         colorName: '',
         embeddings: embeddingsMap[dto.name.trim()],
         userId,
       }
 
+      lastRank = newRank
+
       if (dto.color && BASE_COLORS_MAP[dto.color]) {
         payload.colorName = BASE_COLORS_MAP[dto.color]
-      }
-
-      if (dto.order === undefined) {
-        payload.order = newOrder
-        newOrder += 1
       }
 
       return payload

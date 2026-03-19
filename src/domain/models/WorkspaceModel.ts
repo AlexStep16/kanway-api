@@ -38,9 +38,9 @@ export const WorkspaceSchema = new Schema<IWorkspaceRaw>(
       required: true,
       select: false,
     },
-    order: {
-      type: Number,
-      default: 1,
+    rank: {
+      type: String,
+      required: true,
     },
     deleted_time: {
       type: Date,
@@ -55,7 +55,7 @@ export const WorkspaceSchema = new Schema<IWorkspaceRaw>(
       default: 'Blue',
     },
   },
-  { timestamps: true }
+  { timestamps: true },
 )
 
 const Workspace = model<IWorkspaceRaw>('Workspace', WorkspaceSchema)

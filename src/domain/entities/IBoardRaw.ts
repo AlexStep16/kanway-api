@@ -8,7 +8,7 @@ export interface IBoardRaw {
   is_favorite: boolean
   tasks_count: number
   categories_count: number
-  order: number
+  rank: string
   embeddings: Array<number>
   is_deleted: boolean
   is_deleted_external: boolean

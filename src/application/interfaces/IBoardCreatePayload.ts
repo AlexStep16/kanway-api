@@ -6,7 +6,7 @@ export interface IBoardCreatePayload {
   workspace: Types.ObjectId
   userId: Types.ObjectId
   embeddings: Array<number>
-  order: number
+  rank: string
   isFavorite?: boolean
   isDeleted?: boolean
   isDeletedExternal?: boolean

@@ -5,7 +5,7 @@ export interface ICategoryRawString {
   board: string
   user_id: string
   tasks_count: number
-  order: number
+  rank: string
   embeddings: Array<number>
   is_deleted: boolean
   is_deleted_external: boolean

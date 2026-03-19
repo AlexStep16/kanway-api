@@ -8,6 +8,7 @@ export interface IControllerService<
   TCreateDTO,
   TEditDTO,
   TResult = Record<string, any>,
+  TMoveDTO = Record<string, any>,
 > {
   getCount(criteria: TCriteria, userId: Types.ObjectId, session?: ClientSession): Promise<number>
   getByCriteria(
@@ -37,4 +38,5 @@ export interface IControllerService<
   archive(criteria: TCriteria, user: IUser, externalSession?: ClientSession): Promise<any>
   recover(criteria: TCriteria, user: IUser, externalSession?: ClientSession): Promise<any>
   clone(criteria: TCriteria, user: IUser, externalSession?: ClientSession): Promise<any>
+  move(data: TMoveDTO, user: IUser, externalSession?: ClientSession): Promise<any>
 }
