@@ -302,7 +302,6 @@ export abstract class BaseRepository<
         $match: {
           [parentField]: { $in: parentIds },
           user_id: userId,
-          is_deleted: false,
         },
       },
       {

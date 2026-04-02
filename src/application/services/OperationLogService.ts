@@ -6,7 +6,6 @@ import { IOperationLogRaw } from '@entities/IOperationLogRaw.ts'
 import { ErrorMessages } from '@/enums/ErrorMessages.ts'
 import { IUser } from '@/domain/entities/IUser.ts'
 import { IRevertableService } from '@traits/IRevertableService.ts'
-import { IUndoResponse } from '../interfaces/IUndoResponse.ts'
 import { IOperationLogCriteria } from '../interfaces/criterias/IOperationLogCriteria.ts'
 import { AppError } from '@/domain/errors/AppError.ts'
 import { BaseService } from './BaseService.ts'
@@ -15,6 +14,7 @@ import { toMongoCaseKeys } from '@/utils/objectTransformers.ts'
 import { CategoryService } from './CategoryService.ts'
 import { BoardService } from './BoardService.ts'
 import { WorkspaceService } from './WorkspaceService.ts'
+import { IResponseWithLog } from '../interfaces/IResponseWithLog.ts'
 
 const MAX_RETRIES = 3
 
@@ -109,10 +109,11 @@ export class OperationLogService extends BaseService<
     log: IOperationLog,
     user: IUser,
     session: ClientSession,
-  ): Promise<IUndoResponse[]> {
+    isDryRun: boolean = false,
+  ): Promise<IResponseWithLog<any>[]> {
     const service = this.revertAdapters.get(log.collectionName)
     const dependencies: IOperationLog[] = []
-    const results: IUndoResponse[] = []
+    const results: IResponseWithLog<any>[] = []
 
     if (log.dependencies && log.dependencies.length > 0) {
       const depLogs = await this.repository.findByCriteria(
@@ -129,11 +130,11 @@ export class OperationLogService extends BaseService<
       throw new AppError(`Нет адаптера для сущности: ${log.collectionName}`, 400)
     }
 
-    results.push(await service.revert(log, user, session))
+    results.push(await service.revert(log, user, session, isDryRun))
 
     if (dependencies.length > 0) {
       for (const depLog of dependencies) {
-        const depResult = await this._recursiveRevert(depLog, user, session)
+        const depResult = await this._recursiveRevert(depLog, user, session, isDryRun)
 
         results.push(...depResult)
       }
@@ -146,72 +147,35 @@ export class OperationLogService extends BaseService<
     logIds: string[],
     user: IUser,
     session: ClientSession,
-  ): Promise<IUndoResponse> {
+    isDryRun: boolean = false,
+  ): Promise<IResponseWithLog<any>[]> {
     const logs = await this.repository.findByCriteria({ ids: logIds }, session, undefined, user.id)
-    const results: IUndoResponse[] = []
+    const results: IResponseWithLog<any>[] = []
 
     if (!logs) {
       throw new AppError(ErrorMessages.OPERATION_LOGS_NOT_FOUND, 404)
     }
 
     for (const log of logs) {
-      const result = await this._recursiveRevert(log, user, session)
+      const result = await this._recursiveRevert(log, user, session, isDryRun)
 
       results.push(...result)
     }
 
-    return this.combineUndoResult(results)
-  }
-
-  public combineUndoResult(result: IUndoResponse[]): IUndoResponse {
-    const combinedResult: {
-      affectedWorkspaceIds: string[]
-      affectedBoardIds: string[]
-      affectedCategoryIds: string[]
-      affectedTaskIds: string[]
-    } = {
-      affectedWorkspaceIds: [],
-      affectedBoardIds: [],
-      affectedCategoryIds: [],
-      affectedTaskIds: [],
-    }
-
-    for (const res of result) {
-      if (res.affectedWorkspaceIds) {
-        combinedResult.affectedWorkspaceIds.push(...res.affectedWorkspaceIds)
-      }
-
-      if (res.affectedBoardIds) {
-        combinedResult.affectedBoardIds.push(...res.affectedBoardIds)
-      }
-
-      if (res.affectedCategoryIds) {
-        combinedResult.affectedCategoryIds.push(...res.affectedCategoryIds)
-      }
-
-      if (res.affectedTaskIds) {
-        combinedResult.affectedTaskIds.push(...res.affectedTaskIds)
-      }
-    }
-
-    combinedResult.affectedWorkspaceIds = [...new Set(combinedResult.affectedWorkspaceIds)]
-    combinedResult.affectedBoardIds = [...new Set(combinedResult.affectedBoardIds)]
-    combinedResult.affectedCategoryIds = [...new Set(combinedResult.affectedCategoryIds)]
-    combinedResult.affectedTaskIds = [...new Set(combinedResult.affectedTaskIds)]
-
-    return combinedResult
+    return results
   }
 
   public async undoOperations(
     logIds: string[],
     user: IUser,
     externalSession: ClientSession | null = null,
-  ): Promise<IUndoResponse> {
+    isDryRun: boolean = false,
+  ): Promise<IResponseWithLog<any>[]> {
     if (externalSession) {
-      return this._executeUndoOperations(logIds, user, externalSession)
+      return this._executeUndoOperations(logIds, user, externalSession, isDryRun)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeUndoOperations(logIds, user, session),
+        this._executeUndoOperations(logIds, user, session, isDryRun),
       )
     }
   }

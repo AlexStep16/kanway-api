@@ -2,7 +2,6 @@ import { RunnableConfig } from '@langchain/core/runnables'
 import { AgentDependencies } from '@/application/ai/agent/types/AgentDependencies.ts'
 import { AgentStateAnnotation } from '@/application/ai/agent/AgentStateAnnotation.ts'
 import { ChatPromptTemplate } from '@langchain/core/prompts'
-import { getLastMessages } from '../../helpers/getLastMessages.ts'
 import { Configurable } from '@/application/ai/interfaces/Configurable.ts'
 import { dispatchCustomEvent } from '@langchain/core/callbacks/dispatch'
 import { CustomEvents } from '@/enums/CustomEventsNew.ts'
@@ -21,19 +20,9 @@ export const makeResponderNode = (deps: AgentDependencies) => {
 
     const configurable = config.configurable as Configurable
 
-    const history = getLastMessages(state.messages)
-    const executionOutputs: SystemMessage[] = []
-
-    if (state.execution_output) {
-      executionOutputs.push(
-        new SystemMessage(`Code execution result (print): ${state.execution_output}`),
-      )
-    }
-
     const prompt = ChatPromptTemplate.fromMessages([
       ['system', ResponderPrompt],
-      ...history,
-      ...executionOutputs,
+      new SystemMessage(state.final_response),
     ])
 
     const chain = prompt.pipe(agentModel)

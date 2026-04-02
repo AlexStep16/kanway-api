@@ -32,7 +32,7 @@ export const makeSkillerNode = (deps: AgentDependencies) => {
 
     const prompt = ChatPromptTemplate.fromMessages([
       ['system', SkillerPrompt],
-      new SystemMessage(state.enriched_message),
+      new SystemMessage(state.current_plan[state.current_step_index || 0]),
       ...getLastMessages(state.skiller_messages, 50),
     ])
 

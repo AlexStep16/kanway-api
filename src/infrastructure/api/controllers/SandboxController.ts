@@ -34,69 +34,44 @@ export default class SandboxController {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           code: `
-board_id = "69b9757502918145c4e83247"
+mongo_filter_archived = {"$or": [{"is_deleted": True}, {"is_deleted_external": True}]}
 
-# Поиск категории "спорт"
-sport_candidates = search_categories(
-    search_query="спорт",
-    mongo_filter={"board": board_id}
-)
+targets = [
+    {"title": "Вытереть пыль по комнатам", "resolved_id": None},
+    {"title": "Кухня: плита, раковина, столешницы", "resolved_id": None}
+]
 
-if not sport_candidates:
-    print("Категория «спорт» не найдена на доске.")
-else:
-    # Получаем ID категории, учитывая возможный тип элемента
-    if len(sport_candidates) == 1:
-        candidate = sport_candidates[0]
-        sport_id = candidate["_id"] if isinstance(candidate, dict) else candidate
-    else:
-        sport_ids = [
-            c["_id"] if isinstance(c, dict) else c
-            for c in sport_candidates
-        ]
-        resolved = resolve_ambiguous(
-            entity_type="category",
-            ids=sport_ids,
+for idx, item in enumerate(targets):
+    # Search archived tasks by exact title using fuzzy search
+    res = search_tasks(mongo_filter=mongo_filter_archived, search_query=item["title"], search_mode="fuzzy", limit=20)
+    tasks = res.get("tasks", []) if isinstance(res, dict) else []
+    # Filter exact name match if possible to reduce ambiguity
+    exact_matches = [t for t in tasks if isinstance(t, dict) and t.get("name") == item["title"]]
+    candidates = exact_matches if exact_matches else tasks
+
+    if len(candidates) == 0:
+        print(f"Не найдено архивных задач с названием: {item['title']}")
+        continue
+    if len(candidates) > 1:
+        # resolve ambiguity for this specific title
+        selected_ids = resolve_ambiguous(
+            entity_type="task",
+            ids=[t.get("_id") for t in candidates if t.get("_id")],
             min_select=1,
             max_select=1,
-            id="move_category_sport"
+            id=f"ambig_{idx}"
         )
-        sport_id = resolved[0]
-
-    # Поиск категории "бэклог"
-    backlog_candidates = search_categories(
-        search_query="бэклог",
-        mongo_filter={"board": board_id}
-    )
-
-    if not backlog_candidates:
-        print("Категория «бэклог» не найдена на доске.")
+        if selected_ids and len(selected_ids) > 0:
+            item["resolved_id"] = selected_ids[0]
     else:
-        if len(backlog_candidates) == 1:
-            candidate = backlog_candidates[0]
-            backlog_id = candidate["_id"] if isinstance(candidate, dict) else candidate
-        else:
-            backlog_ids = [
-                c["_id"] if isinstance(c, dict) else c
-                for c in backlog_candidates
-            ]
-            resolved = resolve_ambiguous(
-                entity_type="category",
-                ids=backlog_ids,
-                min_select=1,
-                max_select=1,
-                id="move_category_backlog"
-            )
-            backlog_id = resolved[0]
+        item["resolved_id"] = candidates[0].get("_id")
 
-        # Перемещение категории "спорт" перед "бэклог"
-        moved_category = move_category(
-            id=sport_id,
-            before_category_id=backlog_id,
-            after_category_id=None,
-            new_board_id=None
-        )
-        print("Категория перемещена:", moved_category)`,
+recover_ids = [item["resolved_id"] for item in targets if item["resolved_id"]]
+if recover_ids:
+    recover_tasks(ids=recover_ids)
+    print(f"Восстановлено задач: {len(recover_ids)}")
+else:
+    print("Нет задач для восстановления.")`,
           config: {},
           user_id: '67da84f0a2e3729760781559',
         }),

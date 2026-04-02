@@ -4,8 +4,6 @@ export interface IBoardRawString {
   workspace: string
   user_id: string
   is_favorite: boolean
-  tasks_count: number
-  categories_count: number
   rank: string
   embeddings: Array<number>
   is_deleted: boolean

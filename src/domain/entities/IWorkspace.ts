@@ -6,9 +6,6 @@ export interface IWorkspace {
   name: string
   userId: Types.ObjectId
   isFavorite: boolean
-  tasksCount: number
-  categoriesCount: number
-  boardsCount: number
   rank: string
   color: (typeof BASE_COLORS)[number]
   colorName: string

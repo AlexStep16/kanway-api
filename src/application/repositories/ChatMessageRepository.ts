@@ -54,6 +54,14 @@ export default class ChatMessageRepository extends BaseRepository<
       filter.pending_tool_call_id = { $in: criteria.pendingToolCallIds }
     }
 
+    if (criteria.createdAt) {
+      filter.created_at = criteria.createdAt
+    }
+
+    if (criteria.updatedAt) {
+      filter.updated_at = criteria.updatedAt
+    }
+
     return filter
   }
 }

@@ -40,7 +40,8 @@ export const CategoriesCreateSkill: AgentSkill = {
 
 export const CategoriesUpdateSkill: AgentSkill = {
   name: 'CategoriesUpdate',
-  description: 'Skill for updating categories. Use this skill to modify existing categories.',
+  description:
+    'Skill for updating categories. Use this skill to modify existing categories. Also for moving categories between boards.',
   content: `
     ### SKILL: CategoriesUpdate
 
@@ -66,7 +67,7 @@ export const CategoriesUpdateSkill: AgentSkill = {
 export const CategoryMoveSkill: AgentSkill = {
   name: 'CategoryMove',
   description:
-    'Skill for moving category. Use this skill to change the position of existing category.',
+    'Skill for moving category. Use this skill to change the position of existing category. Not for moving multiple categories between boards.',
   content: `
     ### SKILL: CategoryMove
 
@@ -83,4 +84,77 @@ export const CategoryMoveSkill: AgentSkill = {
   `,
   relatedTools: ['move_category', 'search_categories', 'search_boards', 'resolve_ambiguous'],
   relatedEntities: ['category', 'board'],
+}
+
+export const CategoriesDeleteSkill: AgentSkill = {
+  name: 'CategoriesDelete',
+  description: 'Skill for deleting categories. Use this skill to remove existing categories.',
+  content: `
+    ### SKILL: CategoriesDelete
+
+    This skill allows you to delete existing categories. You must resolve Category name to ID before deleting.
+    If the user says "Delete category A", then find the category by its name and use its ID to delete it.
+
+    #### USAGE STRATEGY & RULES:
+    1. **Find Context First:** You CANNOT delete a category using names like "Delete the category in the Work board". You MUST first call 'search_categories()' to resolve the exact 'category_id'.
+    2. **Handle Ambiguity:** If your search for a category returns multiple matches, you MUST call 'resolve_ambiguous' to let the user pick the correct ID before calling 'delete_categories'.
+    3. **Batch Deletion:** If the user asks to delete multiple categories (e.g., "Delete categories A, B, and C"), pass all of their IDs in a single list to 'delete_categories'. DO NOT call 'delete_categories' inside a loop.
+  `,
+  relatedTools: ['delete_categories', 'search_categories', 'resolve_ambiguous'],
+  relatedEntities: ['category'],
+}
+
+export const CategoriesArchiveSkill: AgentSkill = {
+  name: 'CategoriesArchive',
+  description: 'Skill for archiving categories. Use this skill to archive existing categories.',
+  content: `
+    ### SKILL: CategoriesArchive
+
+    This skill allows you to archive existing categories. You must resolve Category name to ID before archiving.
+    If the user says "Archive category A", then find the category by its name and use its ID to archive it.
+
+    #### USAGE STRATEGY & RULES:
+    1. **Find Context First:** You CANNOT archive a category using names like "Archive the category in the Work board". You MUST first call 'search_categories()' to resolve the exact 'category_id'.
+    2. **Handle Ambiguity:** If your search for a category returns multiple matches, you MUST call 'resolve_ambiguous' to let the user pick the correct ID before calling 'archive_categories'.
+    3. **Batch Archiving:** If the user asks to archive multiple categories (e.g., "Archive categories A, B, and C"), pass all of their IDs in a single list to 'archive_categories'. DO NOT call 'archive_categories' inside a loop.
+  `,
+  relatedTools: ['archive_categories', 'search_categories', 'resolve_ambiguous'],
+  relatedEntities: ['category'],
+}
+
+export const CategoriesRecoverSkill: AgentSkill = {
+  name: 'CategoriesRecover',
+  description: 'Skill for recovering categories. Use this skill to recover deleted categories.',
+  content: `
+    ### SKILL: CategoriesRecover
+
+    This skill allows you to recover deleted categories. You must resolve Category name to ID before recovering.
+    If the user says "Recover category A", then find the category by its name and use its ID to recover it.
+
+    #### USAGE STRATEGY & RULES:
+    1. **Find Context First:** You CANNOT recover a category using names like "Recover the category in the Work board". You MUST first call 'search_categories()' to resolve the exact 'category_id'.
+    2. **Search params:** You MUST use the 'isDeleted' parameter set to true when searching for categories to recover, otherwise you won't find any results.
+    3. **Handle Ambiguity:** If your search for a category returns multiple matches, you MUST call 'resolve_ambiguous' to let the user pick the correct ID before calling 'recover_categories'.
+    4. **Batch Recovery:** If the user asks to recover multiple categories (e.g., "Recover categories A, B, and C"), pass all of their IDs in a single list to 'recover_categories'. DO NOT call 'recover_categories' inside a loop.
+  `,
+  relatedTools: ['recover_categories', 'search_categories', 'resolve_ambiguous'],
+  relatedEntities: ['category'],
+}
+
+export const CategoriesCloneSkill: AgentSkill = {
+  name: 'CategoriesClone',
+  description: 'Skill for cloning categories. Use this skill to clone existing categories.',
+  content: `
+    ### SKILL: CategoriesClone
+
+    This skill allows you to clone existing categories. You must resolve Category name to ID before cloning.
+    If the user says "Clone category A", then find the category by its name and use its ID to clone it.
+
+    #### USAGE STRATEGY & RULES:
+    1. **Find Context First:** You CANNOT clone a category using names like "Clone the category in the Work board". You MUST first call 'search_categories()' to resolve the exact 'category_id'.
+    2. **Handle Ambiguity:** If your search for a category returns multiple matches, you MUST call 'resolve_ambiguous' to let the user pick the correct ID before calling 'clone_categories'.
+    3. **Batch Cloning:** If the user asks to clone multiple categories (e.g., "Clone categories A, B, and C"), pass all of their IDs in a single list to 'clone_categories'. DO NOT call 'clone_categories' inside a loop.
+  `,
+  relatedTools: ['clone_categories', 'search_categories', 'resolve_ambiguous'],
+  relatedEntities: ['category'],
 }

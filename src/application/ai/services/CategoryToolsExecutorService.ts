@@ -27,6 +27,8 @@ import { AbstractToolExecutor } from './AbstractToolExecutor.ts'
 import { MoveCategoryDTO, MoveCategoryDTOSchema } from '../dtos/MoveCategoryDTO.ts'
 import { CategoryMoveDTO } from '@/application/dtos/CategoryMoveDTO.ts'
 import { DispatchPayload } from './ToolDispatcherService.ts'
+import { VectorSearchService } from '@/application/services/VectorSearchService.ts'
+import { findProperty } from '@/utils/findProperty.ts'
 
 type ICategoryCreatePopulated = Partial<
   Omit<ICategoryPopulated, 'id' | 'createdAt' | 'updatedAt'>
@@ -41,6 +43,7 @@ export class CategoryToolsExecutorService extends AbstractToolExecutor {
     private boardService: BoardService,
     private operationLogService: OperationLogService,
     private chatMessageService: ChatMessageService,
+    private vectorSearchService: VectorSearchService,
   ) {
     super()
 
@@ -49,6 +52,10 @@ export class CategoryToolsExecutorService extends AbstractToolExecutor {
       create_categories: this.createCategories.bind(this),
       update_categories: this.updateCategories.bind(this),
       move_category: this.moveCategory.bind(this),
+      delete_categories: this.deleteCategories.bind(this),
+      archive_categories: this.archiveCategories.bind(this),
+      recover_categories: this.recoverCategories.bind(this),
+      clone_categories: this.cloneCategories.bind(this),
     }
   }
 
@@ -60,17 +67,24 @@ export class CategoryToolsExecutorService extends AbstractToolExecutor {
     const args = toolCall.args as {
       mongo_filter?: FilterQuery<ICategoryRawString>
       search_query?: string
+      search_mode?: 'fuzzy' | 'semantic'
       limit?: number
     }
 
-    const { mongo_filter = {}, search_query = '', limit = 50 } = args
+    const { mongo_filter = {}, search_query = '', search_mode = 'fuzzy', limit = 50 } = args
 
     const scaledLimit = search_query ? HARD_SEARCH_LIMIT : limit
 
-    const baseFilter: FilterQuery<ICategoryRawString> = {
-      is_deleted: { $ne: true },
-      is_deleted_external: { $ne: true },
-    }
+    const isMongoFilterHasDeletedCondition =
+      findProperty(mongo_filter, 'is_deleted') !== undefined ||
+      findProperty(mongo_filter, 'is_deleted_external') !== undefined
+
+    const baseFilter: FilterQuery<ICategoryRawString> = isMongoFilterHasDeletedCondition
+      ? {}
+      : {
+          is_deleted: { $ne: true },
+          is_deleted_external: { $ne: true },
+        }
 
     const unionFilter = { ...baseFilter, ...mongo_filter, user_id: new Types.ObjectId(userId) }
 
@@ -94,23 +108,44 @@ export class CategoryToolsExecutorService extends AbstractToolExecutor {
         }
       }
 
-      const fuse = new Fuse(categories, {
-        keys: ['name'],
-        threshold: 0.3,
-        includeScore: true,
-      })
+      let pagedResults: ICategoryRawString[] = []
+      let searchedCount = 0
 
-      const searchResults = fuse.search(search_query)
+      if (search_mode === 'fuzzy') {
+        const fuse = new Fuse(categories, {
+          keys: ['name'],
+          threshold: 0.3,
+          includeScore: true,
+        })
 
-      const pagedResults = searchResults
-        .sort((a, b) => (a.score || 0) - (b.score || 0))
-        .slice(0, scaledLimit)
-        .map((result) => result.item)
+        const searchResults = fuse.search(search_query)
+
+        pagedResults = searchResults
+          .sort((a, b) => (a.score || 0) - (b.score || 0))
+          .slice(0, scaledLimit)
+          .map((result) => result.item)
+        searchedCount = searchResults.length
+      } else if (search_mode === 'semantic') {
+        const filteredIds = categories.map((category) => new Types.ObjectId(category._id))
+
+        const semanticCategories = await this.vectorSearchService.similaritySearchCategories(
+          [search_query],
+          new Types.ObjectId(userId),
+          20,
+          filteredIds,
+        )
+        const semanticCategoryIds = semanticCategories.map((category) => category.id.toString())
+
+        pagedResults = categories.filter((category) =>
+          semanticCategoryIds.includes(category._id.toString()),
+        )
+        searchedCount = semanticCategories.length
+      }
 
       return {
         categories: pagedResults,
-        count: searchResults.length,
-        hasMore: searchResults.length > scaledLimit,
+        count: searchedCount,
+        hasMore: searchedCount > scaledLimit,
       }
     }
 
@@ -297,7 +332,10 @@ export class CategoryToolsExecutorService extends AbstractToolExecutor {
       name: category.name,
     }))
 
-    const resultMessage = `Successfully created ${createdCategories.data.length} categories: ${JSON.stringify(resultInfo)}`
+    const resultMessage = `
+      Successfully created ${createdCategories.data.length} categories: ${JSON.stringify(resultInfo)}
+      Log ID: ${createdCategories.logId}
+    `
 
     return new SuccessToolResult(resultMessage, {
       tempToRealIdMap: tempToRealIdMapNew,
@@ -391,7 +429,10 @@ export class CategoryToolsExecutorService extends AbstractToolExecutor {
 
     const resultInfo = logs[0].entitiesAfter
 
-    const resultMessage = `Successfully updated ${updatedCategories.data.length} categories: ${JSON.stringify(resultInfo)}`
+    const resultMessage = `
+      Successfully updated ${updatedCategories.data.length} categories: ${JSON.stringify(resultInfo)}
+      Log ID: ${updatedCategories.logId}
+    `
 
     return new SuccessToolResult(resultMessage)
   }
@@ -483,8 +524,419 @@ export class CategoryToolsExecutorService extends AbstractToolExecutor {
 
     const resultInfo = logs[0].entitiesAfter
 
-    const resultMessage = `Successfully moved ${result.data.length} categories: ${JSON.stringify(resultInfo)}`
+    const resultMessage = `
+      Successfully moved ${result.data.length} categories: ${JSON.stringify(resultInfo)}
+      Log ID: ${result.logId}
+    `
 
     return new SuccessToolResult(resultMessage)
+  }
+
+  public async deleteCategories(payload: DispatchPayload) {
+    const { toolCall, config, tempToRealIdMap } = payload
+
+    const args = toolCall.args as { ids: string[] }
+    const toolCallId = toolCall.id
+
+    const configurable = config.configurable as Configurable
+    const user = configurable.user
+
+    if (!args.ids || !Array.isArray(args.ids) || args.ids.some((id) => typeof id !== 'string')) {
+      return new FailedToolResult(
+        'Validation Error: Invalid arguments. Please provide an object with an ids property which is array of string IDs.',
+      )
+    }
+
+    const mappedIds = args.ids.map((id) => tempToRealIdMap[id] || id) // Map temp IDs to real IDs using the provided map, fallback to original ID if not found in the map
+
+    if (configurable.aiConfirmationType === AiConfirmationTypeEnum.ALWAYS) {
+      const messages = await this.chatMessageService.getByCriteria(
+        { pendingToolCallId: toolCallId, role: 'operation' },
+        user.id,
+      )
+
+      if (messages.length > 0) {
+        const logs = await this.operationLogService.getByCriteria(
+          { id: messages[0].content },
+          user.id,
+        )
+
+        const log = logs[0]
+
+        if (log.status === OperationLogStatusesEnum.CANCELLED) {
+          return new SuccessToolResult('Category move cancelled by user.')
+        } else if (log.status === OperationLogStatusesEnum.APPROVED) {
+          const selectedIds = log.selectedIds || []
+
+          args.ids = args.ids.filter((id) => selectedIds.includes(id))
+        }
+      } else {
+        const mockDeleteCategory = await this.categoryService.delete(
+          {
+            ids: mappedIds,
+          },
+          user,
+          undefined,
+          true,
+        )
+
+        if (mockDeleteCategory.logId) {
+          return new ConfirmationEntityToolResult({
+            toolCallId: toolCallId,
+            logId: mockDeleteCategory.logId.toString(),
+          })
+        } else return new FailedToolResult('Failed to create operation log for category delete.')
+      }
+    }
+
+    await dispatchCustomEvent(
+      CustomEvents.STEP_ADD,
+      {
+        id: new Types.ObjectId().toString(),
+        name: 'Удаляю категории',
+      },
+      config,
+    )
+
+    const result = await this.categoryService.delete(
+      {
+        ids: mappedIds,
+      },
+      user,
+    )
+
+    const logs = await this.operationLogService.getByCriteria(
+      { id: result.logId!.toString() },
+      user.id,
+    )
+
+    await dispatchCustomEvent(
+      CustomEvents.OPERATION,
+      {
+        logId: logs[0].id,
+        toolCallId: toolCallId,
+      },
+      config,
+    )
+
+    const resultInfo = (logs[0].entitiesBefore || []).map((category) => ({
+      id: category.id,
+      name: category.name,
+    }))
+
+    const resultMessage = `
+      Successfully deleted ${resultInfo.length} categories: ${JSON.stringify(resultInfo)}
+      Log ID: ${result.logId}
+    `
+
+    return new SuccessToolResult(resultMessage)
+  }
+
+  public async archiveCategories(payload: DispatchPayload) {
+    const { toolCall, config, tempToRealIdMap } = payload
+
+    const args = toolCall.args as { ids: string[] }
+    const toolCallId = toolCall.id
+
+    const configurable = config.configurable as Configurable
+    const user = configurable.user
+
+    if (!args.ids || !Array.isArray(args.ids) || args.ids.some((id) => typeof id !== 'string')) {
+      return new FailedToolResult(
+        'Validation Error: Invalid arguments. Please provide an object with an ids property which is array of string IDs.',
+      )
+    }
+
+    const mappedIds = args.ids.map((id) => tempToRealIdMap[id] || id) // Map temp IDs to real IDs using the provided map, fallback to original ID if not found in the map
+
+    if (configurable.aiConfirmationType === AiConfirmationTypeEnum.ALWAYS) {
+      const messages = await this.chatMessageService.getByCriteria(
+        { pendingToolCallId: toolCallId, role: 'operation' },
+        user.id,
+      )
+
+      if (messages.length > 0) {
+        const logs = await this.operationLogService.getByCriteria(
+          { id: messages[0].content },
+          user.id,
+        )
+
+        const log = logs[0]
+
+        if (log.status === OperationLogStatusesEnum.CANCELLED) {
+          return new SuccessToolResult('Categories archive cancelled by user.')
+        } else if (log.status === OperationLogStatusesEnum.APPROVED) {
+          const selectedIds = log.selectedIds || []
+
+          args.ids = args.ids.filter((id) => selectedIds.includes(id))
+        }
+      } else {
+        const mockArchiveCategory = await this.categoryService.archive(
+          {
+            ids: mappedIds,
+          },
+          user,
+          undefined,
+          true,
+        )
+
+        if (mockArchiveCategory.logId) {
+          return new ConfirmationEntityToolResult({
+            toolCallId: toolCallId,
+            logId: mockArchiveCategory.logId.toString(),
+          })
+        } else return new FailedToolResult('Failed to create operation log for category archive.')
+      }
+    }
+
+    await dispatchCustomEvent(
+      CustomEvents.STEP_ADD,
+      {
+        id: new Types.ObjectId().toString(),
+        name: 'Архивирую категории',
+      },
+      config,
+    )
+
+    const result = await this.categoryService.archive(
+      {
+        ids: mappedIds,
+      },
+      user,
+    )
+
+    const logs = await this.operationLogService.getByCriteria(
+      { id: result.logId!.toString() },
+      user.id,
+    )
+
+    await dispatchCustomEvent(
+      CustomEvents.OPERATION,
+      {
+        logId: logs[0].id,
+        toolCallId: toolCallId,
+      },
+      config,
+    )
+
+    const resultInfo = (logs[0].entitiesAfter || []).map((category) => ({
+      id: category.id,
+      name: category.name,
+    }))
+
+    const resultMessage = `
+      Successfully archived ${result.data.length} categories: ${JSON.stringify(resultInfo)}
+      Log ID: ${result.logId}
+    `
+
+    return new SuccessToolResult(resultMessage)
+  }
+
+  public async recoverCategories(payload: DispatchPayload) {
+    const { toolCall, config, tempToRealIdMap } = payload
+
+    const args = toolCall.args as { ids: string[] }
+    const toolCallId = toolCall.id
+
+    const configurable = config.configurable as Configurable
+    const user = configurable.user
+
+    if (!args.ids || !Array.isArray(args.ids) || args.ids.some((id) => typeof id !== 'string')) {
+      return new FailedToolResult(
+        'Validation Error: Invalid arguments. Please provide an object with an ids property which is array of string IDs.',
+      )
+    }
+
+    const mappedIds = args.ids.map((id) => tempToRealIdMap[id] || id) // Map temp IDs to real IDs using the provided map, fallback to original ID if not found in the map
+
+    if (configurable.aiConfirmationType === AiConfirmationTypeEnum.ALWAYS) {
+      const messages = await this.chatMessageService.getByCriteria(
+        { pendingToolCallId: toolCallId, role: 'operation' },
+        user.id,
+      )
+
+      if (messages.length > 0) {
+        const logs = await this.operationLogService.getByCriteria(
+          { id: messages[0].content },
+          user.id,
+        )
+
+        const log = logs[0]
+
+        if (log.status === OperationLogStatusesEnum.CANCELLED) {
+          return new SuccessToolResult('Categories recovery cancelled by user.')
+        } else if (log.status === OperationLogStatusesEnum.APPROVED) {
+          const selectedIds = log.selectedIds || []
+
+          args.ids = args.ids.filter((id) => selectedIds.includes(id))
+        }
+      } else {
+        const mockRecoverCategory = await this.categoryService.recover(
+          {
+            ids: mappedIds,
+          },
+          user,
+          undefined,
+          true,
+        )
+
+        if (mockRecoverCategory.logId) {
+          return new ConfirmationEntityToolResult({
+            toolCallId: toolCallId,
+            logId: mockRecoverCategory.logId.toString(),
+          })
+        } else return new FailedToolResult('Failed to create operation log for category recovery.')
+      }
+    }
+
+    await dispatchCustomEvent(
+      CustomEvents.STEP_ADD,
+      {
+        id: new Types.ObjectId().toString(),
+        name: 'Восстанавливаю категории',
+      },
+      config,
+    )
+
+    const result = await this.categoryService.recover(
+      {
+        ids: mappedIds,
+      },
+      user,
+    )
+
+    const logs = await this.operationLogService.getByCriteria(
+      { id: result.logId!.toString() },
+      user.id,
+    )
+
+    await dispatchCustomEvent(
+      CustomEvents.OPERATION,
+      {
+        logId: logs[0].id,
+        toolCallId: toolCallId,
+      },
+      config,
+    )
+
+    const resultInfo = (logs[0].entitiesAfter || []).map((category) => ({
+      id: category.id,
+      name: category.name,
+    }))
+
+    const resultMessage = `
+      Successfully recovered ${result.data.length} categories: ${JSON.stringify(resultInfo)}
+      Log ID: ${result.logId}
+    `
+
+    return new SuccessToolResult(resultMessage)
+  }
+
+  public async cloneCategories(payload: DispatchPayload) {
+    const { toolCall, config, tempToRealIdMap } = payload
+
+    const args = toolCall.args as { ids: string[] }
+    const toolCallId = toolCall.id
+
+    const configurable = config.configurable as Configurable
+    const user = configurable.user
+
+    if (!args.ids || !Array.isArray(args.ids) || args.ids.some((id) => typeof id !== 'string')) {
+      return new FailedToolResult(
+        'Validation Error: Invalid arguments. Please provide an object with an ids property which is array of string IDs.',
+      )
+    }
+
+    const mappedIds = args.ids.map((id) => tempToRealIdMap[id] || id) // Map temp IDs to real IDs using the provided map, fallback to original ID if not found in the map
+
+    if (configurable.aiConfirmationType === AiConfirmationTypeEnum.ALWAYS) {
+      const messages = await this.chatMessageService.getByCriteria(
+        { pendingToolCallId: toolCallId, role: 'operation' },
+        user.id,
+      )
+
+      if (messages.length > 0) {
+        const logs = await this.operationLogService.getByCriteria(
+          { id: messages[0].content },
+          user.id,
+        )
+
+        const log = logs[0]
+
+        if (log.status === OperationLogStatusesEnum.CANCELLED) {
+          return new SuccessToolResult('Categories clone cancelled by user.')
+        } else if (log.status === OperationLogStatusesEnum.APPROVED) {
+          const selectedIds = log.selectedIds || []
+
+          args.ids = args.ids.filter((id) => selectedIds.includes(id))
+        }
+      } else {
+        const mockCloneCategory = await this.categoryService.clone(
+          {
+            ids: mappedIds,
+          },
+          user,
+          undefined,
+          true,
+        )
+
+        if (mockCloneCategory.logId) {
+          return new ConfirmationEntityToolResult({
+            toolCallId: toolCallId,
+            logId: mockCloneCategory.logId.toString(),
+          })
+        } else return new FailedToolResult('Failed to create operation log for category clone.')
+      }
+    }
+
+    await dispatchCustomEvent(
+      CustomEvents.STEP_ADD,
+      {
+        id: new Types.ObjectId().toString(),
+        name: 'Копирую категории',
+      },
+      config,
+    )
+
+    const result = await this.categoryService.clone(
+      {
+        ids: mappedIds,
+      },
+      user,
+    )
+
+    const logs = await this.operationLogService.getByCriteria(
+      { id: result.logId!.toString() },
+      user.id,
+    )
+
+    await dispatchCustomEvent(
+      CustomEvents.OPERATION,
+      {
+        logId: logs[0].id,
+        toolCallId: toolCallId,
+      },
+      config,
+    )
+
+    const resultInfo = (logs[0].entitiesAfter || []).map((category) => ({
+      id: category.id,
+      name: category.name,
+    }))
+
+    const resultMessage = `
+      Successfully cloned ${result.data.length} categories: ${JSON.stringify(resultInfo)}
+      Log ID: ${result.logId}
+    `
+
+    const tempToRealIdMapNew: Record<string, string> = {}
+
+    for (let i = 0; i < result.data.length; i++) {
+      tempToRealIdMapNew[args.ids[i]] = result.data[i].id.toString()
+    }
+
+    return new SuccessToolResult(resultMessage, {
+      tempToRealIdMap: tempToRealIdMapNew,
+    })
   }
 }

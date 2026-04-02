@@ -6,7 +6,6 @@ export interface ICategory<TBoard = Types.ObjectId, TWorkspace = Types.ObjectId>
   workspace: TWorkspace
   board: TBoard
   userId: Types.ObjectId
-  tasksCount: number
   rank: string
   embeddings: Array<number>
   isDeleted: boolean

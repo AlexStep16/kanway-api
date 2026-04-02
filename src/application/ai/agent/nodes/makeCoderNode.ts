@@ -17,7 +17,7 @@ export const makeCoderNode = (deps: AgentDependencies) => {
   return async (state: typeof AgentStateAnnotation.State, config: RunnableConfig) => {
     await dispatchCustomEvent(CustomEvents.STEP_ADD, {
       id: new Types.ObjectId().toString(),
-      name: 'Думаю',
+      name: 'Работаю',
     })
 
     const configurable = config.configurable as Configurable
@@ -40,20 +40,21 @@ export const makeCoderNode = (deps: AgentDependencies) => {
 
     const skills = skillNames.map((name) => skillMap[name as keyof typeof skillMap]).filter(Boolean)
 
-    const relatedToolNames = skills.flatMap((skill) => skill.relatedTools)
-    const relatedEntities = skills.flatMap((skill) => skill.relatedEntities)
+    const relatedToolNames = new Set(skills.flatMap((skill) => skill.relatedTools))
+    const relatedEntities = new Set(skills.flatMap((skill) => skill.relatedEntities))
 
-    const availableTools = relatedToolNames.map(
+    const availableTools = Array.from(relatedToolNames).map(
       (name) => toolSchemesMap[name as keyof typeof toolSchemesMap],
     )
 
-    const availableSchemes = relatedEntities.map(
+    const availableSchemes = Array.from(relatedEntities).map(
       (name) => entitySchemesMap[name as keyof typeof entitySchemesMap],
     )
 
     const prompt = ChatPromptTemplate.fromMessages([
       ['system', CoderPrompt],
-      new SystemMessage(state.enriched_message),
+      ...state.last_execution_messages,
+      new SystemMessage(state.current_plan[state.current_step_index || 0]),
       ...history,
     ])
 

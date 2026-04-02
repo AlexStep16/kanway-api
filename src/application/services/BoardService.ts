@@ -2,12 +2,7 @@ import { IBoard } from '@entities/IBoard.ts'
 import { IBoardRaw } from '@entities/IBoardRaw.ts'
 import BoardRepository from '@repositories/BoardRepository.ts'
 import { BoardDTO } from '@/application/dtos/BoardDTO.ts'
-import mongoose, {
-  ClientSession,
-  MongooseBulkWriteResult,
-  Types,
-  UpdateWriteOpResult,
-} from 'mongoose'
+import mongoose, { ClientSession, Types, UpdateWriteOpResult } from 'mongoose'
 import { EmbeddingService } from '@infrastructure/services/EmbeddingService.ts'
 import { IBoardCriteria } from '@criterias/IBoardCriteria.ts'
 import { OperationLogService } from '@application/services/OperationLogService.ts'
@@ -22,7 +17,6 @@ import { IUser } from '@entities/IUser.ts'
 import { projectProperties } from '@/utils/projectProperties.ts'
 import { IResponseWithLog } from '@interfaces/IResponseWithLog.ts'
 import { IOperationLog } from '@/domain/entities/IOperationLog.ts'
-import { IUndoResponse } from '../interfaces/IUndoResponse.ts'
 import { AppError } from '@/domain/errors/AppError.ts'
 import { LifecycleDTO } from '../dtos/LifecycleDTO.ts'
 import { WorkspaceService } from './WorkspaceService.ts'
@@ -117,22 +111,11 @@ export class BoardService extends BaseService<
 
     const boardPayload = await this.prepareBoardCreationPayload(data, user.id, session)
 
-    const sideEffects: Promise<any>[] = []
-
     /* CREATE */
     const newBoard = await this.repository.create(boardPayload, session)
 
-    /* UPDATE COUNTERS */
-    sideEffects.push(
-      this.workspaceService.updateBoardsCount(
-        [new Types.ObjectId(newBoard.workspace.id)],
-        user.id,
-        session,
-      ),
-    )
-
     /* LOG */
-    const logPromise = this.operationLogService.create(
+    const log = await this.operationLogService.create(
       {
         operationType: OperationTypesEnum.CREATE,
         collectionName: CollectionsEnum.BOARDS,
@@ -142,12 +125,6 @@ export class BoardService extends BaseService<
       user.id,
       session,
     )
-
-    sideEffects.push(logPromise)
-
-    await Promise.all(sideEffects)
-
-    const log = await logPromise
 
     const newBoardsPopulated = await this.getByCriteria(
       { id: newBoard.id.toString() },
@@ -220,19 +197,8 @@ export class BoardService extends BaseService<
     /* CREATE */
     const newBoards = await this.repository.createMany(boardsPayload, session)
 
-    const sideEffects: Promise<any>[] = []
-
-    /** UPDATE COUNTERS */
-    sideEffects.push(
-      this.workspaceService.updateBoardsCount(
-        uniqueWorkspaceIds.map((id) => new Types.ObjectId(id)),
-        user.id,
-        session,
-      ),
-    )
-
     /* LOG */
-    const logPromise = this.operationLogService.create(
+    const log = await this.operationLogService.create(
       {
         operationType: OperationTypesEnum.CREATE,
         collectionName: CollectionsEnum.BOARDS,
@@ -242,12 +208,6 @@ export class BoardService extends BaseService<
       user.id,
       session,
     )
-
-    sideEffects.push(logPromise)
-
-    await Promise.all(sideEffects)
-
-    const log = await logPromise
 
     const newBoardsPopulated = await this.getByCriteria(
       { ids: newBoards.map((b) => b.id.toString()) },
@@ -356,13 +316,6 @@ export class BoardService extends BaseService<
           ),
         )
       }
-
-      const movedIds = boardsToMove.map((b) => b.id.toString())
-      const boardsAfterMove = updatedBoards.filter((b) => movedIds.includes(b.id.toString()))
-
-      sideEffects.push(
-        ...this._updateBoardsParentCountersWithOld(boardsToMove, boardsAfterMove, userId, session),
-      )
     }
 
     /* LOG */
@@ -537,13 +490,6 @@ export class BoardService extends BaseService<
           ),
         )
       }
-
-      const boardsToMove = existingBoards.filter((b) => movedBoardIds.includes(b.id.toString()))
-      const boardsAfterMove = updatedBoards.filter((b) => movedBoardIds.includes(b.id.toString()))
-
-      sideEffects.push(
-        ...this._updateBoardsParentCountersWithOld(boardsToMove, boardsAfterMove, userId, session),
-      )
     }
 
     const projectedUpdatedBoards = updatedBoards.map(
@@ -601,6 +547,7 @@ export class BoardService extends BaseService<
     criteria: IBoardCriteria,
     userId: Types.ObjectId,
     session: ClientSession,
+    isDryRun: boolean = false,
   ): Promise<IResponseWithLog<null>> {
     const boardsToDelete = await this.repository.findByCriteria(
       criteria,
@@ -613,16 +560,26 @@ export class BoardService extends BaseService<
       throw new NotFoundError('Доски для удаления не найдены.')
     }
 
+    const status = isDryRun ? OperationLogStatusesEnum.PENDING : OperationLogStatusesEnum.SUCCESS
+
     const log = await this.operationLogService.create(
       {
-        operationType: OperationTypesEnum.CREATE,
+        operationType: OperationTypesEnum.DELETE,
         collectionName: CollectionsEnum.BOARDS,
         entitiesBefore: boardsToDelete,
+        status,
         dependencies: [],
       },
       userId,
       session,
     )
+
+    if (isDryRun) {
+      return {
+        data: null,
+        logId: log.id,
+      }
+    }
 
     await this.repository.deleteMany(criteria, userId, session)
 
@@ -637,8 +594,6 @@ export class BoardService extends BaseService<
         userId,
         session,
       ),
-
-      ...this._updateBoardsParentCounters(boardsToDelete, userId, session),
     ])
 
     return {
@@ -651,14 +606,15 @@ export class BoardService extends BaseService<
     criteria: IBoardCriteria,
     user: IUser,
     externalSession?: ClientSession,
+    isDryRun: boolean = false,
   ): Promise<IResponseWithLog<null>> {
     const userId = user.id
 
     if (externalSession) {
-      return this._executeDeleteTransaction(criteria, userId, externalSession)
+      return this._executeDeleteTransaction(criteria, userId, externalSession, isDryRun)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeDeleteTransaction(criteria, userId, session),
+        this._executeDeleteTransaction(criteria, userId, session, isDryRun),
       )
     }
   }
@@ -668,6 +624,7 @@ export class BoardService extends BaseService<
     isRecover: boolean,
     userId: Types.ObjectId,
     session: ClientSession,
+    isDryRun: boolean = false,
   ): Promise<IResponseWithLog<IBoardPopulated[]>> {
     const deleteData: LifecycleDTO = {
       isDeleted: true,
@@ -693,6 +650,32 @@ export class BoardService extends BaseService<
 
     if (boardsToProcess.length === 0) throw new NotFoundError('Доски не найдены.')
 
+    const status = isDryRun ? OperationLogStatusesEnum.PENDING : OperationLogStatusesEnum.SUCCESS
+
+    const entitiesBefore = projectProperties<IBoard>(boardsToProcess, data)
+    const entitiesAfter = entitiesBefore.map((b) => ({ ...b, ...data }))
+
+    /* LOG */
+    const log = await this.operationLogService.create(
+      {
+        operationType: isRecover ? OperationTypesEnum.RECOVER : OperationTypesEnum.ARCHIVE,
+        collectionName: CollectionsEnum.BOARDS,
+        entitiesBefore: entitiesBefore,
+        entitiesAfter: entitiesAfter,
+        status,
+        dependencies: [],
+      },
+      userId,
+      session,
+    )
+
+    if (isDryRun) {
+      return {
+        data: [],
+        logId: log.id,
+      }
+    }
+
     await Promise.all([
       /* PROCESS CHILDREN */
       this.taskService.updateLifecycleTasksByCriteria(
@@ -712,35 +695,6 @@ export class BoardService extends BaseService<
       this.repository.updateManyByCriteria(criteria, data, session, userId),
     ])
 
-    const sideEffects: Promise<any>[] = []
-
-    const entitiesAfter = boardsToProcess.map((board) => ({
-      ...board,
-      isDeleted: data.isDeleted,
-    }))
-
-    /** UPDATE COUNTERS */
-    sideEffects.push(...this._updateBoardsParentCounters(boardsToProcess, userId, session))
-
-    /* LOG */
-    const logPromise = this.operationLogService.create(
-      {
-        operationType: isRecover ? OperationTypesEnum.RECOVER : OperationTypesEnum.ARCHIVE,
-        collectionName: CollectionsEnum.BOARDS,
-        entitiesBefore: boardsToProcess,
-        entitiesAfter: entitiesAfter,
-        dependencies: [],
-      },
-      userId,
-      session,
-    )
-
-    sideEffects.push(logPromise)
-
-    await Promise.all(sideEffects)
-
-    const log = await logPromise
-
     const updatedBoardsPopulated = await this.getByCriteria(
       { ids: entitiesAfter.map((b) => b.id.toString()) },
       userId,
@@ -757,14 +711,15 @@ export class BoardService extends BaseService<
     criteria: IBoardCriteria,
     user: IUser,
     externalSession?: ClientSession,
+    isDryRun: boolean = false,
   ): Promise<IResponseWithLog<IBoardPopulated[]>> {
     const userId = user.id
 
     if (externalSession) {
-      return this._executeLifecycleTransaction(criteria, false, userId, externalSession)
+      return this._executeLifecycleTransaction(criteria, false, userId, externalSession, isDryRun)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeLifecycleTransaction(criteria, false, userId, session),
+        this._executeLifecycleTransaction(criteria, false, userId, session, isDryRun),
       )
     }
   }
@@ -773,14 +728,15 @@ export class BoardService extends BaseService<
     criteria: IBoardCriteria,
     user: IUser,
     externalSession?: ClientSession,
+    isDryRun: boolean = false,
   ): Promise<IResponseWithLog<IBoardPopulated[]>> {
     const userId = user.id
 
     if (externalSession) {
-      return this._executeLifecycleTransaction(criteria, true, userId, externalSession)
+      return this._executeLifecycleTransaction(criteria, true, userId, externalSession, isDryRun)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeLifecycleTransaction(criteria, true, userId, session),
+        this._executeLifecycleTransaction(criteria, true, userId, session, isDryRun),
       )
     }
   }
@@ -789,6 +745,7 @@ export class BoardService extends BaseService<
     criteria: IBoardCriteria,
     userId: Types.ObjectId,
     session: ClientSession,
+    isDryRun: boolean = false,
   ): Promise<IResponseWithLog<IBoardPopulated[]>> {
     const dependencies: Types.ObjectId[] = []
 
@@ -796,7 +753,7 @@ export class BoardService extends BaseService<
       criteria,
       session,
       {
-        projection: '+embeddings -createdAt -updatedAt',
+        projection: isDryRun ? '-createdAt -updatedAt' : '+embeddings -createdAt -updatedAt',
       },
       userId,
     )
@@ -815,10 +772,20 @@ export class BoardService extends BaseService<
       boardsGroupedByWorkspace.get(workspaceId)!.push(board)
     })
 
+    const uniqueWorkspaceIds = [...new Set(boardsToClone.map((b) => b.workspace.toString()))]
+    const allBoardsInWorkspaces = await this.repository.findByCriteria(
+      { workspaceIds: uniqueWorkspaceIds },
+      session,
+      { projection: 'rank workspace' },
+      userId,
+    )
+
     const transformedBoards: Omit<IBoard, 'id'>[] = []
 
     for (const [workspaceId, boards] of boardsGroupedByWorkspace) {
-      const workspaceBoards = boardsToClone.filter((b) => b.workspace.toString() === workspaceId)
+      const workspaceBoards = allBoardsInWorkspaces.filter(
+        (b) => b.workspace.toString() === workspaceId,
+      )
 
       const lastBoard = workspaceBoards.sort((a, b) => (a.rank > b.rank ? -1 : 1))[0]
       let lastRank = LexoRank.middle()
@@ -832,13 +799,32 @@ export class BoardService extends BaseService<
 
         const cleanBoard = {
           ...board,
-          id: undefined,
+          id: isDryRun ? board.id : undefined,
           rank: newRank.toString(),
         }
 
         lastRank = newRank
 
         transformedBoards.push(cleanBoard)
+      }
+    }
+
+    if (isDryRun) {
+      const log = await this.operationLogService.create(
+        {
+          operationType: OperationTypesEnum.CLONE,
+          collectionName: CollectionsEnum.BOARDS,
+          entitiesAfter: transformedBoards,
+          dependencies: [],
+          status: OperationLogStatusesEnum.PENDING,
+        },
+        userId,
+        session,
+      )
+
+      return {
+        data: [],
+        logId: log.id,
       }
     }
 
@@ -868,9 +854,9 @@ export class BoardService extends BaseService<
     if (cloneCategoriesResult.logId) dependencies.push(cloneCategoriesResult.logId)
 
     /* LOG */
-    const logPromise = this.operationLogService.create(
+    const log = await this.operationLogService.create(
       {
-        operationType: OperationTypesEnum.CREATE,
+        operationType: OperationTypesEnum.CLONE,
         collectionName: CollectionsEnum.BOARDS,
         entitiesAfter: clonedBoards,
         dependencies,
@@ -878,13 +864,6 @@ export class BoardService extends BaseService<
       userId,
       session,
     )
-
-    await Promise.all([
-      logPromise,
-      ...this._updateBoardsParentCounters(clonedBoards, userId, session),
-    ])
-
-    const log = await logPromise
 
     const clonedBoardsPopulated = await this.getByCriteria(
       { ids: clonedBoards.map((b) => b.id.toString()) },
@@ -902,14 +881,15 @@ export class BoardService extends BaseService<
     criteria: IBoardCriteria,
     user: IUser,
     externalSession?: ClientSession,
+    isDryRun: boolean = false,
   ): Promise<IResponseWithLog<IBoardPopulated[]>> {
     const userId = user.id
 
     if (externalSession) {
-      return this._executeCloneTransaction(criteria, userId, externalSession)
+      return this._executeCloneTransaction(criteria, userId, externalSession, isDryRun)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeCloneTransaction(criteria, userId, session),
+        this._executeCloneTransaction(criteria, userId, session, isDryRun),
       )
     }
   }
@@ -1052,7 +1032,8 @@ export class BoardService extends BaseService<
     log: IOperationLog,
     user: IUser,
     session: ClientSession,
-  ): Promise<IUndoResponse> {
+    isDryRun: boolean = false,
+  ): Promise<IResponseWithLog<any>> {
     const { operationType } = log
 
     const before = log.entitiesBefore as (Partial<IBoard> & { id: Types.ObjectId })[]
@@ -1062,9 +1043,9 @@ export class BoardService extends BaseService<
     const idsAfter = after?.map((e) => e.id?.toString()) || []
 
     switch (operationType) {
-      case OperationTypesEnum.CREATE: {
-        await this.delete({ ids: idsAfter }, user, session)
-        break
+      case OperationTypesEnum.CREATE:
+      case OperationTypesEnum.CLONE: {
+        return await this.delete({ ids: idsAfter }, user, session, isDryRun)
       }
 
       case OperationTypesEnum.UPDATE: {
@@ -1073,26 +1054,19 @@ export class BoardService extends BaseService<
           id: e.id?.toString(),
         }))
 
-        await this.editMany(payload, user, session)
-        break
+        return await this.editMany(payload, user, session, isDryRun)
       }
 
       case OperationTypesEnum.ARCHIVE: {
-        await this.recover({ ids: idsBefore }, user, session)
-        break
+        return await this.recover({ ids: idsBefore }, user, session, isDryRun)
       }
 
       case OperationTypesEnum.RECOVER: {
-        await this.archive({ ids: idsBefore }, user, session)
-        break
+        return await this.archive({ ids: idsBefore }, user, session, isDryRun)
       }
 
       default:
         throw new AppError(`Операция ${operationType} не поддерживается для отката.`, 400)
-    }
-
-    return {
-      affectedBoardIds: [...new Set([...idsBefore, ...idsAfter])],
     }
   }
 
@@ -1350,97 +1324,6 @@ export class BoardService extends BaseService<
     await this._prepareMainEditFields(rest, boardPayload, boardsToUpdate, isDryRun)
 
     return boardPayload
-  }
-
-  private _updateBoardsParentCountersWithOld(
-    oldBoards: IBoard[],
-    newBoards: IBoard[],
-    userId: Types.ObjectId,
-    session: ClientSession,
-  ) {
-    const sideEffects: Promise<any>[] = []
-
-    const affectedWorkspaces = new Set<string>()
-
-    oldBoards.forEach((b) => {
-      affectedWorkspaces.add(b.workspace.toString())
-    })
-
-    newBoards.forEach((b) => {
-      affectedWorkspaces.add(b.workspace.toString())
-    })
-
-    const uniqueWorkspaceIds = Array.from(affectedWorkspaces).map((id) => new Types.ObjectId(id))
-
-    sideEffects.push(
-      this.workspaceService.updateBoardsCount(uniqueWorkspaceIds, userId, session),
-      this.workspaceService.updateCategoriesCount(uniqueWorkspaceIds, userId, session),
-      this.workspaceService.updateTasksCount(uniqueWorkspaceIds, userId, session),
-    )
-
-    return sideEffects
-  }
-
-  private _updateBoardsParentCounters(
-    boards: IBoard[],
-    userId: Types.ObjectId,
-    session: ClientSession,
-  ) {
-    const uniqueWorkspaceIds = [...new Set(boards.map((b) => b.workspace.toString()))].map(
-      (id) => new Types.ObjectId(id),
-    )
-
-    return [
-      this.workspaceService.updateBoardsCount(uniqueWorkspaceIds, userId, session),
-      this.workspaceService.updateCategoriesCount(uniqueWorkspaceIds, userId, session),
-      this.workspaceService.updateTasksCount(uniqueWorkspaceIds, userId, session),
-    ]
-  }
-
-  public async updateTasksCount(
-    boardIds: Types.ObjectId[],
-    userId: Types.ObjectId,
-    session?: ClientSession,
-  ): Promise<MongooseBulkWriteResult | null> {
-    if (boardIds.length === 0) return null
-
-    const tasksGroupped = await this.taskService.getTasksCountByBoards(boardIds, userId, session)
-
-    const tasksCountMap = new Map<string, number>(
-      tasksGroupped.map((tg) => [tg.parentId, tg.count]),
-    )
-
-    const bulkUpdates = boardIds.map((boardId) => ({
-      id: boardId,
-      tasksCount: tasksCountMap.get(boardId.toString()) || 0,
-    }))
-
-    return await this.repository.bulkUpdate(bulkUpdates, userId, session)
-  }
-
-  public async updateCategoriesCount(
-    boardIds: Types.ObjectId[],
-    userId: Types.ObjectId,
-    session?: ClientSession,
-  ): Promise<MongooseBulkWriteResult | null> {
-    if (boardIds.length === 0) return null
-
-    const categoriesGroupped = await this.categoryService.getCategoriesCountByBoards(
-      boardIds,
-      userId,
-      session,
-    )
-
-    const categoriesCountMap = new Map<string, number>(
-      categoriesGroupped.map((cg) => [cg.parentId, cg.count]),
-    )
-
-    const bulkUpdates = boardIds.map((boardId) => ({
-      id: boardId,
-      categoriesCount: categoriesCountMap.get(boardId.toString()) || 0,
-    }))
-
-    return await this.repository.bulkUpdate(bulkUpdates, userId, session)
   }
 
   public async getBoardsCountByWorkspaces(

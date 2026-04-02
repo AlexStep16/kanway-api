@@ -25,6 +25,8 @@ import { WorkspaceEditManyDTO } from '@/application/dtos/WorkspaceEditManyDTO.ts
 import { MoveWorkspaceDTO, MoveWorkspaceDTOSchema } from '../dtos/MoveWorkspaceDTO.ts'
 import { WorkspaceMoveDTO } from '@/application/dtos/WorkspaceMoveDTO.ts'
 import { DispatchPayload } from './ToolDispatcherService.ts'
+import { VectorSearchService } from '@/application/services/VectorSearchService.ts'
+import { findProperty } from '@/utils/findProperty.ts'
 
 export class WorkspaceToolsExecutorService extends AbstractToolExecutor {
   constructor(
@@ -33,6 +35,7 @@ export class WorkspaceToolsExecutorService extends AbstractToolExecutor {
     private workspaceService: WorkspaceService,
     private operationLogService: OperationLogService,
     private chatMessageService: ChatMessageService,
+    private vectorSearchService: VectorSearchService,
   ) {
     super()
 
@@ -41,6 +44,10 @@ export class WorkspaceToolsExecutorService extends AbstractToolExecutor {
       create_workspaces: this.createWorkspaces.bind(this),
       update_workspaces: this.updateWorkspaces.bind(this),
       move_workspace: this.moveWorkspace.bind(this),
+      delete_workspaces: this.deleteWorkspaces.bind(this),
+      archive_workspaces: this.archiveWorkspaces.bind(this),
+      recover_workspaces: this.recoverWorkspaces.bind(this),
+      clone_workspaces: this.cloneWorkspaces.bind(this),
     }
   }
 
@@ -51,17 +58,24 @@ export class WorkspaceToolsExecutorService extends AbstractToolExecutor {
     const args = toolCall.args as {
       mongo_filter?: FilterQuery<IWorkspaceRawString>
       search_query?: string
+      search_mode?: 'fuzzy' | 'semantic'
       limit?: number
     }
 
-    const { mongo_filter = {}, search_query = '', limit = 50 } = args
+    const { mongo_filter = {}, search_query = '', search_mode = 'fuzzy', limit = 50 } = args
 
     const scaledLimit = search_query ? HARD_SEARCH_LIMIT : limit
 
-    const baseFilter: FilterQuery<IWorkspaceRawString> = {
-      is_deleted: { $ne: true },
-      is_deleted_external: { $ne: true },
-    }
+    const isMongoFilterHasDeletedCondition =
+      findProperty(mongo_filter, 'is_deleted') !== undefined ||
+      findProperty(mongo_filter, 'is_deleted_external') !== undefined
+
+    const baseFilter: FilterQuery<IWorkspaceRawString> = isMongoFilterHasDeletedCondition
+      ? {}
+      : {
+          is_deleted: { $ne: true },
+          is_deleted_external: { $ne: true },
+        }
 
     const unionFilter = { ...baseFilter, ...mongo_filter, user_id: new Types.ObjectId(userId) }
 
@@ -85,23 +99,44 @@ export class WorkspaceToolsExecutorService extends AbstractToolExecutor {
         }
       }
 
-      const fuse = new Fuse(workspaces, {
-        keys: ['name'],
-        threshold: 0.3,
-        includeScore: true,
-      })
+      let pagedResults: IWorkspaceRawString[] = []
+      let searchedCount = 0
 
-      const searchResults = fuse.search(search_query)
+      if (search_mode === 'fuzzy') {
+        const fuse = new Fuse(workspaces, {
+          keys: ['name'],
+          threshold: 0.3,
+          includeScore: true,
+        })
 
-      const pagedResults = searchResults
-        .sort((a, b) => (a.score || 0) - (b.score || 0))
-        .slice(0, scaledLimit)
-        .map((result) => result.item)
+        const searchResults = fuse.search(search_query)
+
+        pagedResults = searchResults
+          .sort((a, b) => (a.score || 0) - (b.score || 0))
+          .slice(0, scaledLimit)
+          .map((result) => result.item)
+        searchedCount = searchResults.length
+      } else if (search_mode === 'semantic') {
+        const filteredIds = workspaces.map((workspace) => new Types.ObjectId(workspace._id))
+
+        const semanticWorkspaces = await this.vectorSearchService.similaritySearchWorkspaces(
+          [search_query],
+          new Types.ObjectId(userId),
+          20,
+          filteredIds,
+        )
+        const semanticWorkspaceIds = semanticWorkspaces.map((workspace) => workspace.id.toString())
+
+        pagedResults = workspaces.filter((workspace) =>
+          semanticWorkspaceIds.includes(workspace._id.toString()),
+        )
+        searchedCount = semanticWorkspaces.length
+      }
 
       return {
         workspaces: pagedResults,
-        count: searchResults.length,
-        hasMore: searchResults.length > scaledLimit,
+        count: searchedCount,
+        hasMore: searchedCount > scaledLimit,
       }
     }
 
@@ -215,10 +250,10 @@ export class WorkspaceToolsExecutorService extends AbstractToolExecutor {
       config,
     )
 
-    const createdWorkspaces = await this.workspaceService.createMany(dtoWorkspaces, user)
+    const result = await this.workspaceService.createMany(dtoWorkspaces, user)
 
     const logs = await this.operationLogService.getByCriteria(
-      { id: createdWorkspaces.logId!.toString() },
+      { id: result.logId!.toString() },
       user.id,
     )
 
@@ -233,16 +268,19 @@ export class WorkspaceToolsExecutorService extends AbstractToolExecutor {
 
     const tempToRealIdMap: Record<string, string> = {}
 
-    for (let i = 0; i < createdWorkspaces.data.length; i++) {
-      tempToRealIdMap[args.workspaces[i]._id] = createdWorkspaces.data[i].id.toString()
+    for (let i = 0; i < result.data.length; i++) {
+      tempToRealIdMap[args.workspaces[i]._id] = result.data[i].id.toString()
     }
 
-    const resultInfo = createdWorkspaces.data.map((workspace) => ({
+    const resultInfo = result.data.map((workspace) => ({
       id: workspace.id,
       name: workspace.name,
     }))
 
-    const resultMessage = `Successfully created ${createdWorkspaces.data.length} workspaces: ${JSON.stringify(resultInfo)}`
+    const resultMessage = `
+      Successfully created ${result.data.length} workspaces: ${JSON.stringify(resultInfo)}
+      Log ID: ${result.logId}
+    `
 
     return new SuccessToolResult(resultMessage, {
       tempToRealIdMap,
@@ -316,12 +354,11 @@ export class WorkspaceToolsExecutorService extends AbstractToolExecutor {
       config,
     )
 
-    const updatedWorkspaces = (await this.workspaceService.editMany(
-      dtoWorkspaces,
-      user,
-    )) as IResponseWithLog<IWorkspace[]>
+    const result = (await this.workspaceService.editMany(dtoWorkspaces, user)) as IResponseWithLog<
+      IWorkspace[]
+    >
     const logs = await this.operationLogService.getByCriteria(
-      { id: updatedWorkspaces.logId!.toString() },
+      { id: result.logId!.toString() },
       user.id,
     )
 
@@ -336,7 +373,10 @@ export class WorkspaceToolsExecutorService extends AbstractToolExecutor {
 
     const resultInfo = logs[0].entitiesAfter
 
-    const resultMessage = `Successfully updated ${updatedWorkspaces.data.length} workspaces: ${JSON.stringify(resultInfo)}`
+    const resultMessage = `
+      Successfully updated ${result.data.length} workspaces: ${JSON.stringify(resultInfo)}
+      Log ID: ${result.logId}
+    `
 
     return new SuccessToolResult(resultMessage)
   }
@@ -425,8 +465,419 @@ export class WorkspaceToolsExecutorService extends AbstractToolExecutor {
 
     const resultInfo = logs[0].entitiesAfter
 
-    const resultMessage = `Successfully updated ${result.data.length} workspaces: ${JSON.stringify(resultInfo)}`
+    const resultMessage = `
+      Successfully updated ${result.data.length} workspaces: ${JSON.stringify(resultInfo)}
+      Log ID: ${result.logId}
+    `
 
     return new SuccessToolResult(resultMessage)
+  }
+
+  public async deleteWorkspaces(payload: DispatchPayload) {
+    const { toolCall, config, tempToRealIdMap } = payload
+
+    const args = toolCall.args as { ids: string[] }
+    const toolCallId = toolCall.id
+
+    const configurable = config.configurable as Configurable
+    const user = configurable.user
+
+    if (!args.ids || !Array.isArray(args.ids) || args.ids.some((id) => typeof id !== 'string')) {
+      return new FailedToolResult(
+        'Validation Error: Invalid arguments. Please provide an object with an ids property which is array of string IDs.',
+      )
+    }
+
+    const mappedIds = args.ids.map((id) => tempToRealIdMap[id] || id) // Map temp IDs to real IDs using the provided map, fallback to original ID if not found in the map
+
+    if (configurable.aiConfirmationType === AiConfirmationTypeEnum.ALWAYS) {
+      const messages = await this.chatMessageService.getByCriteria(
+        { pendingToolCallId: toolCallId, role: 'operation' },
+        user.id,
+      )
+
+      if (messages.length > 0) {
+        const logs = await this.operationLogService.getByCriteria(
+          { id: messages[0].content },
+          user.id,
+        )
+
+        const log = logs[0]
+
+        if (log.status === OperationLogStatusesEnum.CANCELLED) {
+          return new SuccessToolResult('Workspace delete cancelled by user.')
+        } else if (log.status === OperationLogStatusesEnum.APPROVED) {
+          const selectedIds = log.selectedIds || []
+
+          args.ids = args.ids.filter((id) => selectedIds.includes(id))
+        }
+      } else {
+        const mockDeleteWorkspace = await this.workspaceService.delete(
+          {
+            ids: mappedIds,
+          },
+          user,
+          undefined,
+          true,
+        )
+
+        if (mockDeleteWorkspace.logId) {
+          return new ConfirmationEntityToolResult({
+            toolCallId: toolCallId,
+            logId: mockDeleteWorkspace.logId.toString(),
+          })
+        } else return new FailedToolResult('Failed to create operation log for workspace delete.')
+      }
+    }
+
+    await dispatchCustomEvent(
+      CustomEvents.STEP_ADD,
+      {
+        id: new Types.ObjectId().toString(),
+        name: 'Удаляю рабочие пространства',
+      },
+      config,
+    )
+
+    const result = await this.workspaceService.delete(
+      {
+        ids: mappedIds,
+      },
+      user,
+    )
+
+    const logs = await this.operationLogService.getByCriteria(
+      { id: result.logId!.toString() },
+      user.id,
+    )
+
+    await dispatchCustomEvent(
+      CustomEvents.OPERATION,
+      {
+        logId: result.logId,
+        toolCallId: toolCallId,
+      },
+      config,
+    )
+
+    const resultInfo = (logs[0].entitiesBefore || []).map((workspace) => ({
+      id: workspace.id,
+      name: workspace.name,
+    }))
+
+    const resultMessage = `
+      Successfully deleted ${resultInfo.length} workspaces: ${JSON.stringify(resultInfo)}
+      Log ID: ${result.logId}
+    `
+
+    return new SuccessToolResult(resultMessage)
+  }
+
+  public async archiveWorkspaces(payload: DispatchPayload) {
+    const { toolCall, config, tempToRealIdMap } = payload
+
+    const args = toolCall.args as { ids: string[] }
+    const toolCallId = toolCall.id
+
+    const configurable = config.configurable as Configurable
+    const user = configurable.user
+
+    if (!args.ids || !Array.isArray(args.ids) || args.ids.some((id) => typeof id !== 'string')) {
+      return new FailedToolResult(
+        'Validation Error: Invalid arguments. Please provide an object with an ids property which is array of string IDs.',
+      )
+    }
+
+    const mappedIds = args.ids.map((id) => tempToRealIdMap[id] || id) // Map temp IDs to real IDs using the provided map, fallback to original ID if not found in the map
+
+    if (configurable.aiConfirmationType === AiConfirmationTypeEnum.ALWAYS) {
+      const messages = await this.chatMessageService.getByCriteria(
+        { pendingToolCallId: toolCallId, role: 'operation' },
+        user.id,
+      )
+
+      if (messages.length > 0) {
+        const logs = await this.operationLogService.getByCriteria(
+          { id: messages[0].content },
+          user.id,
+        )
+
+        const log = logs[0]
+
+        if (log.status === OperationLogStatusesEnum.CANCELLED) {
+          return new SuccessToolResult('Workspaces archive cancelled by user.')
+        } else if (log.status === OperationLogStatusesEnum.APPROVED) {
+          const selectedIds = log.selectedIds || []
+
+          args.ids = args.ids.filter((id) => selectedIds.includes(id))
+        }
+      } else {
+        const mockArchiveWorkspace = await this.workspaceService.archive(
+          {
+            ids: mappedIds,
+          },
+          user,
+          undefined,
+          true,
+        )
+
+        if (mockArchiveWorkspace.logId) {
+          return new ConfirmationEntityToolResult({
+            toolCallId: toolCallId,
+            logId: mockArchiveWorkspace.logId.toString(),
+          })
+        } else return new FailedToolResult('Failed to create operation log for workspace archive.')
+      }
+    }
+
+    await dispatchCustomEvent(
+      CustomEvents.STEP_ADD,
+      {
+        id: new Types.ObjectId().toString(),
+        name: 'Архивирую рабочие пространства',
+      },
+      config,
+    )
+
+    const result = await this.workspaceService.archive(
+      {
+        ids: mappedIds,
+      },
+      user,
+    )
+
+    const logs = await this.operationLogService.getByCriteria(
+      { id: result.logId!.toString() },
+      user.id,
+    )
+
+    await dispatchCustomEvent(
+      CustomEvents.OPERATION,
+      {
+        logId: logs[0].id,
+        toolCallId: toolCallId,
+      },
+      config,
+    )
+
+    const resultInfo = (logs[0].entitiesAfter || []).map((workspace) => ({
+      id: workspace.id,
+      name: workspace.name,
+    }))
+
+    const resultMessage = `
+      Successfully archived ${result.data.length} workspaces: ${JSON.stringify(resultInfo)}
+      Log ID: ${result.logId}
+    `
+
+    return new SuccessToolResult(resultMessage)
+  }
+
+  public async recoverWorkspaces(payload: DispatchPayload) {
+    const { toolCall, config, tempToRealIdMap } = payload
+
+    const args = toolCall.args as { ids: string[] }
+    const toolCallId = toolCall.id
+
+    const configurable = config.configurable as Configurable
+    const user = configurable.user
+
+    if (!args.ids || !Array.isArray(args.ids) || args.ids.some((id) => typeof id !== 'string')) {
+      return new FailedToolResult(
+        'Validation Error: Invalid arguments. Please provide an object with an ids property which is array of string IDs.',
+      )
+    }
+
+    const mappedIds = args.ids.map((id) => tempToRealIdMap[id] || id) // Map temp IDs to real IDs using the provided map, fallback to original ID if not found in the map
+
+    if (configurable.aiConfirmationType === AiConfirmationTypeEnum.ALWAYS) {
+      const messages = await this.chatMessageService.getByCriteria(
+        { pendingToolCallId: toolCallId, role: 'operation' },
+        user.id,
+      )
+
+      if (messages.length > 0) {
+        const logs = await this.operationLogService.getByCriteria(
+          { id: messages[0].content },
+          user.id,
+        )
+
+        const log = logs[0]
+
+        if (log.status === OperationLogStatusesEnum.CANCELLED) {
+          return new SuccessToolResult('Workspaces recovery cancelled by user.')
+        } else if (log.status === OperationLogStatusesEnum.APPROVED) {
+          const selectedIds = log.selectedIds || []
+
+          args.ids = args.ids.filter((id) => selectedIds.includes(id))
+        }
+      } else {
+        const mockRecoverWorkspace = await this.workspaceService.recover(
+          {
+            ids: mappedIds,
+          },
+          user,
+          undefined,
+          true,
+        )
+
+        if (mockRecoverWorkspace.logId) {
+          return new ConfirmationEntityToolResult({
+            toolCallId: toolCallId,
+            logId: mockRecoverWorkspace.logId.toString(),
+          })
+        } else return new FailedToolResult('Failed to create operation log for workspace recovery.')
+      }
+    }
+
+    await dispatchCustomEvent(
+      CustomEvents.STEP_ADD,
+      {
+        id: new Types.ObjectId().toString(),
+        name: 'Восстанавливаю рабочие пространства',
+      },
+      config,
+    )
+
+    const result = await this.workspaceService.recover(
+      {
+        ids: mappedIds,
+      },
+      user,
+    )
+
+    const logs = await this.operationLogService.getByCriteria(
+      { id: result.logId!.toString() },
+      user.id,
+    )
+
+    await dispatchCustomEvent(
+      CustomEvents.OPERATION,
+      {
+        logId: logs[0].id,
+        toolCallId: toolCallId,
+      },
+      config,
+    )
+
+    const resultInfo = (logs[0].entitiesAfter || []).map((workspace) => ({
+      id: workspace.id,
+      name: workspace.name,
+    }))
+
+    const resultMessage = `
+      Successfully recovered ${result.data.length} workspaces: ${JSON.stringify(resultInfo)}
+      Log ID: ${result.logId}
+    `
+
+    return new SuccessToolResult(resultMessage)
+  }
+
+  public async cloneWorkspaces(payload: DispatchPayload) {
+    const { toolCall, config, tempToRealIdMap } = payload
+
+    const args = toolCall.args as { ids: string[] }
+    const toolCallId = toolCall.id
+
+    const configurable = config.configurable as Configurable
+    const user = configurable.user
+
+    if (!args.ids || !Array.isArray(args.ids) || args.ids.some((id) => typeof id !== 'string')) {
+      return new FailedToolResult(
+        'Validation Error: Invalid arguments. Please provide an object with an ids property which is array of string IDs.',
+      )
+    }
+
+    const mappedIds = args.ids.map((id) => tempToRealIdMap[id] || id) // Map temp IDs to real IDs using the provided map, fallback to original ID if not found in the map
+
+    if (configurable.aiConfirmationType === AiConfirmationTypeEnum.ALWAYS) {
+      const messages = await this.chatMessageService.getByCriteria(
+        { pendingToolCallId: toolCallId, role: 'operation' },
+        user.id,
+      )
+
+      if (messages.length > 0) {
+        const logs = await this.operationLogService.getByCriteria(
+          { id: messages[0].content },
+          user.id,
+        )
+
+        const log = logs[0]
+
+        if (log.status === OperationLogStatusesEnum.CANCELLED) {
+          return new SuccessToolResult('Workspaces clone cancelled by user.')
+        } else if (log.status === OperationLogStatusesEnum.APPROVED) {
+          const selectedIds = log.selectedIds || []
+
+          args.ids = args.ids.filter((id) => selectedIds.includes(id))
+        }
+      } else {
+        const mockCloneWorkspace = await this.workspaceService.clone(
+          {
+            ids: mappedIds,
+          },
+          user,
+          undefined,
+          true,
+        )
+
+        if (mockCloneWorkspace.logId) {
+          return new ConfirmationEntityToolResult({
+            toolCallId: toolCallId,
+            logId: mockCloneWorkspace.logId.toString(),
+          })
+        } else return new FailedToolResult('Failed to create operation log for workspace clone.')
+      }
+    }
+
+    await dispatchCustomEvent(
+      CustomEvents.STEP_ADD,
+      {
+        id: new Types.ObjectId().toString(),
+        name: 'Копирую рабочие пространства',
+      },
+      config,
+    )
+
+    const result = await this.workspaceService.clone(
+      {
+        ids: mappedIds,
+      },
+      user,
+    )
+
+    const logs = await this.operationLogService.getByCriteria(
+      { id: result.logId!.toString() },
+      user.id,
+    )
+
+    await dispatchCustomEvent(
+      CustomEvents.OPERATION,
+      {
+        logId: result.logId,
+        toolCallId: toolCallId,
+      },
+      config,
+    )
+
+    const resultInfo = (logs[0].entitiesAfter || []).map((workspace) => ({
+      id: workspace.id,
+      name: workspace.name,
+    }))
+
+    const resultMessage = `
+      Successfully cloned ${result.data.length} workspaces: ${JSON.stringify(resultInfo)}
+      Log ID: ${result.logId}
+    `
+
+    const tempToRealIdMapNew: Record<string, string> = {}
+
+    for (let i = 0; i < result.data.length; i++) {
+      tempToRealIdMapNew[args.ids[i]] = result.data[i].id.toString()
+    }
+
+    return new SuccessToolResult(resultMessage, {
+      tempToRealIdMap: tempToRealIdMapNew,
+    })
   }
 }

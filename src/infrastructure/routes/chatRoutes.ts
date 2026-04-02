@@ -12,6 +12,7 @@ export default (controller: ChatController): Router => {
 
   router.get('/', controller.getAll)
   router.get('/:id', controller.getById)
+  router.delete('/:id', controller.delete.bind(controller))
   router.post(
     '/send',
     aiLimiter,

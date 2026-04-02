@@ -109,9 +109,21 @@ export default class ChatController {
     try {
       const { jobId } = req.params
 
-      await this.service.stopAgent({ jobId, ...req.body }, req.user!)
+      await this.service.stopAgent({ jobId, ...req.body })
 
       return res.status(200).json(new SuccessResponse('Агент остановлен.'))
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  public async delete(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { id } = req.params
+
+      await this.service.delete({ id }, req.user!)
+
+      return res.status(200).json(new SuccessResponse(null))
     } catch (error) {
       next(error)
     }

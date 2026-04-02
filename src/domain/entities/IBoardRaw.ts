@@ -6,8 +6,6 @@ export interface IBoardRaw {
   workspace: Types.ObjectId
   user_id: Types.ObjectId
   is_favorite: boolean
-  tasks_count: number
-  categories_count: number
   rank: string
   embeddings: Array<number>
   is_deleted: boolean

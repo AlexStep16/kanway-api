@@ -94,10 +94,8 @@ export const RunAgentWorker = new Worker(
 
     const checkInterval = setInterval(async () => {
       try {
-        // Получаем СВЕЖУЮ версию джобы из Redis
         const freshJob = await langgraphQueue.getJob(job.id || '')
 
-        // Если в данных появился наш флаг — рубим процесс
         if (freshJob && freshJob.data && freshJob.data.__abortSignal) {
           controller.abort()
           clearInterval(checkInterval)
@@ -120,7 +118,6 @@ export const RunAgentWorker = new Worker(
     )
 
     try {
-      // Используем streamEvents v2
       const agent = await getAgent(dependencies)
 
       if (isRetry) {

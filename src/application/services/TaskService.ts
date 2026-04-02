@@ -19,7 +19,6 @@ import { SingleUpdateDTO } from '../dtos/SingleUpdateDTO.ts'
 import { projectProperties } from '@/utils/projectProperties.ts'
 import { IResponseWithLog } from '../interfaces/IResponseWithLog.ts'
 import { IOperationLog } from '@/domain/entities/IOperationLog.ts'
-import { IUndoResponse } from '../interfaces/IUndoResponse.ts'
 import { AppError } from '@/domain/errors/AppError.ts'
 import { BoardService } from '@application/services/BoardService.ts'
 import { WorkspaceService } from '@application/services/WorkspaceService.ts'
@@ -119,12 +118,8 @@ export class TaskService extends BaseService<
     /* CREATE */
     const newTask = await this.repository.create(taskPayload, session)
 
-    const sideEffects: Promise<any>[] = []
-
-    sideEffects.push(...this._updateTasksParentCounters([newTask], userId, session))
-
     /* LOG */
-    const logPromise = this.operationLogService.create(
+    const log = await this.operationLogService.create(
       {
         operationType: OperationTypesEnum.CREATE,
         collectionName: CollectionsEnum.TASKS,
@@ -134,12 +129,6 @@ export class TaskService extends BaseService<
       userId,
       session,
     )
-
-    sideEffects.push(logPromise)
-
-    await Promise.all(sideEffects)
-
-    const log = await logPromise
 
     const newTaskPopulated = await this.getByCriteria(
       { id: newTask.id.toString() },
@@ -186,8 +175,6 @@ export class TaskService extends BaseService<
       isDryRun,
     )
 
-    /* RANKING */
-
     if (isDryRun) {
       const log = await this.operationLogService.create(
         {
@@ -210,8 +197,6 @@ export class TaskService extends BaseService<
     /* CREATE */
     const newTasks = await this.repository.createMany(tasksPayload, session)
 
-    const sideEffects: Promise<any>[] = []
-
     const newTasksPopulated = await this.getByCriteria(
       { ids: newTasks.map((t) => t.id.toString()) },
       userId,
@@ -222,10 +207,8 @@ export class TaskService extends BaseService<
       nt.tempClientId = data[index].id // Attach temp client ID back to the response to connect with client-side entity
     })
 
-    sideEffects.push(...this._updateTasksParentCounters(newTasks, userId, session))
-
     /* LOG */
-    const logPromise = this.operationLogService.create(
+    const log = await this.operationLogService.create(
       {
         operationType: OperationTypesEnum.CREATE,
         collectionName: CollectionsEnum.TASKS,
@@ -235,12 +218,6 @@ export class TaskService extends BaseService<
       userId,
       session,
     )
-
-    sideEffects.push(logPromise)
-
-    await Promise.all(sideEffects)
-
-    const log = await logPromise
 
     return {
       data: newTasksPopulated,
@@ -319,13 +296,6 @@ export class TaskService extends BaseService<
         tasksToMove.map((task) => task.id.toString()),
         userId,
         session,
-      )
-
-      const movedIds = tasksToMove.map((t) => t.id.toString())
-      const tasksAfterMove = updatedTasks.filter((t) => movedIds.includes(t.id.toString()))
-
-      sideEffects.push(
-        ...this._updateTasksParentCountersWithOld(tasksToMove, tasksAfterMove, userId, session),
       )
     }
 
@@ -464,13 +434,6 @@ export class TaskService extends BaseService<
     /** MOVE */
     if (movedTaskIds.length > 0) {
       await this.regenerateReferencesByCategories(movedTaskIds, userId, session)
-
-      const tasksToMove = existingTasks.filter((t) => movedTaskIds.includes(t.id.toString()))
-      const tasksAfterMove = updatedTasks.filter((t) => movedTaskIds.includes(t.id.toString()))
-
-      sideEffects.push(
-        ...this._updateTasksParentCountersWithOld(tasksToMove, tasksAfterMove, userId, session),
-      )
     }
 
     const projectedUpdatedTasks = updatedTasks.map(
@@ -616,6 +579,7 @@ export class TaskService extends BaseService<
     criteria: ITaskCriteria,
     userId: Types.ObjectId,
     session: ClientSession,
+    isDryRun: boolean = false,
   ): Promise<IResponseWithLog<null>> {
     const tasksToDelete = await this.repository.findByCriteria(criteria, session, undefined, userId)
 
@@ -623,22 +587,28 @@ export class TaskService extends BaseService<
       throw new NotFoundError('Задачи для удаления не найдены.')
     }
 
+    const status = isDryRun ? OperationLogStatusesEnum.PENDING : OperationLogStatusesEnum.SUCCESS
+
     const log = await this.operationLogService.create(
       {
-        operationType: OperationTypesEnum.CREATE,
+        operationType: OperationTypesEnum.DELETE,
         collectionName: CollectionsEnum.TASKS,
         entitiesBefore: tasksToDelete,
+        status,
         dependencies: [],
       },
       userId,
       session,
     )
 
+    if (isDryRun) {
+      return {
+        data: null,
+        logId: log.id,
+      }
+    }
+
     await this.repository.deleteMany(criteria, userId, session)
-
-    const updateCountersPromises = this._updateTasksParentCounters(tasksToDelete, userId, session)
-
-    await Promise.all(updateCountersPromises)
 
     return {
       data: null,
@@ -650,14 +620,15 @@ export class TaskService extends BaseService<
     criteria: ITaskCriteria,
     user: IUser,
     externalSession?: ClientSession,
+    isDryRun: boolean = false,
   ): Promise<IResponseWithLog<null>> {
     const userId = user.id
 
     if (externalSession) {
-      return this._executeDeleteTransaction(criteria, userId, externalSession)
+      return this._executeDeleteTransaction(criteria, userId, externalSession, isDryRun)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeDeleteTransaction(criteria, userId, session),
+        this._executeDeleteTransaction(criteria, userId, session, isDryRun),
       )
     }
   }
@@ -667,6 +638,7 @@ export class TaskService extends BaseService<
     isRecover: boolean,
     userId: Types.ObjectId,
     session: ClientSession,
+    isDryRun: boolean = false,
   ): Promise<IResponseWithLog<ITaskPopulated[]>> {
     const tasksToProcess = await this.repository.findByCriteria(
       criteria,
@@ -691,6 +663,32 @@ export class TaskService extends BaseService<
 
     if (tasksToProcess.length === 0) throw new NotFoundError('Задачи не найдены.')
 
+    const status = isDryRun ? OperationLogStatusesEnum.PENDING : OperationLogStatusesEnum.SUCCESS
+
+    const entitiesBefore = projectProperties<ITask>(tasksToProcess, data)
+    const entitiesAfter = entitiesBefore.map((t) => ({ ...t, ...data }))
+
+    /* LOG */
+    const log = await this.operationLogService.create(
+      {
+        operationType: isRecover ? OperationTypesEnum.RECOVER : OperationTypesEnum.ARCHIVE,
+        collectionName: CollectionsEnum.TASKS,
+        entitiesBefore: entitiesBefore,
+        entitiesAfter: entitiesAfter,
+        status,
+        dependencies: [],
+      },
+      userId,
+      session,
+    )
+
+    if (isDryRun) {
+      return {
+        data: [],
+        logId: log.id,
+      }
+    }
+
     const updateResult = await this.repository.updateManyByCriteria(criteria, data, session, userId)
 
     if (!updateResult || updateResult.modifiedCount === 0)
@@ -698,32 +696,7 @@ export class TaskService extends BaseService<
 
     const sideEffects: Promise<any>[] = []
 
-    /** UPDATE COUNTERS */
-    sideEffects.push(...this._updateTasksParentCounters(tasksToProcess, userId, session))
-
-    const entitiesAfter = tasksToProcess.map((task) => ({
-      ...task,
-      isDeleted: data.isDeleted,
-    }))
-
-    /* LOG */
-    const logPromise = this.operationLogService.create(
-      {
-        operationType: isRecover ? OperationTypesEnum.RECOVER : OperationTypesEnum.ARCHIVE,
-        collectionName: CollectionsEnum.TASKS,
-        entitiesBefore: tasksToProcess,
-        entitiesAfter: entitiesAfter,
-        dependencies: [],
-      },
-      userId,
-      session,
-    )
-
-    sideEffects.push(logPromise)
-
     await Promise.all(sideEffects)
-
-    const log = await logPromise
 
     const updatedTasksPopulated = await this.getByCriteria(
       { ids: tasksToProcess.map((t) => t.id.toString()) },
@@ -741,14 +714,15 @@ export class TaskService extends BaseService<
     criteria: ITaskCriteria,
     user: IUser,
     externalSession?: ClientSession,
+    isDryRun: boolean = false,
   ): Promise<IResponseWithLog<ITaskPopulated[]>> {
     const userId = user.id
 
     if (externalSession) {
-      return this._executeLifecycleTransaction(criteria, false, userId, externalSession)
+      return this._executeLifecycleTransaction(criteria, false, userId, externalSession, isDryRun)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeLifecycleTransaction(criteria, false, userId, session),
+        this._executeLifecycleTransaction(criteria, false, userId, session, isDryRun),
       )
     }
   }
@@ -757,14 +731,15 @@ export class TaskService extends BaseService<
     criteria: ITaskCriteria,
     user: IUser,
     externalSession?: ClientSession,
+    isDryRun: boolean = false,
   ): Promise<IResponseWithLog<ITaskPopulated[]>> {
     const userId = user.id
 
     if (externalSession) {
-      return this._executeLifecycleTransaction(criteria, true, userId, externalSession)
+      return this._executeLifecycleTransaction(criteria, true, userId, externalSession, isDryRun)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeLifecycleTransaction(criteria, true, userId, session),
+        this._executeLifecycleTransaction(criteria, true, userId, session, isDryRun),
       )
     }
   }
@@ -773,12 +748,13 @@ export class TaskService extends BaseService<
     criteria: ITaskCriteria,
     userId: Types.ObjectId,
     session: ClientSession,
+    isDryRun: boolean = false,
   ): Promise<IResponseWithLog<ITaskPopulated[]>> {
     const tasksToClone: (ITask & { embeddings: number[] })[] = await this.repository.findByCriteria(
       criteria,
       session,
       {
-        projection: '+embeddings -createdAt -updatedAt',
+        projection: isDryRun ? '-createdAt -updatedAt' : '+embeddings -createdAt -updatedAt',
       },
       userId,
     )
@@ -796,10 +772,18 @@ export class TaskService extends BaseService<
       tasksGrouppedByCategory.get(categoryId)!.push(task)
     })
 
+    const uniqueCategoryIds = [...new Set(tasksToClone.map((t) => t.category.toString()))]
+    const allTasksInCategories = await this.repository.findByCriteria(
+      { categoryIds: uniqueCategoryIds },
+      session,
+      { projection: 'rank category' },
+      userId,
+    )
+
     const transformedTasks: Omit<ITask & { embeddings: number[] }, 'id'>[] = []
 
     for (const [categoryId, tasks] of tasksGrouppedByCategory) {
-      const categoryTasks = tasksToClone.filter((t) => t.category.toString() === categoryId)
+      const categoryTasks = allTasksInCategories.filter((t) => t.category.toString() === categoryId)
 
       const lastTask = categoryTasks.sort((a, b) => (a.rank > b.rank ? -1 : 1))[0]
       let lastRank = LexoRank.middle()
@@ -813,7 +797,7 @@ export class TaskService extends BaseService<
 
         const cleanTask = {
           ...task,
-          id: undefined,
+          id: isDryRun ? task.id : undefined,
           name: `${task?.name}`,
           rank: newRank.toString(),
         }
@@ -824,12 +808,31 @@ export class TaskService extends BaseService<
       }
     }
 
+    if (isDryRun) {
+      const log = await this.operationLogService.create(
+        {
+          operationType: OperationTypesEnum.CLONE,
+          collectionName: CollectionsEnum.TASKS,
+          entitiesAfter: transformedTasks,
+          dependencies: [],
+          status: OperationLogStatusesEnum.PENDING,
+        },
+        userId,
+        session,
+      )
+
+      return {
+        data: [],
+        logId: log.id,
+      }
+    }
+
     const newTasks = await this.repository.createMany(transformedTasks, session)
 
     /* LOG */
-    const logPromise = this.operationLogService.create(
+    const log = await this.operationLogService.create(
       {
-        operationType: OperationTypesEnum.CREATE,
+        operationType: OperationTypesEnum.CLONE,
         collectionName: CollectionsEnum.TASKS,
         entitiesAfter: newTasks,
         dependencies: [],
@@ -837,10 +840,6 @@ export class TaskService extends BaseService<
       userId,
       session,
     )
-
-    await Promise.all([logPromise, ...this._updateTasksParentCounters(newTasks, userId, session)])
-
-    const log = await logPromise
 
     const clonedTasksPopulated = await this.getByCriteria(
       { ids: newTasks.map((t) => t.id.toString()) },
@@ -858,14 +857,15 @@ export class TaskService extends BaseService<
     criteria: ITaskCriteria,
     user: IUser,
     externalSession?: ClientSession,
+    isDryRun: boolean = false,
   ): Promise<IResponseWithLog<ITaskPopulated[]>> {
     const userId = user.id
 
     if (externalSession) {
-      return this._executeCloneTransaction(criteria, userId, externalSession)
+      return this._executeCloneTransaction(criteria, userId, externalSession, isDryRun)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeCloneTransaction(criteria, userId, session),
+        this._executeCloneTransaction(criteria, userId, session, isDryRun),
       )
     }
   }
@@ -1017,7 +1017,8 @@ export class TaskService extends BaseService<
     log: IOperationLog,
     user: IUser,
     session: ClientSession,
-  ): Promise<IUndoResponse> {
+    isDryRun: boolean = false,
+  ): Promise<IResponseWithLog<any>> {
     const { operationType } = log
 
     const before = log.entitiesBefore as (Partial<ITask> & { id: Types.ObjectId })[]
@@ -1027,9 +1028,9 @@ export class TaskService extends BaseService<
     const idsAfter = after?.map((e) => e.id?.toString()) || []
 
     switch (operationType) {
-      case OperationTypesEnum.CREATE: {
-        await this.delete({ ids: idsAfter }, user, session)
-        break
+      case OperationTypesEnum.CREATE:
+      case OperationTypesEnum.CLONE: {
+        return await this.delete({ ids: idsAfter }, user, session, isDryRun)
       }
 
       case OperationTypesEnum.UPDATE: {
@@ -1038,26 +1039,19 @@ export class TaskService extends BaseService<
           id: e.id?.toString(),
         }))
 
-        await this.editMany(payload, user, session)
-        break
+        return await this.editMany(payload, user, session, isDryRun)
       }
 
       case OperationTypesEnum.ARCHIVE: {
-        await this.recover({ ids: idsBefore }, user, session)
-        break
+        return await this.recover({ ids: idsBefore }, user, session, isDryRun)
       }
 
       case OperationTypesEnum.RECOVER: {
-        await this.archive({ ids: idsBefore }, user, session)
-        break
+        return await this.archive({ ids: idsBefore }, user, session, isDryRun)
       }
 
       default:
         throw new AppError(`Операция ${operationType} не поддерживается для отката.`, 400)
-    }
-
-    return {
-      affectedTaskIds: [...new Set([...idsBefore, ...idsAfter])],
     }
   }
 
@@ -1371,98 +1365,5 @@ export class TaskService extends BaseService<
     await this._prepareMainEditFields(rest, taskPayload, tasksToUpdate, timezone, isDryRun)
 
     return taskPayload
-  }
-
-  private _updateTasksParentCountersWithOld(
-    oldTasks: ITask[],
-    newTasks: ITask[],
-    userId: Types.ObjectId,
-    session: ClientSession,
-  ) {
-    const sideEffects: Promise<any>[] = []
-
-    const affectedCategories = new Set<string>()
-    const affectedBoards = new Set<string>()
-    const affectedWorkspaces = new Set<string>()
-
-    oldTasks.forEach((t) => {
-      affectedCategories.add(t.category.toString())
-      affectedBoards.add(t.board.toString())
-      affectedWorkspaces.add(t.workspace.toString())
-    })
-
-    newTasks.forEach((t) => {
-      affectedCategories.add(t.category.toString())
-      affectedBoards.add(t.board.toString())
-      affectedWorkspaces.add(t.workspace.toString())
-    })
-
-    sideEffects.push(
-      this.categoryService.updateTasksCount(
-        Array.from(affectedCategories).map((id) => new Types.ObjectId(id)),
-        userId,
-        session,
-      ),
-      this.boardService.updateTasksCount(
-        Array.from(affectedBoards).map((id) => new Types.ObjectId(id)),
-        userId,
-        session,
-      ),
-      this.workspaceService.updateTasksCount(
-        Array.from(affectedWorkspaces).map((id) => new Types.ObjectId(id)),
-        userId,
-        session,
-      ),
-    )
-
-    return sideEffects
-  }
-
-  private _updateTasksParentCounters(
-    tasks: ITask[],
-    userId: Types.ObjectId,
-    session: ClientSession,
-  ) {
-    const uniqueCategoryIds = [...new Set(tasks.map((t) => t.category.toString()))].map(
-      (id) => new Types.ObjectId(id),
-    )
-
-    const uniqueBoardIds = [...new Set(tasks.map((t) => t.board.toString()))].map(
-      (id) => new Types.ObjectId(id),
-    )
-
-    const uniqueWorkspaceIds = [...new Set(tasks.map((t) => t.workspace.toString()))].map(
-      (id) => new Types.ObjectId(id),
-    )
-
-    return [
-      this.categoryService.updateTasksCount(uniqueCategoryIds, userId, session),
-      this.boardService.updateTasksCount(uniqueBoardIds, userId, session),
-      this.workspaceService.updateTasksCount(uniqueWorkspaceIds, userId, session),
-    ]
-  }
-
-  public getTasksCountByCategories(
-    categoryIds: Types.ObjectId[],
-    userId: Types.ObjectId,
-    session?: ClientSession,
-  ): Promise<{ parentId: string; count: number }[]> {
-    return this.repository.getCountGroupedByParents(categoryIds, 'category', userId, session)
-  }
-
-  public getTasksCountByBoards(
-    boardIds: Types.ObjectId[],
-    userId: Types.ObjectId,
-    session?: ClientSession,
-  ): Promise<{ parentId: string; count: number }[]> {
-    return this.repository.getCountGroupedByParents(boardIds, 'board', userId, session)
-  }
-
-  public getTasksCountByWorkspaces(
-    workspaceIds: Types.ObjectId[],
-    userId: Types.ObjectId,
-    session?: ClientSession,
-  ): Promise<{ parentId: string; count: number }[]> {
-    return this.repository.getCountGroupedByParents(workspaceIds, 'workspace', userId, session)
   }
 }

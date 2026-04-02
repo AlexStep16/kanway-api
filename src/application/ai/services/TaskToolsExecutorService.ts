@@ -27,6 +27,8 @@ import { AbstractToolExecutor } from './AbstractToolExecutor.ts'
 import { MoveTaskDTO, MoveTaskDTOSchema } from '../dtos/MoveTaskDTO.ts'
 import { TaskMoveDTO } from '@/application/dtos/TaskMoveDTO.ts'
 import { DispatchPayload } from './ToolDispatcherService.ts'
+import { VectorSearchService } from '@/application/services/VectorSearchService.ts'
+import { findProperty } from '@/utils/findProperty.ts'
 
 type ITaskCreatePopulated = Partial<Omit<ITaskPopulated, 'id' | 'createdAt' | 'updatedAt'>> & {
   id: string
@@ -40,6 +42,7 @@ export class TaskToolsExecutorService extends AbstractToolExecutor {
     private categoryService: CategoryService,
     private operationLogService: OperationLogService,
     private chatMessageService: ChatMessageService,
+    private vectorSearchService: VectorSearchService,
   ) {
     super()
 
@@ -48,6 +51,10 @@ export class TaskToolsExecutorService extends AbstractToolExecutor {
       create_tasks: this.createTasks.bind(this),
       update_tasks: this.updateTasks.bind(this),
       move_task: this.moveTask.bind(this),
+      delete_tasks: this.deleteTasks.bind(this),
+      archive_tasks: this.archiveTasks.bind(this),
+      recover_tasks: this.recoverTasks.bind(this),
+      clone_tasks: this.cloneTasks.bind(this),
     }
   }
 
@@ -59,17 +66,24 @@ export class TaskToolsExecutorService extends AbstractToolExecutor {
     const args = toolCall.args as {
       mongo_filter?: FilterQuery<ITaskRawString>
       search_query?: string
+      search_mode?: 'fuzzy' | 'semantic'
       limit?: number
     }
 
-    const { mongo_filter = {}, search_query = '', limit = 50 } = args
+    const { mongo_filter = {}, search_query = '', search_mode = 'fuzzy', limit = 50 } = args
 
     const scaledLimit = search_query ? HARD_SEARCH_LIMIT : limit
 
-    const baseFilter: FilterQuery<ITaskRawString> = {
-      is_deleted: { $ne: true },
-      is_deleted_external: { $ne: true },
-    }
+    const isMongoFilterHasDeletedCondition =
+      findProperty(mongo_filter, 'is_deleted') !== undefined ||
+      findProperty(mongo_filter, 'is_deleted_external') !== undefined
+
+    const baseFilter: FilterQuery<ITaskRawString> = isMongoFilterHasDeletedCondition
+      ? {}
+      : {
+          is_deleted: { $ne: true },
+          is_deleted_external: { $ne: true },
+        }
 
     const unionFilter = { ...baseFilter, ...mongo_filter, user_id: new Types.ObjectId(userId) }
 
@@ -89,23 +103,42 @@ export class TaskToolsExecutorService extends AbstractToolExecutor {
         }
       }
 
-      const fuse = new Fuse(tasks, {
-        keys: ['name'],
-        threshold: 0.3,
-        includeScore: true,
-      })
+      let pagedResults: ITaskRawString[] = []
+      let searchedCount = 0
 
-      const searchResults = fuse.search(search_query)
+      if (search_mode === 'fuzzy') {
+        const fuse = new Fuse(tasks, {
+          keys: ['name'],
+          threshold: 0.3,
+          includeScore: true,
+        })
 
-      const pagedResults = searchResults
-        .sort((a, b) => (a.score || 0) - (b.score || 0))
-        .slice(0, scaledLimit)
-        .map((result) => result.item)
+        const searchResults = fuse.search(search_query)
+
+        pagedResults = searchResults
+          .sort((a, b) => (a.score || 0) - (b.score || 0))
+          .slice(0, scaledLimit)
+          .map((result) => result.item)
+        searchedCount = searchResults.length
+      } else if (search_mode === 'semantic') {
+        const filteredIds = tasks.map((task) => new Types.ObjectId(task._id))
+
+        const semanticTasks = await this.vectorSearchService.similaritySearchTasks(
+          [search_query],
+          new Types.ObjectId(userId),
+          20,
+          filteredIds,
+        )
+        const semanticTaskIds = semanticTasks.map((task) => task.id.toString())
+
+        pagedResults = tasks.filter((task) => semanticTaskIds.includes(task._id.toString()))
+        searchedCount = semanticTasks.length
+      }
 
       return {
         tasks: pagedResults,
-        count: searchResults.length,
-        hasMore: searchResults.length > scaledLimit,
+        count: searchedCount,
+        hasMore: searchedCount > scaledLimit,
       }
     }
 
@@ -309,7 +342,10 @@ export class TaskToolsExecutorService extends AbstractToolExecutor {
       name: task.name,
     }))
 
-    const resultMessage = `Successfully created ${createdTasks.data.length} tasks: ${JSON.stringify(resultInfo)}`
+    const resultMessage = `
+      Successfully created ${createdTasks.data.length} tasks: ${JSON.stringify(resultInfo)}
+      Log ID: ${createdTasks.logId}
+    `
 
     return new SuccessToolResult(resultMessage, {
       tempToRealIdMap: tempToRealIdMapNew,
@@ -396,9 +432,12 @@ export class TaskToolsExecutorService extends AbstractToolExecutor {
       config,
     )
 
-    const resultInfo = logs[0].entitiesAfter
+    const resultInfo = logs[0].entitiesAfter || []
 
-    const resultMessage = `Successfully updated ${updatedTasks.data.length} tasks: ${JSON.stringify(resultInfo)}`
+    const resultMessage = `
+      Successfully updated ${updatedTasks.data.length} tasks: ${JSON.stringify(resultInfo)}
+      Log ID: ${updatedTasks.logId}
+    `
 
     return new SuccessToolResult(resultMessage)
   }
@@ -489,10 +528,421 @@ export class TaskToolsExecutorService extends AbstractToolExecutor {
       config,
     )
 
-    const resultInfo = logs[0].entitiesAfter
+    const resultInfo = logs[0].entitiesAfter || []
 
-    const resultMessage = `Successfully moved ${result.data.length} tasks: ${JSON.stringify(resultInfo)}`
+    const resultMessage = `
+      Successfully moved ${result.data.length} tasks: ${JSON.stringify(resultInfo)}
+      Log ID: ${result.logId}
+    `
 
     return new SuccessToolResult(resultMessage)
+  }
+
+  public async deleteTasks(payload: DispatchPayload) {
+    const { toolCall, config, tempToRealIdMap } = payload
+
+    const args = toolCall.args as { ids: string[] }
+    const toolCallId = toolCall.id
+
+    const configurable = config.configurable as Configurable
+    const user = configurable.user
+
+    if (!args.ids || !Array.isArray(args.ids) || args.ids.some((id) => typeof id !== 'string')) {
+      return new FailedToolResult(
+        'Validation Error: Invalid arguments. Please provide an object with an ids property which is array of string IDs.',
+      )
+    }
+
+    const mappedIds = args.ids.map((id) => tempToRealIdMap[id] || id) // Map temp IDs to real IDs using the provided map, fallback to original ID if not found in the map
+
+    if (configurable.aiConfirmationType === AiConfirmationTypeEnum.ALWAYS) {
+      const messages = await this.chatMessageService.getByCriteria(
+        { pendingToolCallId: toolCallId, role: 'operation' },
+        user.id,
+      )
+
+      if (messages.length > 0) {
+        const logs = await this.operationLogService.getByCriteria(
+          { id: messages[0].content },
+          user.id,
+        )
+
+        const log = logs[0]
+
+        if (log.status === OperationLogStatusesEnum.CANCELLED) {
+          return new SuccessToolResult('Task move cancelled by user.')
+        } else if (log.status === OperationLogStatusesEnum.APPROVED) {
+          const selectedIds = log.selectedIds || []
+
+          args.ids = args.ids.filter((id) => selectedIds.includes(id))
+        }
+      } else {
+        const mockDeleteTask = await this.taskService.delete(
+          {
+            ids: mappedIds,
+          },
+          user,
+          undefined,
+          true,
+        )
+
+        if (mockDeleteTask.logId) {
+          return new ConfirmationEntityToolResult({
+            toolCallId: toolCallId,
+            logId: mockDeleteTask.logId.toString(),
+          })
+        } else return new FailedToolResult('Failed to create operation log for task delete.')
+      }
+    }
+
+    await dispatchCustomEvent(
+      CustomEvents.STEP_ADD,
+      {
+        id: new Types.ObjectId().toString(),
+        name: 'Удаляю задачи',
+      },
+      config,
+    )
+
+    const result = await this.taskService.delete(
+      {
+        ids: mappedIds,
+      },
+      user,
+    )
+
+    const logs = await this.operationLogService.getByCriteria(
+      { id: result.logId!.toString() },
+      user.id,
+    )
+
+    await dispatchCustomEvent(
+      CustomEvents.OPERATION,
+      {
+        logId: logs[0].id,
+        toolCallId: toolCallId,
+      },
+      config,
+    )
+
+    const resultInfo = (logs[0].entitiesBefore || []).map((task) => ({
+      id: task.id,
+      name: task.name,
+    }))
+
+    const resultMessage = `
+      Successfully deleted ${resultInfo.length} tasks: ${JSON.stringify(resultInfo)}
+      Log ID: ${result.logId}
+    `
+
+    return new SuccessToolResult(resultMessage)
+  }
+
+  public async archiveTasks(payload: DispatchPayload) {
+    const { toolCall, config, tempToRealIdMap } = payload
+
+    const args = toolCall.args as { ids: string[] }
+    const toolCallId = toolCall.id
+
+    const configurable = config.configurable as Configurable
+    const user = configurable.user
+
+    if (!args.ids || !Array.isArray(args.ids) || args.ids.some((id) => typeof id !== 'string')) {
+      return new FailedToolResult(
+        'Validation Error: Invalid arguments. Please provide an object with an ids property which is array of string IDs.',
+      )
+    }
+
+    const mappedIds = args.ids.map((id) => tempToRealIdMap[id] || id) // Map temp IDs to real IDs using the provided map, fallback to original ID if not found in the map
+
+    if (configurable.aiConfirmationType === AiConfirmationTypeEnum.ALWAYS) {
+      const messages = await this.chatMessageService.getByCriteria(
+        { pendingToolCallId: toolCallId, role: 'operation' },
+        user.id,
+      )
+
+      if (messages.length > 0) {
+        const logs = await this.operationLogService.getByCriteria(
+          { id: messages[0].content },
+          user.id,
+        )
+
+        const log = logs[0]
+
+        if (log.status === OperationLogStatusesEnum.CANCELLED) {
+          return new SuccessToolResult('Tasks archive cancelled by user.')
+        } else if (log.status === OperationLogStatusesEnum.APPROVED) {
+          const selectedIds = log.selectedIds || []
+
+          args.ids = args.ids.filter((id) => selectedIds.includes(id))
+        }
+      } else {
+        const mockArchiveTask = await this.taskService.archive(
+          {
+            ids: mappedIds,
+          },
+          user,
+          undefined,
+          true,
+        )
+
+        if (mockArchiveTask.logId) {
+          return new ConfirmationEntityToolResult({
+            toolCallId: toolCallId,
+            logId: mockArchiveTask.logId.toString(),
+          })
+        } else return new FailedToolResult('Failed to create operation log for task archive.')
+      }
+    }
+
+    await dispatchCustomEvent(
+      CustomEvents.STEP_ADD,
+      {
+        id: new Types.ObjectId().toString(),
+        name: 'Архивирую задачи',
+      },
+      config,
+    )
+
+    const result = await this.taskService.archive(
+      {
+        ids: mappedIds,
+      },
+      user,
+    )
+
+    const logs = await this.operationLogService.getByCriteria(
+      { id: result.logId!.toString() },
+      user.id,
+    )
+
+    await dispatchCustomEvent(
+      CustomEvents.OPERATION,
+      {
+        logId: logs[0].id,
+        toolCallId: toolCallId,
+      },
+      config,
+    )
+
+    const resultInfo = (logs[0].entitiesAfter || []).map((task) => ({
+      id: task.id,
+      name: task.name,
+    }))
+
+    const resultMessage = `
+      Successfully archived ${result.data.length} tasks: ${JSON.stringify(resultInfo)}
+      Log ID: ${result.logId}
+    `
+
+    return new SuccessToolResult(resultMessage)
+  }
+
+  public async recoverTasks(payload: DispatchPayload) {
+    const { toolCall, config, tempToRealIdMap } = payload
+
+    const args = toolCall.args as { ids: string[] }
+    const toolCallId = toolCall.id
+
+    const configurable = config.configurable as Configurable
+    const user = configurable.user
+
+    if (!args.ids || !Array.isArray(args.ids) || args.ids.some((id) => typeof id !== 'string')) {
+      return new FailedToolResult(
+        'Validation Error: Invalid arguments. Please provide an object with an ids property which is array of string IDs.',
+      )
+    }
+
+    const mappedIds = args.ids.map((id) => tempToRealIdMap[id] || id) // Map temp IDs to real IDs using the provided map, fallback to original ID if not found in the map
+
+    if (configurable.aiConfirmationType === AiConfirmationTypeEnum.ALWAYS) {
+      const messages = await this.chatMessageService.getByCriteria(
+        { pendingToolCallId: toolCallId, role: 'operation' },
+        user.id,
+      )
+
+      if (messages.length > 0) {
+        const logs = await this.operationLogService.getByCriteria(
+          { id: messages[0].content },
+          user.id,
+        )
+
+        const log = logs[0]
+
+        if (log.status === OperationLogStatusesEnum.CANCELLED) {
+          return new SuccessToolResult('Tasks recovery cancelled by user.')
+        } else if (log.status === OperationLogStatusesEnum.APPROVED) {
+          const selectedIds = log.selectedIds || []
+
+          args.ids = args.ids.filter((id) => selectedIds.includes(id))
+        }
+      } else {
+        const mockRecoverTask = await this.taskService.recover(
+          {
+            ids: mappedIds,
+          },
+          user,
+          undefined,
+          true,
+        )
+
+        if (mockRecoverTask.logId) {
+          return new ConfirmationEntityToolResult({
+            toolCallId: toolCallId,
+            logId: mockRecoverTask.logId.toString(),
+          })
+        } else return new FailedToolResult('Failed to create operation log for task recovery.')
+      }
+    }
+
+    await dispatchCustomEvent(
+      CustomEvents.STEP_ADD,
+      {
+        id: new Types.ObjectId().toString(),
+        name: 'Восстанавливаю задачи',
+      },
+      config,
+    )
+
+    const result = await this.taskService.recover(
+      {
+        ids: mappedIds,
+      },
+      user,
+    )
+
+    const logs = await this.operationLogService.getByCriteria(
+      { id: result.logId!.toString() },
+      user.id,
+    )
+
+    await dispatchCustomEvent(
+      CustomEvents.OPERATION,
+      {
+        logId: logs[0].id,
+        toolCallId: toolCallId,
+      },
+      config,
+    )
+
+    const resultInfo = (logs[0].entitiesAfter || []).map((task) => ({
+      id: task.id,
+      name: task.name,
+    }))
+
+    const resultMessage = `
+      Successfully recovered ${result.data.length} tasks: ${JSON.stringify(resultInfo)}
+      Log ID: ${result.logId}
+    `
+
+    return new SuccessToolResult(resultMessage)
+  }
+
+  public async cloneTasks(payload: DispatchPayload) {
+    const { toolCall, config, tempToRealIdMap } = payload
+
+    const args = toolCall.args as { ids: string[]; tempIds: string[] }
+    const toolCallId = toolCall.id
+
+    const configurable = config.configurable as Configurable
+    const user = configurable.user
+
+    if (!args.ids || !Array.isArray(args.ids) || args.ids.some((id) => typeof id !== 'string')) {
+      return new FailedToolResult(
+        'Validation Error: Invalid arguments. Please provide an object with an ids property which is array of string IDs.',
+      )
+    }
+
+    const mappedIds = args.ids.map((id) => tempToRealIdMap[id] || id) // Map temp IDs to real IDs using the provided map, fallback to original ID if not found in the map
+
+    if (configurable.aiConfirmationType === AiConfirmationTypeEnum.ALWAYS) {
+      const messages = await this.chatMessageService.getByCriteria(
+        { pendingToolCallId: toolCallId, role: 'operation' },
+        user.id,
+      )
+
+      if (messages.length > 0) {
+        const logs = await this.operationLogService.getByCriteria(
+          { id: messages[0].content },
+          user.id,
+        )
+
+        const log = logs[0]
+
+        if (log.status === OperationLogStatusesEnum.CANCELLED) {
+          return new SuccessToolResult('Tasks clone cancelled by user.')
+        } else if (log.status === OperationLogStatusesEnum.APPROVED) {
+          const selectedIds = log.selectedIds || []
+
+          args.ids = args.ids.filter((id) => selectedIds.includes(id))
+        }
+      } else {
+        const mockCloneTask = await this.taskService.clone(
+          {
+            ids: mappedIds,
+          },
+          user,
+          undefined,
+          true,
+        )
+
+        if (mockCloneTask.logId) {
+          return new ConfirmationEntityToolResult({
+            toolCallId: toolCallId,
+            logId: mockCloneTask.logId.toString(),
+          })
+        } else return new FailedToolResult('Failed to create operation log for task clone.')
+      }
+    }
+
+    await dispatchCustomEvent(
+      CustomEvents.STEP_ADD,
+      {
+        id: new Types.ObjectId().toString(),
+        name: 'Копирую задачи',
+      },
+      config,
+    )
+
+    const result = await this.taskService.clone(
+      {
+        ids: mappedIds,
+      },
+      user,
+    )
+
+    const logs = await this.operationLogService.getByCriteria(
+      { id: result.logId!.toString() },
+      user.id,
+    )
+
+    await dispatchCustomEvent(
+      CustomEvents.OPERATION,
+      {
+        logId: logs[0].id,
+        toolCallId: toolCallId,
+      },
+      config,
+    )
+
+    const resultInfo = (logs[0].entitiesAfter || []).map((task) => ({
+      id: task.id,
+      name: task.name,
+    }))
+
+    const resultMessage = `
+      Successfully cloned ${result.data.length} tasks: ${JSON.stringify(resultInfo)}
+      Log ID: ${result.logId}
+    `
+
+    const tempToRealIdMapNew: Record<string, string> = {}
+
+    for (let i = 0; i < result.data.length; i++) {
+      tempToRealIdMapNew[args.ids[i]] = result.data[i].id.toString()
+    }
+
+    return new SuccessToolResult(resultMessage, {
+      tempToRealIdMap: tempToRealIdMapNew,
+    })
   }
 }

@@ -17,9 +17,29 @@ export const AgentStateAnnotation = Annotation.Root({
     reducer: (_, y) => y,
     default: () => [],
   }),
-  brain_messages: Annotation<BaseMessage[]>({
+  planner_messages: Annotation<BaseMessage[]>({
     reducer: (_, y) => y,
     default: () => [],
+  }),
+  replanner_messages: Annotation<BaseMessage[]>({
+    reducer: (_, y) => y,
+    default: () => [],
+  }),
+  last_execution_messages: Annotation<BaseMessage[]>({
+    reducer: (_, y) => y,
+    default: () => [],
+  }),
+  current_plan: Annotation<string[]>({
+    reducer: (_, y) => y,
+    default: () => [],
+  }),
+  current_step_index: Annotation<number>({
+    reducer: (_, y) => y,
+    default: () => 0,
+  }),
+  last_replanner_tool_name: Annotation<string>({
+    reducer: (_, y) => y,
+    default: () => '',
   }),
 
   coder_messages: Annotation<BaseMessage[]>({
@@ -53,9 +73,9 @@ export const AgentStateAnnotation = Annotation.Root({
     reducer: (_, y) => y,
     default: () => '',
   }),
-  execution_output: Annotation<string>({
+  coder_iterations: Annotation<number>({
     reducer: (_, y) => y,
-    default: () => '',
+    default: () => 0,
   }),
   resolved_ambiguities: Annotation<Record<string, any>>({
     reducer: (x, y) => ({ ...x, ...y }),
@@ -70,11 +90,11 @@ export const AgentStateAnnotation = Annotation.Root({
     reducer: (_, y) => y,
     default: () => '',
   }),
-  enriched_message: Annotation<string>({
+  planner_has_error: Annotation<boolean>({
     reducer: (_, y) => y,
-    default: () => '',
+    default: () => false,
   }),
-  brain_has_error: Annotation<boolean>({
+  replanner_has_error: Annotation<boolean>({
     reducer: (_, y) => y,
     default: () => false,
   }),

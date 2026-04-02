@@ -6,8 +6,6 @@ export interface IBoard<TWorkspace = Types.ObjectId> {
   workspace: TWorkspace
   userId: Types.ObjectId
   isFavorite: boolean
-  tasksCount: number
-  categoriesCount: number
   rank: string
   embeddings: number[]
   isDeleted: boolean

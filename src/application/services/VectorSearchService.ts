@@ -26,20 +26,10 @@ export class VectorSearchService {
     count: number
     filter?: any
     textKey?: string
-    isOnlyRelevant?: boolean
 
     mapResult: (doc: Document) => any
   }): Promise<T[]> {
-    const {
-      collectionName,
-      indexName,
-      query,
-      count,
-      filter,
-      mapResult,
-      textKey = 'name',
-      isOnlyRelevant,
-    } = params
+    const { collectionName, indexName, query, count, filter, mapResult, textKey = 'name' } = params
 
     const collection = this.mongoClient.db(process.env.DATABASE_NAME).collection(collectionName)
 
@@ -67,19 +57,16 @@ export class VectorSearchService {
     const maxScore = documents.length > 0 ? documents[0][1] : 0
 
     for (const [doc, score] of documents) {
-      if (isOnlyRelevant) {
-        if (score > maxScore - 0.07 && score > 0.82) {
-          const mappedItem = mapResult(doc)
-          results.push(mappedItem)
-        }
-
-        continue
-      }
-
       if ((score > maxScore - 0.2 && score > 0.42) || score > 0.52) {
         const mappedItem = mapResult(doc)
         results.push(mappedItem)
       }
+
+      /** More precise filtering
+      if (score > maxScore - 0.07 && score > 0.82) {
+        const mappedItem = mapResult(doc)
+        results.push(mappedItem)
+      } */
     }
 
     return results.map(toServerCaseKeys<T>)
@@ -89,11 +76,11 @@ export class VectorSearchService {
     query: string[],
     userId: Types.ObjectId,
     count: number,
-    categoryIds?: Array<Types.ObjectId>,
+    ids?: Array<Types.ObjectId>,
   ): Promise<ITask[]> {
-    const filter: any = { user_id: { $eq: userId }, is_deleted: { $eq: false } }
-    if (categoryIds?.length) filter.category = { $in: categoryIds }
-
+    const filter: any = { user_id: { $eq: userId } }
+    if (ids?.length) filter._id = { $in: ids }
+    console.log(count)
     // Вызываем универсальный метод
     return this._executeSearch<ITask>({
       collectionName: 'tasks',
@@ -112,11 +99,10 @@ export class VectorSearchService {
     query: string[],
     userId: Types.ObjectId,
     count: number,
-    boardIds?: Array<Types.ObjectId>,
-    isOnlyRelevant?: boolean,
+    ids?: Array<Types.ObjectId>,
   ): Promise<ICategory[]> {
-    const filter: any = { user_id: { $eq: userId }, is_deleted: { $eq: false } }
-    if (boardIds?.length) filter.board = { $in: boardIds }
+    const filter: any = { user_id: { $eq: userId } }
+    if (ids?.length) filter._id = { $in: ids }
 
     // Вызываем универсальный метод
     return this._executeSearch<ICategory>({
@@ -125,7 +111,6 @@ export class VectorSearchService {
       query,
       count,
       filter,
-      isOnlyRelevant,
       mapResult: (doc) => ({
         ...doc.metadata,
         name: doc.pageContent,
@@ -137,11 +122,10 @@ export class VectorSearchService {
     query: string[],
     userId: Types.ObjectId,
     count: number,
-    workspaceIds?: Array<Types.ObjectId>,
-    isOnlyRelevant?: boolean,
+    ids?: Array<Types.ObjectId>,
   ): Promise<IBoard[]> {
-    const filter: any = { user_id: { $eq: userId }, is_deleted: { $eq: false } }
-    if (workspaceIds?.length) filter.workspace = { $in: workspaceIds }
+    const filter: any = { user_id: { $eq: userId } }
+    if (ids?.length) filter._id = { $in: ids }
 
     // Вызываем универсальный метод
     return this._executeSearch<IBoard>({
@@ -150,7 +134,6 @@ export class VectorSearchService {
       query,
       count,
       filter,
-      isOnlyRelevant,
       mapResult: (doc) => ({
         ...doc.metadata,
         name: doc.pageContent,
@@ -162,9 +145,10 @@ export class VectorSearchService {
     query: string[],
     userId: Types.ObjectId,
     count: number,
-    isOnlyRelevant?: boolean,
+    ids?: Array<Types.ObjectId>,
   ): Promise<IWorkspace[]> {
-    const filter: any = { user_id: { $eq: userId }, is_deleted: { $eq: false } }
+    const filter: any = { user_id: { $eq: userId } }
+    if (ids?.length) filter._id = { $in: ids }
 
     // Вызываем универсальный метод
     return this._executeSearch<IWorkspace>({
@@ -173,7 +157,6 @@ export class VectorSearchService {
       query,
       count,
       filter,
-      isOnlyRelevant,
       mapResult: (doc) => ({
         ...doc.metadata,
         name: doc.pageContent,

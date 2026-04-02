@@ -35,7 +35,4 @@ When building a workspace dictionary, you MUST use the following fields and type
 
 **Required Fields:**
 - 'name': String (The title of the workspace).
-
-#### USAGE STRATEGY & RULES:
-1. **Batch Creation:** If the user asks to create multiple workspaces (e.g., "Create workspaces A, B, and C"), pass all of them in a single list to 'create_workspaces'. DO NOT call 'create_workspaces' inside a loop.
 `

@@ -4,7 +4,6 @@ export function getDefaultState(): typeof AgentStateAnnotation.State {
   return {
     messages: [],
     skiller_messages: [],
-    brain_messages: [],
 
     coder_messages: [],
     coder_has_error: false,
@@ -12,13 +11,19 @@ export function getDefaultState(): typeof AgentStateAnnotation.State {
     coder_ambiguities: null,
     coder_has_ambiguities: false,
     coder_code: '',
-    execution_output: '',
     resolved_ambiguities: {},
+    current_step_index: 0,
+    last_replanner_tool_name: '',
+    replanner_has_error: false,
+    replanner_messages: [],
+    current_plan: [],
+    planner_messages: [],
+    last_execution_messages: [],
+    coder_iterations: 0,
 
     final_response: '',
     chat_summary: '',
-    enriched_message: '',
-    brain_has_error: false,
+    planner_has_error: false,
     related_skill_names: [],
     skiller_has_error: false,
 

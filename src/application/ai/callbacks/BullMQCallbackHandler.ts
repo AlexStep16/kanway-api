@@ -94,7 +94,7 @@ export class BullMQCallbackHandler extends BaseCallbackHandler {
       }
     })
 
-    if (this.stepsMessage)
+    if (this.stepsMessage) {
       await this.editChatMessage(
         {
           content: this.steps,
@@ -105,6 +105,7 @@ export class BullMQCallbackHandler extends BaseCallbackHandler {
         this.configurable.user,
         this.job,
       )
+    }
   }
 
   failSteps() {

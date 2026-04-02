@@ -6,7 +6,6 @@ export interface ICategoryRaw {
   workspace: Types.ObjectId
   board: Types.ObjectId
   user_id: Types.ObjectId
-  tasks_count: number
   rank: string
   embeddings: Array<number>
   is_deleted: boolean

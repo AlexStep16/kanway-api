@@ -39,7 +39,8 @@ export const BoardsCreateSkill: AgentSkill = {
 
 export const BoardsUpdateSkill: AgentSkill = {
   name: 'BoardsUpdate',
-  description: 'Skill for updating boards. Use this skill to modify existing boards.',
+  description:
+    'Skill for updating boards. Use this skill to modify existing boards. Also for moving boards between workspaces.',
   content: `
     ### SKILL: BoardsUpdate
 
@@ -57,7 +58,8 @@ export const BoardsUpdateSkill: AgentSkill = {
 
 export const BoardMoveSkill: AgentSkill = {
   name: 'BoardMove',
-  description: 'Skill for moving board. Use this skill to change the position of existing board.',
+  description:
+    'Skill for moving board. Use this skill to change the position of existing board. Not for moving multiple boards between workspaces.',
   content: `
     ### SKILL: BoardMove
 
@@ -74,4 +76,77 @@ export const BoardMoveSkill: AgentSkill = {
   `,
   relatedTools: ['move_board', 'search_boards', 'search_workspaces', 'resolve_ambiguous'],
   relatedEntities: ['board', 'workspace'],
+}
+
+export const BoardsDeleteSkill: AgentSkill = {
+  name: 'BoardsDelete',
+  description: 'Skill for deleting boards. Use this skill to remove existing boards.',
+  content: `
+    ### SKILL: BoardsDelete
+
+    This skill allows you to delete existing boards. You must resolve Board name to ID before deleting.
+    If the user says "Delete board A", then find the board by its name and use its ID to delete it.
+
+    #### USAGE STRATEGY & RULES:
+    1. **Find Context First:** You CANNOT delete a board using names like "Delete the board in the Work workspace". You MUST first call 'search_boards()' to resolve the exact 'board_id'.
+    2. **Handle Ambiguity:** If your search for a board returns multiple matches, you MUST call 'resolve_ambiguous' to let the user pick the correct ID before calling 'delete_boards'.
+    3. **Batch Deletion:** If the user asks to delete multiple boards (e.g., "Delete boards A, B, and C"), pass all of their IDs in a single list to 'delete_boards'. DO NOT call 'delete_boards' inside a loop.
+  `,
+  relatedTools: ['delete_boards', 'search_boards', 'resolve_ambiguous'],
+  relatedEntities: ['board'],
+}
+
+export const BoardsArchiveSkill: AgentSkill = {
+  name: 'BoardsArchive',
+  description: 'Skill for archiving boards. Use this skill to archive existing boards.',
+  content: `
+    ### SKILL: BoardsArchive
+
+    This skill allows you to archive existing boards. You must resolve Board name to ID before archiving.
+    If the user says "Archive board A", then find the board by its name and use its ID to archive it.
+
+    #### USAGE STRATEGY & RULES:
+    1. **Find Context First:** You CANNOT archive a board using names like "Archive the board in the Work workspace". You MUST first call 'search_boards()' to resolve the exact 'board_id'.
+    2. **Handle Ambiguity:** If your search for a board returns multiple matches, you MUST call 'resolve_ambiguous' to let the user pick the correct ID before calling 'archive_boards'.
+    3. **Batch Archiving:** If the user asks to archive multiple boards (e.g., "Archive boards A, B, and C"), pass all of their IDs in a single list to 'archive_boards'. DO NOT call 'archive_boards' inside a loop.
+  `,
+  relatedTools: ['archive_boards', 'search_boards', 'resolve_ambiguous'],
+  relatedEntities: ['board'],
+}
+
+export const BoardsRecoverSkill: AgentSkill = {
+  name: 'BoardsRecover',
+  description: 'Skill for recovering boards. Use this skill to recover deleted boards.',
+  content: `
+    ### SKILL: BoardsRecover
+
+    This skill allows you to recover deleted boards. You must resolve Board name to ID before recovering.
+    If the user says "Recover board A", then find the board by its name and use its ID to recover it.
+
+    #### USAGE STRATEGY & RULES:
+    1. **Find Context First:** You CANNOT recover a board using names like "Recover the board in the Work workspace". You MUST first call 'search_boards()' to resolve the exact 'board_id'.
+    2. **Search params:** You MUST use the 'isDeleted' parameter set to true when searching for boards to recover, otherwise you won't find any results.
+    3. **Handle Ambiguity:** If your search for a board returns multiple matches, you MUST call 'resolve_ambiguous' to let the user pick the correct ID before calling 'recover_boards'.
+    4. **Batch Recovery:** If the user asks to recover multiple boards (e.g., "Recover boards A, B, and C"), pass all of their IDs in a single list to 'recover_boards'. DO NOT call 'recover_boards' inside a loop.
+  `,
+  relatedTools: ['recover_boards', 'search_boards', 'resolve_ambiguous'],
+  relatedEntities: ['board'],
+}
+
+export const BoardsCloneSkill: AgentSkill = {
+  name: 'BoardsClone',
+  description: 'Skill for cloning boards. Use this skill to clone existing boards.',
+  content: `
+    ### SKILL: BoardsClone
+
+    This skill allows you to clone existing boards. You must resolve Board name to ID before cloning.
+    If the user says "Clone board A", then find the board by its name and use its ID to clone it.
+
+    #### USAGE STRATEGY & RULES:
+    1. **Find Context First:** You CANNOT clone a board using names like "Clone the board in the Work workspace". You MUST first call 'search_boards()' to resolve the exact 'board_id'.
+    2. **Handle Ambiguity:** If your search for a board returns multiple matches, you MUST call 'resolve_ambiguous' to let the user pick the correct ID before calling 'clone_boards'.
+    3. **Batch Cloning:** If the user asks to clone multiple boards (e.g., "Clone boards A, B, and C"), pass all of their IDs in a single list to 'clone_boards'. DO NOT call 'clone_boards' inside a loop.
+  `,
+  relatedTools: ['clone_boards', 'search_boards', 'resolve_ambiguous'],
+  relatedEntities: ['board'],
 }

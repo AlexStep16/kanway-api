@@ -36,9 +36,4 @@ When building a board dictionary, you MUST use the following fields and types. D
 **Required Fields:**
 - 'name': String (The title of the board).
 - 'workspace': String (The ID of the workspace it belongs to. You MUST find this ID first using 'search_workspaces' or search).
-
-#### USAGE STRATEGY & RULES:
-1. **Find Context First:** You CANNOT create a board using names like "in the Work workspace". You MUST first call 'search_workspaces()' to resolve the exact 'workspace_id'.
-2. **Handle Ambiguity:** If your search for a workspace returns multiple matches, you MUST call 'resolve_ambiguous' to let the user pick the correct ID before calling 'create_boards'.
-3. **Batch Creation:** If the user asks to create multiple boards (e.g., "Create boards A, B, and C"), pass all of them in a single list to 'create_boards'. DO NOT call 'create_boards' inside a loop.
 `

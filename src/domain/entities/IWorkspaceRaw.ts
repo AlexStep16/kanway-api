@@ -6,9 +6,6 @@ export interface IWorkspaceRaw {
   name: string
   user_id: Types.ObjectId
   is_favorite: boolean
-  tasks_count: number
-  categories_count: number
-  boards_count: number
   rank: string
   color: (typeof BASE_COLORS)[number]
   color_name: string

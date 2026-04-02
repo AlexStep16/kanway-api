@@ -10,10 +10,11 @@ export const makeCoderExecutionNode = () => {
     const user = configurable.user
 
     const outputs: Partial<typeof AgentStateAnnotation.State> = {
-      coder_messages: state.coder_messages,
+      coder_messages: [],
       coder_has_error: false,
       pending_internal_tool_calls: [],
-      execution_output: '',
+      coder_iterations: 0,
+      last_execution_messages: [],
     }
 
     try {
@@ -37,22 +38,43 @@ export const makeCoderExecutionNode = () => {
           ),
         ]
         outputs.coder_has_error = true
+        outputs.coder_iterations = state.coder_iterations + 1
+
+        if (state.coder_iterations === 2) {
+          outputs.last_execution_messages?.push(
+            new SystemMessage('The code has been executed 3 times with errors.'),
+            ...outputs.coder_messages,
+          )
+        }
 
         return outputs
       }
 
       outputs.pending_internal_tool_calls = pendingToolCalls
-      outputs.coder_code = state.coder_code
-      outputs.execution_output = executeResult.stdout || ''
+      outputs.coder_iterations = 0
+
+      if (executeResult.stdout) {
+        outputs.last_execution_messages?.push(
+          new SystemMessage(`Last Step: ${state.current_plan[state.current_step_index || 0]}`),
+          new SystemMessage(`Code execution result (print): ${executeResult.stdout}`),
+        )
+      }
 
       return outputs
     } catch (error) {
-      outputs.coder_messages = [
-        new SystemMessage(
-          `Error executing code: ${error instanceof Error ? error.message : String(error)}`,
-        ),
-      ]
+      const errorMessage = new SystemMessage(
+        `Error executing code: ${error instanceof Error ? error.message : String(error)}`,
+      )
+      outputs.coder_messages = [errorMessage]
       outputs.coder_has_error = true
+      outputs.coder_iterations = state.coder_iterations + 1
+
+      if (state.coder_iterations === 2) {
+        outputs.last_execution_messages?.push(
+          new SystemMessage('The code has been executed 3 times with errors.'),
+          ...outputs.coder_messages,
+        )
+      }
 
       return outputs
     }

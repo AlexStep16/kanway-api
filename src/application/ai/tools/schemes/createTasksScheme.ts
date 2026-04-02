@@ -36,9 +36,4 @@ When building a task dictionary, you MUST use the following fields and types. Do
 **Required Fields:**
 - 'name': String (The title of the task).
 - 'category': String (The ID of the category it belongs to. You MUST find this ID first using 'search_categories' or search).
-
-#### USAGE STRATEGY & RULES:
-1. **Find Context First:** You CANNOT create a task using names like "in the Work board". You MUST first call 'search_boards()' and/or 'search_categories()' to resolve the exact 'board_id' and 'category_id'.
-2. **Handle Ambiguity:** If your search for a board or category returns multiple matches, you MUST call 'resolve_ambiguous' to let the user pick the correct ID before calling 'create_tasks'.
-3. **Batch Creation:** If the user asks to create multiple tasks (e.g., "Create tasks A, B, and C"), pass all of them in a single list to 'create_tasks'. DO NOT call 'create_tasks' inside a loop.
 `

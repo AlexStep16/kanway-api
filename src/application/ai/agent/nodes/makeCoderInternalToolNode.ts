@@ -17,11 +17,11 @@ export const makeCoderInternalToolNode = (deps: AgentDependencies) => {
     const user = configurable.user
     const outputs: Partial<typeof AgentStateAnnotation.State> = {
       messages: [],
-      coder_messages: state.coder_messages,
       internal_tool_call_results: [],
       coder_has_confirmations: false,
       coder_has_ambiguities: false,
       internal_tool_calls_have_error: false,
+      last_execution_messages: state.last_execution_messages,
     }
     const resolveAmbiguousCall = pendingToolCalls.find((call) => call.name === 'resolve_ambiguous')
     const tempToRealIdMap: Record<string, string> = {} // Map for tracking temp IDs to real IDs during creating entities
@@ -62,7 +62,7 @@ export const makeCoderInternalToolNode = (deps: AgentDependencies) => {
 
         outputs.coder_has_confirmations = true
       } else if (result instanceof FailedToolResult) {
-        outputs.coder_messages!.push(
+        outputs.last_execution_messages!.push(
           new SystemMessage(`Error executing tool ${pendingToolCall.name}: ${result.content}`),
         )
         outputs.internal_tool_calls_have_error = true
@@ -71,12 +71,13 @@ export const makeCoderInternalToolNode = (deps: AgentDependencies) => {
           Object.assign(tempToRealIdMap, result.meta.tempToRealIdMap)
         }
 
-        outputs.messages!.push(
-          new SystemMessage({
-            name: pendingToolCall.name,
-            content: result.content,
-          }),
-        )
+        const toolResultMessage = new SystemMessage({
+          name: pendingToolCall.name,
+          content: result.content,
+        })
+
+        outputs.last_execution_messages!.push(toolResultMessage)
+        outputs.messages!.push(toolResultMessage)
       }
 
       outputs.internal_tool_call_results = [

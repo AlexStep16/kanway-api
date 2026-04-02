@@ -73,3 +73,77 @@ export const WorkspaceMoveSkill: AgentSkill = {
   relatedTools: ['move_workspace', 'search_workspaces', 'resolve_ambiguous'],
   relatedEntities: ['workspace'],
 }
+
+export const WorkspacesDeleteSkill: AgentSkill = {
+  name: 'WorkspacesDelete',
+  description: 'Skill for deleting workspaces. Use this skill to remove existing workspaces.',
+  content: `
+    ### SKILL: WorkspacesDelete
+
+    This skill allows you to delete existing workspaces. You must resolve Workspace name to ID before deleting.
+    If the user says "Delete workspace A", then find the workspace by its name and use its ID to delete it.
+
+    ### SCRIPT LOGIC (MUST BE IN A SINGLE SCRIPT):
+    - When generating your code, structure it as follows:
+    - Workspace Resolution: First, query for the workspace. If the result is ambiguous (len > 1), call resolve_ambiguous. If not, save the workspace_id to a variable.
+    - If the user says "Delete workspace A", then find the workspace by its name and use its ID to delete it using delete_workspaces at the end of the script.
+    - If the user says "Delete workspaces A, B, and C", then find the workspaces by their names and use their IDs to delete them using delete_workspaces at the end of the script.
+  `,
+  relatedTools: ['delete_workspaces', 'search_workspaces', 'resolve_ambiguous'],
+  relatedEntities: ['workspace'],
+}
+
+export const WorkspacesArchiveSkill: AgentSkill = {
+  name: 'WorkspacesArchive',
+  description: 'Skill for archiving workspaces. Use this skill to archive existing workspaces.',
+  content: `
+    ### SKILL: WorkspacesArchive
+
+    This skill allows you to archive existing workspaces. You must resolve Workspace name to ID before archiving.
+    If the user says "Archive workspace A", then find the workspace by its name and use its ID to archive it.
+
+    #### USAGE STRATEGY & RULES:
+    1. **Find Context First:** You CANNOT archive a workspace using names like "Archive the workspace in the Work board". You MUST first call 'search_workspaces()' to resolve the exact 'workspace_id'.
+    2. **Handle Ambiguity:** If your search for a workspace returns multiple matches, you MUST call 'resolve_ambiguous' to let the user pick the correct ID before calling 'archive_workspaces'.
+    3. **Batch Archiving:** If the user asks to archive multiple workspaces (e.g., "Archive workspaces A, B, and C"), pass all of their IDs in a single list to 'archive_workspaces'. DO NOT call 'archive_workspaces' inside a loop.
+  `,
+  relatedTools: ['archive_workspaces', 'search_workspaces', 'resolve_ambiguous'],
+  relatedEntities: ['workspace'],
+}
+
+export const WorkspacesRecoverSkill: AgentSkill = {
+  name: 'WorkspacesRecover',
+  description: 'Skill for recovering workspaces. Use this skill to recover deleted workspaces.',
+  content: `
+    ### SKILL: WorkspacesRecover
+
+    This skill allows you to recover deleted workspaces. You must resolve Workspace name to ID before recovering.
+    If the user says "Recover workspace A", then find the workspace by its name and use its ID to recover it.
+
+    #### USAGE STRATEGY & RULES:
+    1. **Find Context First:** You CANNOT recover a workspace using names like "Recover the workspace in the Work board". You MUST first call 'search_workspaces()' to resolve the exact 'workspace_id'.
+    2. **Search params:** You MUST use the 'isDeleted' parameter set to true when searching for workspaces to recover, otherwise you won't find any results.
+    3. **Handle Ambiguity:** If your search for a workspace returns multiple matches, you MUST call 'resolve_ambiguous' to let the user pick the correct ID before calling 'recover_workspaces'.
+    4. **Batch Recovery:** If the user asks to recover multiple workspaces (e.g., "Recover workspaces A, B, and C"), pass all of their IDs in a single list to 'recover_workspaces'. DO NOT call 'recover_workspaces' inside a loop.
+  `,
+  relatedTools: ['recover_workspaces', 'search_workspaces', 'resolve_ambiguous'],
+  relatedEntities: ['workspace'],
+}
+
+export const WorkspacesCloneSkill: AgentSkill = {
+  name: 'WorkspacesClone',
+  description: 'Skill for cloning workspaces. Use this skill to clone existing workspaces.',
+  content: `
+    ### SKILL: WorkspacesClone
+
+    This skill allows you to clone existing workspaces. You must resolve Workspace name to ID before cloning.
+    If the user says "Clone workspace A", then find the workspace by its name and use its ID to clone it.
+
+    #### USAGE STRATEGY & RULES:
+    1. **Find Context First:** You CANNOT clone a workspace using names like "Clone the workspace in the Work board". You MUST first call 'search_workspaces()' to resolve the exact 'workspace_id'.
+    2. **Handle Ambiguity:** If your search for a workspace returns multiple matches, you MUST call 'resolve_ambiguous' to let the user pick the correct ID before calling 'clone_workspaces'.
+    3. **Batch Cloning:** If the user asks to clone multiple workspaces (e.g., "Clone workspaces A, B, and C"), pass all of their IDs in a single list to 'clone_workspaces'. DO NOT call 'clone_workspaces' inside a loop.
+  `,
+  relatedTools: ['clone_workspaces', 'search_workspaces', 'resolve_ambiguous'],
+  relatedEntities: ['workspace'],
+}

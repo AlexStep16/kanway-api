@@ -27,6 +27,8 @@ import { BoardEditDTO } from '@/application/dtos/BoardEditDTO.ts'
 import { MoveBoardDTO, MoveBoardDTOSchema } from '../dtos/MoveBoardDTO.ts'
 import { BoardMoveDTO } from '@/application/dtos/BoardMoveDTO.ts'
 import { DispatchPayload } from './ToolDispatcherService.ts'
+import { VectorSearchService } from '@/application/services/VectorSearchService.ts'
+import { findProperty } from '@/utils/findProperty.ts'
 
 type IBoardCreatePopulated = Partial<Omit<IBoardPopulated, 'id' | 'createdAt' | 'updatedAt'>> & {
   id: string
@@ -40,6 +42,7 @@ export class BoardToolsExecutorService extends AbstractToolExecutor {
     private workspaceService: WorkspaceService,
     private operationLogService: OperationLogService,
     private chatMessageService: ChatMessageService,
+    private vectorSearchService: VectorSearchService,
   ) {
     super()
 
@@ -48,6 +51,10 @@ export class BoardToolsExecutorService extends AbstractToolExecutor {
       create_boards: this.createBoards.bind(this),
       update_boards: this.updateBoards.bind(this),
       move_board: this.moveBoard.bind(this),
+      delete_boards: this.deleteBoards.bind(this),
+      archive_boards: this.archiveBoards.bind(this),
+      recover_boards: this.recoverBoards.bind(this),
+      clone_boards: this.cloneBoards.bind(this),
     }
   }
 
@@ -59,17 +66,24 @@ export class BoardToolsExecutorService extends AbstractToolExecutor {
     const args = toolCall.args as {
       mongo_filter?: FilterQuery<IBoardRawString>
       search_query?: string
+      search_mode?: 'fuzzy' | 'semantic'
       limit?: number
     }
 
-    const { mongo_filter = {}, search_query = '', limit = 50 } = args
+    const { mongo_filter = {}, search_query = '', search_mode = 'fuzzy', limit = 50 } = args
 
     const scaledLimit = search_query ? HARD_SEARCH_LIMIT : limit
 
-    const baseFilter: FilterQuery<IBoardRawString> = {
-      is_deleted: { $ne: true },
-      is_deleted_external: { $ne: true },
-    }
+    const isMongoFilterHasDeletedCondition =
+      findProperty(mongo_filter, 'is_deleted') !== undefined ||
+      findProperty(mongo_filter, 'is_deleted_external') !== undefined
+
+    const baseFilter: FilterQuery<IBoardRawString> = isMongoFilterHasDeletedCondition
+      ? {}
+      : {
+          is_deleted: { $ne: true },
+          is_deleted_external: { $ne: true },
+        }
 
     const unionFilter = { ...baseFilter, ...mongo_filter, user_id: new Types.ObjectId(userId) }
 
@@ -93,23 +107,42 @@ export class BoardToolsExecutorService extends AbstractToolExecutor {
         }
       }
 
-      const fuse = new Fuse(boards, {
-        keys: ['name'],
-        threshold: 0.3,
-        includeScore: true,
-      })
+      let pagedResults: IBoardRawString[] = []
+      let searchedCount = 0
 
-      const searchResults = fuse.search(search_query)
+      if (search_mode === 'fuzzy') {
+        const fuse = new Fuse(boards, {
+          keys: ['name'],
+          threshold: 0.3,
+          includeScore: true,
+        })
 
-      const pagedResults = searchResults
-        .sort((a, b) => (a.score || 0) - (b.score || 0))
-        .slice(0, scaledLimit)
-        .map((result) => result.item)
+        const searchResults = fuse.search(search_query)
+
+        pagedResults = searchResults
+          .sort((a, b) => (a.score || 0) - (b.score || 0))
+          .slice(0, scaledLimit)
+          .map((result) => result.item)
+        searchedCount = searchResults.length
+      } else if (search_mode === 'semantic') {
+        const filteredIds = boards.map((board) => new Types.ObjectId(board._id))
+
+        const semanticBoards = await this.vectorSearchService.similaritySearchBoards(
+          [search_query],
+          new Types.ObjectId(userId),
+          20,
+          filteredIds,
+        )
+        const semanticBoardIds = semanticBoards.map((board) => board.id.toString())
+
+        pagedResults = boards.filter((board) => semanticBoardIds.includes(board._id.toString()))
+        searchedCount = semanticBoards.length
+      }
 
       return {
         boards: pagedResults,
-        count: searchResults.length,
-        hasMore: searchResults.length > scaledLimit,
+        count: searchedCount,
+        hasMore: searchedCount > scaledLimit,
       }
     }
 
@@ -291,7 +324,10 @@ export class BoardToolsExecutorService extends AbstractToolExecutor {
       name: board.name,
     }))
 
-    const resultMessage = `Successfully created ${createdBoards.data.length} boards: ${JSON.stringify(resultInfo)}`
+    const resultMessage = `
+      Successfully created ${createdBoards.data.length} boards: ${JSON.stringify(resultInfo)}
+      Log ID: ${createdBoards.logId}
+    `
 
     return new SuccessToolResult(resultMessage, {
       tempToRealIdMap: tempToRealIdMapNew,
@@ -379,7 +415,10 @@ export class BoardToolsExecutorService extends AbstractToolExecutor {
 
     const resultInfo = logs[0].entitiesAfter
 
-    const resultMessage = `Successfully updated ${updatedBoards.data.length} boards: ${JSON.stringify(resultInfo)}`
+    const resultMessage = `
+      Successfully updated ${updatedBoards.data.length} boards: ${JSON.stringify(resultInfo)}
+      Log ID: ${updatedBoards.logId}
+    `
 
     return new SuccessToolResult(resultMessage)
   }
@@ -471,8 +510,419 @@ export class BoardToolsExecutorService extends AbstractToolExecutor {
 
     const resultInfo = logs[0].entitiesAfter
 
-    const resultMessage = `Successfully moved ${result.data.length} boards: ${JSON.stringify(resultInfo)}`
+    const resultMessage = `
+      Successfully moved ${result.data.length} boards: ${JSON.stringify(resultInfo)}
+      Log ID: ${result.logId}
+    `
 
     return new SuccessToolResult(resultMessage)
+  }
+
+  public async deleteBoards(payload: DispatchPayload) {
+    const { toolCall, config, tempToRealIdMap } = payload
+
+    const args = toolCall.args as { ids: string[] }
+    const toolCallId = toolCall.id
+
+    const configurable = config.configurable as Configurable
+    const user = configurable.user
+
+    if (!args.ids || !Array.isArray(args.ids) || args.ids.some((id) => typeof id !== 'string')) {
+      return new FailedToolResult(
+        'Validation Error: Invalid arguments. Please provide an object with an ids property which is array of string IDs.',
+      )
+    }
+
+    const mappedIds = args.ids.map((id) => tempToRealIdMap[id] || id) // Map temp IDs to real IDs using the provided map, fallback to original ID if not found in the map
+
+    if (configurable.aiConfirmationType === AiConfirmationTypeEnum.ALWAYS) {
+      const messages = await this.chatMessageService.getByCriteria(
+        { pendingToolCallId: toolCallId, role: 'operation' },
+        user.id,
+      )
+
+      if (messages.length > 0) {
+        const logs = await this.operationLogService.getByCriteria(
+          { id: messages[0].content },
+          user.id,
+        )
+
+        const log = logs[0]
+
+        if (log.status === OperationLogStatusesEnum.CANCELLED) {
+          return new SuccessToolResult('Board delete cancelled by user.')
+        } else if (log.status === OperationLogStatusesEnum.APPROVED) {
+          const selectedIds = log.selectedIds || []
+
+          args.ids = args.ids.filter((id) => selectedIds.includes(id))
+        }
+      } else {
+        const mockDeleteBoard = await this.boardService.delete(
+          {
+            ids: mappedIds,
+          },
+          user,
+          undefined,
+          true,
+        )
+
+        if (mockDeleteBoard.logId) {
+          return new ConfirmationEntityToolResult({
+            toolCallId: toolCallId,
+            logId: mockDeleteBoard.logId.toString(),
+          })
+        } else return new FailedToolResult('Failed to create operation log for board delete.')
+      }
+    }
+
+    await dispatchCustomEvent(
+      CustomEvents.STEP_ADD,
+      {
+        id: new Types.ObjectId().toString(),
+        name: 'Удаляю доски',
+      },
+      config,
+    )
+
+    const result = await this.boardService.delete(
+      {
+        ids: mappedIds,
+      },
+      user,
+    )
+
+    const logs = await this.operationLogService.getByCriteria(
+      { id: result.logId!.toString() },
+      user.id,
+    )
+
+    await dispatchCustomEvent(
+      CustomEvents.OPERATION,
+      {
+        logId: logs[0].id,
+        toolCallId: toolCallId,
+      },
+      config,
+    )
+
+    const resultInfo = (logs[0].entitiesBefore || []).map((board) => ({
+      id: board.id,
+      name: board.name,
+    }))
+
+    const resultMessage = `
+      Successfully deleted ${resultInfo.length} boards: ${JSON.stringify(resultInfo)}
+      Log ID: ${logs[0].id}
+    `
+
+    return new SuccessToolResult(resultMessage)
+  }
+
+  public async archiveBoards(payload: DispatchPayload) {
+    const { toolCall, config, tempToRealIdMap } = payload
+
+    const args = toolCall.args as { ids: string[] }
+    const toolCallId = toolCall.id
+
+    const configurable = config.configurable as Configurable
+    const user = configurable.user
+
+    if (!args.ids || !Array.isArray(args.ids) || args.ids.some((id) => typeof id !== 'string')) {
+      return new FailedToolResult(
+        'Validation Error: Invalid arguments. Please provide an object with an ids property which is array of string IDs.',
+      )
+    }
+
+    const mappedIds = args.ids.map((id) => tempToRealIdMap[id] || id) // Map temp IDs to real IDs using the provided map, fallback to original ID if not found in the map
+
+    if (configurable.aiConfirmationType === AiConfirmationTypeEnum.ALWAYS) {
+      const messages = await this.chatMessageService.getByCriteria(
+        { pendingToolCallId: toolCallId, role: 'operation' },
+        user.id,
+      )
+
+      if (messages.length > 0) {
+        const logs = await this.operationLogService.getByCriteria(
+          { id: messages[0].content },
+          user.id,
+        )
+
+        const log = logs[0]
+
+        if (log.status === OperationLogStatusesEnum.CANCELLED) {
+          return new SuccessToolResult('Boards archive cancelled by user.')
+        } else if (log.status === OperationLogStatusesEnum.APPROVED) {
+          const selectedIds = log.selectedIds || []
+
+          args.ids = args.ids.filter((id) => selectedIds.includes(id))
+        }
+      } else {
+        const mockArchiveBoard = await this.boardService.archive(
+          {
+            ids: mappedIds,
+          },
+          user,
+          undefined,
+          true,
+        )
+
+        if (mockArchiveBoard.logId) {
+          return new ConfirmationEntityToolResult({
+            toolCallId: toolCallId,
+            logId: mockArchiveBoard.logId.toString(),
+          })
+        } else return new FailedToolResult('Failed to create operation log for board archive.')
+      }
+    }
+
+    await dispatchCustomEvent(
+      CustomEvents.STEP_ADD,
+      {
+        id: new Types.ObjectId().toString(),
+        name: 'Архивирую доски',
+      },
+      config,
+    )
+
+    const result = await this.boardService.archive(
+      {
+        ids: mappedIds,
+      },
+      user,
+    )
+
+    const logs = await this.operationLogService.getByCriteria(
+      { id: result.logId!.toString() },
+      user.id,
+    )
+
+    await dispatchCustomEvent(
+      CustomEvents.OPERATION,
+      {
+        logId: logs[0].id,
+        toolCallId: toolCallId,
+      },
+      config,
+    )
+
+    const resultInfo = (logs[0].entitiesAfter || []).map((board) => ({
+      id: board.id,
+      name: board.name,
+    }))
+
+    const resultMessage = `
+      Successfully archived ${result.data.length} boards: ${JSON.stringify(resultInfo)}
+      Log ID: ${logs[0].id}
+    `
+
+    return new SuccessToolResult(resultMessage)
+  }
+
+  public async recoverBoards(payload: DispatchPayload) {
+    const { toolCall, config, tempToRealIdMap } = payload
+
+    const args = toolCall.args as { ids: string[] }
+    const toolCallId = toolCall.id
+
+    const configurable = config.configurable as Configurable
+    const user = configurable.user
+
+    if (!args.ids || !Array.isArray(args.ids) || args.ids.some((id) => typeof id !== 'string')) {
+      return new FailedToolResult(
+        'Validation Error: Invalid arguments. Please provide an object with an ids property which is array of string IDs.',
+      )
+    }
+
+    const mappedIds = args.ids.map((id) => tempToRealIdMap[id] || id) // Map temp IDs to real IDs using the provided map, fallback to original ID if not found in the map
+
+    if (configurable.aiConfirmationType === AiConfirmationTypeEnum.ALWAYS) {
+      const messages = await this.chatMessageService.getByCriteria(
+        { pendingToolCallId: toolCallId, role: 'operation' },
+        user.id,
+      )
+
+      if (messages.length > 0) {
+        const logs = await this.operationLogService.getByCriteria(
+          { id: messages[0].content },
+          user.id,
+        )
+
+        const log = logs[0]
+
+        if (log.status === OperationLogStatusesEnum.CANCELLED) {
+          return new SuccessToolResult('Boards recovery cancelled by user.')
+        } else if (log.status === OperationLogStatusesEnum.APPROVED) {
+          const selectedIds = log.selectedIds || []
+
+          args.ids = args.ids.filter((id) => selectedIds.includes(id))
+        }
+      } else {
+        const mockRecoverBoard = await this.boardService.recover(
+          {
+            ids: mappedIds,
+          },
+          user,
+          undefined,
+          true,
+        )
+
+        if (mockRecoverBoard.logId) {
+          return new ConfirmationEntityToolResult({
+            toolCallId: toolCallId,
+            logId: mockRecoverBoard.logId.toString(),
+          })
+        } else return new FailedToolResult('Failed to create operation log for board recovery.')
+      }
+    }
+
+    await dispatchCustomEvent(
+      CustomEvents.STEP_ADD,
+      {
+        id: new Types.ObjectId().toString(),
+        name: 'Восстанавливаю доски',
+      },
+      config,
+    )
+
+    const result = await this.boardService.recover(
+      {
+        ids: mappedIds,
+      },
+      user,
+    )
+
+    const logs = await this.operationLogService.getByCriteria(
+      { id: result.logId!.toString() },
+      user.id,
+    )
+
+    await dispatchCustomEvent(
+      CustomEvents.OPERATION,
+      {
+        logId: logs[0].id,
+        toolCallId: toolCallId,
+      },
+      config,
+    )
+
+    const resultInfo = (logs[0].entitiesAfter || []).map((board) => ({
+      id: board.id,
+      name: board.name,
+    }))
+
+    const resultMessage = `
+      Successfully recovered ${result.data.length} boards: ${JSON.stringify(resultInfo)}
+      Log ID: ${logs[0].id}
+    `
+
+    return new SuccessToolResult(resultMessage)
+  }
+
+  public async cloneBoards(payload: DispatchPayload) {
+    const { toolCall, config, tempToRealIdMap } = payload
+
+    const args = toolCall.args as { ids: string[] }
+    const toolCallId = toolCall.id
+
+    const configurable = config.configurable as Configurable
+    const user = configurable.user
+
+    if (!args.ids || !Array.isArray(args.ids) || args.ids.some((id) => typeof id !== 'string')) {
+      return new FailedToolResult(
+        'Validation Error: Invalid arguments. Please provide an object with an ids property which is array of string IDs.',
+      )
+    }
+
+    const mappedIds = args.ids.map((id) => tempToRealIdMap[id] || id) // Map temp IDs to real IDs using the provided map, fallback to original ID if not found in the map
+
+    if (configurable.aiConfirmationType === AiConfirmationTypeEnum.ALWAYS) {
+      const messages = await this.chatMessageService.getByCriteria(
+        { pendingToolCallId: toolCallId, role: 'operation' },
+        user.id,
+      )
+
+      if (messages.length > 0) {
+        const logs = await this.operationLogService.getByCriteria(
+          { id: messages[0].content },
+          user.id,
+        )
+
+        const log = logs[0]
+
+        if (log.status === OperationLogStatusesEnum.CANCELLED) {
+          return new SuccessToolResult('Boards clone cancelled by user.')
+        } else if (log.status === OperationLogStatusesEnum.APPROVED) {
+          const selectedIds = log.selectedIds || []
+
+          args.ids = args.ids.filter((id) => selectedIds.includes(id))
+        }
+      } else {
+        const mockCloneBoard = await this.boardService.clone(
+          {
+            ids: mappedIds,
+          },
+          user,
+          undefined,
+          true,
+        )
+
+        if (mockCloneBoard.logId) {
+          return new ConfirmationEntityToolResult({
+            toolCallId: toolCallId,
+            logId: mockCloneBoard.logId.toString(),
+          })
+        } else return new FailedToolResult('Failed to create operation log for board clone.')
+      }
+    }
+
+    await dispatchCustomEvent(
+      CustomEvents.STEP_ADD,
+      {
+        id: new Types.ObjectId().toString(),
+        name: 'Копирую доски',
+      },
+      config,
+    )
+
+    const result = await this.boardService.clone(
+      {
+        ids: mappedIds,
+      },
+      user,
+    )
+
+    const logs = await this.operationLogService.getByCriteria(
+      { id: result.logId!.toString() },
+      user.id,
+    )
+
+    await dispatchCustomEvent(
+      CustomEvents.OPERATION,
+      {
+        logId: logs[0].id,
+        toolCallId: toolCallId,
+      },
+      config,
+    )
+
+    const resultInfo = (logs[0].entitiesAfter || []).map((board) => ({
+      id: board.id,
+      name: board.name,
+    }))
+
+    const resultMessage = `
+      Successfully cloned ${result.data.length} boards: ${JSON.stringify(resultInfo)}
+      Log ID: ${logs[0].id}
+    `
+
+    const tempToRealIdMapNew: Record<string, string> = {}
+
+    for (let i = 0; i < result.data.length; i++) {
+      tempToRealIdMapNew[args.ids[i]] = result.data[i].id.toString()
+    }
+
+    return new SuccessToolResult(resultMessage, {
+      tempToRealIdMap: tempToRealIdMapNew,
+    })
   }
 }

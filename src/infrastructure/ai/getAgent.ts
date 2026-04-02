@@ -1,9 +1,8 @@
 import { MongoDBSaver } from '@langchain/langgraph-checkpoint-mongodb'
 import { createReActAgent } from '@/application/ai/agent/createReActAgent.ts'
 import { MongoClient } from 'mongodb'
-import { ChatFireworks } from '@langchain/community/chat_models/fireworks'
 import { CompiledStateGraph } from '@langchain/langgraph' // Тип скомпилированного графа
-import { ChatOpenAI } from '@langchain/openai'
+import { initAiModels } from './initAiModels.ts'
 
 // Переменная для хранения единственного экземпляра (Singleton)
 let agentInstance: CompiledStateGraph<any, any, any> | null = null
@@ -32,21 +31,6 @@ export async function getAgent(dependencies: any) {
     dbName: process.env.DATABASE_NAME || 'production',
   })
 
-  // 5. Инициализируем модели
-  // Выносим параметры в конфиг или ENV для гибкости
-  const agentModel = new ChatFireworks({
-    model: 'accounts/fireworks/models/gpt-oss-120b',
-  })
-
-  const synthesizerModel = new ChatFireworks({
-    model: 'accounts/fireworks/models/gpt-oss-120b',
-  })
-
-  const summarizerModel = new ChatFireworks({
-    model: 'accounts/fireworks/models/gpt-oss-120b',
-    temperature: 0,
-  })
-
   // 6. Собираем агента через нашу фабрику
   agentInstance = createReActAgent(
     {
@@ -58,9 +42,7 @@ export async function getAgent(dependencies: any) {
         //userService: dependencies.services.userService,
       },
       models: {
-        agentModel,
-        //synthesizerModel,
-        //summarizerModel,
+        ...initAiModels(),
       },
     },
     checkpointer,

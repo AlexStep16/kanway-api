@@ -34,6 +34,11 @@ import { OperationLogStatusesEnum } from '@/domain/enums/OperationLogStatusesEnu
 import { getDefaultState } from '../ai/helpers/getDefaultState.ts'
 import { TaskService } from './TaskService.ts'
 import { CategoryService } from './CategoryService.ts'
+import { ChatPromptTemplate } from '@langchain/core/prompts'
+import { ChatNamePrompt } from '../ai/prompts/ChatNamePrompt.ts'
+import { initAiModels } from '@/infrastructure/ai/initAiModels.ts'
+import CheckpointWriteRepository from '../repositories/CheckpointWriteRepository.ts'
+import CheckpointRepository from '../repositories/CheckpointRepository.ts'
 
 const MAX_RETRIES = 3
 
@@ -46,6 +51,8 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
   protected categoryService: CategoryService
   protected boardService: BoardService
   protected workspaceService: WorkspaceService
+  protected checkpointWriteRepository: CheckpointWriteRepository
+  protected checkpointRepository: CheckpointRepository
 
   constructor(
     chatRepository: ChatRepository,
@@ -56,6 +63,8 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     categoryService: CategoryService,
     boardService: BoardService,
     workspaceService: WorkspaceService,
+    checkpointWriteRepository: CheckpointWriteRepository,
+    checkpointRepository: CheckpointRepository,
   ) {
     super(chatRepository)
 
@@ -67,6 +76,35 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     this.categoryService = categoryService
     this.boardService = boardService
     this.workspaceService = workspaceService
+    this.checkpointWriteRepository = checkpointWriteRepository
+    this.checkpointRepository = checkpointRepository
+  }
+
+  private async _getActiveEntities(
+    boardId: string | undefined,
+    workspaceId: string | undefined,
+    user: IUser,
+  ) {
+    let activeBoardName = ''
+    let activeWorkspaceName = ''
+
+    const activeBoard = boardId
+      ? await this.boardService.getByCriteria({ id: boardId }, user.id)
+      : null
+
+    const activeWorkspace = workspaceId
+      ? await this.workspaceService.getByCriteria({ id: workspaceId }, user.id)
+      : null
+
+    if (activeBoard && activeBoard.length > 0) {
+      activeBoardName = activeBoard[0].name
+    }
+
+    if (activeWorkspace && activeWorkspace.length > 0) {
+      activeWorkspaceName = activeWorkspace[0].name
+    }
+
+    return { activeBoardName, activeWorkspaceName }
   }
 
   private async _getConfigurableFromUserSetting(
@@ -78,29 +116,12 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       workspaceId: string
       timezone: string
       stepMessageId: string
+      activeBoardName?: string
+      activeWorkspaceName?: string
     },
   ): Promise<RunnableConfig<Configurable>> {
     const userSettings = await this.settingService.getByCriteria({}, user.id)
     const userSetting = userSettings[0]
-
-    let activeBoardName = ''
-    let activeWorkspaceName = ''
-
-    const activeBoard = data.boardId
-      ? await this.boardService.getByCriteria({ id: data.boardId }, user.id)
-      : null
-
-    const activeWorkspace = data.workspaceId
-      ? await this.workspaceService.getByCriteria({ id: data.workspaceId }, user.id)
-      : null
-
-    if (activeBoard && activeBoard.length > 0) {
-      activeBoardName = activeBoard[0].name
-    }
-
-    if (activeWorkspace && activeWorkspace.length > 0) {
-      activeWorkspaceName = activeWorkspace[0].name
-    }
 
     const categories = await this.categoryService.getByCriteria(
       { boardId: data.boardId, isDeleted: false, isDeletedExternal: false },
@@ -121,15 +142,15 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     const tagsList = Array.from(tagsSet).join(', ')
 
     const config: RunnableConfig<Configurable> = {
-      recursionLimit: 25,
+      recursionLimit: 60,
       configurable: {
         thread_id: data.threadId,
         user,
         chatId: data.chatId,
         activeBoardId: data.boardId,
-        activeBoardName,
+        activeBoardName: data.activeBoardName,
         activeWorkspaceId: data.workspaceId,
-        activeWorkspaceName,
+        activeWorkspaceName: data.activeWorkspaceName,
         currentDate: dayjs.tz(dayjs(), data.timezone).toISOString(),
         categoriesList: categoriesList.length > 0 ? categoriesList : 'No categories',
         tagsList: tagsList.length > 0 ? tagsList : 'No tags',
@@ -177,11 +198,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     )
   }
 
-  private async _executeSendTransaction(
-    data: ChatSendDTO,
-    user: IUser,
-    externalSession?: ClientSession,
-  ) {
+  public async send(data: ChatSendDTO, user: IUser) {
     let chat: IChat | null = null
     let toolsWithNoDecision = 0
 
@@ -192,11 +209,29 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     if (user.subscriptionId === SubscriptionPlanEnum.Basic && user.generationsCount === 0) {
       throw new AppError('Достигнут лимит генераций для вашего плана подписки.', 403)
     }
+    const { activeBoardName, activeWorkspaceName } = await this._getActiveEntities(
+      data.boardId,
+      data.workspaceId,
+      user,
+    )
 
     if (!data.threadId) {
+      const prompt = ChatPromptTemplate.fromMessages([['system', ChatNamePrompt]])
+
+      const { chatNameModel } = initAiModels()
+
+      const chain = prompt.pipe(chatNameModel)
+
+      const response = await chain.invoke({
+        board_name: activeBoardName,
+        workspace_name: activeWorkspaceName,
+        current_date: dayjs.tz(dayjs(), data.timezone).toISOString(),
+        user_message: data.message || '',
+      })
+
       const createResult = await this.create(
         {
-          name: data.message?.slice(0, 500) || 'Новый чат',
+          name: (response.content as string) || 'Новый чат',
           workspaceId: data.workspaceId,
           threadId,
         },
@@ -205,7 +240,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
 
       chat = createResult.data[0]
     } else {
-      const getChatResult = await this.getByCriteria({ threadId }, user.id, externalSession)
+      const getChatResult = await this.getByCriteria({ threadId }, user.id)
 
       chat = getChatResult[0]
     }
@@ -213,7 +248,6 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     const chatMessages = await this.chatMessageService.getByCriteria(
       { chatId: chat.id.toString() },
       user.id,
-      externalSession,
     )
 
     for (const chatMessage of chatMessages) {
@@ -227,7 +261,6 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
             id: logId,
           },
           user.id,
-          externalSession,
         )
 
         if (logs && logs.length > 0) {
@@ -253,7 +286,6 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
           threadId,
         },
         user,
-        externalSession,
       )
 
       newChatMessages.push(...userMessage.data)
@@ -280,6 +312,8 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       workspaceId: data.workspaceId,
       timezone: data.timezone,
       stepMessageId: stepsMessage.data[0].id.toHexString(),
+      activeBoardName,
+      activeWorkspaceName,
     })
 
     const payload = getDefaultState()
@@ -304,76 +338,38 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     }
   }
 
-  public async send(data: ChatSendDTO, user: IUser, externalSession?: ClientSession) {
-    if (externalSession) {
-      return this._executeSendTransaction(data, user, externalSession)
-    } else {
-      return await this._retryExecutor((session: ClientSession) =>
-        this._executeSendTransaction(data, user, session),
-      )
-    }
-  }
-
-  private async _updateStepperState(
-    data: { chatId: string; threadId: string },
-    user: IUser,
-    externalSession?: ClientSession,
-  ) {
-    const chatMessages = await this.chatMessageService.getByCriteria(
-      { chatId: data.chatId, threadId: data.threadId },
-      user.id,
-      externalSession,
-    )
-
-    const stepperMessage = [...chatMessages].reverse().find((msg) => msg.role === 'steps')
-
-    if (!stepperMessage) return
-
-    const steps = stepperMessage.content as {
-      id: string
-      name: string
-      state: 'in_progress' | 'completed' | 'failed'
-    }[]
-
-    steps.forEach((step) => {
-      if (step.state !== 'completed') {
-        step.state = 'failed'
-      }
-
-      this.chatMessageService.edit(
-        { content: steps },
-        { id: stepperMessage.id.toString() },
-        user,
-        externalSession,
-      )
-    })
-  }
-
   private async _deleteLastIteration(
+    lastStepperMessageId: string,
     data: { chatId: string; threadId: string },
     user: IUser,
     externalSession?: ClientSession,
   ) {
-    const chatMessages = await this.chatMessageService.getByCriteria(
-      { chatId: data.chatId, threadId: data.threadId },
+    const lastStepperMessages = await this.chatMessageService.getByCriteria(
+      { id: lastStepperMessageId },
       user.id,
       externalSession,
     )
 
-    const lastHumanMessage = [...chatMessages].reverse().find((msg) => msg.role === 'user')
+    const lastStepperMessage = lastStepperMessages[0]
 
-    if (!lastHumanMessage) {
+    if (!lastStepperMessage) {
       throw new AppError('Не найдено сообщение для повторной попытки.', 400)
     }
 
-    const messageIdsAfterLastHuman = chatMessages
-      .filter((msg) => msg.createdAt > lastHumanMessage.createdAt)
-      .map((msg) => msg.id.toString())
-
-    await this.chatMessageService.delete({ ids: messageIdsAfterLastHuman }, user, externalSession)
+    await this.chatMessageService.delete(
+      {
+        chatId: data.chatId,
+        threadId: data.threadId,
+        createdAt: {
+          $gt: lastStepperMessage.createdAt,
+        },
+      },
+      user,
+      externalSession,
+    )
   }
 
-  private async _getLastStepperMessage(
+  private async _getLastStepperMessageId(
     chatId: string,
     user: IUser,
     externalSession?: ClientSession,
@@ -382,6 +378,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       { chatId, role: 'steps' },
       user.id,
       externalSession,
+      undefined,
       {
         sort: { createdAt: -1 },
         limit: 1,
@@ -396,12 +393,15 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     user: IUser,
     externalSession?: ClientSession,
   ) {
-    await this._deleteLastIteration(data, user, externalSession)
-    const lastStepperMessageId = await this._getLastStepperMessage(
+    const lastStepperMessageId = await this._getLastStepperMessageId(
       data.chatId,
       user,
       externalSession,
     )
+
+    if (lastStepperMessageId) {
+      await this._deleteLastIteration(lastStepperMessageId, data, user, externalSession)
+    }
 
     const config = await this._getConfigurableFromUserSetting(user, {
       threadId: data.threadId,
@@ -437,13 +437,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     }
   }
 
-  private async _executeStopAgentTransaction(
-    data: StopAgentDTO,
-    user: IUser,
-    externalSession?: ClientSession,
-  ) {
-    await this._updateStepperState(data, user, externalSession)
-
+  private async _executeStopAgentTransaction(data: StopAgentDTO) {
     const job = await langgraphQueue.getJob(data.jobId)
 
     if (!job) {
@@ -456,14 +450,8 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     })
   }
 
-  public async stopAgent(data: StopAgentDTO, user: IUser, externalSession?: ClientSession) {
-    if (externalSession) {
-      return this._executeStopAgentTransaction(data, user, externalSession)
-    } else {
-      return await this._retryExecutor((session: ClientSession) =>
-        this._executeStopAgentTransaction(data, user, session),
-      )
-    }
+  public async stopAgent(data: StopAgentDTO) {
+    await this._executeStopAgentTransaction(data)
   }
 
   private async _executeCreateTransaction(
@@ -512,6 +500,58 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     }
   }
 
+  private async _executeDeleteTransaction(
+    criteria: IChatCriteria,
+    user: IUser,
+    session: ClientSession,
+  ) {
+    const chats = await this.repository.findByCriteria(criteria, session, undefined, user.id)
+    const uniqueChatIds = Array.from(new Set(chats.map((chat) => chat.id.toString())))
+    const uniqueThreadIds = Array.from(new Set(chats.map((chat) => chat.threadId.toString())))
+
+    const promises = []
+
+    promises.push(
+      this.chatMessageService.delete(
+        {
+          chatIds: uniqueChatIds,
+        },
+        user,
+        session,
+      ),
+    )
+
+    promises.push(
+      this.checkpointWriteRepository.deleteMany({
+        threadIds: uniqueThreadIds,
+      }),
+    )
+
+    promises.push(
+      this.checkpointRepository.deleteMany({
+        threadIds: uniqueThreadIds,
+      }),
+    )
+
+    await Promise.all(promises)
+
+    await this.repository.deleteMany(criteria, user.id, session)
+  }
+
+  public async delete(
+    criteria: IChatCriteria,
+    user: IUser,
+    externalSession?: ClientSession,
+  ): Promise<void> {
+    if (externalSession) {
+      return this._executeDeleteTransaction(criteria, user, externalSession)
+    } else {
+      return await this._retryExecutor((session: ClientSession) =>
+        this._executeDeleteTransaction(criteria, user, session),
+      )
+    }
+  }
+
   private async _executeResolveAmbiguousTransaction(
     data: ResolveAmbiguousDTO,
     user: IUser,
@@ -539,7 +579,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
 
     const chatId = chatMessage.chatId.toString()
 
-    const lastStepperMessageId = await this._getLastStepperMessage(chatId, user, externalSession)
+    const lastStepperMessageId = await this._getLastStepperMessageId(chatId, user, externalSession)
 
     const config = await this._getConfigurableFromUserSetting(user, {
       threadId: chatMessage.threadId,
@@ -605,7 +645,39 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       externalSession,
     )
 
-    const lastStepperMessageId = await this._getLastStepperMessage(
+    const chatMessages = await this.chatMessageService.getByCriteria(
+      { chatId: data.chatId },
+      user.id,
+    )
+
+    let toolsWithNoDecision = 0
+
+    for (const chatMessage of chatMessages) {
+      if (chatMessage.role === 'operation') {
+        const logId: string = chatMessage.content
+
+        if (!logId) continue
+
+        const logs = await this.operationLogService.getByCriteria(
+          {
+            id: logId,
+          },
+          user.id,
+        )
+
+        if (logs && logs.length > 0) {
+          const log = logs[0]
+
+          if (log.status === OperationLogStatusesEnum.PENDING) {
+            toolsWithNoDecision += 1
+          }
+        }
+      }
+    }
+
+    if (toolsWithNoDecision > 0) return
+
+    const lastStepperMessageId = await this._getLastStepperMessageId(
       data.chatId,
       user,
       externalSession,

@@ -49,7 +49,8 @@ export const TasksCreateSkill: AgentSkill = {
 
 export const TasksUpdateSkill: AgentSkill = {
   name: 'TasksUpdate',
-  description: 'Skill for updating tasks. Use this skill to modify existing tasks.',
+  description:
+    'Skill for updating tasks. Use this skill to modify existing tasks. Also for moving tasks between categories.',
   content: `
     ### SKILL: TasksUpdate
 
@@ -76,7 +77,8 @@ export const TasksUpdateSkill: AgentSkill = {
 
 export const TaskMoveSkill: AgentSkill = {
   name: 'TaskMove',
-  description: 'Skill for moving task. Use this skill to change the position of existing task.',
+  description:
+    'Skill for moving task. Use this skill to change the position of existing task. Not for moving multiple tasks between categories.',
   content: `
     ### SKILL: TaskMove
 
@@ -93,4 +95,77 @@ export const TaskMoveSkill: AgentSkill = {
   `,
   relatedTools: ['move_task', 'search_tasks', 'search_categories', 'resolve_ambiguous'],
   relatedEntities: ['task', 'category'],
+}
+
+export const TasksDeleteSkill: AgentSkill = {
+  name: 'TasksDelete',
+  description: 'Skill for deleting tasks. Use this skill to remove existing tasks.',
+  content: `
+    ### SKILL: TasksDelete
+
+    This skill allows you to delete existing tasks. You must resolve Task name to ID before deleting.
+    If the user says "Delete task A", then find the task by its name and use its ID to delete it.
+
+    #### USAGE STRATEGY & RULES:
+    1. **Find Context First:** You CANNOT delete a task using names like "Delete the task in the Work board". You MUST first call 'search_tasks()' to resolve the exact 'task_id'.
+    2. **Handle Ambiguity:** If your search for a task returns multiple matches, you MUST call 'resolve_ambiguous' to let the user pick the correct ID before calling 'delete_tasks'.
+    3. **Batch Deletion:** If the user asks to delete multiple tasks (e.g., "Delete tasks A, B, and C"), pass all of their IDs in a single list to 'delete_tasks'. DO NOT call 'delete_tasks' inside a loop.
+  `,
+  relatedTools: ['delete_tasks', 'search_tasks', 'resolve_ambiguous'],
+  relatedEntities: ['task'],
+}
+
+export const TasksArchiveSkill: AgentSkill = {
+  name: 'TasksArchive',
+  description: 'Skill for archiving tasks. Use this skill to archive existing tasks.',
+  content: `
+    ### SKILL: TasksArchive
+
+    This skill allows you to archive existing tasks. You must resolve Task name to ID before archiving.
+    If the user says "Archive task A", then find the task by its name and use its ID to archive it.
+
+    #### USAGE STRATEGY & RULES:
+    1. **Find Context First:** You CANNOT archive a task using names like "Archive the task in the Work board". You MUST first call 'search_tasks()' to resolve the exact 'task_id'.
+    2. **Handle Ambiguity:** If your search for a task returns multiple matches, you MUST call 'resolve_ambiguous' to let the user pick the correct ID before calling 'archive_tasks'.
+    3. **Batch Archiving:** If the user asks to archive multiple tasks (e.g., "Archive tasks A, B, and C"), pass all of their IDs in a single list to 'archive_tasks'. DO NOT call 'archive_tasks' inside a loop.
+  `,
+  relatedTools: ['archive_tasks', 'search_tasks', 'resolve_ambiguous'],
+  relatedEntities: ['task'],
+}
+
+export const TasksRecoverSkill: AgentSkill = {
+  name: 'TasksRecover',
+  description: 'Skill for recovering tasks. Use this skill to recover deleted tasks.',
+  content: `
+    ### SKILL: TasksRecover
+
+    This skill allows you to recover deleted tasks. You must resolve Task name to ID before recovering.
+    If the user says "Recover task A", then find the task by its name and use its ID to recover it.
+
+    #### USAGE STRATEGY & RULES:
+    1. **Find Context First:** You CANNOT recover a task using names like "Recover the task in the Work board". You MUST first call 'search_tasks()' to resolve the exact 'task_id'.
+    2. **Search params:** You MUST use the 'isDeleted' parameter set to true when searching for tasks to recover, otherwise you won't find any results.
+    3. **Handle Ambiguity:** If your search for a task returns multiple matches, you MUST call 'resolve_ambiguous' to let the user pick the correct ID before calling 'recover_tasks'.
+    4. **Batch Recovery:** If the user asks to recover multiple tasks (e.g., "Recover tasks A, B, and C"), pass all of their IDs in a single list to 'recover_tasks'. DO NOT call 'recover_tasks' inside a loop.
+  `,
+  relatedTools: ['recover_tasks', 'search_tasks', 'resolve_ambiguous'],
+  relatedEntities: ['task'],
+}
+
+export const TasksCloneSkill: AgentSkill = {
+  name: 'TasksClone',
+  description: 'Skill for cloning tasks. Use this skill to clone existing tasks.',
+  content: `
+    ### SKILL: TasksClone
+
+    This skill allows you to clone existing tasks. You must resolve Task name to ID before cloning.
+    If the user says "Clone task A", then find the task by its name and use its ID to clone it.
+
+    #### USAGE STRATEGY & RULES:
+    1. **Find Context First:** You CANNOT clone a task using names like "Clone the task in the Work board". You MUST first call 'search_tasks()' to resolve the exact 'task_id'.
+    2. **Handle Ambiguity:** If your search for a task returns multiple matches, you MUST call 'resolve_ambiguous' to let the user pick the correct ID before calling 'clone_tasks'.
+    3. **Batch Cloning:** If the user asks to clone multiple tasks (e.g., "Clone tasks A, B, and C"), pass all of their IDs in a single list to 'clone_tasks'. DO NOT call 'clone_tasks' inside a loop.
+  `,
+  relatedTools: ['clone_tasks', 'search_tasks', 'resolve_ambiguous'],
+  relatedEntities: ['task'],
 }

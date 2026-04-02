@@ -57,6 +57,8 @@ import { TaskToolsExecutorService } from '@/application/ai/services/TaskToolsExe
 import { BoardToolsExecutorService } from '@/application/ai/services/BoardToolsExecutorService.ts'
 import { WorkspaceToolsExecutorService } from '@/application/ai/services/WorkspaceToolsExecutorService.ts'
 import { GeneralToolsExecutor } from '@/application/ai/services/GeneralToolsExecutor.ts'
+import CheckpointWriteRepository from '@/application/repositories/CheckpointWriteRepository.ts'
+import CheckpointRepository from '@/application/repositories/CheckpointRepository.ts'
 
 export function initializeDependencies() {
   const mongoClient = new MongoClient(process.env.MONGODB_URI || '')
@@ -76,6 +78,8 @@ export function initializeDependencies() {
   const chatRespository = new ChatRepository()
   const agentSkillRepository = new AgentSkillRepository()
   const supportRepository = new SupportRepository()
+  const checkpointRepository = new CheckpointRepository()
+  const checkpointWriteRepository = new CheckpointWriteRepository()
 
   /* MOCK SERVICES START */
   const mockCategoryService = {} as CategoryService
@@ -251,6 +255,8 @@ export function initializeDependencies() {
     categoryService,
     boardService,
     workspaceService,
+    checkpointWriteRepository,
+    checkpointRepository,
   )
   const agentSkillService = new AgentSkillService(agentSkillRepository, embeddingService)
   /** AI SERVICES END */
@@ -261,6 +267,7 @@ export function initializeDependencies() {
     categoryService,
     operationLogService,
     chatMessageService,
+    vectorSearchService,
   )
 
   const categoryToolsExecutorService = new CategoryToolsExecutorService(
@@ -269,6 +276,7 @@ export function initializeDependencies() {
     boardService,
     operationLogService,
     chatMessageService,
+    vectorSearchService,
   )
 
   const boardToolsExecutorService = new BoardToolsExecutorService(
@@ -277,6 +285,7 @@ export function initializeDependencies() {
     workspaceService,
     operationLogService,
     chatMessageService,
+    vectorSearchService,
   )
 
   const workspaceToolsExecutorService = new WorkspaceToolsExecutorService(
@@ -284,6 +293,7 @@ export function initializeDependencies() {
     workspaceService,
     operationLogService,
     chatMessageService,
+    vectorSearchService,
   )
 
   const generalToolsExecutor = new GeneralToolsExecutor(
@@ -291,6 +301,8 @@ export function initializeDependencies() {
     categoryService,
     boardService,
     workspaceService,
+    chatMessageService,
+    operationLogService,
   )
 
   const toolDispatcherService = new ToolDispatcherService(
