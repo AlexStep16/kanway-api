@@ -2,7 +2,7 @@ import { ChatMessageDTO } from '@/application/dtos/ChatMessageDTO.ts'
 import { ChatMessageService } from '@/application/services/ChatMessageService.ts'
 import { IChatMessage } from '@/domain/entities/IChatMessage.ts'
 import { IUser } from '@/domain/entities/IUser.ts'
-import { CustomEvents } from '@/enums/CustomEventsNew.ts'
+import { CustomEvents } from '@/enums/CustomEvents.ts'
 import { BaseCallbackHandler } from '@langchain/core/callbacks/base'
 import type { Job } from 'bullmq'
 import { Configurable } from '../interfaces/Configurable.ts'
@@ -17,7 +17,7 @@ export class BullMQCallbackHandler extends BaseCallbackHandler {
   private job: Job
   private configurable: Configurable
 
-  public isSynthesizeStarted = false
+  public isSynthesizing = false
   public aiMessage: IChatMessage | null = null
   public steps: {
     id: string
@@ -39,6 +39,19 @@ export class BullMQCallbackHandler extends BaseCallbackHandler {
     this.stepsMessage = stepMessage
 
     this.steps = Array.isArray(stepMessage.content) ? stepMessage.content : []
+  }
+
+  async initAiMessage() {
+    this.aiMessage = await this.createChatMessage(
+      {
+        role: 'assistant',
+        content: '',
+        threadId: this.configurable.thread_id,
+        chatId: new Types.ObjectId(this.configurable.chatId),
+      },
+      this.configurable.user,
+      this.job,
+    )
   }
 
   async createChatMessage(dto: ChatMessageDTO, user: IUser, job: Job) {
@@ -170,22 +183,15 @@ export class BullMQCallbackHandler extends BaseCallbackHandler {
     }
 
     if (event === CustomEvents.SYNTHESIZE_START) {
-      this.isSynthesizeStarted = true
+      this.isSynthesizing = true
+    }
 
-      this.aiMessage = await this.createChatMessage(
-        {
-          role: 'assistant',
-          content: '',
-          threadId: this.configurable.thread_id,
-          chatId: new Types.ObjectId(this.configurable.chatId),
-        },
-        this.configurable.user,
-        this.job,
-      )
+    if (event === CustomEvents.SYNTHESIZE_END) {
+      this.isSynthesizing = false
     }
 
     if (event === CustomEvents.DISPLAY) {
-      this.aiMessage = await this.createChatMessage(
+      await this.createChatMessage(
         {
           role: 'display',
           content: data,

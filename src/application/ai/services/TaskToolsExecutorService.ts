@@ -5,7 +5,7 @@ import { CategoryService } from '@/application/services/CategoryService.ts'
 import { TaskService } from '@/application/services/TaskService.ts'
 import { ITaskRawString } from '@/domain/entities/ITaskRawString.ts'
 import { AiConfirmationTypeEnum } from '@/domain/enums/AiConfirmationTypeEnum.ts'
-import { CustomEvents } from '@/enums/CustomEventsNew.ts'
+import { CustomEvents } from '@/enums/CustomEvents.ts'
 import { dispatchCustomEvent } from '@langchain/core/callbacks/dispatch'
 import Fuse from 'fuse.js'
 import { FilterQuery, Types } from 'mongoose'
@@ -29,6 +29,7 @@ import { TaskMoveDTO } from '@/application/dtos/TaskMoveDTO.ts'
 import { DispatchPayload } from './ToolDispatcherService.ts'
 import { VectorSearchService } from '@/application/services/VectorSearchService.ts'
 import { findProperty } from '@/utils/findProperty.ts'
+import dayjs from 'dayjs'
 
 type ITaskCreatePopulated = Partial<Omit<ITaskPopulated, 'id' | 'createdAt' | 'updatedAt'>> & {
   id: string
@@ -92,12 +93,13 @@ export class TaskToolsExecutorService extends AbstractToolExecutor {
     const tasks = await this.taskRepository.findByFilter<ITaskRawString>(unionFilter, undefined, {
       isMongoCase: true,
       limit: scaledLimit,
+      sort: { rank: 1 },
     })
 
     if (search_query) {
       if (tasks.length === 0) {
         return {
-          tasks: [],
+          items: [],
           count: 0,
           hasMore: false,
         }
@@ -136,7 +138,7 @@ export class TaskToolsExecutorService extends AbstractToolExecutor {
       }
 
       return {
-        tasks: pagedResults,
+        items: pagedResults,
         count: searchedCount,
         hasMore: searchedCount > scaledLimit,
       }
@@ -145,7 +147,7 @@ export class TaskToolsExecutorService extends AbstractToolExecutor {
     const hasMore = filteredCount > tasks.length
 
     return {
-      tasks,
+      items: tasks,
       count: filteredCount,
       hasMore,
     }
@@ -173,6 +175,10 @@ export class TaskToolsExecutorService extends AbstractToolExecutor {
       const category = categories.find(
         (c) => c.id.toString() === (tempToRealIdMap[task.category] || task.category),
       )
+
+      if (!category) {
+        throw new Error(`Category with ID ${task.category} not found for task ${task.name}`)
+      }
 
       return {
         ...toServerCaseKeys(task),
@@ -432,10 +438,25 @@ export class TaskToolsExecutorService extends AbstractToolExecutor {
       config,
     )
 
-    const resultInfo = logs[0].entitiesAfter || []
+    const entitiesAfterTransformed = (logs[0].entitiesAfter || []).map((task) => {
+      if (!task) return null
+      if (task.due_date && task.due_hours != null && task.due_minutes != null) {
+        const collectedDateTime = `${task.due_date}T${task.due_hours}:${task.due_minutes}`
+        const utcDueDate = dayjs.utc(collectedDateTime).tz(configurable.timezone)
+
+        return {
+          ...task,
+          due_date: utcDueDate.format('YYYY-MM-DD'),
+          due_hours: utcDueDate.hour(),
+          due_minutes: utcDueDate.minute(),
+        }
+      }
+
+      return task
+    })
 
     const resultMessage = `
-      Successfully updated ${updatedTasks.data.length} tasks: ${JSON.stringify(resultInfo)}
+      Successfully updated ${updatedTasks.data.length} tasks: ${JSON.stringify(entitiesAfterTransformed)}
       Log ID: ${updatedTasks.logId}
     `
 
@@ -463,12 +484,8 @@ export class TaskToolsExecutorService extends AbstractToolExecutor {
 
     const dto: TaskMoveDTO = {
       id: tempToRealIdMap[args.id] || args.id, // Use real ID if available in the map otherwise fallback to the original ID
-      beforeTaskId: args.before_task_id
-        ? tempToRealIdMap[args.before_task_id] || args.before_task_id
-        : undefined,
-      afterTaskId: args.after_task_id
-        ? tempToRealIdMap[args.after_task_id] || args.after_task_id
-        : undefined,
+      beforeId: args.before_id ? tempToRealIdMap[args.before_id] || args.before_id : undefined,
+      afterId: args.after_id ? tempToRealIdMap[args.after_id] || args.after_id : undefined,
       newCategoryId: args.new_category_id
         ? tempToRealIdMap[args.new_category_id] || args.new_category_id
         : undefined,

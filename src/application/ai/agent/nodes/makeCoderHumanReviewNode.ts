@@ -1,6 +1,6 @@
 import { AgentStateAnnotation } from '@/application/ai/agent/AgentStateAnnotation.ts'
+import { HumanMessage } from '@langchain/core/messages'
 import { interrupt } from '@langchain/langgraph'
-import { SystemMessage } from 'node_modules/@langchain/core/dist/messages/system.js'
 
 export const makeCoderHumanReviewNode = () => {
   return (state: typeof AgentStateAnnotation.State) => {
@@ -22,7 +22,7 @@ export const makeCoderHumanReviewNode = () => {
       outputs.resolved_ambiguities = { [data.callId]: data.ids }
 
       outputs.coder_messages!.push(
-        new SystemMessage(`
+        new HumanMessage(`
           User resolved resolve_ambiguous(id = ${state.coder_ambiguities!.id}) call with the following entities: ${data.ids}. You can remove the ambiguity resolution tool call with that ID from the code and use the resolved entities in the code.
         `),
       )

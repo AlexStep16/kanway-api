@@ -3,12 +3,12 @@ import { AgentStateAnnotation } from '@/application/ai/agent/AgentStateAnnotatio
 import { AgentDependencies } from '../types/AgentDependencies.ts'
 import { Configurable } from '@/application/ai/interfaces/Configurable.ts'
 import { dispatchCustomEvent } from '@langchain/core/callbacks/dispatch'
-import { CustomEvents } from '@/enums/CustomEventsNew.ts'
+import { CustomEvents } from '@/enums/CustomEvents.ts'
 import { ToolResult } from '../../tools/helpers/ToolResult.ts'
 import { ConfirmationEntityToolResult } from '../../tools/helpers/ConfirmationEntityToolResult.ts'
 import { ToolResultTypesEnum } from '@/domain/enums/ToolResultTypesEnum.ts'
-import { SystemMessage } from '@langchain/core/messages'
 import { FailedToolResult } from '../../tools/helpers/FailedToolResult.ts'
+import { HumanMessage } from '@langchain/core/messages'
 
 export const makeCoderInternalToolNode = (deps: AgentDependencies) => {
   return async (state: typeof AgentStateAnnotation.State, config: RunnableConfig) => {
@@ -63,18 +63,17 @@ export const makeCoderInternalToolNode = (deps: AgentDependencies) => {
         outputs.coder_has_confirmations = true
       } else if (result instanceof FailedToolResult) {
         outputs.last_execution_messages!.push(
-          new SystemMessage(`Error executing tool ${pendingToolCall.name}: ${result.content}`),
+          new HumanMessage(`Error executing tool ${pendingToolCall.name}: ${result.content}`),
         )
         outputs.internal_tool_calls_have_error = true
+
+        break
       } else {
         if (result.meta?.tempToRealIdMap) {
           Object.assign(tempToRealIdMap, result.meta.tempToRealIdMap)
         }
 
-        const toolResultMessage = new SystemMessage({
-          name: pendingToolCall.name,
-          content: result.content,
-        })
+        const toolResultMessage = new HumanMessage(result.content)
 
         outputs.last_execution_messages!.push(toolResultMessage)
         outputs.messages!.push(toolResultMessage)

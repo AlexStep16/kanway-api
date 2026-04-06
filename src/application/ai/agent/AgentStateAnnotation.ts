@@ -13,10 +13,6 @@ export const AgentStateAnnotation = Annotation.Root({
     reducer: messagesStateReducer,
     default: () => [],
   }),
-  skiller_messages: Annotation<BaseMessage[]>({
-    reducer: (_, y) => y,
-    default: () => [],
-  }),
   planner_messages: Annotation<BaseMessage[]>({
     reducer: (_, y) => y,
     default: () => [],
@@ -37,12 +33,24 @@ export const AgentStateAnnotation = Annotation.Root({
     reducer: (_, y) => y,
     default: () => 0,
   }),
+  current_payload: Annotation<Record<string, any>>({
+    reducer: (_, y) => y,
+    default: () => ({}),
+  }),
+  last_planner_tool_name: Annotation<string>({
+    reducer: (_, y) => y,
+    default: () => '',
+  }),
   last_replanner_tool_name: Annotation<string>({
     reducer: (_, y) => y,
     default: () => '',
   }),
 
   coder_messages: Annotation<BaseMessage[]>({
+    reducer: (_, y) => y,
+    default: () => [],
+  }),
+  coder_errors: Annotation<BaseMessage[]>({
     reducer: (_, y) => y,
     default: () => [],
   }),
@@ -82,27 +90,11 @@ export const AgentStateAnnotation = Annotation.Root({
     default: () => ({}),
   }),
 
-  final_response: Annotation<string>({
-    reducer: (_, y) => y,
-    default: () => '',
-  }),
-  chat_summary: Annotation<string>({
-    reducer: (_, y) => y,
-    default: () => '',
-  }),
   planner_has_error: Annotation<boolean>({
     reducer: (_, y) => y,
     default: () => false,
   }),
   replanner_has_error: Annotation<boolean>({
-    reducer: (_, y) => y,
-    default: () => false,
-  }),
-  related_skill_names: Annotation<string[]>({
-    reducer: (_, y) => y,
-    default: () => [],
-  }),
-  skiller_has_error: Annotation<boolean>({
     reducer: (_, y) => y,
     default: () => false,
   }),

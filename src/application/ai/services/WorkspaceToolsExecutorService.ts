@@ -1,6 +1,6 @@
 import { Configurable } from '@/application/ai/interfaces/Configurable.ts'
 import { AiConfirmationTypeEnum } from '@/domain/enums/AiConfirmationTypeEnum.ts'
-import { CustomEvents } from '@/enums/CustomEventsNew.ts'
+import { CustomEvents } from '@/enums/CustomEvents.ts'
 import { dispatchCustomEvent } from '@langchain/core/callbacks/dispatch'
 import Fuse from 'fuse.js'
 import { FilterQuery, Types } from 'mongoose'
@@ -87,13 +87,14 @@ export class WorkspaceToolsExecutorService extends AbstractToolExecutor {
       {
         isMongoCase: true,
         limit: scaledLimit,
+        sort: { rank: 1 },
       },
     )
 
     if (search_query) {
       if (workspaces.length === 0) {
         return {
-          workspaces: [],
+          items: [],
           count: 0,
           hasMore: false,
         }
@@ -134,7 +135,7 @@ export class WorkspaceToolsExecutorService extends AbstractToolExecutor {
       }
 
       return {
-        workspaces: pagedResults,
+        items: pagedResults,
         count: searchedCount,
         hasMore: searchedCount > scaledLimit,
       }
@@ -143,7 +144,7 @@ export class WorkspaceToolsExecutorService extends AbstractToolExecutor {
     const hasMore = filteredCount > workspaces.length
 
     return {
-      workspaces,
+      items: workspaces,
       count: filteredCount,
       hasMore,
     }
@@ -401,12 +402,8 @@ export class WorkspaceToolsExecutorService extends AbstractToolExecutor {
 
     const dto: WorkspaceMoveDTO = {
       id: tempToRealIdMap[args.id] || args.id,
-      beforeWorkspaceId: args.before_workspace_id
-        ? tempToRealIdMap[args.before_workspace_id] || args.before_workspace_id
-        : undefined,
-      afterWorkspaceId: args.after_workspace_id
-        ? tempToRealIdMap[args.after_workspace_id] || args.after_workspace_id
-        : undefined,
+      beforeId: args.before_id ? tempToRealIdMap[args.before_id] || args.before_id : undefined,
+      afterId: args.after_id ? tempToRealIdMap[args.after_id] || args.after_id : undefined,
     }
 
     if (configurable.aiConfirmationType === AiConfirmationTypeEnum.ALWAYS) {

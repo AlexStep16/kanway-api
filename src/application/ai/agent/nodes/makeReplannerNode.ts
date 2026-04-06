@@ -5,10 +5,10 @@ import { ChatPromptTemplate } from '@langchain/core/prompts'
 import { ReplannerPrompt } from '../../prompts/ReplannerPrompt.ts'
 import { Configurable } from '@/application/ai/interfaces/Configurable.ts'
 import { dispatchCustomEvent } from '@langchain/core/callbacks/dispatch'
-import { CustomEvents } from '@/enums/CustomEventsNew.ts'
+import { CustomEvents } from '@/enums/CustomEvents.ts'
 import { Types } from 'mongoose'
 import { initReplannerTools } from '../../tools/initReplannerTools.ts'
-import getLastHumanMessage from '../../helpers/getLastHumanMessage.ts'
+import { ReplannerAnalyse } from '../../prompts/ReplannerAnalyse.ts'
 
 export const makeReplannerNode = (deps: AgentDependencies) => {
   return async (state: typeof AgentStateAnnotation.State, config: RunnableConfig) => {
@@ -16,37 +16,51 @@ export const makeReplannerNode = (deps: AgentDependencies) => {
       id: new Types.ObjectId().toString(),
       name: 'Проверяю результаты',
     })
-
-    const lastHumanMessage = getLastHumanMessage(state.messages)
+    await dispatchCustomEvent(CustomEvents.SYNTHESIZE_START, {})
 
     const outputs: Partial<typeof AgentStateAnnotation.State> = {
       tool_calls: [],
       replanner_has_error: false,
       replanner_messages: [],
+      messages: [],
     }
 
-    const { agentModel } = deps.models
+    const { replannerModel } = deps.models
 
     const configurable = config.configurable as Configurable
 
     const replannerTools = initReplannerTools()
 
-    const currentPlanText = state.current_plan.length
-      ? state.current_plan.map((step, index) => `${index + 1}. ${step}`).join('\n')
-      : 'No current plan.'
+    let completedSteps = ''
+    let remainingSteps = ''
+
+    for (let i = 0; i < state.current_plan.length; i++) {
+      const step = `${i + 1}. ${state.current_plan[i]}\n`
+
+      if (state.current_step_index === i) {
+        completedSteps = step
+      } else if (state.current_step_index > i) {
+        remainingSteps += step
+      }
+    }
+
+    if (!remainingSteps) remainingSteps = 'Empty'
+
+    const lastExecutionResult = state.last_execution_messages
+      .map((message) => `- ${message.text}`)
+      .join('\n')
 
     const prompt = ChatPromptTemplate.fromMessages([
       ['system', ReplannerPrompt],
-      lastHumanMessage!,
-      ...state.last_execution_messages,
+      ['user', ReplannerAnalyse],
       ...state.replanner_messages,
     ])
 
-    if (!agentModel.bindTools) {
-      throw new Error('Agent model does not support tool binding.')
+    if (!replannerModel.bindTools) {
+      throw new Error('Replanner model does not support tool binding.')
     }
 
-    const chain = prompt.pipe(agentModel.bindTools(replannerTools))
+    const chain = prompt.pipe(replannerModel.bindTools(replannerTools))
 
     const response = await chain.invoke({
       board_id: configurable.activeBoardId,
@@ -55,10 +69,19 @@ export const makeReplannerNode = (deps: AgentDependencies) => {
       categories_list: configurable.categoriesList,
       tags_list: configurable.tagsList,
       aiName: configurable.aiName,
-      current_plan: currentPlanText,
+      completed_steps: completedSteps,
+      remaining_steps: remainingSteps,
+      user_message: configurable.userMessage,
+      last_execution_result: lastExecutionResult,
     })
 
     outputs.tool_calls = response.tool_calls || []
+
+    if (outputs.tool_calls.length === 0) {
+      await dispatchCustomEvent(CustomEvents.FINAL_RESPONSE, response)
+
+      outputs.messages!.push(response)
+    }
 
     return outputs
   }

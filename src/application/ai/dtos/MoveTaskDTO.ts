@@ -7,8 +7,8 @@ import { z } from 'zod'
 export const MoveTaskDTOSchema = z
   .object({
     id: z.string(),
-    before_task_id: z.string(ErrorMessages.TASK_ID_INVALID).nullable().optional(),
-    after_task_id: z.string(ErrorMessages.TASK_ID_INVALID).nullable().optional(),
+    before_id: z.string(ErrorMessages.TASK_ID_INVALID).nullable().optional(),
+    after_id: z.string(ErrorMessages.TASK_ID_INVALID).nullable().optional(),
     new_category_id: z.string(ErrorMessages.CATEGORY_ID_INVALID).nullable().optional(),
   })
   .strict()

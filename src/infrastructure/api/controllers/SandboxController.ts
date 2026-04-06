@@ -34,44 +34,15 @@ export default class SandboxController {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           code: `
-mongo_filter_archived = {"$or": [{"is_deleted": True}, {"is_deleted_external": True}]}
-
-targets = [
-    {"title": "Вытереть пыль по комнатам", "resolved_id": None},
-    {"title": "Кухня: плита, раковина, столешницы", "resolved_id": None}
-]
-
-for idx, item in enumerate(targets):
-    # Search archived tasks by exact title using fuzzy search
-    res = search_tasks(mongo_filter=mongo_filter_archived, search_query=item["title"], search_mode="fuzzy", limit=20)
-    tasks = res.get("tasks", []) if isinstance(res, dict) else []
-    # Filter exact name match if possible to reduce ambiguity
-    exact_matches = [t for t in tasks if isinstance(t, dict) and t.get("name") == item["title"]]
-    candidates = exact_matches if exact_matches else tasks
-
-    if len(candidates) == 0:
-        print(f"Не найдено архивных задач с названием: {item['title']}")
-        continue
-    if len(candidates) > 1:
-        # resolve ambiguity for this specific title
-        selected_ids = resolve_ambiguous(
-            entity_type="task",
-            ids=[t.get("_id") for t in candidates if t.get("_id")],
-            min_select=1,
-            max_select=1,
-            id=f"ambig_{idx}"
-        )
-        if selected_ids and len(selected_ids) > 0:
-            item["resolved_id"] = selected_ids[0]
-    else:
-        item["resolved_id"] = candidates[0].get("_id")
-
-recover_ids = [item["resolved_id"] for item in targets if item["resolved_id"]]
-if recover_ids:
-    recover_tasks(ids=recover_ids)
-    print(f"Восстановлено задач: {len(recover_ids)}")
-else:
-    print("Нет задач для восстановления.")`,
+tasks_result = search_tasks(
+    mongo_filter={
+        "board": "69b9757502918145c4e83247"
+    },
+    search_query="",
+    search_mode="fuzzy",
+    limit=200
+)
+print(tasks_result)`,
           config: {},
           user_id: '67da84f0a2e3729760781559',
         }),

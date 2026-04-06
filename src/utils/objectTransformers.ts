@@ -56,7 +56,7 @@ export function toServerCaseKeys<TEntity>(obj: any): TEntity {
 }
 
 function isSystemKey(key: string): boolean {
-  if (['__v', '_id', 'id'].includes(key)) return true
+  if (['__v', '_id', 'id', 'createdAt', 'updatedAt'].includes(key)) return true
   return false
 }
 

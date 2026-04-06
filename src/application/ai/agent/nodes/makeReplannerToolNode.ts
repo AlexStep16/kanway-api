@@ -1,10 +1,10 @@
 import { RunnableConfig } from '@langchain/core/runnables'
 import { AgentStateAnnotation } from '@/application/ai/agent/AgentStateAnnotation.ts'
-import { SystemMessage } from '@langchain/core/messages'
 import { DynamicStructuredTool } from '@langchain/core/tools'
 import { ToolResult } from '../../tools/helpers/ToolResult.ts'
 import z, { ZodAny } from 'zod'
 import { initReplannerTools } from '../../tools/initReplannerTools.ts'
+import { HumanMessage } from '@langchain/core/messages'
 
 export const makeReplannerToolNode = () => {
   return async (state: typeof AgentStateAnnotation.State, _: RunnableConfig) => {
@@ -15,19 +15,12 @@ export const makeReplannerToolNode = () => {
       replanner_messages: [],
       current_plan: state.current_plan,
       current_step_index: 0,
-      final_response: '',
+      current_payload: state.current_payload,
       last_replanner_tool_name: toolCalls.length === 1 ? toolCalls[0].name : '',
     }
 
-    if (toolCalls.length === 0) {
-      outputs.replanner_messages!.push(new SystemMessage('You MUST call available tool.'))
-      outputs.replanner_has_error = true
-
-      return outputs
-    }
-
     if (toolCalls.length > 1) {
-      outputs.replanner_messages!.push(new SystemMessage('You MUST call only one tool.'))
+      outputs.replanner_messages!.push(new HumanMessage('You MUST call only one tool.'))
       outputs.replanner_has_error = true
 
       return outputs
@@ -40,7 +33,7 @@ export const makeReplannerToolNode = () => {
     )
 
     if (!toolByToolCalls) {
-      outputs.replanner_messages = [new SystemMessage(`Tool ${toolCalls[0].name} not found.`)]
+      outputs.replanner_messages = [new HumanMessage(`Tool ${toolCalls[0].name} not found.`)]
       outputs.replanner_has_error = true
 
       return outputs
@@ -50,7 +43,7 @@ export const makeReplannerToolNode = () => {
 
     if (!validationResult.success) {
       outputs.replanner_messages = [
-        new SystemMessage(
+        new HumanMessage(
           `Validation Error: Invalid arguments. \n${z.prettifyError(
             validationResult.error,
           )}. \nPlease fix the arguments and try again.`,
@@ -66,7 +59,7 @@ export const makeReplannerToolNode = () => {
 
       if (!observation.success) {
         outputs.replanner_messages = [
-          new SystemMessage(`Error executing tool: ${observation.content}`),
+          new HumanMessage(`Error executing tool: ${observation.content}`),
         ]
         outputs.replanner_has_error = true
 
@@ -74,20 +67,29 @@ export const makeReplannerToolNode = () => {
       }
 
       if (toolCalls[0].name === 'update_plan') {
-        const plan = observation.content as string[]
+        const { plan, payload } = observation.content as { plan: string[]; payload: any }
 
         outputs.current_plan = plan
         outputs.current_step_index = 0
-      } else if (toolCalls[0].name === 'response_to_user') {
-        outputs.final_response = toolCalls[0].args.message
+        outputs.current_payload = payload || {}
       } else if (toolCalls[0].name === 'continue') {
+        if (state.current_plan.length <= state.current_step_index + 1) {
+          outputs.replanner_messages = [
+            new HumanMessage(`No more steps in the current plan. You cannot continue.`),
+          ]
+
+          outputs.replanner_has_error = true
+
+          return outputs
+        }
+
         outputs.current_step_index = (state.current_step_index || 0) + 1
       }
 
       return outputs
     } catch (error) {
       outputs.replanner_messages = [
-        new SystemMessage(
+        new HumanMessage(
           `Error executing tool: ${error instanceof Error ? error.message : String(error)}`,
         ),
       ]

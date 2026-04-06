@@ -5,6 +5,7 @@ export async function executeCode(
   resolvedAmbiguities: Record<string, any>,
   userId: Types.ObjectId,
   inheritableMetadata: Record<string, any>,
+  payload: Record<string, any> = {},
 ) {
   const response = await fetch('http://localhost:8000/execute', {
     method: 'POST',
@@ -18,6 +19,7 @@ export async function executeCode(
           inheritableMetadata,
         },
       },
+      payload: payload,
     }),
   })
 

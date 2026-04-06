@@ -7,8 +7,8 @@ import { z } from 'zod'
 export const MoveBoardDTOSchema = z
   .object({
     id: z.string(),
-    before_board_id: z.string(ErrorMessages.BOARD_ID_INVALID).nullable().optional(),
-    after_board_id: z.string(ErrorMessages.BOARD_ID_INVALID).nullable().optional(),
+    before_id: z.string(ErrorMessages.BOARD_ID_INVALID).nullable().optional(),
+    after_id: z.string(ErrorMessages.BOARD_ID_INVALID).nullable().optional(),
     new_workspace_id: z.string(ErrorMessages.WORKSPACE_ID_INVALID).nullable().optional(),
   })
   .strict()

@@ -2,7 +2,7 @@ import { Configurable } from '@/application/ai/interfaces/Configurable.ts'
 import CategoryRepository from '@/application/repositories/CategoryRepository.ts'
 import { CategoryService } from '@/application/services/CategoryService.ts'
 import { AiConfirmationTypeEnum } from '@/domain/enums/AiConfirmationTypeEnum.ts'
-import { CustomEvents } from '@/enums/CustomEventsNew.ts'
+import { CustomEvents } from '@/enums/CustomEvents.ts'
 import { dispatchCustomEvent } from '@langchain/core/callbacks/dispatch'
 import Fuse from 'fuse.js'
 import { FilterQuery, Types } from 'mongoose'
@@ -96,13 +96,14 @@ export class CategoryToolsExecutorService extends AbstractToolExecutor {
       {
         isMongoCase: true,
         limit: scaledLimit,
+        sort: { rank: 1 },
       },
     )
 
     if (search_query) {
       if (categories.length === 0) {
         return {
-          categories: [],
+          items: [],
           count: 0,
           hasMore: false,
         }
@@ -143,7 +144,7 @@ export class CategoryToolsExecutorService extends AbstractToolExecutor {
       }
 
       return {
-        categories: pagedResults,
+        items: pagedResults,
         count: searchedCount,
         hasMore: searchedCount > scaledLimit,
       }
@@ -152,7 +153,7 @@ export class CategoryToolsExecutorService extends AbstractToolExecutor {
     const hasMore = filteredCount > categories.length
 
     return {
-      categories,
+      items: categories,
       count: filteredCount,
       hasMore,
     }
@@ -180,6 +181,10 @@ export class CategoryToolsExecutorService extends AbstractToolExecutor {
       const board = boards.find(
         (b) => b.id.toString() === (tempToRealIdMap[category.board] || category.board),
       )
+
+      if (!board) {
+        throw new Error(`Board with ID ${category.board} not found for category ${category.name}`)
+      }
 
       return {
         ...toServerCaseKeys(category),
@@ -457,12 +462,8 @@ export class CategoryToolsExecutorService extends AbstractToolExecutor {
 
     const dto: CategoryMoveDTO = {
       id: tempToRealIdMap[args.id] || args.id,
-      beforeCategoryId: args.before_category_id
-        ? tempToRealIdMap[args.before_category_id] || args.before_category_id
-        : undefined,
-      afterCategoryId: args.after_category_id
-        ? tempToRealIdMap[args.after_category_id] || args.after_category_id
-        : undefined,
+      beforeId: args.before_id ? tempToRealIdMap[args.before_id] || args.before_id : undefined,
+      afterId: args.after_id ? tempToRealIdMap[args.after_id] || args.after_id : undefined,
       newBoardId: args.new_board_id
         ? tempToRealIdMap[args.new_board_id] || args.new_board_id
         : undefined,

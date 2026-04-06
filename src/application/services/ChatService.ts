@@ -25,7 +25,6 @@ import { NotFoundError } from '@errors/NotFound.ts'
 import { AppError } from '@errors/AppError.ts'
 import { BaseService } from '@application/services/BaseService.ts'
 import { IChatRaw } from '@entities/IChatRaw.ts'
-import { IChatMessage } from '@/domain/entities/IChatMessage.ts'
 import { BoardService } from './BoardService.ts'
 import { WorkspaceService } from './WorkspaceService.ts'
 import { AgentStateAnnotation } from '../ai/agent/AgentStateAnnotation.ts'
@@ -115,6 +114,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       boardId?: string
       workspaceId: string
       timezone: string
+      userMessage: string
       stepMessageId: string
       activeBoardName?: string
       activeWorkspaceName?: string
@@ -155,6 +155,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
         categoriesList: categoriesList.length > 0 ? categoriesList : 'No categories',
         tagsList: tagsList.length > 0 ? tagsList : 'No tags',
         timezone: data.timezone,
+        userMessage: data.userMessage,
 
         aiName: userSetting.aiName || 'Kanbar',
         aiConfirmationType: userSetting.aiConfirmationType,
@@ -203,7 +204,6 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     let toolsWithNoDecision = 0
 
     const messages: BaseMessage[] = []
-    const newChatMessages: IChatMessage[] = []
     const threadId = data.threadId || new Types.ObjectId().toString()
 
     if (user.subscriptionId === SubscriptionPlanEnum.Basic && user.generationsCount === 0) {
@@ -277,25 +277,29 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       throw new AppError('Не все действия подтверждены или отменены.', 400)
     }
 
-    if (data.message) {
-      const userMessage = await this.chatMessageService.create(
-        {
-          role: 'user',
-          content: data.message,
-          chatId: chat.id,
-          threadId,
-        },
-        user,
-      )
-
-      newChatMessages.push(...userMessage.data)
-
-      messages.push(new HumanMessage(data.message))
-    } else if (chatMessages.length > 0 && chatMessages[chatMessages.length - 1].role !== 'user') {
+    if (
+      !data.message &&
+      chatMessages.length > 0 &&
+      chatMessages[chatMessages.length - 1].role !== 'user'
+    ) {
       throw new AppError('Последнее сообщение в чате не является сообщением от пользователя.', 400)
     }
 
-    const stepsMessage = await this.chatMessageService.create(
+    const createUserMessageResult = await this.chatMessageService.create(
+      {
+        role: 'user',
+        content: data.message,
+        chatId: chat.id,
+        threadId,
+      },
+      user,
+    )
+
+    const userMessage = createUserMessageResult.data[0]
+
+    messages.push(new HumanMessage(data.message!))
+
+    const stepMessages = await this.chatMessageService.create(
       {
         role: 'steps',
         content: [],
@@ -305,15 +309,18 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       user,
     )
 
+    const stepMessage = stepMessages.data[0]
+
     const config = await this._getConfigurableFromUserSetting(user, {
       threadId: threadId,
       chatId: chat.id.toString(),
       boardId: data.boardId,
       workspaceId: data.workspaceId,
       timezone: data.timezone,
-      stepMessageId: stepsMessage.data[0].id.toHexString(),
+      stepMessageId: stepMessage.id.toHexString(),
       activeBoardName,
       activeWorkspaceName,
+      userMessage: data.message || '',
     })
 
     const payload = getDefaultState()
@@ -333,7 +340,8 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     return {
       jobId: job.id,
       chat,
-      chatMessages: [...newChatMessages, stepsMessage.data[0]],
+      userMessage,
+      stepMessage,
       threadId: threadId,
     }
   }
@@ -359,7 +367,6 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     await this.chatMessageService.delete(
       {
         chatId: data.chatId,
-        threadId: data.threadId,
         createdAt: {
           $gt: lastStepperMessage.createdAt,
         },
@@ -369,35 +376,34 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     )
   }
 
-  private async _getLastStepperMessageId(
-    chatId: string,
-    user: IUser,
-    externalSession?: ClientSession,
-  ): Promise<string | null> {
-    const stepsMessage = await this.chatMessageService.getByCriteria(
-      { chatId, role: 'steps' },
-      user.id,
-      externalSession,
-      undefined,
-      {
-        sort: { createdAt: -1 },
-        limit: 1,
-      },
-    )
-
-    return stepsMessage.length > 0 ? stepsMessage[0].id.toHexString() : null
-  }
-
   private async _executeRetryTransaction(
     data: RetryAgentDTO,
     user: IUser,
     externalSession?: ClientSession,
   ) {
-    const lastStepperMessageId = await this._getLastStepperMessageId(
-      data.chatId,
-      user,
+    const chatMessages = await this.chatMessageService.getByCriteria(
+      { chatId: data.chatId },
+      user.id,
       externalSession,
+      undefined,
+      {
+        sort: { createdAt: -1 },
+      },
     )
+
+    const lastUserMessage = chatMessages.find((msg) => msg.role === 'user')
+
+    if (!lastUserMessage) {
+      throw new AppError('Не найдено сообщение пользователя для повторной попытки.', 400)
+    }
+
+    const lastStepperMessage = chatMessages.find((msg) => msg.role === 'steps')
+
+    if (!lastStepperMessage) {
+      throw new AppError('Не найдено сообщение шагов для повторной попытки.', 400)
+    }
+
+    const lastStepperMessageId = lastStepperMessage ? lastStepperMessage.id.toHexString() : null
 
     if (lastStepperMessageId) {
       await this._deleteLastIteration(lastStepperMessageId, data, user, externalSession)
@@ -410,6 +416,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       workspaceId: data.workspaceId,
       timezone: data.timezone,
       stepMessageId: lastStepperMessageId || '',
+      userMessage: lastUserMessage ? lastUserMessage.content : '',
     })
 
     const payload = getDefaultState()
@@ -561,6 +568,10 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       { id: data.chatMessageId },
       user.id,
       externalSession,
+      undefined,
+      {
+        sort: { createdAt: -1 },
+      },
     )
 
     if (!chatMessages || chatMessages.length === 0) {
@@ -579,7 +590,17 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
 
     const chatId = chatMessage.chatId.toString()
 
-    const lastStepperMessageId = await this._getLastStepperMessageId(chatId, user, externalSession)
+    const lastUserMessage = chatMessages.find((msg) => msg.role === 'user')
+
+    if (!lastUserMessage) {
+      throw new AppError('Не найдено сообщение пользователя для повторной попытки.', 400)
+    }
+
+    const lastStepperMessage = chatMessages.find((msg) => msg.role === 'steps')
+
+    if (!lastStepperMessage) {
+      throw new AppError('Не найдено сообщение шагов для повторной попытки.', 400)
+    }
 
     const config = await this._getConfigurableFromUserSetting(user, {
       threadId: chatMessage.threadId,
@@ -587,7 +608,8 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       boardId: data.boardId || '',
       workspaceId: data.workspaceId || '',
       timezone: data.timezone || 'UTC',
-      stepMessageId: lastStepperMessageId || '',
+      stepMessageId: lastStepperMessage ? lastStepperMessage.id.toHexString() : '',
+      userMessage: lastUserMessage ? lastUserMessage.content : '',
     })
 
     await this.chatMessageService.delete(
@@ -648,6 +670,11 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     const chatMessages = await this.chatMessageService.getByCriteria(
       { chatId: data.chatId },
       user.id,
+      externalSession,
+      undefined,
+      {
+        sort: { createdAt: -1 },
+      },
     )
 
     let toolsWithNoDecision = 0
@@ -677,11 +704,17 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
 
     if (toolsWithNoDecision > 0) return
 
-    const lastStepperMessageId = await this._getLastStepperMessageId(
-      data.chatId,
-      user,
-      externalSession,
-    )
+    const lastUserMessage = chatMessages.find((msg) => msg.role === 'user')
+
+    if (!lastUserMessage) {
+      throw new AppError('Не найдено сообщение пользователя для повторной попытки.', 400)
+    }
+
+    const lastStepperMessage = chatMessages.find((msg) => msg.role === 'steps')
+
+    if (!lastStepperMessage) {
+      throw new AppError('Не найдено сообщение шагов для повторной попытки.', 400)
+    }
 
     const config = await this._getConfigurableFromUserSetting(user, {
       threadId: data.threadId,
@@ -689,7 +722,8 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       boardId: data.boardId || '',
       workspaceId: data.workspaceId || '',
       timezone: data.timezone || 'UTC',
-      stepMessageId: lastStepperMessageId || '',
+      stepMessageId: lastStepperMessage ? lastStepperMessage.id.toHexString() : '',
+      userMessage: lastUserMessage ? lastUserMessage.content : '',
     })
 
     const job = await langgraphQueue.add('review', {

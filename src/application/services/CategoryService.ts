@@ -926,27 +926,27 @@ export class CategoryService extends BaseService<
     session: ClientSession,
     isDryRun: boolean = false,
   ): Promise<IResponseWithLog<ICategoryPopulated[]>> {
-    const { beforeCategoryId, afterCategoryId, id, newBoardId } = dto
+    const { beforeId, afterId, id, newBoardId } = dto
 
     const criteria: ICategoryCriteria = {
-      ids: [id, beforeCategoryId, afterCategoryId].filter((id): id is string => !!id),
+      ids: [id, beforeId, afterId].filter((id): id is string => !!id),
     }
 
     const updateData: SafeUpdateData<ICategory> = {}
 
     const categories = await this.repository.findByCriteria(criteria, session, undefined, user.id)
     const category = categories.find((t) => t.id.toString() === id)
-    const beforeCategory = categories.find((t) => t.id.toString() === beforeCategoryId)
-    const afterCategory = categories.find((t) => t.id.toString() === afterCategoryId)
+    const beforeCategory = categories.find((t) => t.id.toString() === beforeId)
+    const afterCategory = categories.find((t) => t.id.toString() === afterId)
     let isParentChanged = false
 
     if (!category) {
       throw new NotFoundError('Категория для перемещения не найдена.')
     }
-    if (beforeCategoryId && !beforeCategory) {
+    if (beforeId && !beforeCategory) {
       throw new NotFoundError('Категория перед указанной не найдена.')
     }
-    if (afterCategoryId && !afterCategory) {
+    if (afterId && !afterCategory) {
       throw new NotFoundError('Категория после указанной не найдена.')
     }
 

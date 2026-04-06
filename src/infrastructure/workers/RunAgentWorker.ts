@@ -5,7 +5,7 @@ import { RunnableConfig } from '@langchain/core/runnables'
 import type { Job } from 'bullmq'
 import connectToDatabase from '@db/connectToDatabase.ts'
 import { getAgent } from '@/infrastructure/ai/getAgent.ts'
-import { CustomEvents } from '@/enums/CustomEventsNew.ts'
+import { CustomEvents } from '@/enums/CustomEvents.ts'
 import { initializeDependencies } from '../di/initializeDependencies.ts'
 
 import utc from 'dayjs/plugin/utc.js'
@@ -144,7 +144,7 @@ export const RunAgentWorker = new Worker(
           break
         }
 
-        if (!bullMQHandler.isSynthesizeStarted) continue
+        if (!bullMQHandler.isSynthesizing) continue
 
         if (eventType === 'on_chat_model_stream') {
           const chunk = event.data.chunk
@@ -152,14 +152,17 @@ export const RunAgentWorker = new Worker(
           if (chunk.content && typeof chunk.content === 'string') {
             accumulatedContent += chunk.content
 
-            if (bullMQHandler.aiMessage)
-              await job.updateProgress({
-                role: CustomEvents.UPDATE_MESSAGE,
-                data: {
-                  ...bullMQHandler.aiMessage,
-                  content: accumulatedContent,
-                },
-              })
+            if (!bullMQHandler.aiMessage) {
+              await bullMQHandler.initAiMessage()
+            }
+
+            await job.updateProgress({
+              role: CustomEvents.UPDATE_MESSAGE,
+              data: {
+                ...bullMQHandler.aiMessage,
+                content: accumulatedContent,
+              },
+            })
           }
         }
       }

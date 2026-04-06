@@ -5,12 +5,12 @@ const objectIdRegex = /^[0-9a-fA-F]{24}$/
 
 export const BoardMoveDTOSchema = z.object({
   id: z.string(ErrorMessages.BOARD_ID_INVALID).regex(objectIdRegex),
-  beforeBoardId: z
+  beforeId: z
     .string(ErrorMessages.BEFORE_BOARD_ID_INVALID)
     .regex(objectIdRegex)
     .nullable()
     .optional(),
-  afterBoardId: z
+  afterId: z
     .string(ErrorMessages.AFTER_BOARD_ID_INVALID)
     .regex(objectIdRegex)
     .nullable()

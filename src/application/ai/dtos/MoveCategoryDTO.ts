@@ -7,8 +7,8 @@ import { z } from 'zod'
 export const MoveCategoryDTOSchema = z
   .object({
     id: z.string(),
-    before_category_id: z.string(ErrorMessages.CATEGORY_ID_INVALID).nullable().optional(),
-    after_category_id: z.string(ErrorMessages.CATEGORY_ID_INVALID).nullable().optional(),
+    before_id: z.string(ErrorMessages.CATEGORY_ID_INVALID).nullable().optional(),
+    after_id: z.string(ErrorMessages.CATEGORY_ID_INVALID).nullable().optional(),
     new_board_id: z.string(ErrorMessages.BOARD_ID_INVALID).nullable().optional(),
   })
   .strict()

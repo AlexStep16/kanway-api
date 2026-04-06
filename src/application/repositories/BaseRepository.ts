@@ -61,6 +61,7 @@ export abstract class BaseRepository<
       ...toMongoCaseKeys<Partial<TRawEntity>>(item),
       _id: undefined,
     }))
+
     const options: CreateOptions = { session }
 
     if (session) {

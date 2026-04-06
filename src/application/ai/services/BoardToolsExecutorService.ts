@@ -1,6 +1,6 @@
 import { Configurable } from '@/application/ai/interfaces/Configurable.ts'
 import { AiConfirmationTypeEnum } from '@/domain/enums/AiConfirmationTypeEnum.ts'
-import { CustomEvents } from '@/enums/CustomEventsNew.ts'
+import { CustomEvents } from '@/enums/CustomEvents.ts'
 import { dispatchCustomEvent } from '@langchain/core/callbacks/dispatch'
 import Fuse from 'fuse.js'
 import { FilterQuery, Types } from 'mongoose'
@@ -95,13 +95,14 @@ export class BoardToolsExecutorService extends AbstractToolExecutor {
       {
         isMongoCase: true,
         limit: scaledLimit,
+        sort: { rank: 1 },
       },
     )
 
     if (search_query) {
       if (boards.length === 0) {
         return {
-          boards: [],
+          items: [],
           count: 0,
           hasMore: false,
         }
@@ -140,7 +141,7 @@ export class BoardToolsExecutorService extends AbstractToolExecutor {
       }
 
       return {
-        boards: pagedResults,
+        items: pagedResults,
         count: searchedCount,
         hasMore: searchedCount > scaledLimit,
       }
@@ -149,7 +150,7 @@ export class BoardToolsExecutorService extends AbstractToolExecutor {
     const hasMore = filteredCount > boards.length
 
     return {
-      boards,
+      items: boards,
       count: filteredCount,
       hasMore,
     }
@@ -177,6 +178,10 @@ export class BoardToolsExecutorService extends AbstractToolExecutor {
       const workspace = workspaces.find(
         (w) => w.id.toString() === (tempToRealIdMap[board.workspace] || board.workspace),
       )
+
+      if (!workspace) {
+        throw new Error(`Workspace with ID ${board.workspace} not found for board ${board.name}`)
+      }
 
       return {
         ...toServerCaseKeys(board),
@@ -443,12 +448,8 @@ export class BoardToolsExecutorService extends AbstractToolExecutor {
 
     const dto: BoardMoveDTO = {
       id: tempToRealIdMap[args.id] || args.id,
-      beforeBoardId: args.before_board_id
-        ? tempToRealIdMap[args.before_board_id] || args.before_board_id
-        : undefined,
-      afterBoardId: args.after_board_id
-        ? tempToRealIdMap[args.after_board_id] || args.after_board_id
-        : undefined,
+      beforeId: args.before_id ? tempToRealIdMap[args.before_id] || args.before_id : undefined,
+      afterId: args.after_id ? tempToRealIdMap[args.after_id] || args.after_id : undefined,
       newWorkspaceId: args.new_workspace_id
         ? tempToRealIdMap[args.new_workspace_id] || args.new_workspace_id
         : undefined,

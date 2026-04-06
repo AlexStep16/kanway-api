@@ -7,8 +7,8 @@ import { z } from 'zod'
 export const MoveWorkspaceDTOSchema = z
   .object({
     id: z.string(),
-    before_workspace_id: z.string(ErrorMessages.WORKSPACE_ID_INVALID).nullable().optional(),
-    after_workspace_id: z.string(ErrorMessages.WORKSPACE_ID_INVALID).nullable().optional(),
+    before_id: z.string(ErrorMessages.WORKSPACE_ID_INVALID).nullable().optional(),
+    after_id: z.string(ErrorMessages.WORKSPACE_ID_INVALID).nullable().optional(),
   })
   .strict()
 

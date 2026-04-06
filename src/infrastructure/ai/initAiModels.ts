@@ -1,27 +1,42 @@
 import { ChatFireworks } from '@langchain/community/chat_models/fireworks'
-import { ChatOpenAI } from '@langchain/openai'
+import { ChatVertexAI } from '@langchain/google-vertexai'
 
 export function initAiModels() {
-  const agentModel = new ChatOpenAI({
-    model: 'gpt-5.1-codex-max',
+  const plannerModel = new ChatVertexAI({
+    model: 'gemini-3-flash-preview',
   })
 
-  const synthesizerModel = new ChatFireworks({
+  /*
+  const coderModel = new ChatFireworks({
+    model: 'accounts/fireworks/models/qwen3-vl-30b-a3b-thinking',
+    reasoning: {
+      effort: 'low',
+    },
+    maxTokens: 10000,
+    maxCompletionTokens: 10000,
+  })*/
+
+  const coderModel = new ChatFireworks({
     model: 'accounts/fireworks/models/gpt-oss-120b',
+  })
+
+  const replannerModel = new ChatVertexAI({
+    model: 'gemini-3-flash-preview',
   })
 
   const summarizerModel = new ChatFireworks({
-    model: 'accounts/fireworks/models/gpt-oss-120b',
+    model: 'accounts/fireworks/models/gpt-oss-20b',
     temperature: 0,
   })
 
   const chatNameModel = new ChatFireworks({
-    model: 'accounts/fireworks/models/gpt-oss-120b',
+    model: 'accounts/fireworks/models/gpt-oss-20b',
   })
 
   return {
-    agentModel,
-    synthesizerModel,
+    plannerModel,
+    coderModel,
+    replannerModel,
     summarizerModel,
     chatNameModel,
   }

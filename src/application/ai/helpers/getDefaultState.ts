@@ -3,7 +3,6 @@ import { AgentStateAnnotation } from '../agent/AgentStateAnnotation.ts'
 export function getDefaultState(): typeof AgentStateAnnotation.State {
   return {
     messages: [],
-    skiller_messages: [],
 
     coder_messages: [],
     coder_has_error: false,
@@ -21,11 +20,9 @@ export function getDefaultState(): typeof AgentStateAnnotation.State {
     last_execution_messages: [],
     coder_iterations: 0,
 
-    final_response: '',
-    chat_summary: '',
     planner_has_error: false,
-    related_skill_names: [],
-    skiller_has_error: false,
+    current_payload: {},
+    last_planner_tool_name: '',
 
     tool_calls: [],
     pending_internal_tool_calls: [],

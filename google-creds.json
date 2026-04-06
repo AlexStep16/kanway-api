@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "aerial-optics-418511",
+  "private_key_id": "3f64587e932338a30d1810ce7892d9619fd12ef0",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEugIBADANBgkqhkiG9w0BAQEFAASCBKQwggSgAgEAAoIBAQDB1W5SCAiFLqyF\nUScg9rEsq+OvHUuYQPC4cUird3BBV7Iy5RIDh84NPcKSlcllRY+QDXwUErMB4hao\n7w1g0FwjomdlSLJsDJL3eDsMyBlIMhMKXlHkRdpBhAby/zjB3V4LaNFb4XnKSGOZ\noKs/JkXRKQ/ga+XZkFJOAl01lajq5AscBY9ZAFX1gk9fpJECJbAPx+8Yk9DSYaDH\nkeOjdNsiZOrPms1E7NLLE8+71VgkDNxBBH6vIkDmS7Bej9rWtU3c3lNC5SMhNJ8c\nxG/e04QnZKiTQA1X9DCwPos6fTbLhON5pQqYPjVI/qJuXwAECAWP3QJ6NTN2EIkf\nkqL/bstPAgMBAAECgf8BcTORsdLwsNXtG9IKI5r9G5+iQDQGpNaTZCwBrOHTmqKs\nmbJkCzDrAK80+knap85ppX9G17g0Gp8cuwwhe4PGRjIdOXlvteUxR4L4M9pFckqx\n+dDrT5m91twd/uy2U8rA3UO9tGmteSWNte134CZbsS95PwshbrSDZivFRnxcySGB\nQWNZM98x/EPIlcFb8RtesflCeOEsAHzV3Oe0ZBl/ViIe5loHAGoOsGfSTe0BCShI\nN0H4pIHDdWMivQJiomlQoIL9s/YgCWyfVE3T+N4eUfIE1Y+5Arva8inxp0VIDc7m\n2Ik/Fx7suuwf6qQXuG1chR/2EEpY7Zm7ww5DgsECgYEA5GYh/Ob5fCGi4rgNTfn6\nDhoblNhFt1XyCwKy/yKcxs4SbMNx4vSLWa3EjxvzEStks7mTaU8xN78Uv+DIBDWF\nWIlH00pQQRmimIOTmg/5Q/EouaT/SfpTxB9pAnX+UfSAdHhomBTs4SNSBHEs7vvJ\nhlVVvG/eHTYMB3WTj7x64FsCgYEA2UH4WuKi1410y7ViCop5y0N3xreU/IX28gj0\n+DkL/OzqhwFP1Bp/t5XRCM1EPYQ43c7iIqCKX18Pejm0WTd4Fbs6mbVU34fOlGca\nukNWWnAzWvisXupWRPvfxF0O2mT+yClUzIJTK7m0Xkxxj8rfB25sUiqbq89x6L+u\nnJ038x0CgYBEHJEWMmtEMWO56NlO37VKb066XKStv9umnO90VoYaY2nrNX3JCNRl\nsgRkCRm7jQ1C65yiUxOCZGFztzzuxGc3t/jLceXtBBARG2vxDcJwGILkmefnz9cb\nLaLLMRTeq+OC2EWY1OSvXzEeUgHsYvn+LYSb5WB/pZaAwvd2bebW8QKBgDuC9qTu\nr+ybswKaDOEWTYaAVK76WrVRfPOPwIq+FaqSuyuAEH3pRFLllvzyPV8cePdJVGhn\n0X+Oao7wf5Zwu1Q4lTTFlxoj+VJta8TZ7S2Yznh85bqaNkdvNzxywT7Rq3jo2XGr\nwVyY4e9ywSjCSZWficx4H2xQxsMavpnn9wuBAoGAClWbc+Vu7i+9d0KV4tDN9lNr\nDcOS2nNO5WH+O62ylcZTCO83DKnbzN+W8YoelLT6K292fnH8sZ9+AppbXetB8dpK\nTiQpf6gZiEwrJhSAzJsAJzxrbg6xicljlNwP4ep+qMPf9cTd6SxD+LJ49BO6Dj1I\nSbO7UV7zcQvJlR9/NZo=\n-----END PRIVATE KEY-----\n",
+  "client_email": "kanbar-user@aerial-optics-418511.iam.gserviceaccount.com",
+  "client_id": "101981313700186680333",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/kanbar-user%40aerial-optics-418511.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}

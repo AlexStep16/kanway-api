@@ -61,6 +61,8 @@ export enum ErrorMessages {
   TASK_COLOR_REQUIRED = 'Требуется цвет задачи.',
   TASK_TAGS_INVALID_TYPE = 'Неверный тип тегов задачи.',
   TASK_IS_COMPLETED_INVALID = 'Неверное значение для статуса задачи.',
+  TASK_PRIORITY_REQUIRED = 'Требуется приоритет задачи.',
+  TASK_PRIORITY_INVALID = 'Неверное значение приоритета задачи.',
   TASKS_BULK_UPDATE_INVALID = 'Неверные данные для массового обновления задач.',
   MULTIPLE_TASKS_FOUND = 'Найдено несколько задач с похожим названием. Выберите одно из них.',
   NO_TASKS_BY_NAME_FOUND = 'Задача с таким названием не найдена.',

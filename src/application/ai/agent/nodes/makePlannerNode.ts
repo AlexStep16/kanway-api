@@ -2,12 +2,11 @@ import { RunnableConfig } from '@langchain/core/runnables'
 import { AgentDependencies } from '@/application/ai/agent/types/AgentDependencies.ts'
 import { AgentStateAnnotation } from '@/application/ai/agent/AgentStateAnnotation.ts'
 import { ChatPromptTemplate } from '@langchain/core/prompts'
-import { getLastMessages } from '../../helpers/getLastMessages.ts'
 import { PlannerPrompt } from '../../prompts/PlannerPrompt.ts'
 import { initPlannerTools } from '../../tools/initPlannerTools.ts'
 import { Configurable } from '@/application/ai/interfaces/Configurable.ts'
 import { dispatchCustomEvent } from '@langchain/core/callbacks/dispatch'
-import { CustomEvents } from '@/enums/CustomEventsNew.ts'
+import { CustomEvents } from '@/enums/CustomEvents.ts'
 import { Types } from 'mongoose'
 
 export const makePlannerNode = (deps: AgentDependencies) => {
@@ -16,17 +15,19 @@ export const makePlannerNode = (deps: AgentDependencies) => {
       id: new Types.ObjectId().toString(),
       name: 'Планирую',
     })
+    await dispatchCustomEvent(CustomEvents.SYNTHESIZE_START, {})
 
     const outputs: Partial<typeof AgentStateAnnotation.State> = {
       tool_calls: [],
+      messages: [],
       planner_has_error: false,
     }
 
-    const { agentModel } = deps.models
+    const { plannerModel } = deps.models
 
     const configurable = config.configurable as Configurable
 
-    const history = getLastMessages(state.messages, 20)
+    const history = state.messages.slice(-50)
 
     const plannerTools = initPlannerTools()
 
@@ -36,11 +37,11 @@ export const makePlannerNode = (deps: AgentDependencies) => {
       ...state.planner_messages,
     ])
 
-    if (!agentModel.bindTools) {
-      throw new Error('Agent model does not support tool binding.')
+    if (!plannerModel.bindTools) {
+      throw new Error('Planner model does not support tool binding.')
     }
 
-    const chain = prompt.pipe(agentModel.bindTools(plannerTools))
+    const chain = prompt.pipe(plannerModel.bindTools(plannerTools))
 
     const response = await chain.invoke({
       board_id: configurable.activeBoardId,
@@ -52,6 +53,12 @@ export const makePlannerNode = (deps: AgentDependencies) => {
     })
 
     outputs.tool_calls = response.tool_calls || []
+
+    if (outputs.tool_calls.length === 0) {
+      await dispatchCustomEvent(CustomEvents.FINAL_RESPONSE, response)
+
+      outputs.messages!.push(response)
+    }
 
     return outputs
   }

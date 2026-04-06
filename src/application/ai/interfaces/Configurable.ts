@@ -13,6 +13,7 @@ export interface Configurable {
   categoriesList: string
   tagsList: string
   timezone: string
+  userMessage: string
 
   aiName: string
   aiConfirmationType: AiConfirmationTypeEnum

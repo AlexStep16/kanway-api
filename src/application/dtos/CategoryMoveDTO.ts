@@ -5,12 +5,12 @@ const objectIdRegex = /^[0-9a-fA-F]{24}$/
 
 export const CategoryMoveDTOSchema = z.object({
   id: z.string(ErrorMessages.CATEGORY_ID_INVALID).regex(objectIdRegex),
-  beforeCategoryId: z
+  beforeId: z
     .string(ErrorMessages.BEFORE_CATEGORY_ID_INVALID)
     .regex(objectIdRegex)
     .nullable()
     .optional(),
-  afterCategoryId: z
+  afterId: z
     .string(ErrorMessages.AFTER_CATEGORY_ID_INVALID)
     .regex(objectIdRegex)
     .nullable()

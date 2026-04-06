@@ -1,6 +1,6 @@
 import { RunnableConfig } from '@langchain/core/runnables'
 import { AgentStateAnnotation } from '@/application/ai/agent/AgentStateAnnotation.ts'
-import { SystemMessage } from '@langchain/core/messages'
+import { HumanMessage } from '@langchain/core/messages'
 import { initPlannerTools } from '../../tools/initPlannerTools.ts'
 import { DynamicStructuredTool } from '@langchain/core/tools'
 import { ToolResult } from '../../tools/helpers/ToolResult.ts'
@@ -15,18 +15,12 @@ export const makePlannerToolNode = () => {
       planner_messages: [],
       current_plan: [],
       current_step_index: 0,
-      final_response: '',
-    }
-
-    if (toolCalls.length === 0) {
-      outputs.planner_messages!.push(new SystemMessage('You MUST call available tool.'))
-      outputs.planner_has_error = true
-
-      return outputs
+      current_payload: {},
+      last_planner_tool_name: toolCalls.length === 1 ? toolCalls[0].name : '',
     }
 
     if (toolCalls.length > 1) {
-      outputs.planner_messages!.push(new SystemMessage('You MUST call only one tool.'))
+      outputs.planner_messages!.push(new HumanMessage('You MUST call only one tool.'))
       outputs.planner_has_error = true
 
       return outputs
@@ -39,7 +33,7 @@ export const makePlannerToolNode = () => {
     )
 
     if (!toolByToolCalls) {
-      outputs.planner_messages = [new SystemMessage(`Tool ${toolCalls[0].name} not found.`)]
+      outputs.planner_messages = [new HumanMessage(`Tool ${toolCalls[0].name} not found.`)]
       outputs.planner_has_error = true
 
       return outputs
@@ -49,7 +43,7 @@ export const makePlannerToolNode = () => {
 
     if (!validationResult.success) {
       outputs.planner_messages = [
-        new SystemMessage(
+        new HumanMessage(
           `Validation Error: Invalid arguments. \n${z.prettifyError(
             validationResult.error,
           )}. \nPlease fix the arguments and try again.`,
@@ -65,7 +59,7 @@ export const makePlannerToolNode = () => {
 
       if (!observation.success) {
         outputs.planner_messages = [
-          new SystemMessage(`Error executing tool: ${observation.content}`),
+          new HumanMessage(`Error executing tool: ${observation.content}`),
         ]
         outputs.planner_has_error = true
 
@@ -73,18 +67,17 @@ export const makePlannerToolNode = () => {
       }
 
       if (toolCalls[0].name === 'execute_plan') {
-        const plan = observation.content as string[]
+        const { plan, payload } = observation.content as { plan: string[]; payload: any }
 
         outputs.current_plan = plan
         outputs.current_step_index = 0
-      } else if (toolCalls[0].name === 'response_to_user') {
-        outputs.final_response = toolCalls[0].args.message
+        outputs.current_payload = payload || {}
       }
 
       return outputs
     } catch (error) {
       outputs.planner_messages = [
-        new SystemMessage(
+        new HumanMessage(
           `Error executing tool: ${error instanceof Error ? error.message : String(error)}`,
         ),
       ]

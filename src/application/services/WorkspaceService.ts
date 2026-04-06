@@ -825,26 +825,26 @@ export class WorkspaceService extends BaseService<
     session: ClientSession,
     isDryRun: boolean = false,
   ): Promise<IResponseWithLog<IWorkspace[]>> {
-    const { beforeWorkspaceId, afterWorkspaceId, id } = dto
+    const { beforeId, afterId, id } = dto
 
     const criteria: IWorkspaceCriteria = {
-      ids: [id, beforeWorkspaceId, afterWorkspaceId].filter((id): id is string => !!id),
+      ids: [id, beforeId, afterId].filter((id): id is string => !!id),
     }
 
     const updateData: SafeUpdateData<IWorkspace> = {}
 
     const workspaces = await this.repository.findByCriteria(criteria, session, undefined, user.id)
     const workspace = workspaces.find((t) => t.id.toString() === id)
-    const beforeWorkspace = workspaces.find((t) => t.id.toString() === beforeWorkspaceId)
-    const afterWorkspace = workspaces.find((t) => t.id.toString() === afterWorkspaceId)
+    const beforeWorkspace = workspaces.find((t) => t.id.toString() === beforeId)
+    const afterWorkspace = workspaces.find((t) => t.id.toString() === afterId)
 
     if (!workspace) {
       throw new NotFoundError('Рабочее пространство для перемещения не найдено.')
     }
-    if (beforeWorkspaceId && !beforeWorkspace) {
+    if (beforeId && !beforeWorkspace) {
       throw new NotFoundError('Рабочее пространство перед указанным не найдено.')
     }
-    if (afterWorkspaceId && !afterWorkspace) {
+    if (afterId && !afterWorkspace) {
       throw new NotFoundError('Рабочее пространство после указанного не найдено.')
     }
 

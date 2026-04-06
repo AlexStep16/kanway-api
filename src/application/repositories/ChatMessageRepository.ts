@@ -55,11 +55,11 @@ export default class ChatMessageRepository extends BaseRepository<
     }
 
     if (criteria.createdAt) {
-      filter.created_at = criteria.createdAt
+      filter.createdAt = criteria.createdAt
     }
 
     if (criteria.updatedAt) {
-      filter.updated_at = criteria.updatedAt
+      filter.updatedAt = criteria.updatedAt
     }
 
     return filter

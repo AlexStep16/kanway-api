@@ -915,26 +915,26 @@ export class BoardService extends BaseService<
     session: ClientSession,
     isDryRun: boolean = false,
   ): Promise<IResponseWithLog<IBoardPopulated[]>> {
-    const { beforeBoardId, afterBoardId, id, newWorkspaceId } = dto
+    const { beforeId, afterId, id, newWorkspaceId } = dto
 
     const criteria: IBoardCriteria = {
-      ids: [id, beforeBoardId, afterBoardId].filter((id): id is string => !!id),
+      ids: [id, beforeId, afterId].filter((id): id is string => !!id),
     }
 
     const updateData: SafeUpdateData<IBoard> = {}
 
     const boards = await this.repository.findByCriteria(criteria, session, undefined, user.id)
     const board = boards.find((t) => t.id.toString() === id)
-    const beforeBoard = boards.find((t) => t.id.toString() === beforeBoardId)
-    const afterBoard = boards.find((t) => t.id.toString() === afterBoardId)
+    const beforeBoard = boards.find((t) => t.id.toString() === beforeId)
+    const afterBoard = boards.find((t) => t.id.toString() === afterId)
 
     if (!board) {
       throw new NotFoundError('Доска для перемещения не найдена.')
     }
-    if (beforeBoardId && !beforeBoard) {
+    if (beforeId && !beforeBoard) {
       throw new NotFoundError('Доска перед указанной не найдена.')
     }
-    if (afterBoardId && !afterBoard) {
+    if (afterId && !afterBoard) {
       throw new NotFoundError('Доска после указанной не найдена.')
     }
 

@@ -5,6 +5,8 @@ import { TaskToolsExecutorService } from './TaskToolsExecutorService.ts'
 import { CategoryToolsExecutorService } from './CategoryToolsExecutorService.ts'
 import { WorkspaceToolsExecutorService } from './WorkspaceToolsExecutorService.ts'
 import { BoardToolsExecutorService } from './BoardToolsExecutorService.ts'
+import { ToolResult } from '../tools/helpers/ToolResult.ts'
+import { FailedToolResult } from '../tools/helpers/FailedToolResult.ts'
 
 export interface DispatchPayload {
   toolCall: PendingToolCall
@@ -40,13 +42,17 @@ export class ToolDispatcherService {
     }
   }
 
-  public async dispatch(payload: DispatchPayload) {
+  public async dispatch(payload: DispatchPayload): Promise<ToolResult> {
     const executor = this.router.get(payload.toolCall.name)
 
     if (!executor) {
-      throw new Error(`Dispatcher Error: Unknown tool '${payload.toolCall.name}'`)
+      return new FailedToolResult(`Dispatcher Error: Unknown tool '${payload.toolCall.name}'`)
     }
 
-    return await executor.executeTool(payload)
+    try {
+      return await executor.executeTool(payload)
+    } catch (error) {
+      return new FailedToolResult(error instanceof Error ? error.message : String(error))
+    }
   }
 }

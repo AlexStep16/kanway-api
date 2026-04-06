@@ -17,6 +17,15 @@ export const UpdateTaskDTOSchema = CreateTaskDTOSchema.partial()
     due_date: z.iso.date(ErrorMessages.TASK_DUE_DATE_INVALID).nullable().optional(),
     due_hours: z.number(ErrorMessages.TASK_DUE_TIME_INVALID).min(0).max(23).nullable().optional(),
     due_minutes: z.number(ErrorMessages.TASK_DUE_TIME_INVALID).min(0).max(59).nullable().optional(),
+    priority: z
+      .enum(['low', 'medium', 'high'], {
+        error: (iss) =>
+          iss.input === undefined
+            ? ErrorMessages.TASK_PRIORITY_REQUIRED
+            : ErrorMessages.TASK_PRIORITY_INVALID,
+      })
+      .nullable()
+      .optional(),
     color: z
       .object({
         value: z.enum(TASK_COLORS_TITLES, {

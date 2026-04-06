@@ -891,28 +891,28 @@ export class TaskService extends BaseService<
     session: ClientSession,
     isDryRun: boolean = false,
   ): Promise<IResponseWithLog<ITaskPopulated[]>> {
-    const { beforeTaskId, afterTaskId, id, newCategoryId } = dto
+    const { beforeId, afterId, id, newCategoryId } = dto
 
     const criteria: ITaskCriteria = {
-      ids: [id, beforeTaskId, afterTaskId].filter((id): id is string => !!id),
+      ids: [id, beforeId, afterId].filter((id): id is string => !!id),
     }
 
     const updateData: SafeUpdateData<ITask> = {}
 
     const tasks = await this.repository.findByCriteria(criteria, session, undefined, user.id)
     const task = tasks.find((t) => t.id.toString() === id)
-    const beforeTask = tasks.find((t) => t.id.toString() === beforeTaskId)
-    const afterTask = tasks.find((t) => t.id.toString() === afterTaskId)
+    const beforeTask = tasks.find((t) => t.id.toString() === beforeId)
+    const afterTask = tasks.find((t) => t.id.toString() === afterId)
     let isParentChanged = false
 
     if (!task) {
       throw new NotFoundError('Задача для перемещения не найдена.')
     }
-    if (beforeTaskId && !beforeTask) {
-      throw new NotFoundError('Задача перед указанной не найдена.')
+    if (beforeId && !beforeTask) {
+      throw new NotFoundError('Задача перед не найдена.')
     }
-    if (afterTaskId && !afterTask) {
-      throw new NotFoundError('Задача после указанной не найдена.')
+    if (afterId && !afterTask) {
+      throw new NotFoundError('Задача после не найдена.')
     }
 
     if (newCategoryId) {

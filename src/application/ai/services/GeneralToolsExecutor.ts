@@ -1,6 +1,6 @@
 import { CategoryService } from '@/application/services/CategoryService.ts'
 import { TaskService } from '@/application/services/TaskService.ts'
-import { CustomEvents } from '@/enums/CustomEventsNew.ts'
+import { CustomEvents } from '@/enums/CustomEvents.ts'
 import { dispatchCustomEvent } from '@langchain/core/callbacks/dispatch'
 import { Types } from 'mongoose'
 import { SuccessToolResult } from '../tools/helpers/SuccessToolResult.ts'
@@ -38,7 +38,7 @@ export class GeneralToolsExecutor extends AbstractToolExecutor {
     const { view_type, ids } = toolCall.args as { view_type: string; ids: string[] }
     const userId = new Types.ObjectId(payload.userId)
 
-    const mappedIds = ids.map((id) => tempToRealIdMap[id] || id)
+    const mappedIds = Array.from(new Set(ids)).map((id) => tempToRealIdMap[id] || id)
     const criteria = { ids: mappedIds }
 
     const serviceMap: Record<string, any> = {

@@ -6,7 +6,7 @@ import { ExecutePlanDTOSchema } from '../dtos/ExecutePlanDTO.ts'
 export function initReplannerTools() {
   const updatePlan = tool(
     (data) => {
-      return new SuccessToolResult(data.plan)
+      return new SuccessToolResult(data)
     },
     {
       name: 'update_plan',
@@ -24,17 +24,5 @@ export function initReplannerTools() {
     },
   )
 
-  const responseToUser = tool(
-    (data) => {
-      return new SuccessToolResult(null, data)
-    },
-    {
-      name: 'response_to_user',
-      schema: z.object({
-        message: z.string().describe('The message to send back to the user.'),
-      }),
-    },
-  )
-
-  return [updatePlan, continueTool, responseToUser]
+  return [updatePlan, continueTool]
 }
