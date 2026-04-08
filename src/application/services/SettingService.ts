@@ -2,7 +2,6 @@ import SettingRepository from '@repositories/SettingRepository.ts'
 import { ISetting } from '@entities/ISetting.ts'
 import { ISettingRaw } from '@entities/ISettingRaw.ts'
 import { SettingDTO } from '@dtos/SettingDTO.ts'
-import { toMongoCaseKeys, toServerCaseKeys } from '@utils/objectTransformers.ts'
 import { SettingEditDTO } from '@dtos/SettingEditDTO.ts'
 import { ISettingCriteria } from '@criterias/ISettingCriteria.ts'
 import { ClientSession, Types } from 'mongoose'
@@ -40,11 +39,9 @@ export class SettingService extends BaseService<ISettingRaw, ISetting, ISettingC
     criteria: ISettingCriteria,
     user: IUser,
   ): Promise<ISetting[]> {
-    const payload = toMongoCaseKeys<ISetting>(data)
-
     const updateSettingResult = await this.repository.updateManyByCriteria(
       criteria,
-      payload,
+      data,
       undefined,
       user.id,
     )
@@ -53,8 +50,6 @@ export class SettingService extends BaseService<ISettingRaw, ISetting, ISettingC
       throw new Error('Настройки пользователя не найдены')
     }
 
-    const updatedSetting = await this.repository.findByCriteria({ userId: user.id.toString() })
-
-    return updatedSetting.map(toServerCaseKeys<ISetting>)
+    return await this.getByCriteria({ userId: user.id.toString() })
   }
 }

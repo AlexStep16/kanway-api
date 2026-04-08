@@ -120,6 +120,9 @@ export enum ErrorMessages {
   MESSAGE_TOO_LONG = 'Сообщение не должно превышать 1000 символов.',
 
   CHAT_ID_INVALID = 'Неверный идентификатор чата.',
+  CHAT_NAME_INVALID = 'Неверное название чата.',
+  CHAT_NAME_LESS_THAN_1 = 'Название чата не должно быть пустым.',
+  CHAT_NAME_MORE_THAN_100 = 'Название чата не должно превышать 100 символов.',
 
   TOKEN_REQUIRED = 'Требуется токен.',
   INVALID_TOKEN_FORMAT = 'Неверный формат токена.',
@@ -138,4 +141,5 @@ export enum ErrorMessages {
   PASSWORD_REQUIRED = 'Требуется пароль.',
   INVALID_PASSWORD_FORMAT = 'Неверный формат пароля.',
   THREAD_ID_INVALID = 'Неверный внутренний идентификатор чата.',
+  CREDITS_LOW = 'Недостаточно кредитов для выполнения операции.',
 }

@@ -48,6 +48,8 @@ export const makeSummarizerNode = (deps: AgentDependencies): any => {
 
     const response = await chain.invoke({ chat_history: chatHistory.join('\n') })
 
+    await dispatchCustomEvent(CustomEvents.TOKENS_ADDED, response.usage_metadata?.total_tokens || 0)
+
     return {
       messages: [
         ...removeMessages,

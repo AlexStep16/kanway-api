@@ -31,7 +31,7 @@ import { VectorSearchService } from '@/application/services/VectorSearchService.
 import { findProperty } from '@/utils/findProperty.ts'
 import dayjs from 'dayjs'
 
-type ITaskCreatePopulated = Partial<Omit<ITaskPopulated, 'id' | 'createdAt' | 'updatedAt'>> & {
+type ITaskCreatePopulated = Omit<ITaskPopulated, 'id' | 'createdAt' | 'updatedAt'> & {
   id: string
 }
 
@@ -184,41 +184,40 @@ export class TaskToolsExecutorService extends AbstractToolExecutor {
         ...toServerCaseKeys(task),
         id: task._id,
         workspace: {
-          id: category!.workspace.id,
-          name: category!.workspace.name,
+          id: category.workspace.id,
+          name: category.workspace.name,
         },
         board: {
-          id: category!.board.id,
-          name: category!.board.name,
+          id: category.board.id,
+          name: category.board.name,
         },
         category: {
-          id: category!.id,
-          name: category!.name,
+          id: category.id,
+          name: category.name,
         },
       }
     })
   }
 
-  private _transformRawCreateToDTO(
-    tasksRaw: ITaskCreatePopulated[],
-    userId: string,
-  ): (TaskDTO & { id: string })[] {
+  private _transformRawCreateToDTO(tasksRaw: ITaskCreatePopulated[]): (TaskDTO & { id: string })[] {
     return tasksRaw.map((task) => {
-      return {
+      const dto: TaskDTO & { id: string } = {
         id: task.id,
-        name: task.name!,
-        isCompleted: task.isCompleted,
-        tags: task.tags || [],
-        userId: new Types.ObjectId(userId),
-        description: task.description,
-        dueDate: task.dueDate,
-        dueHours: task.dueHours,
-        dueMinutes: task.dueMinutes,
-        color: task.color ? { ...task.color } : undefined,
-        workspaceId: task.workspace!.id.toString(),
-        boardId: task.board!.id.toString(),
-        categoryId: task.category!.id.toString(),
+        name: task.name,
+        workspaceId: task.workspace.id.toString(),
+        boardId: task.board.id.toString(),
+        categoryId: task.category.id.toString(),
       }
+
+      if (typeof task.isCompleted !== 'undefined') dto.isCompleted = task.isCompleted
+      if (typeof task.tags !== 'undefined') dto.tags = task.tags
+      if (typeof task.description !== 'undefined') dto.description = task.description
+      if (typeof task.dueDate !== 'undefined') dto.dueDate = task.dueDate
+      if (typeof task.dueHours !== 'undefined') dto.dueHours = task.dueHours
+      if (typeof task.dueMinutes !== 'undefined') dto.dueMinutes = task.dueMinutes
+      if (typeof task.color !== 'undefined') dto.color = task.color
+
+      return dto
     })
   }
 
@@ -275,7 +274,7 @@ export class TaskToolsExecutorService extends AbstractToolExecutor {
       tempToRealIdMap,
     )
 
-    let dtoTasks = this._transformRawCreateToDTO(populatedTasks, user.id.toString())
+    let dtoTasks = this._transformRawCreateToDTO(populatedTasks)
 
     if (configurable.aiConfirmationType === AiConfirmationTypeEnum.ALWAYS) {
       const messages = await this.chatMessageService.getByCriteria(
@@ -320,7 +319,7 @@ export class TaskToolsExecutorService extends AbstractToolExecutor {
       },
       config,
     )
-
+    console.log(dtoTasks)
     const createdTasks = await this.taskService.createMany(dtoTasks, user)
 
     const logs = await this.operationLogService.getByCriteria(

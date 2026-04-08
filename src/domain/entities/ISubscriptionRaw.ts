@@ -10,5 +10,4 @@ export interface ISubscriptionRaw {
   interval: 'month' | 'year'
   limit_workspaces: number
   limit_boards: number
-  limit_ai_messages_per_month: number
 }

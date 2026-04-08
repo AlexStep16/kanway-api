@@ -9,11 +9,13 @@ import { Configurable } from '../interfaces/Configurable.ts'
 import { Types } from 'mongoose'
 import { IChatMessageCriteria } from '@/application/interfaces/criterias/IChatMessageCriteria.ts'
 import { getFriendlyErrorMessage } from '@/utils/getFriendlyErrorMessage.ts'
+import { OperationLogService } from '@/application/services/OperationLogService.ts'
 
-export class BullMQCallbackHandler extends BaseCallbackHandler {
-  name = 'BullMQCallbackHandler'
+export class AgentEventsHandler extends BaseCallbackHandler {
+  name = 'AgentEventsHandler'
 
   private chatMessageService: ChatMessageService
+  private operationLogService: OperationLogService
   private job: Job
   private configurable: Configurable
 
@@ -22,19 +24,22 @@ export class BullMQCallbackHandler extends BaseCallbackHandler {
   public steps: {
     id: string
     name: string
-    state: 'in_progress' | 'completed' | 'failed'
+    state: 'in_progress' | 'completed' | 'failed' | 'cancelled'
   }[] = []
   public stepsMessage: IChatMessage
+  public totalTokensUsed = 0
 
   constructor(
     job: Job,
     chatMessageService: ChatMessageService,
+    operationLogService: OperationLogService,
     configurable: Configurable,
     stepMessage: IChatMessage,
   ) {
     super()
     this.job = job
     this.chatMessageService = chatMessageService
+    this.operationLogService = operationLogService
     this.configurable = configurable
     this.stepsMessage = stepMessage
 
@@ -121,10 +126,10 @@ export class BullMQCallbackHandler extends BaseCallbackHandler {
     }
   }
 
-  failSteps() {
+  failSteps(isCancelled = false) {
     for (const step of this.steps) {
       if (step.state === 'in_progress') {
-        step.state = 'failed'
+        step.state = isCancelled ? 'cancelled' : 'failed'
       }
     }
   }
@@ -166,9 +171,23 @@ export class BullMQCallbackHandler extends BaseCallbackHandler {
     )
   }
 
+  addStep(
+    id: string,
+    name: string,
+    state: 'in_progress' | 'completed' | 'failed' | 'cancelled' = 'in_progress',
+  ) {
+    const newStep = {
+      id: id,
+      name: name,
+      state: state,
+    }
+
+    this.steps.push(newStep)
+  }
+
   async handleCustomEvent(event: string, data: any) {
-    if (event === CustomEvents.UNDO) {
-      await this.job.updateProgress({ role: CustomEvents.UNDO, data })
+    if (event === CustomEvents.TOKENS_ADDED) {
+      this.totalTokensUsed += data || 0
     }
 
     if (event === CustomEvents.FINAL_RESPONSE) {
@@ -212,13 +231,7 @@ export class BullMQCallbackHandler extends BaseCallbackHandler {
         }
       })
 
-      const newStep = {
-        id: stepData.id,
-        name: stepData.name,
-        state: 'in_progress' as const,
-      }
-
-      this.steps.push(newStep)
+      this.addStep(stepData.id, stepData.name)
 
       await this.job.updateProgress({
         role: CustomEvents.UPDATE_MESSAGE,
@@ -230,6 +243,11 @@ export class BullMQCallbackHandler extends BaseCallbackHandler {
     }
 
     if (event === CustomEvents.OPERATION) {
+      const operationLogs = await this.operationLogService.getByCriteria(
+        { id: data.logId },
+        this.configurable.user.id,
+      )
+
       await this.createChatMessage(
         {
           role: CustomEvents.OPERATION,
@@ -244,7 +262,7 @@ export class BullMQCallbackHandler extends BaseCallbackHandler {
 
       await this.job.updateProgress({
         role: CustomEvents.OPERATION,
-        data: data,
+        data: operationLogs[0],
       })
     }
   }

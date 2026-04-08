@@ -31,10 +31,6 @@ export const SubscriptionSchema = new Schema<ISubscriptionRaw>({
     type: Number,
     required: true,
   },
-  limit_ai_messages_per_month: {
-    type: Number,
-    required: true,
-  },
 })
 
 const Subscription = model<ISubscriptionRaw>('Subscription', SubscriptionSchema)

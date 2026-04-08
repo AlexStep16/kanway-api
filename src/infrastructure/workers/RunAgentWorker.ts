@@ -21,7 +21,7 @@ import { Command, CompiledStateGraph } from '@langchain/langgraph'
 import getLastHumanMessage from '@/application/ai/helpers/getLastHumanMessage.ts'
 import { langgraphQueue } from '../queues/index.ts'
 import { AgentStateAnnotation } from '@/application/ai/agent/AgentStateAnnotation.ts'
-import { BullMQCallbackHandler } from '@/application/ai/callbacks/BullMQCallbackHandler.ts'
+import { AgentEventsHandler } from '@/application/ai/callbacks/AgentEventsHandler.ts'
 import { getDefaultState } from '@/application/ai/helpers/getDefaultState.ts'
 
 const dependencies = initializeDependencies()
@@ -110,9 +110,10 @@ export const RunAgentWorker = new Worker(
       configurable.user.id,
     )
 
-    const bullMQHandler = new BullMQCallbackHandler(
+    const agentEventsHandler = new AgentEventsHandler(
       job,
       dependencies.services.chatMessageService,
+      dependencies.services.operationLogService,
       configurable,
       stepsMessage[0],
     )
@@ -127,7 +128,7 @@ export const RunAgentWorker = new Worker(
       const stream: any = agent.streamEvents(payload, {
         ...config,
         version: 'v2',
-        callbacks: [bullMQHandler],
+        callbacks: [agentEventsHandler],
         signal: controller.signal,
       })
 
@@ -139,12 +140,12 @@ export const RunAgentWorker = new Worker(
         if (event.name === CustomEvents.AMBIGUITY_RESOLUTION) {
           const eventData = event.data
 
-          await bullMQHandler.createResolveAmbiguousMessage(eventData)
+          await agentEventsHandler.createResolveAmbiguousMessage(eventData)
 
           break
         }
 
-        if (!bullMQHandler.isSynthesizing) continue
+        if (!agentEventsHandler.isSynthesizing) continue
 
         if (eventType === 'on_chat_model_stream') {
           const chunk = event.data.chunk
@@ -152,14 +153,14 @@ export const RunAgentWorker = new Worker(
           if (chunk.content && typeof chunk.content === 'string') {
             accumulatedContent += chunk.content
 
-            if (!bullMQHandler.aiMessage) {
-              await bullMQHandler.initAiMessage()
+            if (!agentEventsHandler.aiMessage) {
+              await agentEventsHandler.initAiMessage()
             }
 
             await job.updateProgress({
               role: CustomEvents.UPDATE_MESSAGE,
               data: {
-                ...bullMQHandler.aiMessage,
+                ...agentEventsHandler.aiMessage,
                 content: accumulatedContent,
               },
             })
@@ -167,24 +168,34 @@ export const RunAgentWorker = new Worker(
         }
       }
 
-      return { status: 'completed', message: 'Агент завершил свою работу.' }
+      await dependencies.services.userService.payCreditsByTokens(
+        agentEventsHandler.totalTokensUsed,
+        configurable.user.id.toString(),
+      )
+
+      return { status: 'completed' }
     } catch (error: any) {
       console.error('Error in RunAgentWorker:', error)
 
-      bullMQHandler.failSteps()
-
-      if (error.name === 'AbortError' || controller.signal.aborted) {
-        const agent = await getAgent(dependencies)
-
-        await cleanupLastIteration(agent, config)
-
-        throw error
-      }
+      agentEventsHandler.failSteps(controller.signal.aborted)
 
       //Sentry.captureException(error, { extra: { jobId: job.id, chatId: configurable?.chatId } })
 
       try {
-        await bullMQHandler.createErrorMessage(error)
+        await agentEventsHandler.createErrorMessage(error)
+
+        if (error.name === 'AbortError' || controller.signal.aborted) {
+          const agent = await getAgent(dependencies)
+
+          await cleanupLastIteration(agent, config)
+
+          dependencies.services.userService.payCreditsByTokens(
+            agentEventsHandler.totalTokensUsed,
+            configurable.user.id.toString(),
+          )
+
+          throw error
+        }
       } catch (dbError) {
         Sentry.captureException(dbError, {
           extra: { jobId: job.id, chatId: configurable?.chatId },
@@ -195,7 +206,7 @@ export const RunAgentWorker = new Worker(
     } finally {
       clearInterval(checkInterval)
 
-      await bullMQHandler.updateStepsMessage()
+      await agentEventsHandler.updateStepsMessage()
     }
   },
   {

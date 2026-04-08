@@ -940,6 +940,7 @@ export class TaskService extends BaseService<
     } else if (afterTask) {
       const afterRank = LexoRank.parse(afterTask.rank)
       newRank = afterRank.genNext()
+      console.log('afterRank', afterRank.toString(), 'newRank', newRank.toString())
     } else {
       newRank = LexoRank.middle()
     }
@@ -1246,8 +1247,8 @@ export class TaskService extends BaseService<
         const taskPayload: ITaskCreatePayload = {
           id: task.id,
           name: taskName,
-          description: task.description ?? '',
-          dueDate: task.dueDate ?? '',
+          description: task.description,
+          dueDate: task.dueDate,
           dueHours: task.dueHours,
           dueMinutes: task.dueMinutes,
           color: task.color

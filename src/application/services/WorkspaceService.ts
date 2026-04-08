@@ -456,6 +456,7 @@ export class WorkspaceService extends BaseService<
     session: ClientSession,
     isDryRun: boolean = false,
   ): Promise<IResponseWithLog<null>> {
+    const workspaces = await this.getByCriteria({}, userId, session)
     const workspacesToDelete = await this.repository.findByCriteria(
       criteria,
       session,
@@ -465,6 +466,12 @@ export class WorkspaceService extends BaseService<
 
     if (workspacesToDelete.length === 0) {
       throw new NotFoundError('Рабочие пространства для удаления не найдены.')
+    }
+    if (
+      workspaces.length === 1 &&
+      workspacesToDelete.some((ws) => ws.id.toString() === workspaces[0].id.toString())
+    ) {
+      throw new AppError('Вы не можете удалить единственное рабочее пространство.', 400)
     }
 
     const status = isDryRun ? OperationLogStatusesEnum.PENDING : OperationLogStatusesEnum.SUCCESS
@@ -540,6 +547,7 @@ export class WorkspaceService extends BaseService<
     }
     const data = isRecover ? recoverData : deleteData
     const childrenData = { ...data, isDeletedExternal: isRecover ? false : true }
+    const workspaces = await this.getByCriteria({}, userId, session)
     const workspacesToProcess = await this.repository.findByCriteria(
       criteria,
       session,
@@ -550,6 +558,13 @@ export class WorkspaceService extends BaseService<
     const workspacesCriteria = { workspaceIds: workspacesToProcess.map((ws) => ws.id.toString()) }
 
     if (workspacesToProcess.length === 0) throw new NotFoundError('Пространства не найдены.')
+    if (
+      !isRecover &&
+      workspaces.length === 1 &&
+      workspacesToProcess.some((ws) => ws.id.toString() === workspaces[0].id.toString())
+    ) {
+      throw new AppError('Вы не можете архивировать единственное рабочее пространство.', 400)
+    }
 
     const status = isDryRun ? OperationLogStatusesEnum.PENDING : OperationLogStatusesEnum.SUCCESS
 

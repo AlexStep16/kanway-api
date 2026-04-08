@@ -8,12 +8,14 @@ import { Configurable } from '@/application/ai/interfaces/Configurable.ts'
 import { dispatchCustomEvent } from '@langchain/core/callbacks/dispatch'
 import { CustomEvents } from '@/enums/CustomEvents.ts'
 import { Types } from 'mongoose'
+import { STEP_MESSAGES } from '@/constants/STEP_MESSAGES.ts'
 
 export const makePlannerNode = (deps: AgentDependencies) => {
   return async (state: typeof AgentStateAnnotation.State, config: RunnableConfig) => {
+    const stepIndex = state.planner_steps_count % STEP_MESSAGES.Planner.length
     await dispatchCustomEvent(CustomEvents.STEP_ADD, {
       id: new Types.ObjectId().toString(),
-      name: 'Планирую',
+      name: STEP_MESSAGES.Planner[stepIndex],
     })
     await dispatchCustomEvent(CustomEvents.SYNTHESIZE_START, {})
 
@@ -21,6 +23,7 @@ export const makePlannerNode = (deps: AgentDependencies) => {
       tool_calls: [],
       messages: [],
       planner_has_error: false,
+      planner_steps_count: state.planner_steps_count + 1,
     }
 
     const { plannerModel } = deps.models
@@ -51,6 +54,8 @@ export const makePlannerNode = (deps: AgentDependencies) => {
       tags_list: configurable.tagsList,
       aiName: configurable.aiName,
     })
+
+    await dispatchCustomEvent(CustomEvents.TOKENS_ADDED, response.usage_metadata?.total_tokens || 0)
 
     outputs.tool_calls = response.tool_calls || []
 

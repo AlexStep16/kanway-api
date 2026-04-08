@@ -3,7 +3,8 @@ import { jwtAuthMiddleware } from '@infrastructure/auth/passportJWTStrategy.ts'
 import ChatController from '@controllers/ChatController.ts'
 import { validationMiddleware } from '@/infrastructure/middlewares/validations/validationMiddleware.ts'
 import { ChatSendDTOSchema } from '@dtos/ChatSendDTO.ts'
-import { aiLimiter } from '@/limiters.ts'
+import { aiLimiter, patchEntitiesLimiter } from '@/limiters.ts'
+import { ChatEditDTOSchema } from '@/application/dtos/ChatEditDTO.ts'
 
 export default (controller: ChatController): Router => {
   const router = express.Router()
@@ -20,6 +21,12 @@ export default (controller: ChatController): Router => {
     controller.send.bind(controller),
   )
   router.post('/retry', aiLimiter, controller.retry.bind(controller))
+  router.patch(
+    '/:id',
+    patchEntitiesLimiter,
+    validationMiddleware(ChatEditDTOSchema),
+    controller.update,
+  )
   router.get('/stream/:jobId/status', controller.streamStatus.bind(controller))
   router.post('/log/approve', aiLimiter, controller.approveLog.bind(controller))
   router.post('/tools/resolve-ambiguous', aiLimiter, controller.resolveAmbiguous.bind(controller))

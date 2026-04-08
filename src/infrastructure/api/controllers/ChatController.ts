@@ -23,6 +23,16 @@ export default class ChatController {
     }
   }
 
+  public update = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const result = await this.service.edit(req.body, { id: req.params.id }, req.user!)
+
+      res.status(200).json(new SuccessResponse(result))
+    } catch (error) {
+      next(error)
+    }
+  }
+
   public streamStatus(req: Request, res: Response) {
     res.setHeader('Content-Type', 'text/event-stream')
     res.setHeader('Cache-Control', 'no-cache')

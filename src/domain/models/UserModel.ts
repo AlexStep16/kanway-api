@@ -59,9 +59,9 @@ export const UserSchema = new Schema<IUserRaw, IUserRawStatics, IUserRawMethods>
       type: Boolean,
       required: false,
     },
-    generations_count: {
+    credits: {
       type: Number,
-      default: 0,
+      default: 50,
     },
     is_tips_completed: {
       type: Boolean,

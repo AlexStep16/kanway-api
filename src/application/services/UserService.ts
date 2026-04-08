@@ -40,6 +40,7 @@ export class UserService implements ICreateUserService<IUser, RegisterCredential
       isConfirmed: false,
       avatarColor: BASE_COLORS[Math.floor(Math.random() * 7)],
       paymentRetriesCount: 0,
+      credits: 50,
       isTipsCompleted: false,
     }
 
@@ -164,14 +165,13 @@ export class UserService implements ICreateUserService<IUser, RegisterCredential
     await this.emailService.sendVerifyEmailToUser(user)
   }
 
-  public async decrementGenerationsCount(
-    userId: string,
-    generationsToDecrement: number,
-  ): Promise<void> {
-    await this.repository.decrementFieldByCriteria(
-      { id: userId },
-      'generations_count',
-      generationsToDecrement,
-    )
+  public async payCreditsByTokens(tokensUsed: number, userId: string): Promise<number> {
+    const tokensPerCredit = 20000
+
+    const finalAmount = Math.ceil(tokensUsed / tokensPerCredit)
+
+    await this.repository.decrementFieldByCriteria({ id: userId }, 'credits', finalAmount)
+
+    return finalAmount
   }
 }

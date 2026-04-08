@@ -15,7 +15,7 @@ export interface IUserRaw {
   subscription_id: SubscriptionPlanEnum
   subscription_until?: Date | null
   is_subscription_active?: boolean
-  generations_count?: number
+  credits?: number
   avatar_color: string
   is_tips_completed?: boolean
   phone?: string

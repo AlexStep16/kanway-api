@@ -8,5 +8,4 @@ export interface ISubscription {
   interval: 'month' | 'year'
   limitWorkspaces: number
   limitBoards: number
-  limitAiMessagesPerMonth: number
 }

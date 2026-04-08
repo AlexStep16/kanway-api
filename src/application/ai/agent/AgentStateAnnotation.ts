@@ -115,4 +115,17 @@ export const AgentStateAnnotation = Annotation.Root({
     reducer: (_, y) => y,
     default: () => false,
   }),
+
+  coder_steps_count: Annotation<number>({
+    reducer: (_, y) => y,
+    default: () => 0,
+  }),
+  planner_steps_count: Annotation<number>({
+    reducer: (_, y) => y,
+    default: () => 0,
+  }),
+  replanner_steps_count: Annotation<number>({
+    reducer: (_, y) => y,
+    default: () => 0,
+  }),
 })

@@ -30,9 +30,7 @@ import { DispatchPayload } from './ToolDispatcherService.ts'
 import { VectorSearchService } from '@/application/services/VectorSearchService.ts'
 import { findProperty } from '@/utils/findProperty.ts'
 
-type ICategoryCreatePopulated = Partial<
-  Omit<ICategoryPopulated, 'id' | 'createdAt' | 'updatedAt'>
-> & {
+type ICategoryCreatePopulated = Omit<ICategoryPopulated, 'id' | 'createdAt' | 'updatedAt'> & {
   id: string
 }
 
@@ -190,12 +188,12 @@ export class CategoryToolsExecutorService extends AbstractToolExecutor {
         ...toServerCaseKeys(category),
         id: category._id,
         workspace: {
-          id: board!.workspace.id,
-          name: board!.workspace.name,
+          id: board.workspace.id,
+          name: board.workspace.name,
         },
         board: {
-          id: board!.id,
-          name: board!.name,
+          id: board.id,
+          name: board.name,
         },
       }
     })
@@ -203,15 +201,13 @@ export class CategoryToolsExecutorService extends AbstractToolExecutor {
 
   private _transformRawCreateToDTO(
     categoriesRaw: ICategoryCreatePopulated[],
-    userId: string,
   ): (CategoryDTO & { id: string })[] {
     return categoriesRaw.map((category) => {
       return {
         id: category.id,
-        name: category.name!,
-        userId: new Types.ObjectId(userId),
-        workspaceId: category.workspace!.id.toString(),
-        boardId: category.board!.id.toString(),
+        name: category.name,
+        workspaceId: category.workspace.id.toString(),
+        boardId: category.board.id.toString(),
       }
     })
   }
@@ -259,7 +255,7 @@ export class CategoryToolsExecutorService extends AbstractToolExecutor {
       tempToRealIdMap,
     )
 
-    let dtoCategories = this._transformRawCreateToDTO(populatedCategories, user.id.toString())
+    let dtoCategories = this._transformRawCreateToDTO(populatedCategories)
 
     if (configurable.aiConfirmationType === AiConfirmationTypeEnum.ALWAYS) {
       const messages = await this.chatMessageService.getByCriteria(

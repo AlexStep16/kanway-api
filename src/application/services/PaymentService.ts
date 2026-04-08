@@ -154,10 +154,7 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
     }
   }
 
-  private async _getCreatePayloadByPlan(
-    user: IUser,
-    plan: SubscriptionPlanEnum,
-  ): Promise<ICreatePayment | null> {
+  private _getCreatePayloadByPlan(user: IUser, plan: SubscriptionPlanEnum): ICreatePayment | null {
     if (plan === SubscriptionPlanEnum.Business) {
       return this._getBusinessCreatePayload(user)
     } else if (plan === SubscriptionPlanEnum.Premium) {

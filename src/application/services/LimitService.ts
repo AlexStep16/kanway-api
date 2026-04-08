@@ -22,7 +22,11 @@ export class LimitService {
     const maxBoards = SUBSCRIPTION_LIMITS[user.subscriptionId].boards
     if (maxBoards === Infinity) return
 
-    const boardsCount = await this.boardService.getCount({ workspaceId }, user.id, session)
+    const boardsCount = await this.boardService.getCount(
+      { workspaceId, isDeleted: false },
+      user.id,
+      session,
+    )
 
     if (boardsCount >= maxBoards) {
       throw new AppError(`Вы достигли лимита по количеству досок - ${maxBoards}.`, 403)
@@ -61,7 +65,11 @@ export class LimitService {
     const maxWorkspaces = SUBSCRIPTION_LIMITS[user.subscriptionId].workspaces
     if (maxWorkspaces === Infinity) return
 
-    const workspacesCount = await this.workspaceService.getCount({}, user.id, session)
+    const workspacesCount = await this.workspaceService.getCount(
+      { isDeleted: false },
+      user.id,
+      session,
+    )
 
     if (workspacesCount >= maxWorkspaces) {
       throw new AppError(`Вы достигли лимита по количеству пространств - ${maxWorkspaces}.`, 403)

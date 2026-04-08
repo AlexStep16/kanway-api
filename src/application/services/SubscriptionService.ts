@@ -26,7 +26,6 @@ export class SubscriptionService extends BaseService<
       interval: data.interval,
       limitWorkspaces: data.limitWorkspaces,
       limitBoards: data.limitBoards,
-      limitAiMessagesPerMonth: data.limitAiMessagesPerMonth,
     }
 
     await this.repository.create(subscription)

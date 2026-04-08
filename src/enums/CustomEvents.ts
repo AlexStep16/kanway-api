@@ -5,9 +5,9 @@ export enum CustomEvents {
   AMBIGUITY_RESOLUTION = 'ambiguity_resolution',
   NEW_MESSAGE = 'new_message',
   UPDATE_MESSAGE = 'update_message',
-  UNDO = 'undo',
   INTEGRATION = 'integration',
   SYNTHESIZE_START = 'synthesize_start',
   SYNTHESIZE_END = 'synthesize_end',
+  TOKENS_ADDED = 'tokens_added',
   FINAL_RESPONSE = 'final_response',
 }

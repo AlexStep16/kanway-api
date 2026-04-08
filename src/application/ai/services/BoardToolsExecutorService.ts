@@ -30,7 +30,7 @@ import { DispatchPayload } from './ToolDispatcherService.ts'
 import { VectorSearchService } from '@/application/services/VectorSearchService.ts'
 import { findProperty } from '@/utils/findProperty.ts'
 
-type IBoardCreatePopulated = Partial<Omit<IBoardPopulated, 'id' | 'createdAt' | 'updatedAt'>> & {
+type IBoardCreatePopulated = Omit<IBoardPopulated, 'id' | 'createdAt' | 'updatedAt'> & {
   id: string
 }
 
@@ -187,8 +187,8 @@ export class BoardToolsExecutorService extends AbstractToolExecutor {
         ...toServerCaseKeys(board),
         id: board._id,
         workspace: {
-          id: workspace!.id,
-          name: workspace!.name,
+          id: workspace.id,
+          name: workspace.name,
         },
       }
     })
@@ -196,14 +196,12 @@ export class BoardToolsExecutorService extends AbstractToolExecutor {
 
   private _transformRawCreateToDTO(
     boardsRaw: IBoardCreatePopulated[],
-    userId: string,
   ): (BoardDTO & { id: string })[] {
     return boardsRaw.map((board) => {
       return {
         id: board.id,
-        name: board.name!,
-        userId: new Types.ObjectId(userId),
-        workspaceId: board.workspace!.id.toString(),
+        name: board.name,
+        workspaceId: board.workspace.id.toString(),
         isFavorite: board.isFavorite || false,
       }
     })
@@ -251,7 +249,7 @@ export class BoardToolsExecutorService extends AbstractToolExecutor {
       tempToRealIdMap,
     )
 
-    let dtoBoards = this._transformRawCreateToDTO(populatedBoards, user.id.toString())
+    let dtoBoards = this._transformRawCreateToDTO(populatedBoards)
 
     if (configurable.aiConfirmationType === AiConfirmationTypeEnum.ALWAYS) {
       const messages = await this.chatMessageService.getByCriteria(

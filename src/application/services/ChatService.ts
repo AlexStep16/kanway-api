@@ -10,7 +10,6 @@ import { IChat } from '@domain/entities/IChat.ts'
 import { IChatCriteria } from '@interfaces/criterias/IChatCriteria.ts'
 import { ChatSendDTO } from '@dtos/ChatSendDTO.ts'
 import { BaseMessage, HumanMessage } from '@langchain/core/messages'
-import { SubscriptionPlanEnum } from '@/domain/enums/SubscriptionPlanEnum.ts'
 import { ChatMessageService } from '@application/services/ChatMessageService.ts'
 import { RunnableConfig } from '@langchain/core/runnables'
 import dayjs from 'dayjs'
@@ -38,6 +37,8 @@ import { ChatNamePrompt } from '../ai/prompts/ChatNamePrompt.ts'
 import { initAiModels } from '@/infrastructure/ai/initAiModels.ts'
 import CheckpointWriteRepository from '../repositories/CheckpointWriteRepository.ts'
 import CheckpointRepository from '../repositories/CheckpointRepository.ts'
+import { ChatEditDTO } from '../dtos/ChatEditDTO.ts'
+import { ErrorMessages } from '@/enums/ErrorMessages.ts'
 
 const MAX_RETRIES = 3
 
@@ -206,9 +207,10 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     const messages: BaseMessage[] = []
     const threadId = data.threadId || new Types.ObjectId().toString()
 
-    if (user.subscriptionId === SubscriptionPlanEnum.Basic && user.generationsCount === 0) {
-      throw new AppError('Достигнут лимит генераций для вашего плана подписки.', 403)
+    if (user.credits === 0) {
+      throw new AppError(ErrorMessages.CREDITS_LOW, 403)
     }
+
     const { activeBoardName, activeWorkspaceName } = await this._getActiveEntities(
       data.boardId,
       data.workspaceId,
@@ -344,6 +346,12 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       stepMessage,
       threadId: threadId,
     }
+  }
+
+  public async edit(data: ChatEditDTO, criteria: IChatCriteria, user: IUser): Promise<IChat[]> {
+    await this.repository.updateManyByCriteria(criteria, data, undefined, user.id)
+
+    return await this.getByCriteria(criteria, user.id)
   }
 
   private async _deleteLastIteration(
