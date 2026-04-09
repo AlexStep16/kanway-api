@@ -10,10 +10,13 @@ import { Types } from 'mongoose'
 import { IChatMessageCriteria } from '@/application/interfaces/criterias/IChatMessageCriteria.ts'
 import { getFriendlyErrorMessage } from '@/utils/getFriendlyErrorMessage.ts'
 import { OperationLogService } from '@/application/services/OperationLogService.ts'
+import { getCreditsUsed } from '@/utils/getCreditsUsed.ts'
+import { ChatService } from '@/application/services/ChatService.ts'
 
 export class AgentEventsHandler extends BaseCallbackHandler {
   name = 'AgentEventsHandler'
 
+  private chatService: ChatService
   private chatMessageService: ChatMessageService
   private operationLogService: OperationLogService
   private job: Job
@@ -31,6 +34,7 @@ export class AgentEventsHandler extends BaseCallbackHandler {
 
   constructor(
     job: Job,
+    chatService: ChatService,
     chatMessageService: ChatMessageService,
     operationLogService: OperationLogService,
     configurable: Configurable,
@@ -38,6 +42,7 @@ export class AgentEventsHandler extends BaseCallbackHandler {
   ) {
     super()
     this.job = job
+    this.chatService = chatService
     this.chatMessageService = chatMessageService
     this.operationLogService = operationLogService
     this.configurable = configurable
@@ -89,7 +94,7 @@ export class AgentEventsHandler extends BaseCallbackHandler {
 
     const errorMsgDTO: ChatMessageDTO = {
       role: 'error',
-      content: `😔 ${userFriendlyMessage}`,
+      content: `${userFriendlyMessage}`,
       threadId: this.configurable?.thread_id,
       chatId: new Types.ObjectId(this.configurable?.chatId),
     }
@@ -105,18 +110,25 @@ export class AgentEventsHandler extends BaseCallbackHandler {
     })
   }
 
-  async updateStepsMessage() {
+  completeSteps() {
     this.steps.forEach((step) => {
       if (step.state === 'in_progress') {
         step.state = 'completed'
       }
     })
+  }
 
+  async updateStepsMessage() {
     if (this.stepsMessage) {
+      const creditsUsed = getCreditsUsed(this.totalTokensUsed)
+
+      const dto: Partial<ChatMessageDTO> = {
+        content: this.steps,
+        creditsUsed,
+      }
+
       await this.editChatMessage(
-        {
-          content: this.steps,
-        },
+        dto,
         {
           id: this.stepsMessage.id.toString(),
         },
@@ -134,16 +146,11 @@ export class AgentEventsHandler extends BaseCallbackHandler {
     }
   }
 
-  async updateAssistantMessage(content: string) {
+  async updateAssistantMessage(dto: Partial<ChatMessageDTO>) {
     if (!this.aiMessage) return
 
     await this.editChatMessage(
-      {
-        role: 'assistant',
-        content: content,
-        threadId: this.configurable?.thread_id,
-        chatId: new Types.ObjectId(this.configurable?.chatId),
-      },
+      dto,
       {
         id: this.aiMessage.id.toString(),
       },
@@ -190,8 +197,30 @@ export class AgentEventsHandler extends BaseCallbackHandler {
       this.totalTokensUsed += data || 0
     }
 
+    if (event === CustomEvents.CHAT_UPDATED) {
+      const chatEditResult = await this.chatService.edit(
+        {
+          name: data.name,
+        },
+        {
+          id: this.configurable.chatId,
+        },
+        this.configurable.user,
+      )
+
+      await this.job.updateProgress({
+        role: CustomEvents.CHAT_UPDATED,
+        data: chatEditResult[0],
+      })
+    }
+
     if (event === CustomEvents.FINAL_RESPONSE) {
-      await this.updateAssistantMessage(data.text)
+      const creditsUsed = getCreditsUsed(this.totalTokensUsed)
+
+      await this.updateAssistantMessage({
+        content: data.text,
+        creditsUsed,
+      })
     }
 
     if (event === CustomEvents.INTEGRATION) {
@@ -225,13 +254,8 @@ export class AgentEventsHandler extends BaseCallbackHandler {
     if (event === CustomEvents.STEP_ADD) {
       const stepData = data
 
-      this.steps.forEach((step) => {
-        if (step.state === 'in_progress') {
-          step.state = 'completed'
-        }
-      })
-
-      this.addStep(stepData.id, stepData.name)
+      this.completeSteps()
+      this.addStep(stepData.id, stepData.name, stepData.state)
 
       await this.job.updateProgress({
         role: CustomEvents.UPDATE_MESSAGE,

@@ -17,11 +17,13 @@ import { routePlannerOutput } from './edges/routePlannerOutput.ts'
 import { routeReplannerOutput } from './edges/routeReplannerOutput.ts'
 import { makeSummarizerNode } from './nodes/makeSummarizerNode.ts'
 import { END, START, StateGraph } from '@langchain/langgraph'
+import { makeChatNameNode } from './nodes/makeChatNameNode.ts'
 
 export function createReActAgent(dependencies: AgentDependencies, checkpointer: MongoDBSaver) {
   const plannerNode = makePlannerNode(dependencies)
   const replannerNode = makeReplannerNode(dependencies)
   const coderNode = makeCoderNode(dependencies)
+  const chatNameNode = makeChatNameNode(dependencies)
 
   const plannerToolNode = makePlannerToolNode()
   const replannerToolNode = makeReplannerToolNode()
@@ -46,16 +48,18 @@ export function createReActAgent(dependencies: AgentDependencies, checkpointer: 
 
     .addNode('Summarizer', summarizerNode)
 
+    .addNode('ChatName', chatNameNode)
+
     .addEdge(START, 'Summarizer')
     .addEdge('Summarizer', 'Planner')
     .addConditionalEdges('Planner', routePlannerOutput, {
       PlannerTool: 'PlannerTool',
-      [END]: END,
+      ChatName: 'ChatName',
     })
     .addConditionalEdges('PlannerTool', routePlannerToolOutput, {
       Planner: 'Planner',
       Coder: 'Coder',
-      [END]: END,
+      ChatName: 'ChatName',
     })
     .addEdge('Coder', 'CoderExecution')
     .addConditionalEdges('CoderExecution', routeCoderExecutionOutput, {
@@ -65,12 +69,12 @@ export function createReActAgent(dependencies: AgentDependencies, checkpointer: 
     })
     .addConditionalEdges('Replanner', routeReplannerOutput, {
       ReplannerTool: 'ReplannerTool',
-      [END]: END,
+      ChatName: 'ChatName',
     })
     .addConditionalEdges('ReplannerTool', routeReplannerToolOutput, {
       Replanner: 'Replanner',
       Coder: 'Coder',
-      [END]: END,
+      ChatName: 'ChatName',
     })
     .addEdge('CoderInternalTool', 'CoderHumanReview')
     .addConditionalEdges('CoderHumanReview', routeCoderHumanReviewOutput, {
@@ -78,6 +82,7 @@ export function createReActAgent(dependencies: AgentDependencies, checkpointer: 
       CoderInternalTool: 'CoderInternalTool',
       Replanner: 'Replanner',
     })
+    .addEdge('ChatName', END)
 
   return graphBuilder.compile({ checkpointer })
 }

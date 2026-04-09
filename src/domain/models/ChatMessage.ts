@@ -22,6 +22,9 @@ const ChatMessageSchema = new Schema<IChatMessageRaw>(
       ref: 'Chat',
       required: true,
     },
+    credits_used: {
+      type: Number,
+    },
     user_id: {
       type: Schema.Types.ObjectId,
       ref: 'User',

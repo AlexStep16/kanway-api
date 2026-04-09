@@ -66,8 +66,14 @@ export const makeReplannerNode = (deps: AgentDependencies) => {
     const chain = prompt.pipe(replannerModel.bindTools(replannerTools))
 
     const response = await chain.invoke({
-      board_id: configurable.activeBoardId,
-      workspace_id: configurable.activeWorkspaceId,
+      board: {
+        id: configurable.activeBoardId,
+        name: configurable.activeBoardName,
+      },
+      workspace: {
+        id: configurable.activeWorkspaceId,
+        name: configurable.activeWorkspaceName,
+      },
       current_date: configurable.currentDate,
       categories_list: configurable.categoriesList,
       tags_list: configurable.tagsList,

@@ -58,7 +58,11 @@ export class GeneralToolsExecutor extends AbstractToolExecutor {
 
     dispatchCustomEvent(CustomEvents.DISPLAY, { entityType: view_type, entities: result }, config)
 
-    return new SuccessToolResult(`Displayed ${result.length} ${view_type}(s) to the user.`)
+    const lightResult = result.map((item: any) => ({ id: item.id, name: item.name }))
+
+    return new SuccessToolResult(
+      `Displayed next entities to the user:\n ${JSON.stringify(lightResult)}`,
+    )
   }
 
   public async undoOperation(payload: DispatchPayload) {

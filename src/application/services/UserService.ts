@@ -18,6 +18,7 @@ import { ClientSession, Types } from 'mongoose'
 import sharp from 'sharp'
 import { rm } from 'fs/promises'
 import { EmailService } from '@/infrastructure/services/EmailService.ts'
+import { getCreditsUsed } from '@/utils/getCreditsUsed.ts'
 
 export class UserService implements ICreateUserService<IUser, RegisterCredentialsDTO> {
   private repository: UserRepository
@@ -166,9 +167,7 @@ export class UserService implements ICreateUserService<IUser, RegisterCredential
   }
 
   public async payCreditsByTokens(tokensUsed: number, userId: string): Promise<number> {
-    const tokensPerCredit = 20000
-
-    const finalAmount = Math.ceil(tokensUsed / tokensPerCredit)
+    const finalAmount = getCreditsUsed(tokensUsed)
 
     await this.repository.decrementFieldByCriteria({ id: userId }, 'credits', finalAmount)
 

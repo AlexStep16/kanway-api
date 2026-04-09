@@ -2,7 +2,9 @@ import SuccessResponse from '@/application/services/SuccessResponse.ts'
 import { NextFunction, Request, Response } from 'express'
 import { ChatService } from '@/application/services/ChatService.ts'
 import { IChatCriteria } from '@/application/interfaces/criterias/IChatCriteria.ts'
-import { langgraphQueueEvents } from '@/infrastructure/queues/index.ts'
+import { langgraphQueue, langgraphQueueEvents } from '@/infrastructure/queues/index.ts'
+import mongoose from 'mongoose'
+import { CustomEvents } from '@/enums/CustomEvents.ts'
 
 export default class ChatController {
   protected service: ChatService
@@ -76,12 +78,57 @@ export default class ChatController {
   }
 
   public async send(req: Request, res: Response, next: NextFunction) {
+    const session = await mongoose.startSession()
+    session.startTransaction()
+
     try {
-      const result = await this.service.send(req.body, req.user!)
+      const clientDisconnected = new Promise((_, reject) => {
+        req.on('close', () => {
+          if (!res.writableEnded) {
+            reject(new Error('CLIENT_ABORTED'))
+          }
+        })
+      })
+
+      const result = (await Promise.race([
+        clientDisconnected,
+        (async () => {
+          return await this.service.send(req.body, req.user!, session)
+        })(),
+      ])) as Awaited<ReturnType<ChatService['send']>>
+
+      await session.commitTransaction()
+
+      const job = await langgraphQueue.add('process_query', result.jobPayload, {
+        jobId: req.body.jobId,
+      })
+
+      await job.updateProgress({
+        role: CustomEvents.NEW_MESSAGE,
+        data: result.userMessage,
+      })
+
+      await job.updateProgress({
+        role: CustomEvents.NEW_MESSAGE,
+        data: result.stepMessage,
+      })
 
       return res.status(200).json(new SuccessResponse(result))
     } catch (error) {
-      next(error)
+      await session.abortTransaction()
+
+      const job = await langgraphQueue.getJob(req.params.jobId)
+
+      if (job) {
+        await job.updateData({
+          ...job.data,
+          __abortSignal: true,
+        })
+      }
+
+      if (error && error instanceof Error && error.message !== 'CLIENT_ABORTED') next(error)
+    } finally {
+      session.endSession()
     }
   }
 

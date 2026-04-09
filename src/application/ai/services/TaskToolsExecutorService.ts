@@ -319,7 +319,7 @@ export class TaskToolsExecutorService extends AbstractToolExecutor {
       },
       config,
     )
-    console.log(dtoTasks)
+
     const createdTasks = await this.taskService.createMany(dtoTasks, user)
 
     const logs = await this.operationLogService.getByCriteria(

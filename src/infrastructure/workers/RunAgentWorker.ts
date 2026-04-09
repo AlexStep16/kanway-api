@@ -103,7 +103,7 @@ export const RunAgentWorker = new Worker(
       } catch (err) {
         Sentry.captureException(err, { extra: { jobId: job.id } })
       }
-    }, 500)
+    }, 100)
 
     const stepsMessage = await dependencies.services.chatMessageService.getByCriteria(
       { id: configurable.stepMessageId },
@@ -112,6 +112,7 @@ export const RunAgentWorker = new Worker(
 
     const agentEventsHandler = new AgentEventsHandler(
       job,
+      dependencies.services.chatService,
       dependencies.services.chatMessageService,
       dependencies.services.operationLogService,
       configurable,
@@ -181,21 +182,21 @@ export const RunAgentWorker = new Worker(
 
       //Sentry.captureException(error, { extra: { jobId: job.id, chatId: configurable?.chatId } })
 
+      if (error.name === 'AbortError' || controller.signal.aborted) {
+        const agent = await getAgent(dependencies)
+
+        await cleanupLastIteration(agent, config)
+
+        dependencies.services.userService.payCreditsByTokens(
+          agentEventsHandler.totalTokensUsed,
+          configurable.user.id.toString(),
+        )
+
+        throw error
+      }
+
       try {
         await agentEventsHandler.createErrorMessage(error)
-
-        if (error.name === 'AbortError' || controller.signal.aborted) {
-          const agent = await getAgent(dependencies)
-
-          await cleanupLastIteration(agent, config)
-
-          dependencies.services.userService.payCreditsByTokens(
-            agentEventsHandler.totalTokensUsed,
-            configurable.user.id.toString(),
-          )
-
-          throw error
-        }
       } catch (dbError) {
         Sentry.captureException(dbError, {
           extra: { jobId: job.id, chatId: configurable?.chatId },
@@ -206,6 +207,7 @@ export const RunAgentWorker = new Worker(
     } finally {
       clearInterval(checkInterval)
 
+      agentEventsHandler.completeSteps()
       await agentEventsHandler.updateStepsMessage()
     }
   },

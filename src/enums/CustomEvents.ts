@@ -10,4 +10,5 @@ export enum CustomEvents {
   SYNTHESIZE_END = 'synthesize_end',
   TOKENS_ADDED = 'tokens_added',
   FINAL_RESPONSE = 'final_response',
+  CHAT_UPDATED = 'chat_updated',
 }

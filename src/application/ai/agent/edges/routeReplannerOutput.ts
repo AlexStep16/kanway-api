@@ -1,4 +1,3 @@
-import { END } from '@langchain/langgraph'
 import { AgentStateAnnotation } from '../AgentStateAnnotation.ts'
 
 export const routeReplannerOutput = (state: typeof AgentStateAnnotation.State) => {
@@ -6,5 +5,5 @@ export const routeReplannerOutput = (state: typeof AgentStateAnnotation.State) =
     return 'ReplannerTool'
   }
 
-  return END
+  return 'ChatName'
 }

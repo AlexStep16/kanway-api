@@ -32,9 +32,6 @@ import { OperationLogStatusesEnum } from '@/domain/enums/OperationLogStatusesEnu
 import { getDefaultState } from '../ai/helpers/getDefaultState.ts'
 import { TaskService } from './TaskService.ts'
 import { CategoryService } from './CategoryService.ts'
-import { ChatPromptTemplate } from '@langchain/core/prompts'
-import { ChatNamePrompt } from '../ai/prompts/ChatNamePrompt.ts'
-import { initAiModels } from '@/infrastructure/ai/initAiModels.ts'
 import CheckpointWriteRepository from '../repositories/CheckpointWriteRepository.ts'
 import CheckpointRepository from '../repositories/CheckpointRepository.ts'
 import { ChatEditDTO } from '../dtos/ChatEditDTO.ts'
@@ -84,16 +81,17 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     boardId: string | undefined,
     workspaceId: string | undefined,
     user: IUser,
+    session?: ClientSession,
   ) {
     let activeBoardName = ''
     let activeWorkspaceName = ''
 
     const activeBoard = boardId
-      ? await this.boardService.getByCriteria({ id: boardId }, user.id)
+      ? await this.boardService.getByCriteria({ id: boardId }, user.id, session)
       : null
 
     const activeWorkspace = workspaceId
-      ? await this.workspaceService.getByCriteria({ id: workspaceId }, user.id)
+      ? await this.workspaceService.getByCriteria({ id: workspaceId }, user.id, session)
       : null
 
     if (activeBoard && activeBoard.length > 0) {
@@ -115,18 +113,21 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       boardId?: string
       workspaceId: string
       timezone: string
+      isChatNameNeeded?: boolean
       userMessage: string
       stepMessageId: string
       activeBoardName?: string
       activeWorkspaceName?: string
     },
+    session?: ClientSession,
   ): Promise<RunnableConfig<Configurable>> {
-    const userSettings = await this.settingService.getByCriteria({}, user.id)
+    const userSettings = await this.settingService.getByCriteria({}, user.id, session)
     const userSetting = userSettings[0]
 
     const categories = await this.categoryService.getByCriteria(
       { boardId: data.boardId, isDeleted: false, isDeletedExternal: false },
       user.id,
+      session,
     )
     const categoriesList = categories
       .map((category) => `${category.name} (${category.id})`)
@@ -135,6 +136,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     const tasks = await this.taskService.getByCriteria(
       { boardId: data.boardId, isDeleted: false, isDeletedExternal: false },
       user.id,
+      session,
     )
     const tagsSet = new Set<string>()
     tasks.forEach((task) => {
@@ -156,6 +158,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
         categoriesList: categoriesList.length > 0 ? categoriesList : 'No categories',
         tagsList: tagsList.length > 0 ? tagsList : 'No tags',
         timezone: data.timezone,
+        isChatNameNeeded: !!data.isChatNameNeeded,
         userMessage: data.userMessage,
 
         aiName: userSetting.aiName || 'Kanbar',
@@ -200,9 +203,10 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     )
   }
 
-  public async send(data: ChatSendDTO, user: IUser) {
+  public async send(data: ChatSendDTO, user: IUser, externalSession: ClientSession) {
     let chat: IChat | null = null
     let toolsWithNoDecision = 0
+    let isChatNameNeeded = false
 
     const messages: BaseMessage[] = []
     const threadId = data.threadId || new Types.ObjectId().toString()
@@ -215,34 +219,25 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       data.boardId,
       data.workspaceId,
       user,
+      externalSession,
     )
 
     if (!data.threadId) {
-      const prompt = ChatPromptTemplate.fromMessages([['system', ChatNamePrompt]])
-
-      const { chatNameModel } = initAiModels()
-
-      const chain = prompt.pipe(chatNameModel)
-
-      const response = await chain.invoke({
-        board_name: activeBoardName,
-        workspace_name: activeWorkspaceName,
-        current_date: dayjs.tz(dayjs(), data.timezone).toISOString(),
-        user_message: data.message || '',
-      })
+      isChatNameNeeded = true
 
       const createResult = await this.create(
         {
-          name: (response.content as string) || 'Новый чат',
+          name: 'Новый чат',
           workspaceId: data.workspaceId,
           threadId,
         },
         user,
+        externalSession,
       )
 
       chat = createResult.data[0]
     } else {
-      const getChatResult = await this.getByCriteria({ threadId }, user.id)
+      const getChatResult = await this.getByCriteria({ threadId }, user.id, externalSession)
 
       chat = getChatResult[0]
     }
@@ -250,6 +245,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     const chatMessages = await this.chatMessageService.getByCriteria(
       { chatId: chat.id.toString() },
       user.id,
+      externalSession,
     )
 
     for (const chatMessage of chatMessages) {
@@ -263,6 +259,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
             id: logId,
           },
           user.id,
+          externalSession,
         )
 
         if (logs && logs.length > 0) {
@@ -295,6 +292,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
         threadId,
       },
       user,
+      externalSession,
     )
 
     const userMessage = createUserMessageResult.data[0]
@@ -304,26 +302,38 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     const stepMessages = await this.chatMessageService.create(
       {
         role: 'steps',
-        content: [],
+        content: [
+          {
+            id: new Types.ObjectId().toHexString(),
+            name: 'Устанавливаю соединение с AI',
+            state: 'in_progress',
+          },
+        ],
         threadId: threadId,
         chatId: chat.id,
       },
       user,
+      externalSession,
     )
 
     const stepMessage = stepMessages.data[0]
 
-    const config = await this._getConfigurableFromUserSetting(user, {
-      threadId: threadId,
-      chatId: chat.id.toString(),
-      boardId: data.boardId,
-      workspaceId: data.workspaceId,
-      timezone: data.timezone,
-      stepMessageId: stepMessage.id.toHexString(),
-      activeBoardName,
-      activeWorkspaceName,
-      userMessage: data.message || '',
-    })
+    const config = await this._getConfigurableFromUserSetting(
+      user,
+      {
+        threadId: threadId,
+        chatId: chat.id.toString(),
+        boardId: data.boardId,
+        workspaceId: data.workspaceId,
+        timezone: data.timezone,
+        stepMessageId: stepMessage.id.toHexString(),
+        isChatNameNeeded,
+        activeBoardName,
+        activeWorkspaceName,
+        userMessage: data.message || '',
+      },
+      externalSession,
+    )
 
     const payload = getDefaultState()
 
@@ -337,13 +347,11 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       config,
     }
 
-    const job = await langgraphQueue.add('process_query', jobPayload, { jobId: data.jobId })
-
     return {
-      jobId: job.id,
-      chat,
+      jobPayload,
       userMessage,
       stepMessage,
+      chat,
       threadId: threadId,
     }
   }
@@ -387,7 +395,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
   private async _executeRetryTransaction(
     data: RetryAgentDTO,
     user: IUser,
-    externalSession?: ClientSession,
+    externalSession: ClientSession,
   ) {
     const chatMessages = await this.chatMessageService.getByCriteria(
       { chatId: data.chatId },
@@ -417,15 +425,19 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       await this._deleteLastIteration(lastStepperMessageId, data, user, externalSession)
     }
 
-    const config = await this._getConfigurableFromUserSetting(user, {
-      threadId: data.threadId,
-      chatId: data.chatId.toString(),
-      boardId: data.boardId,
-      workspaceId: data.workspaceId,
-      timezone: data.timezone,
-      stepMessageId: lastStepperMessageId || '',
-      userMessage: lastUserMessage ? lastUserMessage.content : '',
-    })
+    const config = await this._getConfigurableFromUserSetting(
+      user,
+      {
+        threadId: data.threadId,
+        chatId: data.chatId.toString(),
+        boardId: data.boardId,
+        workspaceId: data.workspaceId,
+        timezone: data.timezone,
+        stepMessageId: lastStepperMessageId || '',
+        userMessage: lastUserMessage ? lastUserMessage.content : '',
+      },
+      externalSession,
+    )
 
     const payload = getDefaultState()
 
@@ -570,7 +582,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
   private async _executeResolveAmbiguousTransaction(
     data: ResolveAmbiguousDTO,
     user: IUser,
-    externalSession?: ClientSession,
+    externalSession: ClientSession,
   ) {
     const chatMessages = await this.chatMessageService.getByCriteria(
       { id: data.chatMessageId },
@@ -610,15 +622,19 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       throw new AppError('Не найдено сообщение шагов для повторной попытки.', 400)
     }
 
-    const config = await this._getConfigurableFromUserSetting(user, {
-      threadId: chatMessage.threadId,
-      chatId: chatId,
-      boardId: data.boardId || '',
-      workspaceId: data.workspaceId || '',
-      timezone: data.timezone || 'UTC',
-      stepMessageId: lastStepperMessage ? lastStepperMessage.id.toHexString() : '',
-      userMessage: lastUserMessage ? lastUserMessage.content : '',
-    })
+    const config = await this._getConfigurableFromUserSetting(
+      user,
+      {
+        threadId: chatMessage.threadId,
+        chatId: chatId,
+        boardId: data.boardId || '',
+        workspaceId: data.workspaceId || '',
+        timezone: data.timezone || 'UTC',
+        stepMessageId: lastStepperMessage ? lastStepperMessage.id.toHexString() : '',
+        userMessage: lastUserMessage ? lastUserMessage.content : '',
+      },
+      externalSession,
+    )
 
     await this.chatMessageService.delete(
       {
@@ -647,7 +663,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
   private async _executeApproveLogTransaction(
     data: ApproveLogDTO,
     user: IUser,
-    externalSession?: ClientSession,
+    externalSession: ClientSession,
   ) {
     const logs = await this.operationLogService.getByCriteria(
       { id: data.id },
@@ -724,15 +740,19 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       throw new AppError('Не найдено сообщение шагов для повторной попытки.', 400)
     }
 
-    const config = await this._getConfigurableFromUserSetting(user, {
-      threadId: data.threadId,
-      chatId: data.chatId,
-      boardId: data.boardId || '',
-      workspaceId: data.workspaceId || '',
-      timezone: data.timezone || 'UTC',
-      stepMessageId: lastStepperMessage ? lastStepperMessage.id.toHexString() : '',
-      userMessage: lastUserMessage ? lastUserMessage.content : '',
-    })
+    const config = await this._getConfigurableFromUserSetting(
+      user,
+      {
+        threadId: data.threadId,
+        chatId: data.chatId,
+        boardId: data.boardId || '',
+        workspaceId: data.workspaceId || '',
+        timezone: data.timezone || 'UTC',
+        stepMessageId: lastStepperMessage ? lastStepperMessage.id.toHexString() : '',
+        userMessage: lastUserMessage ? lastUserMessage.content : '',
+      },
+      externalSession,
+    )
 
     const job = await langgraphQueue.add('review', {
       payload: new Command({

@@ -141,7 +141,8 @@ ${EntitySchemes}
 
 ### CONTEXT VARIABLES
 - Current Date: {current_date}
-- Active Workspace ID: {workspace_id} | Active Board ID: {board_id}
+- Active Workspace: {workspace}
+- Active Board: {board}
 - Existing Categories on Active Board: {categories_list}
 - Existing Tags: {tags_list}
 `
