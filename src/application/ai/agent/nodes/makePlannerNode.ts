@@ -17,11 +17,10 @@ export const makePlannerNode = (deps: AgentDependencies) => {
       id: new Types.ObjectId().toString(),
       name: STEP_MESSAGES.Planner[stepIndex],
     })
-    await dispatchCustomEvent(CustomEvents.SYNTHESIZE_START, {})
 
     const outputs: Partial<typeof AgentStateAnnotation.State> = {
       tool_calls: [],
-      messages: [],
+      final_messages: state.final_messages,
       planner_has_error: false,
       planner_steps_count: state.planner_steps_count + 1,
     }
@@ -47,14 +46,8 @@ export const makePlannerNode = (deps: AgentDependencies) => {
     const chain = prompt.pipe(plannerModel.bindTools(plannerTools))
 
     const response = await chain.invoke({
-      board: {
-        id: configurable.activeBoardId,
-        name: configurable.activeBoardName,
-      },
-      workspace: {
-        id: configurable.activeWorkspaceId,
-        name: configurable.activeWorkspaceName,
-      },
+      board: configurable.activeBoard || 'Нет активной доски',
+      workspace: configurable.activeWorkspace,
       current_date: configurable.currentDate,
       categories_list: configurable.categoriesList,
       tags_list: configurable.tagsList,
@@ -68,7 +61,7 @@ export const makePlannerNode = (deps: AgentDependencies) => {
     if (outputs.tool_calls.length === 0) {
       await dispatchCustomEvent(CustomEvents.FINAL_RESPONSE, response)
 
-      outputs.messages!.push(response)
+      outputs.final_messages!.push(response)
     }
 
     return outputs

@@ -707,6 +707,7 @@ export class WorkspaceService extends BaseService<
     userId: Types.ObjectId,
     session: ClientSession,
     isDryRun: boolean = false,
+    tempIds: string[] = [],
   ): Promise<IResponseWithLog<IWorkspace[]>> {
     const dependencies: Types.ObjectId[] = []
 
@@ -719,19 +720,21 @@ export class WorkspaceService extends BaseService<
       userId,
     )
 
-    let lastRank = await this._getLastRank(userId, session)
-
     if (workspacesToClone.length === 0)
       throw new NotFoundError('Пространства для клонирования не найдены.')
 
-    const transformedWorkspaces: Omit<IWorkspace, 'id'>[] = []
+    let lastRank = await this._getLastRank(userId, session)
 
-    for (const workspace of workspacesToClone) {
+    const transformedWorkspaces: IWorkspaceCreatePayload[] = []
+
+    for (let i = 0; i < workspacesToClone.length; i++) {
+      const workspace = workspacesToClone[i]
+      const id = tempIds[i] || undefined
       const newRank = lastRank.genNext()
 
       const cleanWorkspace = {
         ...workspace,
-        id: isDryRun ? workspace.id : undefined,
+        id: isDryRun ? workspace.id.toString() : id,
         rank: newRank.toString(),
       }
 
@@ -807,14 +810,15 @@ export class WorkspaceService extends BaseService<
     user: IUser,
     externalSession?: ClientSession,
     isDryRun: boolean = false,
+    tempIds: string[] = [],
   ): Promise<IResponseWithLog<IWorkspace[]>> {
     const userId = user.id
 
     if (externalSession) {
-      return this._executeCloneTransaction(criteria, userId, externalSession, isDryRun)
+      return this._executeCloneTransaction(criteria, userId, externalSession, isDryRun, tempIds)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeCloneTransaction(criteria, userId, session, isDryRun),
+        this._executeCloneTransaction(criteria, userId, session, isDryRun, tempIds),
       )
     }
   }
@@ -842,51 +846,37 @@ export class WorkspaceService extends BaseService<
   ): Promise<IResponseWithLog<IWorkspace[]>> {
     const { beforeId, afterId, id } = dto
 
-    const criteria: IWorkspaceCriteria = {
-      ids: [id, beforeId, afterId].filter((id): id is string => !!id),
-    }
+    const workspaceIds = [id, beforeId, afterId].filter(Boolean) as string[]
+    const workspaces = await this.repository.findByCriteria(
+      { ids: workspaceIds },
+      session,
+      undefined,
+      user.id,
+    )
 
-    const updateData: SafeUpdateData<IWorkspace> = {}
-
-    const workspaces = await this.repository.findByCriteria(criteria, session, undefined, user.id)
     const workspace = workspaces.find((t) => t.id.toString() === id)
-    const beforeWorkspace = workspaces.find((t) => t.id.toString() === beforeId)
-    const afterWorkspace = workspaces.find((t) => t.id.toString() === afterId)
+    const beforeWorkspace = beforeId ? workspaces.find((t) => t.id.toString() === beforeId) : null
+    const afterWorkspace = afterId ? workspaces.find((t) => t.id.toString() === afterId) : null
 
-    if (!workspace) {
-      throw new NotFoundError('Рабочее пространство для перемещения не найдено.')
-    }
-    if (beforeId && !beforeWorkspace) {
-      throw new NotFoundError('Рабочее пространство перед указанным не найдено.')
-    }
-    if (afterId && !afterWorkspace) {
-      throw new NotFoundError('Рабочее пространство после указанного не найдено.')
-    }
+    if (!workspace) throw new NotFoundError('Рабочее пространство не найдено.')
 
-    let newRank = LexoRank.middle()
+    let newRank: LexoRank
 
     if (beforeWorkspace && afterWorkspace) {
-      const beforeRank = LexoRank.parse(beforeWorkspace.rank)
-      const afterRank = LexoRank.parse(afterWorkspace.rank)
-
-      newRank = beforeRank.between(afterRank)
+      newRank = LexoRank.parse(beforeWorkspace.rank).between(LexoRank.parse(afterWorkspace.rank))
     } else if (beforeWorkspace) {
-      const beforeRank = LexoRank.parse(beforeWorkspace.rank)
-
-      newRank = beforeRank.genPrev()
+      newRank = LexoRank.parse(beforeWorkspace.rank).genPrev()
     } else if (afterWorkspace) {
-      const afterRank = LexoRank.parse(afterWorkspace.rank)
+      newRank = LexoRank.parse(afterWorkspace.rank).genNext()
+    } else newRank = LexoRank.middle()
 
-      newRank = afterRank.genNext()
-    } else {
-      newRank = LexoRank.middle()
+    const updateData: SafeUpdateData<IWorkspace> = {
+      rank: newRank.toString(),
     }
 
-    updateData.rank = newRank.toString()
-
     const workspacesBefore = projectProperties<IWorkspace>([workspace], updateData)
-    const workspacesAfter = workspacesBefore.map((w) => ({
-      ...w,
+    const workspacesAfter = workspacesBefore.map((t) => ({
+      ...t,
       ...updateData,
     }))
 

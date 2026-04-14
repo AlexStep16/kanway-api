@@ -7,7 +7,7 @@ import { Types } from 'mongoose'
 import { dispatchCustomEvent } from '@langchain/core/callbacks/dispatch'
 import { CustomEvents } from '@/enums/CustomEvents.ts'
 import { Configurable } from '../../interfaces/Configurable.ts'
-import { AIMessage, HumanMessage } from '@langchain/core/messages'
+import { AIMessage } from '@langchain/core/messages'
 import { extractPythonCode } from '@/utils/extractPythonCode.ts'
 import { STEP_MESSAGES } from '@/constants/STEP_MESSAGES.ts'
 
@@ -18,12 +18,11 @@ export const makeCoderNode = (deps: AgentDependencies) => {
       id: new Types.ObjectId().toString(),
       name: STEP_MESSAGES.Coder[stepIndex],
     })
-    await dispatchCustomEvent(CustomEvents.SYNTHESIZE_END, {})
 
     const configurable = config.configurable as Configurable
 
     const outputs: Partial<typeof AgentStateAnnotation.State> = {
-      coder_messages: [],
+      coder_messages: state.coder_messages,
       coder_code: '',
       coder_ambiguities: null,
       internal_tool_call_results: [],
@@ -38,18 +37,13 @@ export const makeCoderNode = (deps: AgentDependencies) => {
 
     const history = state.coder_messages.slice(-50)
 
-    const prompt = ChatPromptTemplate.fromMessages([
-      ['system', CoderPrompt],
-      ...state.last_execution_messages,
-      new HumanMessage(state.current_plan[state.current_step_index || 0]),
-      ...history,
-    ])
+    const prompt = ChatPromptTemplate.fromMessages([['system', CoderPrompt], ...history])
 
     const chain = prompt.pipe(coderModel)
 
     const response = await chain.invoke({
-      board_id: configurable.activeBoardId,
-      workspace_id: configurable.activeWorkspaceId,
+      board: configurable.activeBoard,
+      workspace: configurable.activeWorkspace,
       current_date: configurable.currentDate,
       payload: state.current_payload,
     })

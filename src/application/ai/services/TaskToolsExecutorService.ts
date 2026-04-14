@@ -8,7 +8,7 @@ import { AiConfirmationTypeEnum } from '@/domain/enums/AiConfirmationTypeEnum.ts
 import { CustomEvents } from '@/enums/CustomEvents.ts'
 import { dispatchCustomEvent } from '@langchain/core/callbacks/dispatch'
 import Fuse from 'fuse.js'
-import { FilterQuery, Types } from 'mongoose'
+import { ClientSession, FilterQuery, Types } from 'mongoose'
 import { ConfirmationEntityToolResult } from '../tools/helpers/ConfirmationEntityToolResult.ts'
 import { ITaskPopulated } from '@/application/interfaces/ITaskPopulated.ts'
 import { SuccessToolResult } from '../tools/helpers/SuccessToolResult.ts'
@@ -59,7 +59,7 @@ export class TaskToolsExecutorService extends AbstractToolExecutor {
     }
   }
 
-  public async searchTasks(payload: DispatchPayload) {
+  public async searchTasks(payload: DispatchPayload, session?: ClientSession) {
     const HARD_SEARCH_LIMIT = 2000
 
     const { toolCall, userId } = payload
@@ -88,9 +88,9 @@ export class TaskToolsExecutorService extends AbstractToolExecutor {
 
     const unionFilter = { ...baseFilter, ...mongo_filter, user_id: new Types.ObjectId(userId) }
 
-    const filteredCount = await this.taskRepository.getCountByFilter(unionFilter)
+    const filteredCount = await this.taskRepository.getCountByFilter(unionFilter, session)
 
-    const tasks = await this.taskRepository.findByFilter<ITaskRawString>(unionFilter, undefined, {
+    const tasks = await this.taskRepository.findByFilter<ITaskRawString>(unionFilter, session, {
       isMongoCase: true,
       limit: scaledLimit,
       sort: { rank: 1 },
@@ -156,25 +156,20 @@ export class TaskToolsExecutorService extends AbstractToolExecutor {
   private async _populateTasksParentData(
     tasks: CreateTasksDTO['tasks'],
     userId: string,
-    tempToRealIdMap: Record<string, string>,
+    session?: ClientSession,
   ): Promise<ITaskCreatePopulated[]> {
     const uniqueCategoryIds = Array.from(
-      new Set(
-        tasks
-          .filter((task) => tempToRealIdMap[task.category] || task.category)
-          .map((task) => tempToRealIdMap[task.category] || task.category),
-      ),
+      new Set(tasks.filter((task) => task.category).map((task) => task.category)),
     )
 
     const categories = await this.categoryService.getByCriteria(
       { ids: uniqueCategoryIds },
       new Types.ObjectId(userId),
+      session,
     )
 
     return tasks.map((task) => {
-      const category = categories.find(
-        (c) => c.id.toString() === (tempToRealIdMap[task.category] || task.category),
-      )
+      const category = categories.find((c) => c.id.toString() === task.category)
 
       if (!category) {
         throw new Error(`Category with ID ${task.category} not found for task ${task.name}`)
@@ -221,13 +216,10 @@ export class TaskToolsExecutorService extends AbstractToolExecutor {
     })
   }
 
-  private _transformRawUpdateToDTO(
-    tasksRaw: UpdateTasksDTO['updates'],
-    tempToRealIdMap: Record<string, string>,
-  ): TaskEditManyDTO {
+  private _transformRawUpdateToDTO(tasksRaw: UpdateTasksDTO['updates']): TaskEditManyDTO {
     return tasksRaw.map((task) => {
       const update: TaskEditDTO = {
-        id: tempToRealIdMap[task._id] || task._id, // Use real ID if available in the map otherwise fallback to the original ID
+        id: task._id,
       }
 
       if (typeof task.name !== 'undefined') update.name = task.name
@@ -238,19 +230,16 @@ export class TaskToolsExecutorService extends AbstractToolExecutor {
       if (typeof task.due_hours !== 'undefined') update.dueHours = task.due_hours
       if (typeof task.due_minutes !== 'undefined') update.dueMinutes = task.due_minutes
       if (typeof task.color !== 'undefined') update.color = task.color
-      if (typeof task.workspace !== 'undefined')
-        update.workspaceId = tempToRealIdMap[task.workspace] || task.workspace
-      if (typeof task.board !== 'undefined')
-        update.boardId = tempToRealIdMap[task.board] || task.board
-      if (typeof task.category !== 'undefined')
-        update.categoryId = tempToRealIdMap[task.category] || task.category
+      if (typeof task.workspace !== 'undefined') update.workspaceId = task.workspace
+      if (typeof task.board !== 'undefined') update.boardId = task.board
+      if (typeof task.category !== 'undefined') update.categoryId = task.category
 
       return update
     })
   }
 
-  public async createTasks(payload: DispatchPayload) {
-    const { toolCall, config, tempToRealIdMap } = payload
+  public async createTasks(payload: DispatchPayload, session?: ClientSession) {
+    const { toolCall, config } = payload
 
     const args = toolCall.args as CreateTasksDTO
     const toolCallId = toolCall.id
@@ -271,7 +260,7 @@ export class TaskToolsExecutorService extends AbstractToolExecutor {
     const populatedTasks = await this._populateTasksParentData(
       args.tasks,
       user.id.toString(),
-      tempToRealIdMap,
+      session,
     )
 
     let dtoTasks = this._transformRawCreateToDTO(populatedTasks)
@@ -280,12 +269,14 @@ export class TaskToolsExecutorService extends AbstractToolExecutor {
       const messages = await this.chatMessageService.getByCriteria(
         { pendingToolCallId: toolCallId, role: 'operation' },
         user.id,
+        session,
       )
 
       if (messages.length > 0) {
         const logs = await this.operationLogService.getByCriteria(
           { id: messages[0].content },
           user.id,
+          session,
         )
 
         const log = logs[0]
@@ -300,7 +291,7 @@ export class TaskToolsExecutorService extends AbstractToolExecutor {
           return new FailedToolResult('Task creation pending user confirmation.')
         }
       } else {
-        const mockCreateTasks = await this.taskService.createMany(dtoTasks, user, undefined, true)
+        const mockCreateTasks = await this.taskService.createMany(dtoTasks, user, session, true)
 
         if (mockCreateTasks.logId) {
           return new ConfirmationEntityToolResult({
@@ -320,11 +311,12 @@ export class TaskToolsExecutorService extends AbstractToolExecutor {
       config,
     )
 
-    const createdTasks = await this.taskService.createMany(dtoTasks, user)
+    const createdTasks = await this.taskService.createMany(dtoTasks, user, session)
 
     const logs = await this.operationLogService.getByCriteria(
       { id: createdTasks.logId!.toString() },
       user.id,
+      session,
     )
 
     await dispatchCustomEvent(
@@ -336,12 +328,6 @@ export class TaskToolsExecutorService extends AbstractToolExecutor {
       config,
     )
 
-    const tempToRealIdMapNew: Record<string, string> = {}
-
-    for (let i = 0; i < createdTasks.data.length; i++) {
-      tempToRealIdMapNew[args.tasks[i]._id] = createdTasks.data[i].id.toString()
-    }
-
     const resultInfo = createdTasks.data.map((task) => ({
       id: task.id,
       name: task.name,
@@ -352,13 +338,11 @@ export class TaskToolsExecutorService extends AbstractToolExecutor {
       Log ID: ${createdTasks.logId}
     `
 
-    return new SuccessToolResult(resultMessage, {
-      tempToRealIdMap: tempToRealIdMapNew,
-    })
+    return new SuccessToolResult(resultMessage)
   }
 
-  public async updateTasks(payload: DispatchPayload) {
-    const { toolCall, config, tempToRealIdMap } = payload
+  public async updateTasks(payload: DispatchPayload, session?: ClientSession) {
+    const { toolCall, config } = payload
 
     const args = toolCall.args as UpdateTasksDTO
     const toolCallId = toolCall.id
@@ -376,18 +360,20 @@ export class TaskToolsExecutorService extends AbstractToolExecutor {
       )
     }
 
-    let dtoTasks = this._transformRawUpdateToDTO(args.updates, tempToRealIdMap)
+    let dtoTasks = this._transformRawUpdateToDTO(args.updates)
 
     if (configurable.aiConfirmationType === AiConfirmationTypeEnum.ALWAYS) {
       const messages = await this.chatMessageService.getByCriteria(
         { pendingToolCallId: toolCallId, role: 'operation' },
         user.id,
+        session,
       )
 
       if (messages.length > 0) {
         const logs = await this.operationLogService.getByCriteria(
           { id: messages[0].content },
           user.id,
+          session,
         )
 
         const log = logs[0]
@@ -400,7 +386,7 @@ export class TaskToolsExecutorService extends AbstractToolExecutor {
           dtoTasks = dtoTasks.filter((task) => selectedIds.includes(task.id))
         }
       } else {
-        const mockUpdateTasks = await this.taskService.editMany(dtoTasks, user, undefined, true)
+        const mockUpdateTasks = await this.taskService.editMany(dtoTasks, user, session, true)
 
         if (mockUpdateTasks.logId) {
           return new ConfirmationEntityToolResult({
@@ -420,12 +406,15 @@ export class TaskToolsExecutorService extends AbstractToolExecutor {
       config,
     )
 
-    const updatedTasks = (await this.taskService.editMany(dtoTasks, user)) as IResponseWithLog<
-      ITaskPopulated[]
-    >
+    const updatedTasks = (await this.taskService.editMany(
+      dtoTasks,
+      user,
+      session,
+    )) as IResponseWithLog<ITaskPopulated[]>
     const logs = await this.operationLogService.getByCriteria(
       { id: updatedTasks.logId!.toString() },
       user.id,
+      session,
     )
 
     await dispatchCustomEvent(
@@ -462,8 +451,8 @@ export class TaskToolsExecutorService extends AbstractToolExecutor {
     return new SuccessToolResult(resultMessage)
   }
 
-  public async moveTask(payload: DispatchPayload) {
-    const { toolCall, config, tempToRealIdMap } = payload
+  public async moveTask(payload: DispatchPayload, session?: ClientSession) {
+    const { toolCall, config } = payload
 
     const args = toolCall.args as MoveTaskDTO
     const toolCallId = toolCall.id
@@ -482,24 +471,24 @@ export class TaskToolsExecutorService extends AbstractToolExecutor {
     }
 
     const dto: TaskMoveDTO = {
-      id: tempToRealIdMap[args.id] || args.id, // Use real ID if available in the map otherwise fallback to the original ID
-      beforeId: args.before_id ? tempToRealIdMap[args.before_id] || args.before_id : undefined,
-      afterId: args.after_id ? tempToRealIdMap[args.after_id] || args.after_id : undefined,
-      newCategoryId: args.new_category_id
-        ? tempToRealIdMap[args.new_category_id] || args.new_category_id
-        : undefined,
+      id: args.id,
+      beforeId: args.before_id ? args.before_id : undefined,
+      afterId: args.after_id ? args.after_id : undefined,
+      newCategoryId: args.new_category_id ? args.new_category_id : undefined,
     }
 
     if (configurable.aiConfirmationType === AiConfirmationTypeEnum.ALWAYS) {
       const messages = await this.chatMessageService.getByCriteria(
         { pendingToolCallId: toolCallId, role: 'operation' },
         user.id,
+        session,
       )
 
       if (messages.length > 0) {
         const logs = await this.operationLogService.getByCriteria(
           { id: messages[0].content },
           user.id,
+          session,
         )
 
         const log = logs[0]
@@ -508,7 +497,7 @@ export class TaskToolsExecutorService extends AbstractToolExecutor {
           return new SuccessToolResult('Task move cancelled by user.')
         }
       } else {
-        const mockMoveTask = await this.taskService.move(dto, user, undefined, true)
+        const mockMoveTask = await this.taskService.move(dto, user, session, true)
 
         if (mockMoveTask.logId) {
           return new ConfirmationEntityToolResult({
@@ -528,11 +517,12 @@ export class TaskToolsExecutorService extends AbstractToolExecutor {
       config,
     )
 
-    const result = await this.taskService.move(dto, user)
+    const result = await this.taskService.move(dto, user, session)
 
     const logs = await this.operationLogService.getByCriteria(
       { id: result.logId!.toString() },
       user.id,
+      session,
     )
 
     await dispatchCustomEvent(
@@ -554,8 +544,8 @@ export class TaskToolsExecutorService extends AbstractToolExecutor {
     return new SuccessToolResult(resultMessage)
   }
 
-  public async deleteTasks(payload: DispatchPayload) {
-    const { toolCall, config, tempToRealIdMap } = payload
+  public async deleteTasks(payload: DispatchPayload, session?: ClientSession) {
+    const { toolCall, config } = payload
 
     const args = toolCall.args as { ids: string[] }
     const toolCallId = toolCall.id
@@ -569,18 +559,18 @@ export class TaskToolsExecutorService extends AbstractToolExecutor {
       )
     }
 
-    const mappedIds = args.ids.map((id) => tempToRealIdMap[id] || id) // Map temp IDs to real IDs using the provided map, fallback to original ID if not found in the map
-
     if (configurable.aiConfirmationType === AiConfirmationTypeEnum.ALWAYS) {
       const messages = await this.chatMessageService.getByCriteria(
         { pendingToolCallId: toolCallId, role: 'operation' },
         user.id,
+        session,
       )
 
       if (messages.length > 0) {
         const logs = await this.operationLogService.getByCriteria(
           { id: messages[0].content },
           user.id,
+          session,
         )
 
         const log = logs[0]
@@ -595,10 +585,10 @@ export class TaskToolsExecutorService extends AbstractToolExecutor {
       } else {
         const mockDeleteTask = await this.taskService.delete(
           {
-            ids: mappedIds,
+            ids: args.ids,
           },
           user,
-          undefined,
+          session,
           true,
         )
 
@@ -622,14 +612,16 @@ export class TaskToolsExecutorService extends AbstractToolExecutor {
 
     const result = await this.taskService.delete(
       {
-        ids: mappedIds,
+        ids: args.ids,
       },
       user,
+      session,
     )
 
     const logs = await this.operationLogService.getByCriteria(
       { id: result.logId!.toString() },
       user.id,
+      session,
     )
 
     await dispatchCustomEvent(
@@ -654,8 +646,8 @@ export class TaskToolsExecutorService extends AbstractToolExecutor {
     return new SuccessToolResult(resultMessage)
   }
 
-  public async archiveTasks(payload: DispatchPayload) {
-    const { toolCall, config, tempToRealIdMap } = payload
+  public async archiveTasks(payload: DispatchPayload, session?: ClientSession) {
+    const { toolCall, config } = payload
 
     const args = toolCall.args as { ids: string[] }
     const toolCallId = toolCall.id
@@ -669,18 +661,18 @@ export class TaskToolsExecutorService extends AbstractToolExecutor {
       )
     }
 
-    const mappedIds = args.ids.map((id) => tempToRealIdMap[id] || id) // Map temp IDs to real IDs using the provided map, fallback to original ID if not found in the map
-
     if (configurable.aiConfirmationType === AiConfirmationTypeEnum.ALWAYS) {
       const messages = await this.chatMessageService.getByCriteria(
         { pendingToolCallId: toolCallId, role: 'operation' },
         user.id,
+        session,
       )
 
       if (messages.length > 0) {
         const logs = await this.operationLogService.getByCriteria(
           { id: messages[0].content },
           user.id,
+          session,
         )
 
         const log = logs[0]
@@ -695,10 +687,10 @@ export class TaskToolsExecutorService extends AbstractToolExecutor {
       } else {
         const mockArchiveTask = await this.taskService.archive(
           {
-            ids: mappedIds,
+            ids: args.ids,
           },
           user,
-          undefined,
+          session,
           true,
         )
 
@@ -722,14 +714,16 @@ export class TaskToolsExecutorService extends AbstractToolExecutor {
 
     const result = await this.taskService.archive(
       {
-        ids: mappedIds,
+        ids: args.ids,
       },
       user,
+      session,
     )
 
     const logs = await this.operationLogService.getByCriteria(
       { id: result.logId!.toString() },
       user.id,
+      session,
     )
 
     await dispatchCustomEvent(
@@ -754,8 +748,8 @@ export class TaskToolsExecutorService extends AbstractToolExecutor {
     return new SuccessToolResult(resultMessage)
   }
 
-  public async recoverTasks(payload: DispatchPayload) {
-    const { toolCall, config, tempToRealIdMap } = payload
+  public async recoverTasks(payload: DispatchPayload, session?: ClientSession) {
+    const { toolCall, config } = payload
 
     const args = toolCall.args as { ids: string[] }
     const toolCallId = toolCall.id
@@ -769,18 +763,18 @@ export class TaskToolsExecutorService extends AbstractToolExecutor {
       )
     }
 
-    const mappedIds = args.ids.map((id) => tempToRealIdMap[id] || id) // Map temp IDs to real IDs using the provided map, fallback to original ID if not found in the map
-
     if (configurable.aiConfirmationType === AiConfirmationTypeEnum.ALWAYS) {
       const messages = await this.chatMessageService.getByCriteria(
         { pendingToolCallId: toolCallId, role: 'operation' },
         user.id,
+        session,
       )
 
       if (messages.length > 0) {
         const logs = await this.operationLogService.getByCriteria(
           { id: messages[0].content },
           user.id,
+          session,
         )
 
         const log = logs[0]
@@ -795,10 +789,10 @@ export class TaskToolsExecutorService extends AbstractToolExecutor {
       } else {
         const mockRecoverTask = await this.taskService.recover(
           {
-            ids: mappedIds,
+            ids: args.ids,
           },
           user,
-          undefined,
+          session,
           true,
         )
 
@@ -822,14 +816,16 @@ export class TaskToolsExecutorService extends AbstractToolExecutor {
 
     const result = await this.taskService.recover(
       {
-        ids: mappedIds,
+        ids: args.ids,
       },
       user,
+      session,
     )
 
     const logs = await this.operationLogService.getByCriteria(
       { id: result.logId!.toString() },
       user.id,
+      session,
     )
 
     await dispatchCustomEvent(
@@ -854,8 +850,8 @@ export class TaskToolsExecutorService extends AbstractToolExecutor {
     return new SuccessToolResult(resultMessage)
   }
 
-  public async cloneTasks(payload: DispatchPayload) {
-    const { toolCall, config, tempToRealIdMap } = payload
+  public async cloneTasks(payload: DispatchPayload, session?: ClientSession) {
+    const { toolCall, config } = payload
 
     const args = toolCall.args as { ids: string[]; tempIds: string[] }
     const toolCallId = toolCall.id
@@ -869,18 +865,18 @@ export class TaskToolsExecutorService extends AbstractToolExecutor {
       )
     }
 
-    const mappedIds = args.ids.map((id) => tempToRealIdMap[id] || id) // Map temp IDs to real IDs using the provided map, fallback to original ID if not found in the map
-
     if (configurable.aiConfirmationType === AiConfirmationTypeEnum.ALWAYS) {
       const messages = await this.chatMessageService.getByCriteria(
         { pendingToolCallId: toolCallId, role: 'operation' },
         user.id,
+        session,
       )
 
       if (messages.length > 0) {
         const logs = await this.operationLogService.getByCriteria(
           { id: messages[0].content },
           user.id,
+          session,
         )
 
         const log = logs[0]
@@ -895,11 +891,12 @@ export class TaskToolsExecutorService extends AbstractToolExecutor {
       } else {
         const mockCloneTask = await this.taskService.clone(
           {
-            ids: mappedIds,
+            ids: args.ids,
           },
           user,
-          undefined,
+          session,
           true,
+          args.tempIds,
         )
 
         if (mockCloneTask.logId) {
@@ -922,14 +919,18 @@ export class TaskToolsExecutorService extends AbstractToolExecutor {
 
     const result = await this.taskService.clone(
       {
-        ids: mappedIds,
+        ids: args.ids,
       },
       user,
+      session,
+      false,
+      args.tempIds,
     )
 
     const logs = await this.operationLogService.getByCriteria(
       { id: result.logId!.toString() },
       user.id,
+      session,
     )
 
     await dispatchCustomEvent(
@@ -951,14 +952,6 @@ export class TaskToolsExecutorService extends AbstractToolExecutor {
       Log ID: ${result.logId}
     `
 
-    const tempToRealIdMapNew: Record<string, string> = {}
-
-    for (let i = 0; i < result.data.length; i++) {
-      tempToRealIdMapNew[args.ids[i]] = result.data[i].id.toString()
-    }
-
-    return new SuccessToolResult(resultMessage, {
-      tempToRealIdMap: tempToRealIdMapNew,
-    })
+    return new SuccessToolResult(resultMessage)
   }
 }

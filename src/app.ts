@@ -39,7 +39,7 @@ await connectToDatabase()
 
 const app = express()
 
-const frontUrl = process.env.FRONT_URL || 'https://kanbar.ru'
+const frontUrl = process.env.FRONT_URL || 'https://kanway.ru'
 const frontUrlWithoutProtocol = frontUrl.split('https://')[1]
 
 app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')))

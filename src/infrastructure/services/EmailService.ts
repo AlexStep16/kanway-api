@@ -42,7 +42,7 @@ export class EmailService {
       throw new NotFoundError(ErrorMessages.TOKEN_NOT_FOUND)
     }
 
-    const verificationUrl = `https://kanbar.com/verify?token=${tokenModel.token}`
+    const verificationUrl = `https://kanway.com/verify?token=${tokenModel.token}`
 
     try {
       const templatePath = path.resolve('email-templates/verify-email.html')
@@ -64,8 +64,8 @@ export class EmailService {
             plaintext: `Подтвердите почту по ссылке: ${verificationUrl}`,
           },
           subject: 'Подтверждение почты',
-          from_email: 'noreply@kanbar.ru',
-          from_name: 'Kanbar',
+          from_email: 'noreply@kanway.ru',
+          from_name: 'Kanway',
           track_links: 0,
           track_read: 0,
         },
@@ -111,7 +111,7 @@ export class EmailService {
       throw new NotFoundError(ErrorMessages.TOKEN_NOT_FOUND)
     }
 
-    const recoveryUrl = `https://kanbar.com/password-recovery?token=${tokenModel.token}`
+    const recoveryUrl = `https://kanway.com/password-recovery?token=${tokenModel.token}`
     try {
       const templatePath = path.resolve('email-templates/password-recovery.html')
 
@@ -132,8 +132,8 @@ export class EmailService {
             plaintext: `Восстановите пароль по ссылке: ${recoveryUrl}`,
           },
           subject: 'Восстановление пароля',
-          from_email: 'noreply@kanbar.ru',
-          from_name: 'Kanbar',
+          from_email: 'noreply@kanway.ru',
+          from_name: 'Kanway',
           track_links: 0,
           track_read: 0,
         },
@@ -201,8 +201,8 @@ export class EmailService {
             plaintext: `Сообщение от пользователя`,
           },
           subject: 'Сообщение в поддержку',
-          from_email: 'noreply@kanbar.ru',
-          from_name: 'Kanbar',
+          from_email: 'noreply@kanway.ru',
+          from_name: 'Kanway',
           track_links: 0,
           track_read: 0,
         },
@@ -251,9 +251,9 @@ export class EmailService {
           html: htmlContent,
           plaintext: `К сожалению, ваш платеж не прошёл.`,
         },
-        subject: 'Проблема с оплатой подписки — Kanbar.',
-        from_email: 'noreply@kanbar.ru',
-        from_name: 'Kanbar',
+        subject: 'Проблема с оплатой подписки — Kanway.',
+        from_email: 'noreply@kanway.ru',
+        from_name: 'Kanway',
         track_links: 0,
         track_read: 0,
       },
@@ -294,9 +294,9 @@ export class EmailService {
           html: htmlContent,
           plaintext: `К сожалению, ваш платеж не прошёл.`,
         },
-        subject: 'Проблема с оплатой подписки — Kanbar.',
-        from_email: 'noreply@kanbar.ru',
-        from_name: 'Kanbar',
+        subject: 'Проблема с оплатой подписки — Kanway.',
+        from_email: 'noreply@kanway.ru',
+        from_name: 'Kanway',
         track_links: 0,
         track_read: 0,
       },
@@ -354,9 +354,9 @@ export class EmailService {
           html: htmlContent,
           plaintext: `Поздравляем! Ваш платеж прошёл успешно.`,
         },
-        subject: 'Успешная оплата подписки — Kanbar.',
-        from_email: 'noreply@kanbar.ru',
-        from_name: 'Kanbar',
+        subject: 'Успешная оплата подписки — Kanway.',
+        from_email: 'noreply@kanway.ru',
+        from_name: 'Kanway',
         track_links: 0,
         track_read: 0,
       },

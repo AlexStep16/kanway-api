@@ -53,7 +53,7 @@ export class AuthService {
 
       await this.settingService.create(
         {
-          aiName: 'Kanbar',
+          aiName: 'Kanway',
           aiConfirmationType: AiConfirmationTypeEnum.ONLY_FOR_SENSITIVE,
         },
         newUser[0].id,

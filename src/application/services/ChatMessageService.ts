@@ -94,6 +94,41 @@ export class ChatMessageService extends BaseService<
     return chatMessage
   }
 
+  private async _executeCreateManyTransaction(
+    data: ChatMessageDTO[],
+    user: IUser,
+    session: ClientSession,
+  ): Promise<IResponseWithLog<IChatMessage[]>> {
+    const chatMessages = await this.repository.createMany(
+      data.map((dto) => ({
+        role: dto.role,
+        content: dto.content,
+        listType: dto.listType,
+        pendingToolCallId: dto.pendingToolCallId,
+        userId: user.id,
+        chatId: dto.chatId,
+        threadId: dto.threadId,
+      })),
+      session,
+    )
+
+    const log = await this.operationLogService.create(
+      {
+        operationType: OperationTypesEnum.CREATE,
+        collectionName: CollectionsEnum.CHAT_HISTORIES,
+        entitiesAfter: chatMessages,
+        dependencies: [],
+      },
+      user.id,
+      session,
+    )
+
+    return {
+      data: chatMessages,
+      logId: log.id,
+    }
+  }
+
   private async _executeCreateTransaction(
     data: ChatMessageDTO,
     user: IUser,
@@ -139,6 +174,20 @@ export class ChatMessageService extends BaseService<
     } else {
       return await this._retryExecutor((session: ClientSession) =>
         this._executeCreateTransaction(data, user, session),
+      )
+    }
+  }
+
+  public async createMany(
+    data: ChatMessageDTO[],
+    user: IUser,
+    externalSession?: ClientSession,
+  ): Promise<IResponseWithLog<IChatMessage[]>> {
+    if (externalSession) {
+      return this._executeCreateManyTransaction(data, user, externalSession)
+    } else {
+      return await this._retryExecutor((session: ClientSession) =>
+        this._executeCreateManyTransaction(data, user, session),
       )
     }
   }

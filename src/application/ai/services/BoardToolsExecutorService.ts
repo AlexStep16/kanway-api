@@ -3,7 +3,7 @@ import { AiConfirmationTypeEnum } from '@/domain/enums/AiConfirmationTypeEnum.ts
 import { CustomEvents } from '@/enums/CustomEvents.ts'
 import { dispatchCustomEvent } from '@langchain/core/callbacks/dispatch'
 import Fuse from 'fuse.js'
-import { FilterQuery, Types } from 'mongoose'
+import { ClientSession, FilterQuery, Types } from 'mongoose'
 import { ConfirmationEntityToolResult } from '../tools/helpers/ConfirmationEntityToolResult.ts'
 import { SuccessToolResult } from '../tools/helpers/SuccessToolResult.ts'
 import { toServerCaseKeys } from '@/utils/objectTransformers.ts'
@@ -58,7 +58,7 @@ export class BoardToolsExecutorService extends AbstractToolExecutor {
     }
   }
 
-  public async searchBoards(payload: DispatchPayload) {
+  public async searchBoards(payload: DispatchPayload, session?: ClientSession) {
     const HARD_SEARCH_LIMIT = 2000
 
     const { toolCall, userId } = payload
@@ -87,17 +87,13 @@ export class BoardToolsExecutorService extends AbstractToolExecutor {
 
     const unionFilter = { ...baseFilter, ...mongo_filter, user_id: new Types.ObjectId(userId) }
 
-    const filteredCount = await this.boardRepository.getCountByFilter(unionFilter)
+    const filteredCount = await this.boardRepository.getCountByFilter(unionFilter, session)
 
-    const boards = await this.boardRepository.findByFilter<IBoardRawString>(
-      unionFilter,
-      undefined,
-      {
-        isMongoCase: true,
-        limit: scaledLimit,
-        sort: { rank: 1 },
-      },
-    )
+    const boards = await this.boardRepository.findByFilter<IBoardRawString>(unionFilter, session, {
+      isMongoCase: true,
+      limit: scaledLimit,
+      sort: { rank: 1 },
+    })
 
     if (search_query) {
       if (boards.length === 0) {
@@ -159,25 +155,20 @@ export class BoardToolsExecutorService extends AbstractToolExecutor {
   private async _populateBoardsParentData(
     boards: CreateBoardsDTO['boards'],
     userId: string,
-    tempToRealIdMap: Record<string, string>,
+    session?: ClientSession,
   ): Promise<IBoardCreatePopulated[]> {
     const uniqueWorkspaceIds = Array.from(
-      new Set(
-        boards
-          .filter((board) => tempToRealIdMap[board.workspace] || board.workspace)
-          .map((board) => tempToRealIdMap[board.workspace] || board.workspace),
-      ),
+      new Set(boards.filter((board) => board.workspace).map((board) => board.workspace)),
     )
 
     const workspaces = await this.workspaceService.getByCriteria(
       { ids: uniqueWorkspaceIds },
       new Types.ObjectId(userId),
+      session,
     )
 
     return boards.map((board) => {
-      const workspace = workspaces.find(
-        (w) => w.id.toString() === (tempToRealIdMap[board.workspace] || board.workspace),
-      )
+      const workspace = workspaces.find((w) => w.id.toString() === board.workspace)
 
       if (!workspace) {
         throw new Error(`Workspace with ID ${board.workspace} not found for board ${board.name}`)
@@ -207,26 +198,22 @@ export class BoardToolsExecutorService extends AbstractToolExecutor {
     })
   }
 
-  private _transformRawUpdateToDTO(
-    boardsRaw: UpdateBoardsDTO['updates'],
-    tempToRealIdMap: Record<string, string>,
-  ): BoardEditManyDTO {
+  private _transformRawUpdateToDTO(boardsRaw: UpdateBoardsDTO['updates']): BoardEditManyDTO {
     return boardsRaw.map((board) => {
       const update: BoardEditDTO = {
-        id: tempToRealIdMap[board._id] || board._id,
+        id: board._id,
       }
 
       if (typeof board.name !== 'undefined') update.name = board.name
-      if (typeof board.workspace !== 'undefined')
-        update.workspaceId = tempToRealIdMap[board.workspace] || board.workspace
+      if (typeof board.workspace !== 'undefined') update.workspaceId = board.workspace
       if (typeof board.is_favorite !== 'undefined') update.isFavorite = board.is_favorite
 
       return update
     })
   }
 
-  public async createBoards(payload: DispatchPayload) {
-    const { toolCall, config, tempToRealIdMap } = payload
+  public async createBoards(payload: DispatchPayload, session?: ClientSession) {
+    const { toolCall, config } = payload
     const args = toolCall.args as CreateBoardsDTO
     const toolCallId = toolCall.id
 
@@ -246,7 +233,7 @@ export class BoardToolsExecutorService extends AbstractToolExecutor {
     const populatedBoards = await this._populateBoardsParentData(
       args.boards,
       user.id.toString(),
-      tempToRealIdMap,
+      session,
     )
 
     let dtoBoards = this._transformRawCreateToDTO(populatedBoards)
@@ -255,12 +242,14 @@ export class BoardToolsExecutorService extends AbstractToolExecutor {
       const messages = await this.chatMessageService.getByCriteria(
         { pendingToolCallId: toolCallId, role: 'operation' },
         user.id,
+        session,
       )
 
       if (messages.length > 0) {
         const logs = await this.operationLogService.getByCriteria(
           { id: messages[0].content },
           user.id,
+          session,
         )
 
         const log = logs[0]
@@ -275,12 +264,7 @@ export class BoardToolsExecutorService extends AbstractToolExecutor {
           return new FailedToolResult('Board creation pending user confirmation.')
         }
       } else {
-        const mockCreateBoards = await this.boardService.createMany(
-          dtoBoards,
-          user,
-          undefined,
-          true,
-        )
+        const mockCreateBoards = await this.boardService.createMany(dtoBoards, user, session, true)
 
         if (mockCreateBoards.logId) {
           return new ConfirmationEntityToolResult({
@@ -300,11 +284,12 @@ export class BoardToolsExecutorService extends AbstractToolExecutor {
       config,
     )
 
-    const createdBoards = await this.boardService.createMany(dtoBoards, user)
+    const createdBoards = await this.boardService.createMany(dtoBoards, user, session)
 
     const logs = await this.operationLogService.getByCriteria(
       { id: createdBoards.logId!.toString() },
       user.id,
+      session,
     )
 
     await dispatchCustomEvent(
@@ -316,12 +301,6 @@ export class BoardToolsExecutorService extends AbstractToolExecutor {
       config,
     )
 
-    const tempToRealIdMapNew: Record<string, string> = {}
-
-    for (let i = 0; i < createdBoards.data.length; i++) {
-      tempToRealIdMapNew[args.boards[i]._id] = createdBoards.data[i].id.toString()
-    }
-
     const resultInfo = createdBoards.data.map((board) => ({
       id: board.id,
       name: board.name,
@@ -332,13 +311,11 @@ export class BoardToolsExecutorService extends AbstractToolExecutor {
       Log ID: ${createdBoards.logId}
     `
 
-    return new SuccessToolResult(resultMessage, {
-      tempToRealIdMap: tempToRealIdMapNew,
-    })
+    return new SuccessToolResult(resultMessage)
   }
 
-  public async updateBoards(payload: DispatchPayload) {
-    const { toolCall, config, tempToRealIdMap } = payload
+  public async updateBoards(payload: DispatchPayload, session?: ClientSession) {
+    const { toolCall, config } = payload
     const args = toolCall.args as UpdateBoardsDTO
     const toolCallId = toolCall.id
 
@@ -355,18 +332,20 @@ export class BoardToolsExecutorService extends AbstractToolExecutor {
       )
     }
 
-    let dtoBoards = this._transformRawUpdateToDTO(args.updates, tempToRealIdMap)
+    let dtoBoards = this._transformRawUpdateToDTO(args.updates)
 
     if (configurable.aiConfirmationType === AiConfirmationTypeEnum.ALWAYS) {
       const messages = await this.chatMessageService.getByCriteria(
         { pendingToolCallId: toolCallId, role: 'operation' },
         user.id,
+        session,
       )
 
       if (messages.length > 0) {
         const logs = await this.operationLogService.getByCriteria(
           { id: messages[0].content },
           user.id,
+          session,
         )
 
         const log = logs[0]
@@ -379,7 +358,7 @@ export class BoardToolsExecutorService extends AbstractToolExecutor {
           dtoBoards = dtoBoards.filter((board) => selectedIds.includes(board.id))
         }
       } else {
-        const mockUpdateBoards = await this.boardService.editMany(dtoBoards, user, undefined, true)
+        const mockUpdateBoards = await this.boardService.editMany(dtoBoards, user, session, true)
 
         if (mockUpdateBoards.logId) {
           return new ConfirmationEntityToolResult({
@@ -399,12 +378,15 @@ export class BoardToolsExecutorService extends AbstractToolExecutor {
       config,
     )
 
-    const updatedBoards = (await this.boardService.editMany(dtoBoards, user)) as IResponseWithLog<
-      IBoardPopulated[]
-    >
+    const updatedBoards = (await this.boardService.editMany(
+      dtoBoards,
+      user,
+      session,
+    )) as IResponseWithLog<IBoardPopulated[]>
     const logs = await this.operationLogService.getByCriteria(
       { id: updatedBoards.logId!.toString() },
       user.id,
+      session,
     )
 
     await dispatchCustomEvent(
@@ -426,8 +408,8 @@ export class BoardToolsExecutorService extends AbstractToolExecutor {
     return new SuccessToolResult(resultMessage)
   }
 
-  public async moveBoard(payload: DispatchPayload) {
-    const { toolCall, config, tempToRealIdMap } = payload
+  public async moveBoard(payload: DispatchPayload, session?: ClientSession) {
+    const { toolCall, config } = payload
     const args = toolCall.args as MoveBoardDTO
     const toolCallId = toolCall.id
 
@@ -445,24 +427,24 @@ export class BoardToolsExecutorService extends AbstractToolExecutor {
     }
 
     const dto: BoardMoveDTO = {
-      id: tempToRealIdMap[args.id] || args.id,
-      beforeId: args.before_id ? tempToRealIdMap[args.before_id] || args.before_id : undefined,
-      afterId: args.after_id ? tempToRealIdMap[args.after_id] || args.after_id : undefined,
-      newWorkspaceId: args.new_workspace_id
-        ? tempToRealIdMap[args.new_workspace_id] || args.new_workspace_id
-        : undefined,
+      id: args.id,
+      beforeId: args.before_id ? args.before_id : undefined,
+      afterId: args.after_id ? args.after_id : undefined,
+      newWorkspaceId: args.new_workspace_id ? args.new_workspace_id : undefined,
     }
 
     if (configurable.aiConfirmationType === AiConfirmationTypeEnum.ALWAYS) {
       const messages = await this.chatMessageService.getByCriteria(
         { pendingToolCallId: toolCallId, role: 'operation' },
         user.id,
+        session,
       )
 
       if (messages.length > 0) {
         const logs = await this.operationLogService.getByCriteria(
           { id: messages[0].content },
           user.id,
+          session,
         )
 
         const log = logs[0]
@@ -471,7 +453,7 @@ export class BoardToolsExecutorService extends AbstractToolExecutor {
           return new SuccessToolResult('Board move cancelled by user.')
         }
       } else {
-        const mockMoveBoard = await this.boardService.move(dto, user, undefined, true)
+        const mockMoveBoard = await this.boardService.move(dto, user, session, true)
 
         if (mockMoveBoard.logId) {
           return new ConfirmationEntityToolResult({
@@ -491,11 +473,12 @@ export class BoardToolsExecutorService extends AbstractToolExecutor {
       config,
     )
 
-    const result = await this.boardService.move(dto, user)
+    const result = await this.boardService.move(dto, user, session)
 
     const logs = await this.operationLogService.getByCriteria(
       { id: result.logId!.toString() },
       user.id,
+      session,
     )
 
     await dispatchCustomEvent(
@@ -517,8 +500,8 @@ export class BoardToolsExecutorService extends AbstractToolExecutor {
     return new SuccessToolResult(resultMessage)
   }
 
-  public async deleteBoards(payload: DispatchPayload) {
-    const { toolCall, config, tempToRealIdMap } = payload
+  public async deleteBoards(payload: DispatchPayload, session?: ClientSession) {
+    const { toolCall, config } = payload
 
     const args = toolCall.args as { ids: string[] }
     const toolCallId = toolCall.id
@@ -532,18 +515,18 @@ export class BoardToolsExecutorService extends AbstractToolExecutor {
       )
     }
 
-    const mappedIds = args.ids.map((id) => tempToRealIdMap[id] || id) // Map temp IDs to real IDs using the provided map, fallback to original ID if not found in the map
-
     if (configurable.aiConfirmationType === AiConfirmationTypeEnum.ALWAYS) {
       const messages = await this.chatMessageService.getByCriteria(
         { pendingToolCallId: toolCallId, role: 'operation' },
         user.id,
+        session,
       )
 
       if (messages.length > 0) {
         const logs = await this.operationLogService.getByCriteria(
           { id: messages[0].content },
           user.id,
+          session,
         )
 
         const log = logs[0]
@@ -558,10 +541,10 @@ export class BoardToolsExecutorService extends AbstractToolExecutor {
       } else {
         const mockDeleteBoard = await this.boardService.delete(
           {
-            ids: mappedIds,
+            ids: args.ids,
           },
           user,
-          undefined,
+          session,
           true,
         )
 
@@ -585,14 +568,16 @@ export class BoardToolsExecutorService extends AbstractToolExecutor {
 
     const result = await this.boardService.delete(
       {
-        ids: mappedIds,
+        ids: args.ids,
       },
       user,
+      session,
     )
 
     const logs = await this.operationLogService.getByCriteria(
       { id: result.logId!.toString() },
       user.id,
+      session,
     )
 
     await dispatchCustomEvent(
@@ -617,8 +602,8 @@ export class BoardToolsExecutorService extends AbstractToolExecutor {
     return new SuccessToolResult(resultMessage)
   }
 
-  public async archiveBoards(payload: DispatchPayload) {
-    const { toolCall, config, tempToRealIdMap } = payload
+  public async archiveBoards(payload: DispatchPayload, session?: ClientSession) {
+    const { toolCall, config } = payload
 
     const args = toolCall.args as { ids: string[] }
     const toolCallId = toolCall.id
@@ -632,18 +617,18 @@ export class BoardToolsExecutorService extends AbstractToolExecutor {
       )
     }
 
-    const mappedIds = args.ids.map((id) => tempToRealIdMap[id] || id) // Map temp IDs to real IDs using the provided map, fallback to original ID if not found in the map
-
     if (configurable.aiConfirmationType === AiConfirmationTypeEnum.ALWAYS) {
       const messages = await this.chatMessageService.getByCriteria(
         { pendingToolCallId: toolCallId, role: 'operation' },
         user.id,
+        session,
       )
 
       if (messages.length > 0) {
         const logs = await this.operationLogService.getByCriteria(
           { id: messages[0].content },
           user.id,
+          session,
         )
 
         const log = logs[0]
@@ -658,10 +643,10 @@ export class BoardToolsExecutorService extends AbstractToolExecutor {
       } else {
         const mockArchiveBoard = await this.boardService.archive(
           {
-            ids: mappedIds,
+            ids: args.ids,
           },
           user,
-          undefined,
+          session,
           true,
         )
 
@@ -685,14 +670,16 @@ export class BoardToolsExecutorService extends AbstractToolExecutor {
 
     const result = await this.boardService.archive(
       {
-        ids: mappedIds,
+        ids: args.ids,
       },
       user,
+      session,
     )
 
     const logs = await this.operationLogService.getByCriteria(
       { id: result.logId!.toString() },
       user.id,
+      session,
     )
 
     await dispatchCustomEvent(
@@ -717,8 +704,8 @@ export class BoardToolsExecutorService extends AbstractToolExecutor {
     return new SuccessToolResult(resultMessage)
   }
 
-  public async recoverBoards(payload: DispatchPayload) {
-    const { toolCall, config, tempToRealIdMap } = payload
+  public async recoverBoards(payload: DispatchPayload, session?: ClientSession) {
+    const { toolCall, config } = payload
 
     const args = toolCall.args as { ids: string[] }
     const toolCallId = toolCall.id
@@ -732,18 +719,18 @@ export class BoardToolsExecutorService extends AbstractToolExecutor {
       )
     }
 
-    const mappedIds = args.ids.map((id) => tempToRealIdMap[id] || id) // Map temp IDs to real IDs using the provided map, fallback to original ID if not found in the map
-
     if (configurable.aiConfirmationType === AiConfirmationTypeEnum.ALWAYS) {
       const messages = await this.chatMessageService.getByCriteria(
         { pendingToolCallId: toolCallId, role: 'operation' },
         user.id,
+        session,
       )
 
       if (messages.length > 0) {
         const logs = await this.operationLogService.getByCriteria(
           { id: messages[0].content },
           user.id,
+          session,
         )
 
         const log = logs[0]
@@ -758,10 +745,10 @@ export class BoardToolsExecutorService extends AbstractToolExecutor {
       } else {
         const mockRecoverBoard = await this.boardService.recover(
           {
-            ids: mappedIds,
+            ids: args.ids,
           },
           user,
-          undefined,
+          session,
           true,
         )
 
@@ -785,14 +772,16 @@ export class BoardToolsExecutorService extends AbstractToolExecutor {
 
     const result = await this.boardService.recover(
       {
-        ids: mappedIds,
+        ids: args.ids,
       },
       user,
+      session,
     )
 
     const logs = await this.operationLogService.getByCriteria(
       { id: result.logId!.toString() },
       user.id,
+      session,
     )
 
     await dispatchCustomEvent(
@@ -817,10 +806,10 @@ export class BoardToolsExecutorService extends AbstractToolExecutor {
     return new SuccessToolResult(resultMessage)
   }
 
-  public async cloneBoards(payload: DispatchPayload) {
-    const { toolCall, config, tempToRealIdMap } = payload
+  public async cloneBoards(payload: DispatchPayload, session?: ClientSession) {
+    const { toolCall, config } = payload
 
-    const args = toolCall.args as { ids: string[] }
+    const args = toolCall.args as { ids: string[]; tempIds: string[] }
     const toolCallId = toolCall.id
 
     const configurable = config.configurable as Configurable
@@ -832,18 +821,18 @@ export class BoardToolsExecutorService extends AbstractToolExecutor {
       )
     }
 
-    const mappedIds = args.ids.map((id) => tempToRealIdMap[id] || id) // Map temp IDs to real IDs using the provided map, fallback to original ID if not found in the map
-
     if (configurable.aiConfirmationType === AiConfirmationTypeEnum.ALWAYS) {
       const messages = await this.chatMessageService.getByCriteria(
         { pendingToolCallId: toolCallId, role: 'operation' },
         user.id,
+        session,
       )
 
       if (messages.length > 0) {
         const logs = await this.operationLogService.getByCriteria(
           { id: messages[0].content },
           user.id,
+          session,
         )
 
         const log = logs[0]
@@ -858,11 +847,12 @@ export class BoardToolsExecutorService extends AbstractToolExecutor {
       } else {
         const mockCloneBoard = await this.boardService.clone(
           {
-            ids: mappedIds,
+            ids: args.ids,
           },
           user,
-          undefined,
+          session,
           true,
+          args.tempIds,
         )
 
         if (mockCloneBoard.logId) {
@@ -885,14 +875,18 @@ export class BoardToolsExecutorService extends AbstractToolExecutor {
 
     const result = await this.boardService.clone(
       {
-        ids: mappedIds,
+        ids: args.ids,
       },
       user,
+      session,
+      true,
+      args.tempIds,
     )
 
     const logs = await this.operationLogService.getByCriteria(
       { id: result.logId!.toString() },
       user.id,
+      session,
     )
 
     await dispatchCustomEvent(
@@ -914,14 +908,6 @@ export class BoardToolsExecutorService extends AbstractToolExecutor {
       Log ID: ${logs[0].id}
     `
 
-    const tempToRealIdMapNew: Record<string, string> = {}
-
-    for (let i = 0; i < result.data.length; i++) {
-      tempToRealIdMapNew[args.ids[i]] = result.data[i].id.toString()
-    }
-
-    return new SuccessToolResult(resultMessage, {
-      tempToRealIdMap: tempToRealIdMapNew,
-    })
+    return new SuccessToolResult(resultMessage)
   }
 }

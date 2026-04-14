@@ -7,12 +7,13 @@ export const ExecutePlanDTOSchema = z.object({
       'The list of instructions for the coder to execute. Each item should be a clear, concise instruction.',
     ),
   payload: z
-    .any()
+    .record(z.string(), z.any())
     .describe(
       'ONE-STEP RULE: For 95% of requests (Creation, Updates, Metadata Moves), this array MUST contain exactly ONE string. ' +
         "Combine 'Create Categories', 'Create Tasks', and 'Render' into a single technical instruction. " +
         "Multiple steps are allowed ONLY if a 'semantic_search' review is required between actions.",
-    ),
+    )
+    .optional(),
 })
 
 export type ExecutePlanDTO = z.infer<typeof ExecutePlanDTOSchema>

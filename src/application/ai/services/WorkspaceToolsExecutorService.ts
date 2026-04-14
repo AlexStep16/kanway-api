@@ -3,7 +3,7 @@ import { AiConfirmationTypeEnum } from '@/domain/enums/AiConfirmationTypeEnum.ts
 import { CustomEvents } from '@/enums/CustomEvents.ts'
 import { dispatchCustomEvent } from '@langchain/core/callbacks/dispatch'
 import Fuse from 'fuse.js'
-import { FilterQuery, Types } from 'mongoose'
+import { ClientSession, FilterQuery, Types } from 'mongoose'
 import { ConfirmationEntityToolResult } from '../tools/helpers/ConfirmationEntityToolResult.ts'
 import { SuccessToolResult } from '../tools/helpers/SuccessToolResult.ts'
 import { FailedToolResult } from '../tools/helpers/FailedToolResult.ts'
@@ -51,7 +51,7 @@ export class WorkspaceToolsExecutorService extends AbstractToolExecutor {
     }
   }
 
-  public async searchWorkspaces(payload: DispatchPayload) {
+  public async searchWorkspaces(payload: DispatchPayload, session?: ClientSession) {
     const HARD_SEARCH_LIMIT = 2000
 
     const { toolCall, userId } = payload
@@ -79,11 +79,11 @@ export class WorkspaceToolsExecutorService extends AbstractToolExecutor {
 
     const unionFilter = { ...baseFilter, ...mongo_filter, user_id: new Types.ObjectId(userId) }
 
-    const filteredCount = await this.workspaceRepository.getCountByFilter(unionFilter)
+    const filteredCount = await this.workspaceRepository.getCountByFilter(unionFilter, session)
 
     const workspaces = await this.workspaceRepository.findByFilter<IWorkspaceRawString>(
       unionFilter,
-      undefined,
+      session,
       {
         isMongoCase: true,
         limit: scaledLimit,
@@ -167,11 +167,10 @@ export class WorkspaceToolsExecutorService extends AbstractToolExecutor {
 
   private _transformRawUpdateToDTO(
     workspaces: UpdateWorkspacesDTO['updates'],
-    tempToRealIdMap: Record<string, string>,
   ): WorkspaceEditManyDTO {
     return workspaces.map((workspace) => {
       const update: WorkspaceEditDTO = {
-        id: tempToRealIdMap[workspace._id] || workspace._id,
+        id: workspace._id,
       }
 
       if (typeof workspace.name !== 'undefined') update.name = workspace.name
@@ -182,7 +181,7 @@ export class WorkspaceToolsExecutorService extends AbstractToolExecutor {
     })
   }
 
-  public async createWorkspaces(payload: DispatchPayload) {
+  public async createWorkspaces(payload: DispatchPayload, session?: ClientSession) {
     const { toolCall, config } = payload
     const args = toolCall.args as CreateWorkspacesDTO
     const toolCallId = toolCall.id
@@ -206,12 +205,14 @@ export class WorkspaceToolsExecutorService extends AbstractToolExecutor {
       const messages = await this.chatMessageService.getByCriteria(
         { pendingToolCallId: toolCallId, role: 'operation' },
         user.id,
+        session,
       )
 
       if (messages.length > 0) {
         const logs = await this.operationLogService.getByCriteria(
           { id: messages[0].content },
           user.id,
+          session,
         )
 
         const log = logs[0]
@@ -229,7 +230,7 @@ export class WorkspaceToolsExecutorService extends AbstractToolExecutor {
         const mockCreateWorkspaces = await this.workspaceService.createMany(
           dtoWorkspaces,
           user,
-          undefined,
+          session,
           true,
         )
 
@@ -251,11 +252,12 @@ export class WorkspaceToolsExecutorService extends AbstractToolExecutor {
       config,
     )
 
-    const result = await this.workspaceService.createMany(dtoWorkspaces, user)
+    const result = await this.workspaceService.createMany(dtoWorkspaces, user, session)
 
     const logs = await this.operationLogService.getByCriteria(
       { id: result.logId!.toString() },
       user.id,
+      session,
     )
 
     await dispatchCustomEvent(
@@ -267,12 +269,6 @@ export class WorkspaceToolsExecutorService extends AbstractToolExecutor {
       config,
     )
 
-    const tempToRealIdMap: Record<string, string> = {}
-
-    for (let i = 0; i < result.data.length; i++) {
-      tempToRealIdMap[args.workspaces[i]._id] = result.data[i].id.toString()
-    }
-
     const resultInfo = result.data.map((workspace) => ({
       id: workspace.id,
       name: workspace.name,
@@ -283,13 +279,11 @@ export class WorkspaceToolsExecutorService extends AbstractToolExecutor {
       Log ID: ${result.logId}
     `
 
-    return new SuccessToolResult(resultMessage, {
-      tempToRealIdMap,
-    })
+    return new SuccessToolResult(resultMessage)
   }
 
-  public async updateWorkspaces(payload: DispatchPayload) {
-    const { toolCall, config, tempToRealIdMap } = payload
+  public async updateWorkspaces(payload: DispatchPayload, session?: ClientSession) {
+    const { toolCall, config } = payload
     const args = toolCall.args as UpdateWorkspacesDTO
     const toolCallId = toolCall.id
 
@@ -306,18 +300,20 @@ export class WorkspaceToolsExecutorService extends AbstractToolExecutor {
       )
     }
 
-    let dtoWorkspaces = this._transformRawUpdateToDTO(args.updates, tempToRealIdMap)
+    let dtoWorkspaces = this._transformRawUpdateToDTO(args.updates)
 
     if (configurable.aiConfirmationType === AiConfirmationTypeEnum.ALWAYS) {
       const messages = await this.chatMessageService.getByCriteria(
         { pendingToolCallId: toolCallId, role: 'operation' },
         user.id,
+        session,
       )
 
       if (messages.length > 0) {
         const logs = await this.operationLogService.getByCriteria(
           { id: messages[0].content },
           user.id,
+          session,
         )
 
         const log = logs[0]
@@ -333,7 +329,7 @@ export class WorkspaceToolsExecutorService extends AbstractToolExecutor {
         const mockUpdateWorkspaces = await this.workspaceService.editMany(
           dtoWorkspaces,
           user,
-          undefined,
+          session,
           true,
         )
 
@@ -355,12 +351,15 @@ export class WorkspaceToolsExecutorService extends AbstractToolExecutor {
       config,
     )
 
-    const result = (await this.workspaceService.editMany(dtoWorkspaces, user)) as IResponseWithLog<
-      IWorkspace[]
-    >
+    const result = (await this.workspaceService.editMany(
+      dtoWorkspaces,
+      user,
+      session,
+    )) as IResponseWithLog<IWorkspace[]>
     const logs = await this.operationLogService.getByCriteria(
       { id: result.logId!.toString() },
       user.id,
+      session,
     )
 
     await dispatchCustomEvent(
@@ -382,8 +381,8 @@ export class WorkspaceToolsExecutorService extends AbstractToolExecutor {
     return new SuccessToolResult(resultMessage)
   }
 
-  public async moveWorkspace(payload: DispatchPayload) {
-    const { toolCall, config, tempToRealIdMap } = payload
+  public async moveWorkspace(payload: DispatchPayload, session?: ClientSession) {
+    const { toolCall, config } = payload
     const args = toolCall.args as MoveWorkspaceDTO
     const toolCallId = toolCall.id
 
@@ -401,21 +400,23 @@ export class WorkspaceToolsExecutorService extends AbstractToolExecutor {
     }
 
     const dto: WorkspaceMoveDTO = {
-      id: tempToRealIdMap[args.id] || args.id,
-      beforeId: args.before_id ? tempToRealIdMap[args.before_id] || args.before_id : undefined,
-      afterId: args.after_id ? tempToRealIdMap[args.after_id] || args.after_id : undefined,
+      id: args.id,
+      beforeId: args.before_id ? args.before_id : undefined,
+      afterId: args.after_id ? args.after_id : undefined,
     }
 
     if (configurable.aiConfirmationType === AiConfirmationTypeEnum.ALWAYS) {
       const messages = await this.chatMessageService.getByCriteria(
         { pendingToolCallId: toolCallId, role: 'operation' },
         user.id,
+        session,
       )
 
       if (messages.length > 0) {
         const logs = await this.operationLogService.getByCriteria(
           { id: messages[0].content },
           user.id,
+          session,
         )
 
         const log = logs[0]
@@ -424,7 +425,7 @@ export class WorkspaceToolsExecutorService extends AbstractToolExecutor {
           return new SuccessToolResult('Workspace move cancelled by user.')
         }
       } else {
-        const mockMoveWorkspace = await this.workspaceService.move(dto, user, undefined, true)
+        const mockMoveWorkspace = await this.workspaceService.move(dto, user, session, true)
 
         if (mockMoveWorkspace.logId) {
           return new ConfirmationEntityToolResult({
@@ -444,11 +445,12 @@ export class WorkspaceToolsExecutorService extends AbstractToolExecutor {
       config,
     )
 
-    const result = await this.workspaceService.move(dto, user)
+    const result = await this.workspaceService.move(dto, user, session)
 
     const logs = await this.operationLogService.getByCriteria(
       { id: result.logId!.toString() },
       user.id,
+      session,
     )
 
     await dispatchCustomEvent(
@@ -470,8 +472,8 @@ export class WorkspaceToolsExecutorService extends AbstractToolExecutor {
     return new SuccessToolResult(resultMessage)
   }
 
-  public async deleteWorkspaces(payload: DispatchPayload) {
-    const { toolCall, config, tempToRealIdMap } = payload
+  public async deleteWorkspaces(payload: DispatchPayload, session?: ClientSession) {
+    const { toolCall, config } = payload
 
     const args = toolCall.args as { ids: string[] }
     const toolCallId = toolCall.id
@@ -485,18 +487,18 @@ export class WorkspaceToolsExecutorService extends AbstractToolExecutor {
       )
     }
 
-    const mappedIds = args.ids.map((id) => tempToRealIdMap[id] || id) // Map temp IDs to real IDs using the provided map, fallback to original ID if not found in the map
-
     if (configurable.aiConfirmationType === AiConfirmationTypeEnum.ALWAYS) {
       const messages = await this.chatMessageService.getByCriteria(
         { pendingToolCallId: toolCallId, role: 'operation' },
         user.id,
+        session,
       )
 
       if (messages.length > 0) {
         const logs = await this.operationLogService.getByCriteria(
           { id: messages[0].content },
           user.id,
+          session,
         )
 
         const log = logs[0]
@@ -511,10 +513,10 @@ export class WorkspaceToolsExecutorService extends AbstractToolExecutor {
       } else {
         const mockDeleteWorkspace = await this.workspaceService.delete(
           {
-            ids: mappedIds,
+            ids: args.ids,
           },
           user,
-          undefined,
+          session,
           true,
         )
 
@@ -538,14 +540,16 @@ export class WorkspaceToolsExecutorService extends AbstractToolExecutor {
 
     const result = await this.workspaceService.delete(
       {
-        ids: mappedIds,
+        ids: args.ids,
       },
       user,
+      session,
     )
 
     const logs = await this.operationLogService.getByCriteria(
       { id: result.logId!.toString() },
       user.id,
+      session,
     )
 
     await dispatchCustomEvent(
@@ -570,8 +574,8 @@ export class WorkspaceToolsExecutorService extends AbstractToolExecutor {
     return new SuccessToolResult(resultMessage)
   }
 
-  public async archiveWorkspaces(payload: DispatchPayload) {
-    const { toolCall, config, tempToRealIdMap } = payload
+  public async archiveWorkspaces(payload: DispatchPayload, session?: ClientSession) {
+    const { toolCall, config } = payload
 
     const args = toolCall.args as { ids: string[] }
     const toolCallId = toolCall.id
@@ -585,18 +589,18 @@ export class WorkspaceToolsExecutorService extends AbstractToolExecutor {
       )
     }
 
-    const mappedIds = args.ids.map((id) => tempToRealIdMap[id] || id) // Map temp IDs to real IDs using the provided map, fallback to original ID if not found in the map
-
     if (configurable.aiConfirmationType === AiConfirmationTypeEnum.ALWAYS) {
       const messages = await this.chatMessageService.getByCriteria(
         { pendingToolCallId: toolCallId, role: 'operation' },
         user.id,
+        session,
       )
 
       if (messages.length > 0) {
         const logs = await this.operationLogService.getByCriteria(
           { id: messages[0].content },
           user.id,
+          session,
         )
 
         const log = logs[0]
@@ -611,10 +615,10 @@ export class WorkspaceToolsExecutorService extends AbstractToolExecutor {
       } else {
         const mockArchiveWorkspace = await this.workspaceService.archive(
           {
-            ids: mappedIds,
+            ids: args.ids,
           },
           user,
-          undefined,
+          session,
           true,
         )
 
@@ -638,14 +642,16 @@ export class WorkspaceToolsExecutorService extends AbstractToolExecutor {
 
     const result = await this.workspaceService.archive(
       {
-        ids: mappedIds,
+        ids: args.ids,
       },
       user,
+      session,
     )
 
     const logs = await this.operationLogService.getByCriteria(
       { id: result.logId!.toString() },
       user.id,
+      session,
     )
 
     await dispatchCustomEvent(
@@ -670,8 +676,8 @@ export class WorkspaceToolsExecutorService extends AbstractToolExecutor {
     return new SuccessToolResult(resultMessage)
   }
 
-  public async recoverWorkspaces(payload: DispatchPayload) {
-    const { toolCall, config, tempToRealIdMap } = payload
+  public async recoverWorkspaces(payload: DispatchPayload, session?: ClientSession) {
+    const { toolCall, config } = payload
 
     const args = toolCall.args as { ids: string[] }
     const toolCallId = toolCall.id
@@ -685,18 +691,18 @@ export class WorkspaceToolsExecutorService extends AbstractToolExecutor {
       )
     }
 
-    const mappedIds = args.ids.map((id) => tempToRealIdMap[id] || id) // Map temp IDs to real IDs using the provided map, fallback to original ID if not found in the map
-
     if (configurable.aiConfirmationType === AiConfirmationTypeEnum.ALWAYS) {
       const messages = await this.chatMessageService.getByCriteria(
         { pendingToolCallId: toolCallId, role: 'operation' },
         user.id,
+        session,
       )
 
       if (messages.length > 0) {
         const logs = await this.operationLogService.getByCriteria(
           { id: messages[0].content },
           user.id,
+          session,
         )
 
         const log = logs[0]
@@ -711,10 +717,10 @@ export class WorkspaceToolsExecutorService extends AbstractToolExecutor {
       } else {
         const mockRecoverWorkspace = await this.workspaceService.recover(
           {
-            ids: mappedIds,
+            ids: args.ids,
           },
           user,
-          undefined,
+          session,
           true,
         )
 
@@ -738,14 +744,16 @@ export class WorkspaceToolsExecutorService extends AbstractToolExecutor {
 
     const result = await this.workspaceService.recover(
       {
-        ids: mappedIds,
+        ids: args.ids,
       },
       user,
+      session,
     )
 
     const logs = await this.operationLogService.getByCriteria(
       { id: result.logId!.toString() },
       user.id,
+      session,
     )
 
     await dispatchCustomEvent(
@@ -770,10 +778,10 @@ export class WorkspaceToolsExecutorService extends AbstractToolExecutor {
     return new SuccessToolResult(resultMessage)
   }
 
-  public async cloneWorkspaces(payload: DispatchPayload) {
-    const { toolCall, config, tempToRealIdMap } = payload
+  public async cloneWorkspaces(payload: DispatchPayload, session?: ClientSession) {
+    const { toolCall, config } = payload
 
-    const args = toolCall.args as { ids: string[] }
+    const args = toolCall.args as { ids: string[]; tempIds: string[] }
     const toolCallId = toolCall.id
 
     const configurable = config.configurable as Configurable
@@ -785,18 +793,18 @@ export class WorkspaceToolsExecutorService extends AbstractToolExecutor {
       )
     }
 
-    const mappedIds = args.ids.map((id) => tempToRealIdMap[id] || id) // Map temp IDs to real IDs using the provided map, fallback to original ID if not found in the map
-
     if (configurable.aiConfirmationType === AiConfirmationTypeEnum.ALWAYS) {
       const messages = await this.chatMessageService.getByCriteria(
         { pendingToolCallId: toolCallId, role: 'operation' },
         user.id,
+        session,
       )
 
       if (messages.length > 0) {
         const logs = await this.operationLogService.getByCriteria(
           { id: messages[0].content },
           user.id,
+          session,
         )
 
         const log = logs[0]
@@ -811,11 +819,12 @@ export class WorkspaceToolsExecutorService extends AbstractToolExecutor {
       } else {
         const mockCloneWorkspace = await this.workspaceService.clone(
           {
-            ids: mappedIds,
+            ids: args.ids,
           },
           user,
-          undefined,
+          session,
           true,
+          args.tempIds,
         )
 
         if (mockCloneWorkspace.logId) {
@@ -838,14 +847,18 @@ export class WorkspaceToolsExecutorService extends AbstractToolExecutor {
 
     const result = await this.workspaceService.clone(
       {
-        ids: mappedIds,
+        ids: args.ids,
       },
       user,
+      session,
+      false,
+      args.tempIds,
     )
 
     const logs = await this.operationLogService.getByCriteria(
       { id: result.logId!.toString() },
       user.id,
+      session,
     )
 
     await dispatchCustomEvent(
@@ -867,14 +880,6 @@ export class WorkspaceToolsExecutorService extends AbstractToolExecutor {
       Log ID: ${result.logId}
     `
 
-    const tempToRealIdMapNew: Record<string, string> = {}
-
-    for (let i = 0; i < result.data.length; i++) {
-      tempToRealIdMapNew[args.ids[i]] = result.data[i].id.toString()
-    }
-
-    return new SuccessToolResult(resultMessage, {
-      tempToRealIdMap: tempToRealIdMapNew,
-    })
+    return new SuccessToolResult(resultMessage)
   }
 }

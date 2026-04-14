@@ -19,11 +19,10 @@ export const makeChatNameNode = (deps: AgentDependencies): any => {
       id: new Types.ObjectId().toString(),
       name: 'Придумываю название чату',
     })
-    await dispatchCustomEvent(CustomEvents.SYNTHESIZE_END, {})
 
     const { chatNameModel } = deps.models
 
-    const lastAIMessage = getLastAiMessage(state.messages)
+    const lastAIMessage = getLastAiMessage(state.final_messages)
 
     const prompt = ChatPromptTemplate.fromMessages([['system', ChatNamePrompt]])
 

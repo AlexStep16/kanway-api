@@ -10,7 +10,6 @@ export interface AgentDependencies {
   models: {
     plannerModel: BaseChatModel
     coderModel: BaseChatModel
-    replannerModel: BaseChatModel
     summarizerModel: BaseChatModel
     chatNameModel: BaseChatModel
   }

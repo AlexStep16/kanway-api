@@ -13,15 +13,11 @@ export const AgentStateAnnotation = Annotation.Root({
     reducer: messagesStateReducer,
     default: () => [],
   }),
+  final_messages: Annotation<BaseMessage[]>({
+    reducer: (_, y) => y,
+    default: () => [],
+  }),
   planner_messages: Annotation<BaseMessage[]>({
-    reducer: (_, y) => y,
-    default: () => [],
-  }),
-  replanner_messages: Annotation<BaseMessage[]>({
-    reducer: (_, y) => y,
-    default: () => [],
-  }),
-  last_execution_messages: Annotation<BaseMessage[]>({
     reducer: (_, y) => y,
     default: () => [],
   }),
@@ -29,19 +25,11 @@ export const AgentStateAnnotation = Annotation.Root({
     reducer: (_, y) => y,
     default: () => [],
   }),
-  current_step_index: Annotation<number>({
-    reducer: (_, y) => y,
-    default: () => 0,
-  }),
   current_payload: Annotation<Record<string, any>>({
     reducer: (_, y) => y,
     default: () => ({}),
   }),
   last_planner_tool_name: Annotation<string>({
-    reducer: (_, y) => y,
-    default: () => '',
-  }),
-  last_replanner_tool_name: Annotation<string>({
     reducer: (_, y) => y,
     default: () => '',
   }),
@@ -94,10 +82,6 @@ export const AgentStateAnnotation = Annotation.Root({
     reducer: (_, y) => y,
     default: () => false,
   }),
-  replanner_has_error: Annotation<boolean>({
-    reducer: (_, y) => y,
-    default: () => false,
-  }),
 
   tool_calls: Annotation<ToolCall[]>({
     reducer: (_, y) => y,
@@ -121,10 +105,6 @@ export const AgentStateAnnotation = Annotation.Root({
     default: () => 0,
   }),
   planner_steps_count: Annotation<number>({
-    reducer: (_, y) => y,
-    default: () => 0,
-  }),
-  replanner_steps_count: Annotation<number>({
     reducer: (_, y) => y,
     default: () => 0,
   }),

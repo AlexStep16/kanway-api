@@ -6,6 +6,6 @@ export const routeCoderHumanReviewOutput = (state: typeof AgentStateAnnotation.S
   } else if (state.coder_has_confirmations) {
     return 'CoderInternalTool'
   } else {
-    return 'Replanner'
+    return 'Planner'
   }
 }

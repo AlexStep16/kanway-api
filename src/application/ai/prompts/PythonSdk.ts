@@ -1,4 +1,9 @@
 export const PythonSdk = `
+class SearchResponse(TypedDict):
+    items: list[dict]
+    count: int
+    hasMore: bool
+
 **ARCHIVE:**
   - archive_boards(ids: list[string]) -> None
   - archive_categories(ids: list[string]) -> None
@@ -24,6 +29,8 @@ export const PythonSdk = `
   - delete_workspaces(ids: list[string]) -> None
 
 **MOVE:**
+- **IMPORTANT:** Do not use MOVE for bulk moving of multiple items. Instead, use 'update_' with the new parent ID.
+
   - move_board(id: str, before_id: str = None, after_id: str = None, new_workspace_id: str = None) -> None
   - move_category(id: str, before_id: str = None, after_category_id: str = None, new_board_id: str = None) -> None
   - move_task(id: str, before_id: str = None, after_id: str = None, new_category_id: str = None) -> None
@@ -36,10 +43,10 @@ export const PythonSdk = `
   - recover_workspaces(ids: list[string]) -> None
 
 **SEARCH:**
-  - search_boards(mongo_filter: dict = None, search_query: str = None, search_mode: str = None, limit: int = 50) -> dict
-  - search_categories(mongo_filter: dict = None, search_query: str = None, search_mode: str = None, limit: int = 50) -> dict
-  - search_tasks(mongo_filter: dict = None, search_query: str = None, search_mode: str = None, limit: int = 50) -> dict
-  - search_workspaces(mongo_filter: dict = None, search_query: str = None, search_mode: str = None, limit: int = 50) -> dict
+  - search_boards(mongo_filter: dict = None, search_query: str = None, search_mode: str = None, limit: int = 50) -> SearchResponse
+  - search_categories(mongo_filter: dict = None, search_query: str = None, search_mode: str = None, limit: int = 50) -> SearchResponse
+  - search_tasks(mongo_filter: dict = None, search_query: str = None, search_mode: str = None, limit: int = 50) -> SearchResponse
+  - search_workspaces(mongo_filter: dict = None, search_query: str = None, search_mode: str = None, limit: int = 50) -> SearchResponse
 
 **UPDATE:**
   - update_boards(boards: list[dict]) -> None

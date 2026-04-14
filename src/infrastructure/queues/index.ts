@@ -1,4 +1,3 @@
-import { Queue, QueueEvents } from 'bullmq'
+import { Queue } from 'bullmq'
 
 export const langgraphQueue = new Queue('langgraph-tasks')
-export const langgraphQueueEvents = new QueueEvents('langgraph-tasks')

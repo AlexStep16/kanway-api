@@ -12,6 +12,7 @@ import { getFriendlyErrorMessage } from '@/utils/getFriendlyErrorMessage.ts'
 import { OperationLogService } from '@/application/services/OperationLogService.ts'
 import { getCreditsUsed } from '@/utils/getCreditsUsed.ts'
 import { ChatService } from '@/application/services/ChatService.ts'
+import { Redis } from 'ioredis'
 
 export class AgentEventsHandler extends BaseCallbackHandler {
   name = 'AgentEventsHandler'
@@ -22,7 +23,6 @@ export class AgentEventsHandler extends BaseCallbackHandler {
   private job: Job
   private configurable: Configurable
 
-  public isSynthesizing = false
   public aiMessage: IChatMessage | null = null
   public steps: {
     id: string
@@ -30,7 +30,9 @@ export class AgentEventsHandler extends BaseCallbackHandler {
     state: 'in_progress' | 'completed' | 'failed' | 'cancelled'
   }[] = []
   public stepsMessage: IChatMessage
+  public jobHistory: any[] = []
   public totalTokensUsed = 0
+  public redisClient = new Redis()
 
   constructor(
     job: Job,
@@ -51,6 +53,13 @@ export class AgentEventsHandler extends BaseCallbackHandler {
     this.steps = Array.isArray(stepMessage.content) ? stepMessage.content : []
   }
 
+  public async pushProgress(newEvent: any) {
+    this.jobHistory.push(newEvent)
+    await this.job.updateProgress(this.jobHistory)
+
+    await this.redisClient.publish(`job-events:${this.job.id}`, JSON.stringify(newEvent))
+  }
+
   async initAiMessage() {
     this.aiMessage = await this.createChatMessage(
       {
@@ -60,14 +69,14 @@ export class AgentEventsHandler extends BaseCallbackHandler {
         chatId: new Types.ObjectId(this.configurable.chatId),
       },
       this.configurable.user,
-      this.job,
     )
   }
 
-  async createChatMessage(dto: ChatMessageDTO, user: IUser, job: Job) {
+  async createChatMessage(dto: ChatMessageDTO, user: IUser) {
     const createChatMessageResult = await this.chatMessageService.create(dto, user)
 
-    await job.updateProgress({
+    await this.pushProgress({
+      id: crypto.randomUUID(),
       role: CustomEvents.NEW_MESSAGE,
       data: createChatMessageResult.data[0],
     })
@@ -75,15 +84,11 @@ export class AgentEventsHandler extends BaseCallbackHandler {
     return createChatMessageResult.data[0]
   }
 
-  async editChatMessage(
-    dto: Partial<ChatMessageDTO>,
-    criteria: IChatMessageCriteria,
-    user: IUser,
-    job: Job,
-  ) {
+  async editChatMessage(dto: Partial<ChatMessageDTO>, criteria: IChatMessageCriteria, user: IUser) {
     const editChatMessageResult = await this.chatMessageService.edit(dto, criteria, user)
 
-    await job.updateProgress({
+    await this.pushProgress({
+      id: crypto.randomUUID(),
       role: CustomEvents.UPDATE_MESSAGE,
       data: editChatMessageResult,
     })
@@ -101,7 +106,8 @@ export class AgentEventsHandler extends BaseCallbackHandler {
 
     const savedMsg = await this.chatMessageService.create(errorMsgDTO, this.configurable?.user)
 
-    await this.job.updateProgress({
+    await this.pushProgress({
+      id: crypto.randomUUID(),
       role: CustomEvents.NEW_MESSAGE,
       data: {
         ...savedMsg.data[0],
@@ -133,7 +139,6 @@ export class AgentEventsHandler extends BaseCallbackHandler {
           id: this.stepsMessage.id.toString(),
         },
         this.configurable.user,
-        this.job,
       )
     }
   }
@@ -155,7 +160,6 @@ export class AgentEventsHandler extends BaseCallbackHandler {
         id: this.aiMessage.id.toString(),
       },
       this.configurable.user,
-      this.job,
     )
   }
 
@@ -174,7 +178,6 @@ export class AgentEventsHandler extends BaseCallbackHandler {
         chatId: new Types.ObjectId(this.configurable?.chatId),
       },
       this.configurable.user,
-      this.job,
     )
   }
 
@@ -208,7 +211,8 @@ export class AgentEventsHandler extends BaseCallbackHandler {
         this.configurable.user,
       )
 
-      await this.job.updateProgress({
+      await this.pushProgress({
+        id: crypto.randomUUID(),
         role: CustomEvents.CHAT_UPDATED,
         data: chatEditResult[0],
       })
@@ -224,18 +228,11 @@ export class AgentEventsHandler extends BaseCallbackHandler {
     }
 
     if (event === CustomEvents.INTEGRATION) {
-      await this.job.updateProgress({
+      await this.pushProgress({
+        id: crypto.randomUUID(),
         role: CustomEvents.INTEGRATION,
         data: data.integration,
       })
-    }
-
-    if (event === CustomEvents.SYNTHESIZE_START) {
-      this.isSynthesizing = true
-    }
-
-    if (event === CustomEvents.SYNTHESIZE_END) {
-      this.isSynthesizing = false
     }
 
     if (event === CustomEvents.DISPLAY) {
@@ -247,7 +244,6 @@ export class AgentEventsHandler extends BaseCallbackHandler {
           chatId: new Types.ObjectId(this.configurable.chatId),
         },
         this.configurable.user,
-        this.job,
       )
     }
 
@@ -257,7 +253,8 @@ export class AgentEventsHandler extends BaseCallbackHandler {
       this.completeSteps()
       this.addStep(stepData.id, stepData.name, stepData.state)
 
-      await this.job.updateProgress({
+      await this.pushProgress({
+        id: crypto.randomUUID(),
         role: CustomEvents.UPDATE_MESSAGE,
         data: {
           ...this.stepsMessage,
@@ -270,6 +267,7 @@ export class AgentEventsHandler extends BaseCallbackHandler {
       const operationLogs = await this.operationLogService.getByCriteria(
         { id: data.logId },
         this.configurable.user.id,
+        data.session,
       )
 
       await this.createChatMessage(
@@ -281,10 +279,10 @@ export class AgentEventsHandler extends BaseCallbackHandler {
           chatId: new Types.ObjectId(this.configurable.chatId),
         },
         this.configurable.user,
-        this.job,
       )
 
-      await this.job.updateProgress({
+      await this.pushProgress({
+        id: crypto.randomUUID(),
         role: CustomEvents.OPERATION,
         data: operationLogs[0],
       })

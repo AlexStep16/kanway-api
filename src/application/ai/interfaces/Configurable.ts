@@ -5,10 +5,14 @@ export interface Configurable {
   thread_id: string
   user: IUser
   chatId: string
-  activeBoardId?: string
-  activeBoardName?: string
-  activeWorkspaceId: string
-  activeWorkspaceName?: string
+  activeBoard: {
+    id: string
+    name: string
+  } | null
+  activeWorkspace: {
+    id: string
+    name: string
+  }
   currentDate: string
   categoriesList: string
   tagsList: string

@@ -102,7 +102,7 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
         },
         items: [
           {
-            description: 'Бизнес подписка Kanbar',
+            description: 'Бизнес подписка Kanway',
             quantity: '1',
             amount: {
               value: '999.00',
@@ -136,7 +136,7 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
         },
         items: [
           {
-            description: 'Премиум подписка Kanbar',
+            description: 'Премиум подписка Kanway',
             quantity: '1',
             amount: {
               value: '599.00',
@@ -332,14 +332,14 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
         },
         capture: true,
         payment_method_id: paymentMethod.serviceId,
-        description: `Продление ${planText} подписки Kanbar`,
+        description: `Продление ${planText} подписки Kanway`,
       },
       idempotenceKey,
     )
 
     const paymentData = {
       serviceId: payment.id,
-      description: `Продление ${planText} подписки Kanbar`,
+      description: `Продление ${planText} подписки Kanway`,
       amount: payment.amount.value,
       currency: payment.amount.currency,
       type: plan,

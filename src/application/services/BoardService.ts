@@ -279,18 +279,17 @@ export class BoardService extends BaseService<
     )
 
     if (boardsToMove.length > 0) {
+      const boardIds = boardsToMove.map((b) => b.id.toString())
+
       const affectedCategoriesPromise = this.categoryService.getByCriteria(
-        { boardIds: boardsToMove.map((b) => b.id.toString()) },
+        { boardIds },
         userId,
         session,
         { projection: { _id: 1 } },
       )
-      const affectedTasksPromise = this.taskService.getByCriteria(
-        { boardIds: boardsToMove.map((b) => b.id.toString()) },
-        userId,
-        session,
-        { projection: { _id: 1 } },
-      )
+      const affectedTasksPromise = this.taskService.getByCriteria({ boardIds }, userId, session, {
+        projection: { _id: 1 },
+      })
 
       const [affectedCategories, affectedTasks] = await Promise.all([
         affectedCategoriesPromise,
@@ -299,7 +298,7 @@ export class BoardService extends BaseService<
 
       if (affectedCategories.length > 0) {
         sideEffects.push(
-          this.categoryService.regenerateReferencesByBoards(
+          this.categoryService.moveCategoriesByBoards(
             affectedCategories.map((c) => c.id.toString()),
             userId,
             session,
@@ -309,13 +308,15 @@ export class BoardService extends BaseService<
 
       if (affectedTasks.length > 0) {
         sideEffects.push(
-          this.taskService.regenerateReferencesByBoards(
+          this.taskService.moveTasksByBoards(
             affectedTasks.map((t) => t.id.toString()),
             userId,
             session,
           ),
         )
       }
+
+      await this.rerankBoards(boardIds, userId, session)
     }
 
     /* LOG */
@@ -473,7 +474,7 @@ export class BoardService extends BaseService<
 
       if (affectedCategories.length > 0) {
         sideEffects.push(
-          this.categoryService.regenerateReferencesByBoards(
+          this.categoryService.moveCategoriesByBoards(
             affectedCategories.map((c) => c.id.toString()),
             userId,
             session,
@@ -483,13 +484,15 @@ export class BoardService extends BaseService<
 
       if (affectedTasks.length > 0) {
         sideEffects.push(
-          this.taskService.regenerateReferencesByBoards(
+          this.taskService.moveTasksByBoards(
             affectedTasks.map((t) => t.id.toString()),
             userId,
             session,
           ),
         )
       }
+
+      await this.rerankBoards(movedBoardIds, userId, session)
     }
 
     const projectedUpdatedBoards = updatedBoards.map(
@@ -746,6 +749,7 @@ export class BoardService extends BaseService<
     userId: Types.ObjectId,
     session: ClientSession,
     isDryRun: boolean = false,
+    tempIds: string[] = [],
   ): Promise<IResponseWithLog<IBoardPopulated[]>> {
     const dependencies: Types.ObjectId[] = []
 
@@ -772,38 +776,42 @@ export class BoardService extends BaseService<
       boardsGroupedByWorkspace.get(workspaceId)!.push(board)
     })
 
-    const uniqueWorkspaceIds = [...new Set(boardsToClone.map((b) => b.workspace.toString()))]
-    const allBoardsInWorkspaces = await this.repository.findByCriteria(
-      { workspaceIds: uniqueWorkspaceIds },
-      session,
-      { projection: 'rank workspace' },
+    const uniqueWorkspaceIds = [...new Set(boardsToClone.map((b) => b.workspace))]
+    const lastRanksArray = await this.repository.getLastRanksByParents(
+      uniqueWorkspaceIds,
+      'workspace',
       userId,
+      session,
     )
+    const lastRankMap = new Map<string, string>()
+    lastRanksArray.forEach((r) => {
+      lastRankMap.set(r.parentId.toString(), r.rank)
+    })
 
-    const transformedBoards: Omit<IBoard, 'id'>[] = []
+    const transformedBoards: IBoardCreatePayload[] = []
 
     for (const [workspaceId, boards] of boardsGroupedByWorkspace) {
-      const workspaceBoards = allBoardsInWorkspaces.filter(
-        (b) => b.workspace.toString() === workspaceId,
-      )
+      for (let i = 0; i < boards.length; i++) {
+        const board = boards[i]
+        const id = tempIds[i] || undefined
 
-      const lastBoard = workspaceBoards.sort((a, b) => (a.rank > b.rank ? -1 : 1))[0]
-      let lastRank = LexoRank.middle()
+        const lastRankInMap = lastRankMap.get(workspaceId)
+        let nextRank: string
 
-      if (lastBoard) {
-        lastRank = LexoRank.parse(lastBoard.rank)
-      }
+        if (lastRankInMap) {
+          nextRank = LexoRank.parse(lastRankInMap).genNext().toString()
+        } else {
+          nextRank = LexoRank.middle().toString()
+        }
 
-      for (const board of boards) {
-        const newRank = lastRank.genNext()
+        lastRankMap.set(workspaceId, nextRank)
 
         const cleanBoard = {
           ...board,
-          id: isDryRun ? board.id : undefined,
-          rank: newRank.toString(),
+          id: isDryRun ? board.id.toString() : id,
+          name: `${board.name} (Копия)`,
+          rank: nextRank,
         }
-
-        lastRank = newRank
 
         transformedBoards.push(cleanBoard)
       }
@@ -882,14 +890,15 @@ export class BoardService extends BaseService<
     user: IUser,
     externalSession?: ClientSession,
     isDryRun: boolean = false,
+    tempIds: string[] = [],
   ): Promise<IResponseWithLog<IBoardPopulated[]>> {
     const userId = user.id
 
     if (externalSession) {
-      return this._executeCloneTransaction(criteria, userId, externalSession, isDryRun)
+      return this._executeCloneTransaction(criteria, userId, externalSession, isDryRun, tempIds)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeCloneTransaction(criteria, userId, session, isDryRun),
+        this._executeCloneTransaction(criteria, userId, session, isDryRun, tempIds),
       )
     }
   }
@@ -917,71 +926,62 @@ export class BoardService extends BaseService<
   ): Promise<IResponseWithLog<IBoardPopulated[]>> {
     const { beforeId, afterId, id, newWorkspaceId } = dto
 
-    const criteria: IBoardCriteria = {
-      ids: [id, beforeId, afterId].filter((id): id is string => !!id),
-    }
+    const boardIds = [id, beforeId, afterId].filter(Boolean) as string[]
+    const boards = await this.repository.findByCriteria(
+      { ids: boardIds },
+      session,
+      undefined,
+      user.id,
+    )
 
-    const updateData: SafeUpdateData<IBoard> = {}
-
-    const boards = await this.repository.findByCriteria(criteria, session, undefined, user.id)
     const board = boards.find((t) => t.id.toString() === id)
-    const beforeBoard = boards.find((t) => t.id.toString() === beforeId)
-    const afterBoard = boards.find((t) => t.id.toString() === afterId)
+    const beforeBoard = beforeId ? boards.find((t) => t.id.toString() === beforeId) : null
+    const afterBoard = afterId ? boards.find((t) => t.id.toString() === afterId) : null
 
-    if (!board) {
-      throw new NotFoundError('Доска для перемещения не найдена.')
+    if (!board) throw new NotFoundError('Доска не найдена.')
+
+    let newRank: LexoRank
+
+    if (beforeBoard && afterBoard) {
+      newRank = LexoRank.parse(beforeBoard.rank).between(LexoRank.parse(afterBoard.rank))
+    } else if (beforeBoard) {
+      newRank = LexoRank.parse(beforeBoard.rank).genPrev()
+    } else if (afterBoard) {
+      newRank = LexoRank.parse(afterBoard.rank).genNext()
+    } else {
+      if (newWorkspaceId) {
+        const lastRankData = await this.repository.getLastRanksByParents(
+          [new Types.ObjectId(newWorkspaceId)],
+          'workspace',
+          user.id,
+          session,
+        )
+        newRank = lastRankData.length
+          ? LexoRank.parse(lastRankData[0].rank).genNext()
+          : LexoRank.middle()
+      } else {
+        newRank = LexoRank.middle()
+      }
     }
-    if (beforeId && !beforeBoard) {
-      throw new NotFoundError('Доска перед указанной не найдена.')
-    }
-    if (afterId && !afterBoard) {
-      throw new NotFoundError('Доска после указанной не найдена.')
+
+    const updateData: SafeUpdateData<IBoard> = {
+      rank: newRank.toString(),
     }
 
     if (newWorkspaceId) {
-      const workspace = await this.workspaceService.getByCriteria(
+      const [workspace] = await this.workspaceService.getByCriteria(
         { id: newWorkspaceId },
         user.id,
         session,
       )
+      if (!workspace) throw new NotFoundError('Рабочее пространство не найдено.')
 
-      if (!workspace.length) {
-        throw new NotFoundError('Рабочее пространство для перемещения не найдено.')
-      }
-    }
-
-    let newRank = LexoRank.middle()
-
-    if (beforeBoard && afterBoard) {
-      const beforeRank = LexoRank.parse(beforeBoard.rank)
-      const afterRank = LexoRank.parse(afterBoard.rank)
-
-      newRank = beforeRank.between(afterRank)
-    } else if (beforeBoard) {
-      const beforeRank = LexoRank.parse(beforeBoard.rank)
-
-      newRank = beforeRank.genPrev()
-    } else if (afterBoard) {
-      const afterRank = LexoRank.parse(afterBoard.rank)
-
-      newRank = afterRank.genNext()
-    } else {
-      newRank = LexoRank.middle()
-    }
-
-    updateData.rank = newRank.toString()
-
-    if (newWorkspaceId) {
-      updateData.workspace = new Types.ObjectId(newWorkspaceId)
-    } else if (beforeBoard && beforeBoard.workspace.toString() !== board.workspace.toString()) {
-      updateData.workspace = beforeBoard.workspace
-    } else if (afterBoard && afterBoard.workspace.toString() !== board.workspace.toString()) {
-      updateData.workspace = afterBoard.workspace
+      updateData.workspace = workspace.id
     }
 
     const boardsBefore = projectProperties<IBoard>([board], updateData)
-    const boardsAfter = boardsBefore.map((b) => ({
-      ...b,
+    const boardsAfter = boardsBefore.map((t) => ({
+      ...t,
       ...updateData,
     }))
 
@@ -1026,6 +1026,67 @@ export class BoardService extends BaseService<
       data: updatedBoards,
       logId: log.id,
     }
+  }
+
+  public async rerankBoards(boardIds: string[], userId: Types.ObjectId, session: ClientSession) {
+    const boards = await this.repository.findByCriteria(
+      { ids: boardIds },
+      session,
+      {
+        sort: { rank: 1 },
+      },
+      userId,
+    )
+    if (!boards.length) return
+
+    const workspaceIds = [...new Set(boards.map((b) => b.workspace))]
+
+    const [workspaces, lastRanksByWorkspaces] = await Promise.all([
+      this.workspaceService.getByCriteria(
+        { ids: workspaceIds.map((id) => id.toString()) },
+        userId,
+        session,
+      ),
+      this.repository.getLastRanksByParents(workspaceIds, 'workspace', userId, session),
+    ])
+
+    const lastRankMap = new Map<string, string>()
+
+    lastRanksByWorkspaces.forEach((item) => {
+      lastRankMap.set(item.parentId.toString(), item.rank)
+    })
+
+    const workspaceMap = new Map(workspaces.map((w) => [w.id.toString(), w]))
+    const bulkUpdates: SingleUpdateDTO<SafeUpdateData<IBoard>>[] = []
+
+    for (const board of boards) {
+      const wsId = board.workspace.toString()
+      const workspace = workspaceMap.get(wsId)
+
+      if (workspace) {
+        const currentLastRank = lastRankMap.get(wsId)
+        let newRank: string
+
+        if (currentLastRank) {
+          newRank = LexoRank.parse(currentLastRank).genNext().toString()
+        } else {
+          newRank = LexoRank.middle().toString()
+        }
+
+        lastRankMap.set(wsId, newRank)
+
+        bulkUpdates.push({
+          id: board.id,
+          rank: newRank,
+        })
+      }
+    }
+
+    if (bulkUpdates.length > 0) {
+      return await this.repository.bulkUpdate(bulkUpdates, userId, session)
+    }
+
+    return null
   }
 
   public async revert(

@@ -42,10 +42,7 @@ export abstract class BaseRepository<
     data: TCreatePayload,
     session: ClientSession | null = null,
   ): Promise<TEntity> {
-    const mongoData = {
-      ...toMongoCaseKeys<Partial<TRawEntity>>(data),
-      _id: undefined,
-    }
+    const mongoData = toMongoCaseKeys<Partial<TRawEntity>>(data)
     const [newDoc] = await this.model.create([mongoData], { session })
     const newDocObj = newDoc.toObject() as TRawEntity
     delete (newDocObj as any).embeddings
@@ -57,10 +54,7 @@ export abstract class BaseRepository<
     data: TCreatePayload[],
     session: ClientSession | null = null,
   ): Promise<TEntity[]> {
-    const mongoData = data.map((item) => ({
-      ...toMongoCaseKeys<Partial<TRawEntity>>(item),
-      _id: undefined,
-    }))
+    const mongoData = data.map(toMongoCaseKeys<Partial<TRawEntity>>)
 
     const options: CreateOptions = { session }
 

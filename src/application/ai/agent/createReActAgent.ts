@@ -10,23 +10,18 @@ import { makeCoderHumanReviewNode } from './nodes/makeCoderHumanReviewNode.ts'
 import { routeCoderHumanReviewOutput } from './edges/routeCoderHumanReviewOutput.ts'
 import { makeCoderInternalToolNode } from './nodes/makeCoderInternalToolNode.ts'
 import { routeCoderExecutionOutput } from './edges/routeCoderExecutionOutput.ts'
-import { makeReplannerNode } from './nodes/makeReplannerNode.ts'
-import { makeReplannerToolNode } from './nodes/makeReplannerToolNode.ts'
-import { routeReplannerToolOutput } from './edges/routeReplannerToolOutput.ts'
 import { routePlannerOutput } from './edges/routePlannerOutput.ts'
-import { routeReplannerOutput } from './edges/routeReplannerOutput.ts'
 import { makeSummarizerNode } from './nodes/makeSummarizerNode.ts'
 import { END, START, StateGraph } from '@langchain/langgraph'
 import { makeChatNameNode } from './nodes/makeChatNameNode.ts'
+import { routeCoderInternalToolOutput } from './edges/routeCoderInternalToolOutput.ts'
 
 export function createReActAgent(dependencies: AgentDependencies, checkpointer: MongoDBSaver) {
   const plannerNode = makePlannerNode(dependencies)
-  const replannerNode = makeReplannerNode(dependencies)
   const coderNode = makeCoderNode(dependencies)
   const chatNameNode = makeChatNameNode(dependencies)
 
   const plannerToolNode = makePlannerToolNode()
-  const replannerToolNode = makeReplannerToolNode()
 
   const coderExecutionNode = makeCoderExecutionNode()
   const coderInternalToolNode = makeCoderInternalToolNode(dependencies)
@@ -37,9 +32,6 @@ export function createReActAgent(dependencies: AgentDependencies, checkpointer: 
   const graphBuilder = new StateGraph(AgentStateAnnotation)
     .addNode('Planner', plannerNode)
     .addNode('PlannerTool', plannerToolNode)
-
-    .addNode('Replanner', replannerNode)
-    .addNode('ReplannerTool', replannerToolNode)
 
     .addNode('Coder', coderNode)
     .addNode('CoderExecution', coderExecutionNode)
@@ -63,24 +55,18 @@ export function createReActAgent(dependencies: AgentDependencies, checkpointer: 
     })
     .addEdge('Coder', 'CoderExecution')
     .addConditionalEdges('CoderExecution', routeCoderExecutionOutput, {
-      Replanner: 'Replanner',
+      Planner: 'Planner',
       Coder: 'Coder',
       CoderInternalTool: 'CoderInternalTool',
     })
-    .addConditionalEdges('Replanner', routeReplannerOutput, {
-      ReplannerTool: 'ReplannerTool',
-      ChatName: 'ChatName',
-    })
-    .addConditionalEdges('ReplannerTool', routeReplannerToolOutput, {
-      Replanner: 'Replanner',
+    .addConditionalEdges('CoderInternalTool', routeCoderInternalToolOutput, {
+      CoderHumanReview: 'CoderHumanReview',
       Coder: 'Coder',
-      ChatName: 'ChatName',
     })
-    .addEdge('CoderInternalTool', 'CoderHumanReview')
     .addConditionalEdges('CoderHumanReview', routeCoderHumanReviewOutput, {
       CoderExecution: 'CoderExecution',
       CoderInternalTool: 'CoderInternalTool',
-      Replanner: 'Replanner',
+      Planner: 'Planner',
     })
     .addEdge('ChatName', END)
 

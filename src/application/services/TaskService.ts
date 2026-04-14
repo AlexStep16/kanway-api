@@ -292,10 +292,11 @@ export class TaskService extends BaseService<
     )
 
     if (tasksToMove.length > 0) {
-      await this.regenerateReferencesByCategories(
+      await this.moveTasksByCategories(
         tasksToMove.map((task) => task.id.toString()),
         userId,
         session,
+        true,
       )
     }
 
@@ -433,7 +434,7 @@ export class TaskService extends BaseService<
 
     /** MOVE */
     if (movedTaskIds.length > 0) {
-      await this.regenerateReferencesByCategories(movedTaskIds, userId, session)
+      await this.moveTasksByCategories(movedTaskIds, userId, session, true)
     }
 
     const projectedUpdatedTasks = updatedTasks.map(
@@ -497,37 +498,73 @@ export class TaskService extends BaseService<
     }
   }
 
-  public async regenerateReferencesByCategories(
+  public async moveTasksByCategories(
     taskIds: string[],
     userId: Types.ObjectId,
     session: ClientSession,
+    isRerank = false,
   ) {
-    const tasks = await this.repository.findByCriteria({ ids: taskIds }, session, undefined, userId)
+    const tasks = await this.repository.findByCriteria(
+      { ids: taskIds },
+      session,
+      {
+        sort: { rank: 1 },
+      },
+      userId,
+    )
     if (!tasks.length) return
 
-    const categoryIds = [...new Set(tasks.map((t) => t.category.toString()))]
+    const categoryIds = [...new Set(tasks.map((t) => t.category))]
 
-    const categories = await this.categoryService.getByCriteria({
-      ids: categoryIds,
-    })
+    const [categories, lastRanksArray] = await Promise.all([
+      this.categoryService.getByCriteria(
+        { ids: categoryIds.map((id) => id.toString()) },
+        userId,
+        session,
+      ),
+      this.repository.getLastRanksByParents(categoryIds, 'category', userId, session),
+    ])
 
     const categoryMap = new Map(categories.map((c) => [c.id.toString(), c]))
 
-    const bulkUpdates = tasks.reduce(
-      (acc, task) => {
-        const category = categoryMap.get(task.category.toString())
+    // 3. Индексируем последние ранги для быстрого доступа O(1)
+    const lastRankMap = new Map<string, string>()
+    lastRanksArray.forEach((r) => {
+      lastRankMap.set(r.parentId.toString(), r.rank)
+    })
 
-        if (category) {
-          acc.push({
-            id: task.id,
-            board: category.board.id,
-            workspace: category.workspace.id,
-          })
+    const bulkUpdates: SingleUpdateDTO<SafeUpdateData<ITask>>[] = []
+
+    for (const task of tasks) {
+      const catIdStr = task.category.toString()
+      const category = categoryMap.get(catIdStr)
+
+      if (!category) continue
+
+      const update: SingleUpdateDTO<SafeUpdateData<ITask>> = {
+        id: task.id,
+        category: category.id,
+        board: category.board.id,
+        workspace: category.workspace.id,
+      }
+
+      if (isRerank) {
+        const currentLastRank = lastRankMap.get(catIdStr)
+        let nextRank: string
+
+        if (currentLastRank) {
+          nextRank = LexoRank.parse(currentLastRank).genNext().toString()
+        } else {
+          nextRank = LexoRank.middle().toString()
         }
-        return acc
-      },
-      [] as SingleUpdateDTO<SafeUpdateData<ITask>>[],
-    )
+
+        update.rank = nextRank
+
+        lastRankMap.set(catIdStr, nextRank)
+      }
+
+      bulkUpdates.push(update)
+    }
 
     if (bulkUpdates.length > 0) {
       return await this.repository.bulkUpdate(bulkUpdates, userId, session)
@@ -536,7 +573,7 @@ export class TaskService extends BaseService<
     return null
   }
 
-  public async regenerateReferencesByBoards(
+  public async moveTasksByBoards(
     taskIds: string[],
     userId: Types.ObjectId,
     session: ClientSession,
@@ -749,6 +786,7 @@ export class TaskService extends BaseService<
     userId: Types.ObjectId,
     session: ClientSession,
     isDryRun: boolean = false,
+    tempIds: string[] = [],
   ): Promise<IResponseWithLog<ITaskPopulated[]>> {
     const tasksToClone: (ITask & { embeddings: number[] })[] = await this.repository.findByCriteria(
       criteria,
@@ -772,37 +810,42 @@ export class TaskService extends BaseService<
       tasksGrouppedByCategory.get(categoryId)!.push(task)
     })
 
-    const uniqueCategoryIds = [...new Set(tasksToClone.map((t) => t.category.toString()))]
-    const allTasksInCategories = await this.repository.findByCriteria(
-      { categoryIds: uniqueCategoryIds },
-      session,
-      { projection: 'rank category' },
+    const uniqueCategoryIds = [...new Set(tasksToClone.map((t) => t.category))]
+    const lastRanksArray = await this.repository.getLastRanksByParents(
+      uniqueCategoryIds,
+      'category',
       userId,
+      session,
     )
+    const lastRankMap = new Map<string, string>()
+    lastRanksArray.forEach((r) => {
+      lastRankMap.set(r.parentId.toString(), r.rank)
+    })
 
-    const transformedTasks: Omit<ITask & { embeddings: number[] }, 'id'>[] = []
+    const transformedTasks: ITaskCreatePayload[] = []
 
     for (const [categoryId, tasks] of tasksGrouppedByCategory) {
-      const categoryTasks = allTasksInCategories.filter((t) => t.category.toString() === categoryId)
+      for (let i = 0; i < tasks.length; i++) {
+        const task = tasks[i]
+        const id = tempIds[i] || undefined
 
-      const lastTask = categoryTasks.sort((a, b) => (a.rank > b.rank ? -1 : 1))[0]
-      let lastRank = LexoRank.middle()
+        const lastRankInMap = lastRankMap.get(categoryId)
+        let nextRank: string
 
-      if (lastTask) {
-        lastRank = LexoRank.parse(lastTask.rank)
-      }
+        if (lastRankInMap) {
+          nextRank = LexoRank.parse(lastRankInMap).genNext().toString()
+        } else {
+          nextRank = LexoRank.middle().toString()
+        }
 
-      for (const task of tasks) {
-        const newRank = lastRank.genNext()
+        lastRankMap.set(categoryId, nextRank)
 
         const cleanTask = {
           ...task,
-          id: isDryRun ? task.id : undefined,
-          name: `${task?.name}`,
-          rank: newRank.toString(),
+          id: isDryRun ? task.id.toString() : id,
+          name: `${task.name} (Копия)`,
+          rank: nextRank,
         }
-
-        lastRank = newRank
 
         transformedTasks.push(cleanTask)
       }
@@ -858,14 +901,15 @@ export class TaskService extends BaseService<
     user: IUser,
     externalSession?: ClientSession,
     isDryRun: boolean = false,
+    tempIds: string[] = [],
   ): Promise<IResponseWithLog<ITaskPopulated[]>> {
     const userId = user.id
 
     if (externalSession) {
-      return this._executeCloneTransaction(criteria, userId, externalSession, isDryRun)
+      return this._executeCloneTransaction(criteria, userId, externalSession, isDryRun, tempIds)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeCloneTransaction(criteria, userId, session, isDryRun),
+        this._executeCloneTransaction(criteria, userId, session, isDryRun, tempIds),
       )
     }
   }
@@ -893,72 +937,59 @@ export class TaskService extends BaseService<
   ): Promise<IResponseWithLog<ITaskPopulated[]>> {
     const { beforeId, afterId, id, newCategoryId } = dto
 
-    const criteria: ITaskCriteria = {
-      ids: [id, beforeId, afterId].filter((id): id is string => !!id),
-    }
+    const taskIds = [id, beforeId, afterId].filter(Boolean) as string[]
+    const tasks = await this.repository.findByCriteria(
+      { ids: taskIds },
+      session,
+      undefined,
+      user.id,
+    )
 
-    const updateData: SafeUpdateData<ITask> = {}
-
-    const tasks = await this.repository.findByCriteria(criteria, session, undefined, user.id)
     const task = tasks.find((t) => t.id.toString() === id)
-    const beforeTask = tasks.find((t) => t.id.toString() === beforeId)
-    const afterTask = tasks.find((t) => t.id.toString() === afterId)
-    let isParentChanged = false
+    const beforeTask = beforeId ? tasks.find((t) => t.id.toString() === beforeId) : null
+    const afterTask = afterId ? tasks.find((t) => t.id.toString() === afterId) : null
 
-    if (!task) {
-      throw new NotFoundError('Задача для перемещения не найдена.')
+    if (!task) throw new NotFoundError('Задача не найдена.')
+
+    let newRank: LexoRank
+
+    if (beforeTask && afterTask) {
+      newRank = LexoRank.parse(beforeTask.rank).between(LexoRank.parse(afterTask.rank))
+    } else if (beforeTask) {
+      newRank = LexoRank.parse(beforeTask.rank).genPrev()
+    } else if (afterTask) {
+      newRank = LexoRank.parse(afterTask.rank).genNext()
+    } else {
+      if (newCategoryId) {
+        const lastRankData = await this.repository.getLastRanksByParents(
+          [new Types.ObjectId(newCategoryId)],
+          'category',
+          user.id,
+          session,
+        )
+        newRank = lastRankData.length
+          ? LexoRank.parse(lastRankData[0].rank).genNext()
+          : LexoRank.middle()
+      } else {
+        newRank = LexoRank.middle()
+      }
     }
-    if (beforeId && !beforeTask) {
-      throw new NotFoundError('Задача перед не найдена.')
-    }
-    if (afterId && !afterTask) {
-      throw new NotFoundError('Задача после не найдена.')
+
+    const updateData: SafeUpdateData<ITask> = {
+      rank: newRank.toString(),
     }
 
     if (newCategoryId) {
-      const category = await this.categoryService.getByCriteria(
+      const [category] = await this.categoryService.getByCriteria(
         { id: newCategoryId },
         user.id,
         session,
       )
+      if (!category) throw new NotFoundError('Категория не найдена.')
 
-      if (!category.length) {
-        throw new NotFoundError('Категория для перемещения не найдена.')
-      }
-    }
-
-    let newRank = LexoRank.middle()
-
-    if (beforeTask && afterTask) {
-      const beforeRank = LexoRank.parse(beforeTask.rank)
-      const afterRank = LexoRank.parse(afterTask.rank)
-
-      newRank = beforeRank.between(afterRank)
-    } else if (beforeTask) {
-      const beforeRank = LexoRank.parse(beforeTask.rank)
-      newRank = beforeRank.genPrev()
-    } else if (afterTask) {
-      const afterRank = LexoRank.parse(afterTask.rank)
-      newRank = afterRank.genNext()
-      console.log('afterRank', afterRank.toString(), 'newRank', newRank.toString())
-    } else {
-      newRank = LexoRank.middle()
-    }
-
-    updateData.rank = newRank.toString()
-
-    if (newCategoryId) {
-      updateData.category = new Types.ObjectId(newCategoryId)
-
-      isParentChanged = true
-    } else if (beforeTask && beforeTask.category.toString() !== task.category.toString()) {
-      updateData.category = beforeTask.category
-
-      isParentChanged = true
-    } else if (afterTask && afterTask.category.toString() !== task.category.toString()) {
-      updateData.category = afterTask.category
-
-      isParentChanged = true
+      updateData.category = category.id
+      updateData.board = category.board.id
+      updateData.workspace = category.workspace.id
     }
 
     const tasksBefore = projectProperties<ITask>([task], updateData)
@@ -988,10 +1019,6 @@ export class TaskService extends BaseService<
     }
 
     await this.repository.updateManyByCriteria({ id }, updateData, session, user.id)
-
-    if (isParentChanged) {
-      await this.regenerateReferencesByCategories([id], user.id, session)
-    }
 
     const log = await this.operationLogService.create(
       {
@@ -1167,6 +1194,7 @@ export class TaskService extends BaseService<
     }
 
     const taskPayload: ITaskCreatePayload = {
+      id: data.id,
       name: taskName,
       description: data.description || '',
       dueDate: data.dueDate || '',

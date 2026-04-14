@@ -281,10 +281,11 @@ export class CategoryService extends BaseService<
     )
 
     if (categoriesToMove.length > 0) {
-      await this.regenerateReferencesByBoards(
+      await this.moveCategoriesByBoards(
         categoriesToMove.map((category) => category.id.toString()),
         userId,
         session,
+        true,
       )
 
       const affectedTasks = await this.taskService.getByCriteria(
@@ -297,7 +298,7 @@ export class CategoryService extends BaseService<
       )
 
       sideEffects.push(
-        this.taskService.regenerateReferencesByCategories(
+        this.taskService.moveTasksByCategories(
           affectedTasks.map((t) => t.id.toString()),
           userId,
           session,
@@ -443,7 +444,7 @@ export class CategoryService extends BaseService<
 
     /** MOVE */
     if (movedCategoryIds.length > 0) {
-      await this.regenerateReferencesByBoards(movedCategoryIds, userId, session)
+      await this.moveCategoriesByBoards(movedCategoryIds, userId, session, true)
 
       const affectedTasks = await this.taskService.getByCriteria(
         { categoryIds: movedCategoryIds },
@@ -454,7 +455,7 @@ export class CategoryService extends BaseService<
 
       if (affectedTasks.length > 0) {
         sideEffects.push(
-          this.taskService.regenerateReferencesByCategories(
+          this.taskService.moveTasksByCategories(
             affectedTasks.map((t) => t.id.toString()),
             userId,
             session,
@@ -518,42 +519,71 @@ export class CategoryService extends BaseService<
     }
   }
 
-  public async regenerateReferencesByBoards(
+  public async moveCategoriesByBoards(
     categoryIds: string[],
     userId: Types.ObjectId,
     session: ClientSession,
+    isRerank = false,
   ) {
     const categories = await this.repository.findByCriteria(
       { ids: categoryIds },
       session,
-      undefined,
+      {
+        sort: { rank: 1 },
+      },
       userId,
     )
     if (!categories.length) return
 
-    const boardIds = [...new Set(categories.map((c) => c.board.toString()))]
+    const boardIds = [...new Set(categories.map((c) => c.board))]
 
-    const boards = await this.boardService.getByCriteria({
-      ids: boardIds,
-    })
+    const [boards, lastRanksArray] = await Promise.all([
+      this.boardService.getByCriteria(
+        { ids: boardIds.map((id) => id.toString()) },
+        userId,
+        session,
+      ),
+      this.repository.getLastRanksByParents(boardIds, 'board', userId, session),
+    ])
 
     const boardMap = new Map(boards.map((b) => [b.id.toString(), b]))
 
-    const bulkUpdates = categories.reduce(
-      (acc, category) => {
-        const board = boardMap.get(category.board.toString())
+    const lastRankMap = new Map<string, string>()
+    lastRanksArray.forEach((r) => {
+      lastRankMap.set(r.parentId.toString(), r.rank)
+    })
 
-        if (board) {
-          acc.push({
-            id: category.id,
-            board: board.id,
-            workspace: board.workspace.id,
-          })
+    const bulkUpdates: SingleUpdateDTO<SafeUpdateData<ICategory>>[] = []
+
+    for (const category of categories) {
+      const boardIdStr = category.board.toString()
+      const board = boardMap.get(boardIdStr)
+
+      if (!board) continue
+
+      const update: SingleUpdateDTO<SafeUpdateData<ICategory>> = {
+        id: category.id,
+        board: board.id,
+        workspace: board.workspace.id,
+      }
+
+      if (isRerank) {
+        const currentLastRank = lastRankMap.get(boardIdStr)
+        let nextRank: string
+
+        if (currentLastRank) {
+          nextRank = LexoRank.parse(currentLastRank).genNext().toString()
+        } else {
+          nextRank = LexoRank.middle().toString()
         }
-        return acc
-      },
-      [] as SingleUpdateDTO<SafeUpdateData<ICategory>>[],
-    )
+
+        update.rank = nextRank
+
+        lastRankMap.set(boardIdStr, nextRank)
+      }
+
+      bulkUpdates.push(update)
+    }
 
     if (bulkUpdates.length > 0) {
       return await this.repository.bulkUpdate(bulkUpdates, userId, session)
@@ -757,6 +787,7 @@ export class CategoryService extends BaseService<
     userId: Types.ObjectId,
     session: ClientSession,
     isDryRun: boolean = false,
+    tempIds: string[] = [],
   ): Promise<IResponseWithLog<ICategoryPopulated[]>> {
     const dependencies: Types.ObjectId[] = []
 
@@ -768,51 +799,58 @@ export class CategoryService extends BaseService<
       },
       userId,
     )
-    const uniqueBoardIds = [...new Set(categoriesToClone.map((c) => c.board.toString()))]
-    const allCategoriesInBoards = await this.repository.findByCriteria(
-      { boardIds: uniqueBoardIds },
-      session,
-      { projection: 'rank board' },
-      userId,
-    )
 
     if (categoriesToClone.length === 0)
       throw new NotFoundError('Категории для клонирования не найдены.')
 
-    const categoriesGroupedByBoard: Map<string, (ICategory & { embeddings: number[] })[]> =
+    const categoriesGrouppedByBoard: Map<string, (ICategory & { embeddings: number[] })[]> =
       new Map()
     categoriesToClone.forEach((category) => {
       const boardId = category.board.toString()
 
-      if (!categoriesGroupedByBoard.has(boardId)) {
-        categoriesGroupedByBoard.set(boardId, [])
+      if (!categoriesGrouppedByBoard.has(boardId)) {
+        categoriesGrouppedByBoard.set(boardId, [])
       }
 
-      categoriesGroupedByBoard.get(boardId)!.push(category)
+      categoriesGrouppedByBoard.get(boardId)!.push(category)
     })
 
-    const transformedCategories: Omit<ICategory & { embeddings: number[] }, 'id'>[] = []
+    const uniqueBoardIds = [...new Set(categoriesToClone.map((c) => c.board))]
+    const lastRanksArray = await this.repository.getLastRanksByParents(
+      uniqueBoardIds,
+      'board',
+      userId,
+      session,
+    )
+    const lastRankMap = new Map<string, string>()
+    lastRanksArray.forEach((r) => {
+      lastRankMap.set(r.parentId.toString(), r.rank)
+    })
 
-    for (const [boardId, categories] of categoriesGroupedByBoard) {
-      const boardCategories = allCategoriesInBoards.filter((c) => c.board.toString() === boardId)
+    const transformedCategories: ICategoryCreatePayload[] = []
 
-      const lastCategory = boardCategories.sort((a, b) => (a.rank > b.rank ? -1 : 1))[0]
-      let lastRank = LexoRank.middle()
+    for (const [boardId, categories] of categoriesGrouppedByBoard) {
+      for (let i = 0; i < categories.length; i++) {
+        const category = categories[i]
+        const id = tempIds[i] || undefined
 
-      if (lastCategory) {
-        lastRank = LexoRank.parse(lastCategory.rank)
-      }
+        const lastRankInMap = lastRankMap.get(boardId)
+        let nextRank: string
 
-      for (const category of categories) {
-        const newRank = lastRank.genNext()
+        if (lastRankInMap) {
+          nextRank = LexoRank.parse(lastRankInMap).genNext().toString()
+        } else {
+          nextRank = LexoRank.middle().toString()
+        }
+
+        lastRankMap.set(boardId, nextRank)
 
         const cleanCategory = {
           ...category,
-          id: isDryRun ? category.id : undefined,
-          rank: newRank.toString(),
+          id: isDryRun ? category.id.toString() : id,
+          name: `${category.name} (Копия)`,
+          rank: nextRank,
         }
-
-        lastRank = newRank
 
         transformedCategories.push(cleanCategory)
       }
@@ -877,7 +915,7 @@ export class CategoryService extends BaseService<
     )
 
     const clonedCategoriesPopulated = await this.getByCriteria(
-      { ids: clonedCategories.map((t) => t.id.toString()) },
+      { ids: clonedCategories.map((c) => c.id.toString()) },
       userId,
       session,
     )
@@ -893,14 +931,15 @@ export class CategoryService extends BaseService<
     user: IUser,
     externalSession?: ClientSession,
     isDryRun: boolean = false,
+    tempIds: string[] = [],
   ): Promise<IResponseWithLog<ICategoryPopulated[]>> {
     const userId = user.id
 
     if (externalSession) {
-      return this._executeCloneTransaction(criteria, userId, externalSession, isDryRun)
+      return this._executeCloneTransaction(criteria, userId, externalSession, isDryRun, tempIds)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeCloneTransaction(criteria, userId, session, isDryRun),
+        this._executeCloneTransaction(criteria, userId, session, isDryRun, tempIds),
       )
     }
   }
@@ -928,72 +967,59 @@ export class CategoryService extends BaseService<
   ): Promise<IResponseWithLog<ICategoryPopulated[]>> {
     const { beforeId, afterId, id, newBoardId } = dto
 
-    const criteria: ICategoryCriteria = {
-      ids: [id, beforeId, afterId].filter((id): id is string => !!id),
-    }
+    const categoryIds = [id, beforeId, afterId].filter(Boolean) as string[]
+    const categories = await this.repository.findByCriteria(
+      { ids: categoryIds },
+      session,
+      undefined,
+      user.id,
+    )
 
-    const updateData: SafeUpdateData<ICategory> = {}
-
-    const categories = await this.repository.findByCriteria(criteria, session, undefined, user.id)
     const category = categories.find((t) => t.id.toString() === id)
-    const beforeCategory = categories.find((t) => t.id.toString() === beforeId)
-    const afterCategory = categories.find((t) => t.id.toString() === afterId)
-    let isParentChanged = false
+    const beforeCategory = beforeId ? categories.find((t) => t.id.toString() === beforeId) : null
+    const afterCategory = afterId ? categories.find((t) => t.id.toString() === afterId) : null
 
-    if (!category) {
-      throw new NotFoundError('Категория для перемещения не найдена.')
-    }
-    if (beforeId && !beforeCategory) {
-      throw new NotFoundError('Категория перед указанной не найдена.')
-    }
-    if (afterId && !afterCategory) {
-      throw new NotFoundError('Категория после указанной не найдена.')
-    }
+    if (!category) throw new NotFoundError('Категория не найдена.')
 
-    if (newBoardId) {
-      const board = await this.boardService.getByCriteria({ id: newBoardId }, user.id, session)
+    let newRank: LexoRank
 
-      if (!board.length) {
-        throw new NotFoundError('Доска для перемещения не найдена.')
+    if (beforeCategory && afterCategory) {
+      newRank = LexoRank.parse(beforeCategory.rank).between(LexoRank.parse(afterCategory.rank))
+    } else if (beforeCategory) {
+      newRank = LexoRank.parse(beforeCategory.rank).genPrev()
+    } else if (afterCategory) {
+      newRank = LexoRank.parse(afterCategory.rank).genNext()
+    } else {
+      if (newBoardId) {
+        const lastRankData = await this.repository.getLastRanksByParents(
+          [new Types.ObjectId(newBoardId)],
+          'board',
+          user.id,
+          session,
+        )
+        newRank = lastRankData.length
+          ? LexoRank.parse(lastRankData[0].rank).genNext()
+          : LexoRank.middle()
+      } else {
+        newRank = LexoRank.middle()
       }
     }
 
-    let newRank = LexoRank.middle()
-
-    if (beforeCategory && afterCategory) {
-      const beforeRank = LexoRank.parse(beforeCategory.rank)
-      const afterRank = LexoRank.parse(afterCategory.rank)
-
-      newRank = beforeRank.between(afterRank)
-    } else if (beforeCategory) {
-      const beforeRank = LexoRank.parse(beforeCategory.rank)
-      newRank = beforeRank.genPrev()
-    } else if (afterCategory) {
-      const afterRank = LexoRank.parse(afterCategory.rank)
-      newRank = afterRank.genNext()
-    } else {
-      newRank = LexoRank.middle()
+    const updateData: SafeUpdateData<ICategory> = {
+      rank: newRank.toString(),
     }
 
-    updateData.rank = newRank.toString()
-
     if (newBoardId) {
-      updateData.board = new Types.ObjectId(newBoardId)
+      const [board] = await this.boardService.getByCriteria({ id: newBoardId }, user.id, session)
+      if (!board) throw new NotFoundError('Доска не найдена.')
 
-      isParentChanged = true
-    } else if (beforeCategory && beforeCategory.board.toString() !== category.board.toString()) {
-      updateData.board = beforeCategory.board
-
-      isParentChanged = true
-    } else if (afterCategory && afterCategory.board.toString() !== category.board.toString()) {
-      updateData.board = afterCategory.board
-
-      isParentChanged = true
+      updateData.board = board.id
+      updateData.workspace = board.workspace.id
     }
 
     const categoriesBefore = projectProperties<ICategory>([category], updateData)
-    const categoriesAfter = categoriesBefore.map((c) => ({
-      ...c,
+    const categoriesAfter = categoriesBefore.map((t) => ({
+      ...t,
       ...updateData,
     }))
 
@@ -1018,10 +1044,6 @@ export class CategoryService extends BaseService<
     }
 
     await this.repository.updateManyByCriteria({ id }, updateData, session, user.id)
-
-    if (isParentChanged) {
-      await this.regenerateReferencesByBoards([id], user.id, session)
-    }
 
     const log = await this.operationLogService.create(
       {

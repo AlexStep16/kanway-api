@@ -2,9 +2,9 @@ import SuccessResponse from '@/application/services/SuccessResponse.ts'
 import { NextFunction, Request, Response } from 'express'
 import { ChatService } from '@/application/services/ChatService.ts'
 import { IChatCriteria } from '@/application/interfaces/criterias/IChatCriteria.ts'
-import { langgraphQueue, langgraphQueueEvents } from '@/infrastructure/queues/index.ts'
+import { langgraphQueue } from '@/infrastructure/queues/index.ts'
 import mongoose from 'mongoose'
-import { CustomEvents } from '@/enums/CustomEvents.ts'
+import { Redis } from 'ioredis'
 
 export default class ChatController {
   protected service: ChatService
@@ -35,45 +35,69 @@ export default class ChatController {
     }
   }
 
-  public streamStatus(req: Request, res: Response) {
+  public async streamStatus(req: Request, res: Response) {
     res.setHeader('Content-Type', 'text/event-stream')
     res.setHeader('Cache-Control', 'no-cache')
     res.setHeader('Connection', 'keep-alive')
 
     const userjobId = req.params.jobId
 
-    const onProgress = ({ jobId, data }: { jobId: string; data: any }) => {
-      if (jobId !== userjobId) return // Игнорируем события не для этого jobId
+    const subscriber = new Redis()
 
-      res.write(`data: ${JSON.stringify({ status: 'progress', data: data })}\n\n`)
-    }
+    const closeConnection = async () => {
+      if (res.writableEnded) return
 
-    const onCompleted = (args: {
-      jobId: string
-      returnvalue: string
-      prev?: string | undefined
-    }) => {
-      if (userjobId !== args.jobId) return // Игнорируем события не для этого jobId
-
-      res.write(`data: ${JSON.stringify({ status: 'completed', result: args.returnvalue })}\n\n`)
-      res.end() // Закрываем соединение
-    }
-
-    const onFailed = (event: { failedReason: string; jobId: string }) => {
-      if (userjobId !== event.jobId) return // Игнорируем события не для этого jobId
-
-      res.write(`data: ${JSON.stringify({ status: 'failed', error: event.failedReason })}\n\n`)
+      await subscriber.unsubscribe().catch(() => {})
+      await subscriber.quit().catch(() => {})
       res.end()
     }
 
-    langgraphQueueEvents.on(`progress`, onProgress)
-    langgraphQueueEvents.on(`completed`, onCompleted)
-    langgraphQueueEvents.on(`failed`, onFailed)
+    const sentIds = new Set<string>()
 
-    req.on('close', () => {
-      langgraphQueueEvents.removeListener(`progress`, onProgress)
-      langgraphQueueEvents.removeListener(`completed`, onCompleted)
-      langgraphQueueEvents.removeListener(`failed`, onFailed)
+    const sendEvent = (event: any) => {
+      const eventId = event.id || JSON.stringify(event)
+      if (!sentIds.has(eventId)) {
+        res.write(`data: ${JSON.stringify(event)}\n\n`)
+        sentIds.add(eventId)
+      }
+    }
+
+    await subscriber.subscribe(`job-events:${userjobId}`)
+
+    subscriber.on('message', (_channel, message) => {
+      try {
+        const event = JSON.parse(message) as {
+          id: string
+          role?: string
+          data?: any
+          status?: 'completed' | 'failed'
+        }
+
+        sendEvent(event)
+
+        if (event.status && (event.status === 'completed' || event.status === 'failed')) {
+          closeConnection()
+        }
+      } catch (e) {
+        console.error('Failed to parse SSE event', e)
+      }
+    })
+
+    const job = await langgraphQueue.getJob(userjobId)
+
+    if (job) {
+      if (Array.isArray(job.progress)) {
+        job.progress.forEach((oldEvent: any) => sendEvent(oldEvent))
+      }
+
+      const state = await job.getState()
+      if (state === 'completed' || state === 'failed') {
+        return await closeConnection()
+      }
+    }
+
+    req.on('close', async () => {
+      await closeConnection()
     })
   }
 
@@ -99,18 +123,8 @@ export default class ChatController {
 
       await session.commitTransaction()
 
-      const job = await langgraphQueue.add('process_query', result.jobPayload, {
+      await langgraphQueue.add('process_query', result.jobPayload, {
         jobId: req.body.jobId,
-      })
-
-      await job.updateProgress({
-        role: CustomEvents.NEW_MESSAGE,
-        data: result.userMessage,
-      })
-
-      await job.updateProgress({
-        role: CustomEvents.NEW_MESSAGE,
-        data: result.stepMessage,
       })
 
       return res.status(200).json(new SuccessResponse(result))

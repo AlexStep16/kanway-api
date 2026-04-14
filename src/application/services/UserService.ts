@@ -166,8 +166,14 @@ export class UserService implements ICreateUserService<IUser, RegisterCredential
     await this.emailService.sendVerifyEmailToUser(user)
   }
 
-  public async payCreditsByTokens(tokensUsed: number, userId: string): Promise<number> {
-    const finalAmount = getCreditsUsed(tokensUsed)
+  public async payCreditsByTokens(
+    tokensUsed: number,
+    userId: string,
+    userCredits?: number,
+  ): Promise<number> {
+    let finalAmount = getCreditsUsed(tokensUsed)
+
+    if (userCredits !== undefined && userCredits < finalAmount) finalAmount = userCredits
 
     await this.repository.decrementFieldByCriteria({ id: userId }, 'credits', finalAmount)
 

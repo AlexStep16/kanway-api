@@ -1,5 +1,5 @@
 import { Worker } from 'bullmq'
-import { RemoveMessage } from '@langchain/core/messages'
+import { HumanMessage, RemoveMessage } from '@langchain/core/messages'
 import { RunnableConfig } from '@langchain/core/runnables'
 
 import type { Job } from 'bullmq'
@@ -22,7 +22,6 @@ import getLastHumanMessage from '@/application/ai/helpers/getLastHumanMessage.ts
 import { langgraphQueue } from '../queues/index.ts'
 import { AgentStateAnnotation } from '@/application/ai/agent/AgentStateAnnotation.ts'
 import { AgentEventsHandler } from '@/application/ai/callbacks/AgentEventsHandler.ts'
-import { getDefaultState } from '@/application/ai/helpers/getDefaultState.ts'
 
 const dependencies = initializeDependencies()
 
@@ -44,8 +43,14 @@ async function cleanupLastIteration(agent: CompiledStateGraph<any, any>, config:
   const currentState = await agent.getState(config)
   const messages = currentState.values.messages || []
 
+  const configurable = config.configurable as Configurable
+
   if (messages.length === 0) {
-    throw new Error('History is empty, cannot retry.')
+    messages.push(new HumanMessage(configurable.userMessage))
+
+    return await agent.updateState(config, {
+      messages,
+    })
   }
 
   const lastHumanMessage = getLastHumanMessage(messages)
@@ -61,11 +66,9 @@ async function cleanupLastIteration(agent: CompiledStateGraph<any, any>, config:
   if (messagesToDelete.length > 0) {
     const removeRequests = messagesToDelete.map((msg: any) => new RemoveMessage({ id: msg.id }))
 
-    const updateData: Partial<typeof AgentStateAnnotation.State> = {
-      ...getDefaultState(),
+    await agent.updateState(config, {
       messages: removeRequests,
-    }
-    await agent.updateState(config, updateData)
+    })
   }
 }
 
@@ -122,6 +125,11 @@ export const RunAgentWorker = new Worker(
     try {
       const agent = await getAgent(dependencies)
 
+      const updateData: Partial<typeof AgentStateAnnotation.State> = {
+        messages: [new HumanMessage(configurable.userMessage)],
+      }
+      await agent.updateState(config, updateData)
+
       if (isRetry) {
         await cleanupLastIteration(agent, config)
       }
@@ -146,19 +154,22 @@ export const RunAgentWorker = new Worker(
           break
         }
 
-        if (!agentEventsHandler.isSynthesizing) continue
-
         if (eventType === 'on_chat_model_stream') {
           const chunk = event.data.chunk
 
-          if (chunk.content && typeof chunk.content === 'string') {
+          if (
+            chunk.content &&
+            typeof chunk.content === 'string' &&
+            event.metadata?.langgraph_node === 'Planner'
+          ) {
             accumulatedContent += chunk.content
 
             if (!agentEventsHandler.aiMessage) {
               await agentEventsHandler.initAiMessage()
             }
 
-            await job.updateProgress({
+            await agentEventsHandler.pushProgress({
+              id: crypto.randomUUID(),
               role: CustomEvents.UPDATE_MESSAGE,
               data: {
                 ...agentEventsHandler.aiMessage,
@@ -172,6 +183,7 @@ export const RunAgentWorker = new Worker(
       await dependencies.services.userService.payCreditsByTokens(
         agentEventsHandler.totalTokensUsed,
         configurable.user.id.toString(),
+        configurable.user.credits,
       )
 
       return { status: 'completed' }
@@ -182,20 +194,14 @@ export const RunAgentWorker = new Worker(
 
       //Sentry.captureException(error, { extra: { jobId: job.id, chatId: configurable?.chatId } })
 
-      if (error.name === 'AbortError' || controller.signal.aborted) {
-        const agent = await getAgent(dependencies)
-
-        await cleanupLastIteration(agent, config)
-
-        dependencies.services.userService.payCreditsByTokens(
-          agentEventsHandler.totalTokensUsed,
-          configurable.user.id.toString(),
-        )
-
-        throw error
-      }
+      if (error.name === 'AbortError' || controller.signal.aborted) throw error
 
       try {
+        await agentEventsHandler.pushProgress({
+          id: crypto.randomUUID(),
+          status: 'failed',
+        })
+
         await agentEventsHandler.createErrorMessage(error)
       } catch (dbError) {
         Sentry.captureException(dbError, {
@@ -207,8 +213,24 @@ export const RunAgentWorker = new Worker(
     } finally {
       clearInterval(checkInterval)
 
+      const agent = await getAgent(dependencies)
+
+      const currentState = await agent.getState(config)
+
+      const finalMessages = currentState.values.final_messages || []
+
+      const updateData: Partial<typeof AgentStateAnnotation.State> = {
+        messages: finalMessages,
+      }
+      await agent.updateState(config, updateData)
+
       agentEventsHandler.completeSteps()
       await agentEventsHandler.updateStepsMessage()
+
+      await agentEventsHandler.pushProgress({
+        id: crypto.randomUUID(),
+        status: 'completed',
+      })
     }
   },
   {

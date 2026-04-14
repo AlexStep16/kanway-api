@@ -16,7 +16,6 @@ export const makeSummarizerNode = (deps: AgentDependencies): any => {
       id: new Types.ObjectId().toString(),
       name: 'Сжимаю чат',
     })
-    await dispatchCustomEvent(CustomEvents.SYNTHESIZE_END, {})
 
     const { summarizerModel } = deps.models
 

@@ -14,8 +14,9 @@ export const makeCoderExecutionNode = () => {
       coder_errors: state.coder_errors,
       coder_has_error: false,
       pending_internal_tool_calls: [],
-      coder_iterations: 0,
-      last_execution_messages: state.last_execution_messages,
+      coder_iterations: state.coder_iterations,
+      planner_messages: state.planner_messages,
+      final_messages: state.final_messages,
     }
 
     try {
@@ -40,23 +41,14 @@ export const makeCoderExecutionNode = () => {
         outputs.coder_messages!.push(errorMessage)
         outputs.coder_errors!.push(errorMessage)
         outputs.coder_has_error = true
-        outputs.coder_iterations = state.coder_iterations + 1
-
-        if (state.coder_iterations === 2) {
-          outputs.last_execution_messages?.push(
-            new HumanMessage('The code has been executed 3 times with errors.'),
-            ...outputs.coder_errors!,
-          )
-        }
 
         return outputs
       }
 
       outputs.pending_internal_tool_calls = pendingToolCalls
-      outputs.coder_iterations = 0
 
       if (executeResult.stdout) {
-        outputs.last_execution_messages?.push(
+        outputs.planner_messages!.push(
           new HumanMessage(
             `[SANDBOX OUTPUT]\nCode execution result (print):\n${executeResult.stdout}`,
           ),
@@ -64,8 +56,6 @@ export const makeCoderExecutionNode = () => {
       }
 
       outputs.coder_errors = []
-
-      return outputs
     } catch (error) {
       const errorMessage = new HumanMessage(
         `Error executing code: ${error instanceof Error ? error.message : String(error)}`,
@@ -73,16 +63,17 @@ export const makeCoderExecutionNode = () => {
       outputs.coder_messages!.push(errorMessage)
       outputs.coder_errors!.push(errorMessage)
       outputs.coder_has_error = true
-      outputs.coder_iterations = state.coder_iterations + 1
+    } finally {
+      outputs.coder_iterations = (state.coder_iterations || 0) + 1
 
-      if (state.coder_iterations === 2) {
-        outputs.last_execution_messages?.push(
-          new HumanMessage('The code has been executed 3 times with errors.'),
+      if (outputs.coder_iterations > 4 && outputs.coder_has_error) {
+        outputs.planner_messages!.push(
+          new HumanMessage('The code has been executed 5 times with errors.'),
           ...outputs.coder_errors!,
         )
       }
-
-      return outputs
     }
+
+    return outputs
   }
 }

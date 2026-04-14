@@ -2,7 +2,7 @@ import { CategoryService } from '@/application/services/CategoryService.ts'
 import { TaskService } from '@/application/services/TaskService.ts'
 import { CustomEvents } from '@/enums/CustomEvents.ts'
 import { dispatchCustomEvent } from '@langchain/core/callbacks/dispatch'
-import { Types } from 'mongoose'
+import { ClientSession, Types } from 'mongoose'
 import { SuccessToolResult } from '../tools/helpers/SuccessToolResult.ts'
 import { WorkspaceService } from '@/application/services/WorkspaceService.ts'
 import { BoardService } from '@/application/services/BoardService.ts'
@@ -33,12 +33,12 @@ export class GeneralToolsExecutor extends AbstractToolExecutor {
     }
   }
 
-  public async displayToUser(payload: DispatchPayload) {
-    const { toolCall, config, tempToRealIdMap } = payload
+  public async displayToUser(payload: DispatchPayload, session?: ClientSession) {
+    const { toolCall, config } = payload
     const { view_type, ids } = toolCall.args as { view_type: string; ids: string[] }
     const userId = new Types.ObjectId(payload.userId)
 
-    const mappedIds = Array.from(new Set(ids)).map((id) => tempToRealIdMap[id] || id)
+    const mappedIds = Array.from(new Set(ids))
     const criteria = { ids: mappedIds }
 
     const serviceMap: Record<string, any> = {
@@ -54,7 +54,7 @@ export class GeneralToolsExecutor extends AbstractToolExecutor {
       return new FailedToolResult(`Unsupported view_type: ${view_type}`)
     }
 
-    const result = await service.getByCriteria(criteria, userId)
+    const result = await service.getByCriteria(criteria, userId, session)
 
     dispatchCustomEvent(CustomEvents.DISPLAY, { entityType: view_type, entities: result }, config)
 
@@ -65,7 +65,7 @@ export class GeneralToolsExecutor extends AbstractToolExecutor {
     )
   }
 
-  public async undoOperation(payload: DispatchPayload) {
+  public async undoOperation(payload: DispatchPayload, session?: ClientSession) {
     const { toolCall, config } = payload
 
     const logId = toolCall.args?.log_id
@@ -82,12 +82,14 @@ export class GeneralToolsExecutor extends AbstractToolExecutor {
       const messages = await this.chatMessageService.getByCriteria(
         { pendingToolCallId: toolCallId, role: 'operation' },
         user.id,
+        session,
       )
 
       if (messages.length > 0) {
         const logs = await this.operationLogService.getByCriteria(
           { id: messages[0].content },
           user.id,
+          session,
         )
 
         const log = logs[0]
@@ -99,7 +101,7 @@ export class GeneralToolsExecutor extends AbstractToolExecutor {
         const mockOperationsUndo = await this.operationLogService.undoOperations(
           [logId],
           user,
-          undefined,
+          session,
           true,
         )
         const mockOperationUndo = mockOperationsUndo[0]
@@ -122,10 +124,11 @@ export class GeneralToolsExecutor extends AbstractToolExecutor {
       config,
     )
 
-    const operationsUndo = await this.operationLogService.undoOperations([logId], user, undefined)
+    const operationsUndo = await this.operationLogService.undoOperations([logId], user, session)
     const logs = await this.operationLogService.getByCriteria(
       { id: operationsUndo[0].logId!.toString() },
       user.id,
+      session,
     )
 
     await dispatchCustomEvent(

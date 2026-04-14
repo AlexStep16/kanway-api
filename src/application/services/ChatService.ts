@@ -79,30 +79,32 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
 
   private async _getActiveEntities(
     boardId: string | undefined,
-    workspaceId: string | undefined,
+    workspaceId: string,
     user: IUser,
     session?: ClientSession,
   ) {
-    let activeBoardName = ''
-    let activeWorkspaceName = ''
-
-    const activeBoard = boardId
+    const boards = boardId
       ? await this.boardService.getByCriteria({ id: boardId }, user.id, session)
       : null
 
-    const activeWorkspace = workspaceId
-      ? await this.workspaceService.getByCriteria({ id: workspaceId }, user.id, session)
+    const workspaces = await this.workspaceService.getByCriteria(
+      { id: workspaceId },
+      user.id,
+      session,
+    )
+
+    const board = boards
+      ? {
+          id: boards[0].id.toString(),
+          name: boards[0].name,
+        }
       : null
-
-    if (activeBoard && activeBoard.length > 0) {
-      activeBoardName = activeBoard[0].name
+    const workspace = {
+      id: workspaces[0].id.toString(),
+      name: workspaces[0].name,
     }
 
-    if (activeWorkspace && activeWorkspace.length > 0) {
-      activeWorkspaceName = activeWorkspace[0].name
-    }
-
-    return { activeBoardName, activeWorkspaceName }
+    return { board, workspace }
   }
 
   private async _getConfigurableFromUserSetting(
@@ -110,14 +112,12 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     data: {
       threadId: string
       chatId: string
-      boardId?: string
-      workspaceId: string
       timezone: string
       isChatNameNeeded?: boolean
       userMessage: string
       stepMessageId: string
-      activeBoardName?: string
-      activeWorkspaceName?: string
+      activeBoard: { id: string; name: string } | null
+      activeWorkspace: { id: string; name: string }
     },
     session?: ClientSession,
   ): Promise<RunnableConfig<Configurable>> {
@@ -125,7 +125,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     const userSetting = userSettings[0]
 
     const categories = await this.categoryService.getByCriteria(
-      { boardId: data.boardId, isDeleted: false, isDeletedExternal: false },
+      { boardId: data.activeBoard?.id, isDeleted: false, isDeletedExternal: false },
       user.id,
       session,
     )
@@ -134,7 +134,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       .join(', ')
 
     const tasks = await this.taskService.getByCriteria(
-      { boardId: data.boardId, isDeleted: false, isDeletedExternal: false },
+      { boardId: data.activeBoard?.id, isDeleted: false, isDeletedExternal: false },
       user.id,
       session,
     )
@@ -150,10 +150,8 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
         thread_id: data.threadId,
         user,
         chatId: data.chatId,
-        activeBoardId: data.boardId,
-        activeBoardName: data.activeBoardName,
-        activeWorkspaceId: data.workspaceId,
-        activeWorkspaceName: data.activeWorkspaceName,
+        activeBoard: data.activeBoard,
+        activeWorkspace: data.activeWorkspace,
         currentDate: dayjs.tz(dayjs(), data.timezone).toISOString(),
         categoriesList: categoriesList.length > 0 ? categoriesList : 'No categories',
         tagsList: tagsList.length > 0 ? tagsList : 'No tags',
@@ -161,7 +159,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
         isChatNameNeeded: !!data.isChatNameNeeded,
         userMessage: data.userMessage,
 
-        aiName: userSetting.aiName || 'Kanbar',
+        aiName: userSetting.aiName || 'Kanway',
         aiConfirmationType: userSetting.aiConfirmationType,
         defaultCategoryName: userSetting.aiDefaultCategory,
         defaultBoardName: userSetting.aiDefaultBoard,
@@ -215,7 +213,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       throw new AppError(ErrorMessages.CREDITS_LOW, 403)
     }
 
-    const { activeBoardName, activeWorkspaceName } = await this._getActiveEntities(
+    const { board, workspace } = await this._getActiveEntities(
       data.boardId,
       data.workspaceId,
       user,
@@ -323,21 +321,17 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       {
         threadId: threadId,
         chatId: chat.id.toString(),
-        boardId: data.boardId,
-        workspaceId: data.workspaceId,
         timezone: data.timezone,
         stepMessageId: stepMessage.id.toHexString(),
         isChatNameNeeded,
-        activeBoardName,
-        activeWorkspaceName,
+        activeBoard: board,
+        activeWorkspace: workspace,
         userMessage: data.message || '',
       },
       externalSession,
     )
 
     const payload = getDefaultState()
-
-    payload.messages = messages
 
     const jobPayload: {
       payload: Partial<typeof AgentStateAnnotation.State> | Command
@@ -407,6 +401,13 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       },
     )
 
+    const { board, workspace } = await this._getActiveEntities(
+      data.boardId,
+      data.workspaceId,
+      user,
+      externalSession,
+    )
+
     const lastUserMessage = chatMessages.find((msg) => msg.role === 'user')
 
     if (!lastUserMessage) {
@@ -430,9 +431,9 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       {
         threadId: data.threadId,
         chatId: data.chatId.toString(),
-        boardId: data.boardId,
-        workspaceId: data.workspaceId,
         timezone: data.timezone,
+        activeBoard: board,
+        activeWorkspace: workspace,
         stepMessageId: lastStepperMessageId || '',
         userMessage: lastUserMessage ? lastUserMessage.content : '',
       },
@@ -594,6 +595,13 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       },
     )
 
+    const { board, workspace } = await this._getActiveEntities(
+      data.boardId,
+      data.workspaceId,
+      user,
+      externalSession,
+    )
+
     if (!chatMessages || chatMessages.length === 0) {
       throw new AppError('Сообщение чата не найдено.', 400)
     }
@@ -627,8 +635,8 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       {
         threadId: chatMessage.threadId,
         chatId: chatId,
-        boardId: data.boardId || '',
-        workspaceId: data.workspaceId || '',
+        activeBoard: board,
+        activeWorkspace: workspace,
         timezone: data.timezone || 'UTC',
         stepMessageId: lastStepperMessage ? lastStepperMessage.id.toHexString() : '',
         userMessage: lastUserMessage ? lastUserMessage.content : '',
@@ -644,15 +652,21 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       externalSession,
     )
 
-    const job = await langgraphQueue.add('resolve_ambiguous', {
-      payload: new Command({
-        resume: {
-          ids: data.ids,
-          callId: data.callId,
-        },
-      }),
-      config,
-    })
+    const job = await langgraphQueue.add(
+      'resolve_ambiguous',
+      {
+        payload: new Command({
+          resume: {
+            ids: data.ids,
+            callId: data.callId,
+          },
+        }),
+        config,
+      },
+      {
+        jobId: data.jobId,
+      },
+    )
 
     return {
       jobId: job.id,
@@ -674,6 +688,13 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     if (!logs || logs.length === 0) {
       throw new AppError('Лог не найден.', 400)
     }
+
+    const { board, workspace } = await this._getActiveEntities(
+      data.boardId,
+      data.workspaceId,
+      user,
+      externalSession,
+    )
 
     const log = logs[0]
 
@@ -745,8 +766,8 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       {
         threadId: data.threadId,
         chatId: data.chatId,
-        boardId: data.boardId || '',
-        workspaceId: data.workspaceId || '',
+        activeBoard: board,
+        activeWorkspace: workspace,
         timezone: data.timezone || 'UTC',
         stepMessageId: lastStepperMessage ? lastStepperMessage.id.toHexString() : '',
         userMessage: lastUserMessage ? lastUserMessage.content : '',

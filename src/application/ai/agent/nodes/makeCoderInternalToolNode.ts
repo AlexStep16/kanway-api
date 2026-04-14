@@ -9,6 +9,7 @@ import { ConfirmationEntityToolResult } from '../../tools/helpers/ConfirmationEn
 import { ToolResultTypesEnum } from '@/domain/enums/ToolResultTypesEnum.ts'
 import { FailedToolResult } from '../../tools/helpers/FailedToolResult.ts'
 import { HumanMessage } from '@langchain/core/messages'
+import mongoose from 'mongoose'
 
 export const makeCoderInternalToolNode = (deps: AgentDependencies) => {
   return async (state: typeof AgentStateAnnotation.State, config: RunnableConfig) => {
@@ -16,15 +17,15 @@ export const makeCoderInternalToolNode = (deps: AgentDependencies) => {
     const configurable = config.configurable as Configurable
     const user = configurable.user
     const outputs: Partial<typeof AgentStateAnnotation.State> = {
-      messages: [],
       internal_tool_call_results: [],
       coder_has_confirmations: false,
       coder_has_ambiguities: false,
       internal_tool_calls_have_error: false,
-      last_execution_messages: state.last_execution_messages,
+      coder_messages: state.coder_messages,
+      planner_messages: state.planner_messages,
+      final_messages: state.final_messages,
     }
     const resolveAmbiguousCall = pendingToolCalls.find((call) => call.name === 'resolve_ambiguous')
-    const tempToRealIdMap: Record<string, string> = {} // Map for tracking temp IDs to real IDs during creating entities
 
     const filteredPendingToolCalls = pendingToolCalls.filter((call) => {
       const toolResult = state.internal_tool_call_results?.find((result) => result[call.id])
@@ -49,34 +50,37 @@ export const makeCoderInternalToolNode = (deps: AgentDependencies) => {
       return outputs
     }
 
+    const session = await mongoose.startSession()
+    session.startTransaction()
+
     for (const pendingToolCall of filteredPendingToolCalls) {
-      const result = (await deps.services.toolDispatcherService.dispatch({
-        toolCall: pendingToolCall,
-        userId: user.id.toString(),
-        config,
-        tempToRealIdMap,
-      })) as ToolResult
+      const result = (await deps.services.toolDispatcherService.dispatch(
+        {
+          toolCall: pendingToolCall,
+          userId: user.id.toString(),
+          config,
+        },
+        session,
+      )) as ToolResult
 
       if (result instanceof ConfirmationEntityToolResult) {
         await dispatchCustomEvent(CustomEvents.OPERATION, result.meta)
 
         outputs.coder_has_confirmations = true
       } else if (result instanceof FailedToolResult) {
-        outputs.last_execution_messages!.push(
+        outputs.coder_messages!.push(
           new HumanMessage(`Error executing tool ${pendingToolCall.name}: ${result.content}`),
         )
         outputs.internal_tool_calls_have_error = true
 
+        session.abortTransaction()
+
         break
       } else {
-        if (result.meta?.tempToRealIdMap) {
-          Object.assign(tempToRealIdMap, result.meta.tempToRealIdMap)
-        }
-
         const toolResultMessage = new HumanMessage(result.content)
 
-        outputs.last_execution_messages!.push(toolResultMessage)
-        outputs.messages!.push(toolResultMessage)
+        outputs.planner_messages!.push(toolResultMessage)
+        outputs.final_messages!.push(toolResultMessage)
       }
 
       outputs.internal_tool_call_results = [
@@ -85,6 +89,9 @@ export const makeCoderInternalToolNode = (deps: AgentDependencies) => {
         },
       ]
     }
+
+    if (!outputs.internal_tool_calls_have_error) await session.commitTransaction()
+    session.endSession()
 
     return outputs
   }
