@@ -16,12 +16,12 @@
     "sourceMap": true,
     "declaration": true,
     "declarationMap": true,
-    "noEmit": true,
+    "noEmit": false,
 
     "esModuleInterop": true,
     "resolveJsonModule": true,
     "skipLibCheck": true,
-    "allowImportingTsExtensions": true,
+    "allowImportingTsExtensions": false,
     "paths": {
       "@/*": ["./src/*"],
       "@utils/*": ["./src/utils/*"],
