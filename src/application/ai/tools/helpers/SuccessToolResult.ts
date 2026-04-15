@@ -1,5 +1,5 @@
-import { ToolResultTypesEnum } from '@/domain/enums/ToolResultTypesEnum.ts'
-import { ToolResult } from './ToolResult.ts'
+import { ToolResultTypesEnum } from '@/domain/enums/ToolResultTypesEnum.js'
+import { ToolResult } from './ToolResult.js'
 
 export class SuccessToolResult extends ToolResult {
   constructor(content: any = null, meta: any = null) {

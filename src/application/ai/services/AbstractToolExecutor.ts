@@ -1,5 +1,5 @@
 import { ClientSession } from 'mongoose'
-import { DispatchPayload } from './ToolDispatcherService.ts'
+import { DispatchPayload } from './ToolDispatcherService.js'
 
 export abstract class AbstractToolExecutor {
   protected toolRegistry: Record<

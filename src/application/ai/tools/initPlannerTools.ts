@@ -1,6 +1,6 @@
 import { tool } from '@langchain/core/tools'
-import { SuccessToolResult } from './helpers/SuccessToolResult.ts'
-import { ExecutePlanDTOSchema } from '../dtos/ExecutePlanDTO.ts'
+import { SuccessToolResult } from './helpers/SuccessToolResult.js'
+import { ExecutePlanDTOSchema } from '../dtos/ExecutePlanDTO.js'
 
 export function initPlannerTools() {
   const executePlan = tool(

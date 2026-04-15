@@ -1,4 +1,4 @@
-import { ICategory } from '@/domain/entities/ICategory.ts'
+import { ICategory } from '@/domain/entities/ICategory.js'
 import { Types } from 'mongoose'
 
 export type ICategoryPopulated = ICategory<

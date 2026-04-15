@@ -1,13 +1,13 @@
-import SettingRepository from '@repositories/SettingRepository.ts'
-import { ISetting } from '@entities/ISetting.ts'
-import { ISettingRaw } from '@entities/ISettingRaw.ts'
-import { SettingDTO } from '@dtos/SettingDTO.ts'
-import { SettingEditDTO } from '@dtos/SettingEditDTO.ts'
-import { ISettingCriteria } from '@criterias/ISettingCriteria.ts'
+import SettingRepository from '@repositories/SettingRepository.js'
+import { ISetting } from '@entities/ISetting.js'
+import { ISettingRaw } from '@entities/ISettingRaw.js'
+import { SettingDTO } from '@dtos/SettingDTO.js'
+import { SettingEditDTO } from '@dtos/SettingEditDTO.js'
+import { ISettingCriteria } from '@criterias/ISettingCriteria.js'
 import { ClientSession, Types } from 'mongoose'
-import { SystemFields } from '@infrastructure/types/SystemFields.ts'
-import { IUser } from '@/domain/entities/IUser.ts'
-import { BaseService } from './BaseService.ts'
+import { SystemFields } from '@infrastructure/types/SystemFields.js'
+import { IUser } from '@/domain/entities/IUser.js'
+import { BaseService } from './BaseService.js'
 
 export class SettingService extends BaseService<ISettingRaw, ISetting, ISettingCriteria> {
   protected repository: SettingRepository

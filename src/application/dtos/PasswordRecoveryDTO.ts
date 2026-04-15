@@ -1,4 +1,4 @@
-import { ErrorMessages } from '@/enums/ErrorMessages.ts'
+import { ErrorMessages } from '@/enums/ErrorMessages.js'
 import { z } from 'zod'
 
 export const PasswordRecoverySchema = z.object({

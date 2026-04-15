@@ -1,10 +1,10 @@
-import { IUserCriteria } from '@criterias/IUserCriteria.ts'
-import SuccessResponse from '@application/services/SuccessResponse.ts'
-import { UserService } from '@application/services/UserService.ts'
+import { IUserCriteria } from '@criterias/IUserCriteria.js'
+import SuccessResponse from '@application/services/SuccessResponse.js'
+import { UserService } from '@application/services/UserService.js'
 import { Request, Response, NextFunction } from 'express'
-import { AppError } from '@errors/AppError.ts'
-import { IUser } from '@entities/IUser.ts'
-import { EmailService } from '@/infrastructure/services/EmailService.ts'
+import { AppError } from '@errors/AppError.js'
+import { IUser } from '@entities/IUser.js'
+import { EmailService } from '@/infrastructure/services/EmailService.js'
 
 export class UserController {
   protected service: UserService

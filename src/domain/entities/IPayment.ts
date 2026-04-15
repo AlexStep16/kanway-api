@@ -1,6 +1,6 @@
-import { PaymentStatusesEnum } from '@domain/enums/PaymentStatusesEnum.ts'
+import { PaymentStatusesEnum } from '@domain/enums/PaymentStatusesEnum.js'
 import { Types } from 'mongoose'
-import { SubscriptionPlanEnum } from '../enums/SubscriptionPlanEnum.ts'
+import { SubscriptionPlanEnum } from '../enums/SubscriptionPlanEnum.js'
 
 export interface IPayment {
   id: Types.ObjectId

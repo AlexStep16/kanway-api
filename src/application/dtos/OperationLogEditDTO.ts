@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { OperationLogCreationSchema } from './OperationLogCreationDTO.ts'
+import { OperationLogCreationSchema } from './OperationLogCreationDTO.js'
 
 const objectIdRegex = /^[0-9a-fA-F]{24}$/
 

@@ -1,8 +1,8 @@
-import { IPaymentRaw } from '@entities/IPaymentRaw.ts'
-import PaymentModel from '@models/PaymentModel.ts'
-import { IPayment } from '@/domain/entities/IPayment.ts'
-import { BaseRepository } from './BaseRepository.ts'
-import { IPaymentCriteria } from '../interfaces/criterias/IPaymentCriteria.ts'
+import { IPaymentRaw } from '@entities/IPaymentRaw.js'
+import PaymentModel from '@models/PaymentModel.js'
+import { IPayment } from '@/domain/entities/IPayment.js'
+import { BaseRepository } from './BaseRepository.js'
+import { IPaymentCriteria } from '../interfaces/criterias/IPaymentCriteria.js'
 import { FilterQuery, Types } from 'mongoose'
 
 export default class PaymentRepository extends BaseRepository<IPaymentRaw, IPayment> {

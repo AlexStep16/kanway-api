@@ -1,11 +1,11 @@
-import { ITokenRaw } from '@entities/ITokenRaw.ts'
-import TokenModel from '@models/TokenModel.ts'
-import { TokenTypesEnum } from '@/domain/enums/TokenTypesEnum.ts'
+import { ITokenRaw } from '@entities/ITokenRaw.js'
+import TokenModel from '@models/TokenModel.js'
+import { TokenTypesEnum } from '@/domain/enums/TokenTypesEnum.js'
 import { FilterQuery, Types } from 'mongoose'
-import { BaseRepository } from '@repositories/BaseRepository.ts'
-import { IToken } from '@entities/IToken.ts'
-import { ITokenCreatePayload } from '../interfaces/ITokenCreatePayload.ts'
-import { ITokenCriteria } from '../interfaces/criterias/ITokenCriteria.ts'
+import { BaseRepository } from '@repositories/BaseRepository.js'
+import { IToken } from '@entities/IToken.js'
+import { ITokenCreatePayload } from '../interfaces/ITokenCreatePayload.js'
+import { ITokenCriteria } from '../interfaces/criterias/ITokenCriteria.js'
 
 export default class TokenRepository extends BaseRepository<
   ITokenRaw,

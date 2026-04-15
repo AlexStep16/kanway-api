@@ -1,3 +1,3 @@
-import { IBaseCriteria } from './IBaseCriteria.ts'
+import { IBaseCriteria } from './IBaseCriteria.js'
 
 export interface ISubscriptionCriteria extends IBaseCriteria {}

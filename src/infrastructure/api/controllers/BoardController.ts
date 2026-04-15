@@ -1,12 +1,12 @@
-import { BoardService } from '@application/services/BoardService.ts'
-import { IBoard } from '@entities/IBoard.ts'
-import { BaseController } from '@controllers/BaseController.ts'
-import { IBoardCriteria } from '@interfaces/criterias/IBoardCriteria.ts'
+import { BoardService } from '@application/services/BoardService.js'
+import { IBoard } from '@entities/IBoard.js'
+import { BaseController } from '@controllers/BaseController.js'
+import { IBoardCriteria } from '@interfaces/criterias/IBoardCriteria.js'
 import { Request, Response, NextFunction } from 'express'
-import SuccessResponse from '@application/services/SuccessResponse.ts'
-import { BoardEditDTO } from '@dtos/BoardEditDTO.ts'
-import { BoardDTO } from '@dtos/BoardDTO.ts'
-import { IBoardPopulated } from '@interfaces/IBoardPopulated.ts'
+import SuccessResponse from '@application/services/SuccessResponse.js'
+import { BoardEditDTO } from '@dtos/BoardEditDTO.js'
+import { BoardDTO } from '@dtos/BoardDTO.js'
+import { IBoardPopulated } from '@interfaces/IBoardPopulated.js'
 
 export default class BoardController extends BaseController<
   IBoard,

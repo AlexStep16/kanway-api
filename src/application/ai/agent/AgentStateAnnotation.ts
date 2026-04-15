@@ -1,6 +1,6 @@
 import { BaseMessage, ToolCall } from '@langchain/core/messages'
 import { Annotation, messagesStateReducer } from '@langchain/langgraph'
-import { ToolResult } from '../tools/helpers/ToolResult.ts'
+import { ToolResult } from '../tools/helpers/ToolResult.js'
 
 export interface PendingToolCall {
   id: string

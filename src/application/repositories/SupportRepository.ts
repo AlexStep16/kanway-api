@@ -1,7 +1,7 @@
-import { ISupport } from '@entities/ISupport.ts'
-import { ISupportRaw } from '@entities/ISupportRaw.ts'
-import SupportModel from '@models/SupportModel.ts'
-import { BaseRepository } from '@repositories/BaseRepository.ts'
+import { ISupport } from '@entities/ISupport.js'
+import { ISupportRaw } from '@entities/ISupportRaw.js'
+import SupportModel from '@models/SupportModel.js'
+import { BaseRepository } from '@repositories/BaseRepository.js'
 
 export default class SupportRepository extends BaseRepository<ISupportRaw, ISupport> {
   constructor() {

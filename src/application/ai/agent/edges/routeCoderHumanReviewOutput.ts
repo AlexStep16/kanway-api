@@ -1,4 +1,4 @@
-import { AgentStateAnnotation } from '../AgentStateAnnotation.ts'
+import { AgentStateAnnotation } from '../AgentStateAnnotation.js'
 
 export const routeCoderHumanReviewOutput = (state: typeof AgentStateAnnotation.State) => {
   if (state.coder_has_ambiguities) {

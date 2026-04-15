@@ -1,8 +1,8 @@
-import { IUser } from '@entities/IUser.ts'
-import SuccessResponse from '@application/services/SuccessResponse.ts'
+import { IUser } from '@entities/IUser.js'
+import SuccessResponse from '@application/services/SuccessResponse.js'
 import { Request, Response, NextFunction } from 'express'
-import { IControllerService } from '@interfaces/traits/IControllerService.ts'
-import { IBaseCriteria } from '@/application/interfaces/criterias/IBaseCriteria.ts'
+import { IControllerService } from '@interfaces/traits/IControllerService.js'
+import { IBaseCriteria } from '@/application/interfaces/criterias/IBaseCriteria.js'
 
 export abstract class BaseController<
   TEntity,

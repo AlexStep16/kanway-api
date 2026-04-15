@@ -1,4 +1,4 @@
-import { TokenTypesEnum } from '@/domain/enums/TokenTypesEnum.ts'
+import { TokenTypesEnum } from '@/domain/enums/TokenTypesEnum.js'
 import { Types } from 'mongoose'
 
 export interface ITokenCreatePayload {

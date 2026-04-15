@@ -1,7 +1,7 @@
-import { AppError } from '@errors/AppError.ts'
+import { AppError } from '@errors/AppError.js'
 import { Request, Response, NextFunction } from 'express'
 import * as Sentry from '@sentry/node'
-import { ValidationError } from '@/domain/errors/ValidationError.ts'
+import { ValidationError } from '@/domain/errors/ValidationError.js'
 
 export const globalErrorHandler = (err: any, _r: Request, res: Response, _n: NextFunction) => {
   if (process.env.NODE_ENV === 'development') {

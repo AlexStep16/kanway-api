@@ -1,5 +1,5 @@
 import { Types } from 'mongoose'
-import { AiConfirmationTypeEnum } from '@domain/enums/AiConfirmationTypeEnum.ts'
+import { AiConfirmationTypeEnum } from '@domain/enums/AiConfirmationTypeEnum.js'
 
 export interface ISetting {
   id: Types.ObjectId

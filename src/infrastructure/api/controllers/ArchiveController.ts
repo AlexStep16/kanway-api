@@ -1,8 +1,8 @@
-import { BoardService } from '@/application/services/BoardService.ts'
-import { CategoryService } from '@/application/services/CategoryService.ts'
-import SuccessResponse from '@/application/services/SuccessResponse.ts'
-import { TaskService } from '@/application/services/TaskService.ts'
-import { WorkspaceService } from '@/application/services/WorkspaceService.ts'
+import { BoardService } from '@/application/services/BoardService.js'
+import { CategoryService } from '@/application/services/CategoryService.js'
+import SuccessResponse from '@/application/services/SuccessResponse.js'
+import { TaskService } from '@/application/services/TaskService.js'
+import { WorkspaceService } from '@/application/services/WorkspaceService.js'
 import { NextFunction, Request, Response } from 'express'
 
 export default class ArchiveController {
@@ -15,7 +15,7 @@ export default class ArchiveController {
     taskServiceInstance: TaskService,
     categoryServiceInstance: CategoryService,
     boardServiceInstance: BoardService,
-    workspaceServiceInstance: WorkspaceService
+    workspaceServiceInstance: WorkspaceService,
   ) {
     this.taskService = taskServiceInstance
     this.categoryService = categoryServiceInstance

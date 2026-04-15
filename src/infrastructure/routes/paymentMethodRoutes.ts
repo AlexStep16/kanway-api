@@ -1,6 +1,6 @@
 import { Router } from 'express'
-import { jwtAuthMiddleware } from '@infrastructure/auth/passportJWTStrategy.ts'
-import { PaymentMethodController } from '@controllers/PaymentMethodController.ts'
+import { jwtAuthMiddleware } from '@infrastructure/auth/passportJWTStrategy.js'
+import { PaymentMethodController } from '@controllers/PaymentMethodController.js'
 
 export default (controller: PaymentMethodController): Router => {
   const router = Router({ mergeParams: true })

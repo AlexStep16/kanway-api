@@ -1,9 +1,9 @@
-import { IUserRaw } from '@entities/IUserRaw.ts'
-import { UserModel } from '@models/UserModel.ts' // Mongoose Model
-import { BaseRepository } from '@repositories/BaseRepository.ts'
-import { IUserCriteria } from '../interfaces/criterias/IUserCriteria.ts'
+import { IUserRaw } from '@entities/IUserRaw.js'
+import { UserModel } from '@models/UserModel.js' // Mongoose Model
+import { BaseRepository } from '@repositories/BaseRepository.js'
+import { IUserCriteria } from '../interfaces/criterias/IUserCriteria.js'
 import { FilterQuery, Types } from 'mongoose'
-import { IUser } from '@/domain/entities/IUser.ts'
+import { IUser } from '@/domain/entities/IUser.js'
 
 export default class UserRepository extends BaseRepository<IUserRaw, IUser, IUserCriteria> {
   constructor() {

@@ -1,4 +1,4 @@
-import { IWorkspace } from '@/domain/entities/IWorkspace.ts'
+import { IWorkspace } from '@/domain/entities/IWorkspace.js'
 
 interface CompressedWorkspace {
   id: string

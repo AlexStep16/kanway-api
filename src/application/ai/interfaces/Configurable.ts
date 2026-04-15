@@ -1,5 +1,5 @@
-import { IUser } from '@/domain/entities/IUser.ts'
-import { AiConfirmationTypeEnum } from '@/domain/enums/AiConfirmationTypeEnum.ts'
+import { IUser } from '@/domain/entities/IUser.js'
+import { AiConfirmationTypeEnum } from '@/domain/enums/AiConfirmationTypeEnum.js'
 
 export interface Configurable {
   thread_id: string

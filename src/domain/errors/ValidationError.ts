@@ -1,4 +1,4 @@
-import { AppError } from '@errors/AppError.ts'
+import { AppError } from '@errors/AppError.js'
 
 export class ValidationError extends AppError {
   constructor(message: string = 'Неверные входные данные.') {

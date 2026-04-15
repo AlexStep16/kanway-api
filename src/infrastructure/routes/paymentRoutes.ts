@@ -1,9 +1,9 @@
 import { Router } from 'express'
-import { jwtAuthMiddleware } from '@infrastructure/auth/passportJWTStrategy.ts'
-import { PaymentController } from '@controllers/PaymentController.ts'
-import { validationMiddleware } from '../middlewares/validations/validationMiddleware.ts'
-import { BuySubscriptionDTOSchema } from '@/application/dtos/BuySubscriptionDTO.ts'
-import { patchEntitiesLimiter, postEntitiesLimiter } from '@/limiters.ts'
+import { jwtAuthMiddleware } from '@infrastructure/auth/passportJWTStrategy.js'
+import { PaymentController } from '@controllers/PaymentController.js'
+import { validationMiddleware } from '../middlewares/validations/validationMiddleware.js'
+import { BuySubscriptionDTOSchema } from '@/application/dtos/BuySubscriptionDTO.js'
+import { patchEntitiesLimiter, postEntitiesLimiter } from '@/limiters.js'
 
 export default (controller: PaymentController): Router => {
   const router = Router({ mergeParams: true })

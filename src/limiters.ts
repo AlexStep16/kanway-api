@@ -2,7 +2,7 @@ import { RedisStore, type RedisReply } from 'rate-limit-redis'
 import { Redis } from 'ioredis'
 import { NextFunction, Request, Response } from 'express'
 import { rateLimit, ipKeyGenerator } from 'express-rate-limit'
-import { AppError } from './domain/errors/AppError.ts'
+import { AppError } from './domain/errors/AppError.js'
 
 const redis = new Redis()
 

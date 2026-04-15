@@ -1,7 +1,7 @@
 import { z } from 'zod'
-import { TaskDTOSchema } from '@dtos/TaskDTO.ts'
-import { ErrorMessages } from '@/enums/ErrorMessages.ts'
-import { TASK_COLORS_TITLES } from '@/constants/TASK_COLORS.ts'
+import { TaskDTOSchema } from '@dtos/TaskDTO.js'
+import { ErrorMessages } from '@/enums/ErrorMessages.js'
+import { TASK_COLORS_TITLES } from '@/constants/TASK_COLORS.js'
 
 const objectIdRegex = /^[0-9a-fA-F]{24}$/
 

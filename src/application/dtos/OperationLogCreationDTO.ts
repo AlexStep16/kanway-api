@@ -1,7 +1,7 @@
 import { Types } from 'mongoose'
 import { z } from 'zod'
-import { OperationTypesEnum } from '@domain/enums/OperationTypesEnum.ts'
-import { OperationLogStatusesEnum } from '@/domain/enums/OperationLogStatusesEnum.ts'
+import { OperationTypesEnum } from '@domain/enums/OperationTypesEnum.js'
+import { OperationLogStatusesEnum } from '@/domain/enums/OperationLogStatusesEnum.js'
 
 const objectIdRegex = /^[0-9a-fA-F]{24}$/
 

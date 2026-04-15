@@ -1,8 +1,8 @@
 import { Schema, model, Model, HydratedDocument } from 'mongoose'
-import { IUserRaw } from '@entities/IUserRaw.ts'
+import { IUserRaw } from '@entities/IUserRaw.js'
 import bcrypt from 'bcrypt'
-import { BASE_COLORS } from '@constants/BASE_COLORS.ts'
-import { SALT_ROUNDS } from '@constants/SALT_ROUNDS.ts'
+import { BASE_COLORS } from '@constants/BASE_COLORS.js'
+import { SALT_ROUNDS } from '@constants/SALT_ROUNDS.js'
 
 interface IUserRawMethods {
   comparePassword(password: string): Promise<boolean>

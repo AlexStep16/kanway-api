@@ -1,8 +1,8 @@
-import SuccessResponse from '@/application/services/SuccessResponse.ts'
-import { RegisterCredentialsDTO } from '@/application/dtos/RegisterCredentialsDTO.ts'
-import { AuthService } from '@application/services/AuthService.ts'
+import SuccessResponse from '@/application/services/SuccessResponse.js'
+import { RegisterCredentialsDTO } from '@/application/dtos/RegisterCredentialsDTO.js'
+import { AuthService } from '@application/services/AuthService.js'
 import { NextFunction, Request, Response } from 'express'
-import { LoginCredentialsDTO } from '@/application/dtos/LoginCredentialsDTO.ts'
+import { LoginCredentialsDTO } from '@/application/dtos/LoginCredentialsDTO.js'
 
 export default class AuthController {
   protected service: AuthService

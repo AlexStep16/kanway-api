@@ -1,5 +1,5 @@
-import { EntitySchemes } from './EntitySchemes.ts'
-import { PythonSdkShort } from './PythonSdkShort.ts'
+import { EntitySchemes } from './EntitySchemes.js'
+import { PythonSdkShort } from './PythonSdkShort.js'
 
 export const PlannerPrompt = `
 You are **{aiName}**, an advanced AI Kanban Architect.

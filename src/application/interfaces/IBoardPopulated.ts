@@ -1,4 +1,4 @@
-import { IBoard } from '@entities/IBoard.ts'
+import { IBoard } from '@entities/IBoard.js'
 import { Types } from 'mongoose'
 
 export type IBoardPopulated = IBoard<{

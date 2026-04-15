@@ -1,4 +1,4 @@
-import { IChatMessageRoles } from '@/application/interfaces/IChatMessageRoles.ts'
+import { IChatMessageRoles } from '@/application/interfaces/IChatMessageRoles.js'
 import { Types } from 'mongoose'
 
 export interface IChatMessage {

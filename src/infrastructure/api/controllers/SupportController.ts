@@ -1,7 +1,7 @@
-import SuccessResponse from '@/application/services/SuccessResponse.ts'
+import SuccessResponse from '@/application/services/SuccessResponse.js'
 import { Request, Response } from 'express'
-import { EmailService } from '@/infrastructure/services/EmailService.ts'
-import SupportRepository from '@/application/repositories/SupportRepository.ts'
+import { EmailService } from '@/infrastructure/services/EmailService.js'
+import SupportRepository from '@/application/repositories/SupportRepository.js'
 
 export default class SupportController {
   protected repository: SupportRepository

@@ -1,6 +1,6 @@
-import SuccessResponse from '@application/services/SuccessResponse.ts'
+import SuccessResponse from '@application/services/SuccessResponse.js'
 import { Request, Response, NextFunction } from 'express'
-import { PaymentService } from '@/application/services/PaymentService.ts'
+import { PaymentService } from '@/application/services/PaymentService.js'
 
 export class PaymentController {
   protected service: PaymentService

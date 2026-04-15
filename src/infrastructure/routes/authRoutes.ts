@@ -1,11 +1,11 @@
 import express, { Router } from 'express'
-import AuthController from '@controllers/AuthController.ts'
-import { validationMiddleware } from '../middlewares/validations/validationMiddleware.ts'
-import { RegisterCredentialsSchema } from '@/application/dtos/RegisterCredentialsDTO.ts'
-import { LoginCredentialsSchema } from '@/application/dtos/LoginCredentialsDTO.ts'
-import { PasswordRecoveryLinkSchema } from '@/application/dtos/PasswordRecoveryLinkDTO.ts'
-import { TokenWithTypePayloadSchemaDTO } from '@/application/dtos/TokenWithTypePayloadDTO.ts'
-import { emailLimiter } from '@/limiters.ts'
+import AuthController from '@controllers/AuthController.js'
+import { validationMiddleware } from '../middlewares/validations/validationMiddleware.js'
+import { RegisterCredentialsSchema } from '@/application/dtos/RegisterCredentialsDTO.js'
+import { LoginCredentialsSchema } from '@/application/dtos/LoginCredentialsDTO.js'
+import { PasswordRecoveryLinkSchema } from '@/application/dtos/PasswordRecoveryLinkDTO.js'
+import { TokenWithTypePayloadSchemaDTO } from '@/application/dtos/TokenWithTypePayloadDTO.js'
+import { emailLimiter } from '@/limiters.js'
 
 export default (controller: AuthController): Router => {
   const router = express.Router()

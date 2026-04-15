@@ -1,5 +1,5 @@
 import { model, Schema } from 'mongoose'
-import { ISupportRaw } from '@entities/ISupportRaw.ts'
+import { ISupportRaw } from '@entities/ISupportRaw.js'
 
 const SupportSchema = new Schema<ISupportRaw>(
   {

@@ -1,9 +1,9 @@
-import ChatMessage from '@models/ChatMessage.ts'
-import { IChatMessageRaw } from '@/domain/entities/IChatMessageRaw.ts'
-import { BaseRepository } from '@repositories/BaseRepository.ts'
-import { IChatMessageCriteria } from '../interfaces/criterias/IChatMessageCriteria.ts'
+import ChatMessage from '@models/ChatMessage.js'
+import { IChatMessageRaw } from '@/domain/entities/IChatMessageRaw.js'
+import { BaseRepository } from '@repositories/BaseRepository.js'
+import { IChatMessageCriteria } from '../interfaces/criterias/IChatMessageCriteria.js'
 import { FilterQuery, Types } from 'mongoose'
-import { IChatMessage } from '@entities/IChatMessage.ts'
+import { IChatMessage } from '@entities/IChatMessage.js'
 
 export default class ChatMessageRepository extends BaseRepository<
   IChatMessageRaw,

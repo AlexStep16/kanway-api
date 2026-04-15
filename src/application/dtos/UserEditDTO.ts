@@ -1,6 +1,6 @@
 import { z } from 'zod'
-import { UserDTOSchema } from '@dtos/UserDTO.ts'
-import { ErrorMessages } from '@/enums/ErrorMessages.ts'
+import { UserDTOSchema } from '@dtos/UserDTO.js'
+import { ErrorMessages } from '@/enums/ErrorMessages.js'
 
 export const UserEditSchemaDTO = UserDTOSchema.partial()
   .omit({ email: true })

@@ -1,13 +1,13 @@
 import { RunnableConfig } from '@langchain/core/runnables'
-import { AgentDependencies } from '@/application/ai/agent/types/AgentDependencies.ts'
-import { AgentStateAnnotation } from '@/application/ai/agent/AgentStateAnnotation.ts'
+import { AgentDependencies } from '@/application/ai/agent/types/AgentDependencies.js'
+import { AgentStateAnnotation } from '@/application/ai/agent/AgentStateAnnotation.js'
 import { ChatPromptTemplate } from '@langchain/core/prompts'
 import { dispatchCustomEvent } from '@langchain/core/callbacks/dispatch'
-import { CustomEvents } from '@/enums/CustomEvents.ts'
+import { CustomEvents } from '@/enums/CustomEvents.js'
 import { Types } from 'mongoose'
-import { Configurable } from '../../interfaces/Configurable.ts'
-import getLastAiMessage from '../../helpers/getLastAiMessage.ts'
-import { ChatNamePrompt } from '../../prompts/ChatNamePrompt.ts'
+import { Configurable } from '../../interfaces/Configurable.js'
+import getLastAiMessage from '../../helpers/getLastAiMessage.js'
+import { ChatNamePrompt } from '../../prompts/ChatNamePrompt.js'
 
 export const makeChatNameNode = (deps: AgentDependencies): any => {
   return async (state: typeof AgentStateAnnotation.State, config: RunnableConfig) => {

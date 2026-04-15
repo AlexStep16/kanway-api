@@ -1,10 +1,10 @@
-import { ITaskRaw } from '@entities/ITaskRaw.ts'
-import TaskModel from '@models/TaskModel.ts'
-import { ITaskCriteria } from '@criterias/ITaskCriteria.ts'
+import { ITaskRaw } from '@entities/ITaskRaw.js'
+import TaskModel from '@models/TaskModel.js'
+import { ITaskCriteria } from '@criterias/ITaskCriteria.js'
 import { FilterQuery, Types } from 'mongoose'
-import { BaseRepository } from '@repositories/BaseRepository.ts'
-import { ITask } from '@entities/ITask.ts'
-import { ITaskCreatePayload } from '@interfaces/ITaskCreatePayload.ts'
+import { BaseRepository } from '@repositories/BaseRepository.js'
+import { ITask } from '@entities/ITask.js'
+import { ITaskCreatePayload } from '@interfaces/ITaskCreatePayload.js'
 
 export default class TaskRepository extends BaseRepository<
   ITaskRaw,

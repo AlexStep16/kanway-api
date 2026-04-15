@@ -1,4 +1,4 @@
-import { AgentStateAnnotation } from '../AgentStateAnnotation.ts'
+import { AgentStateAnnotation } from '../AgentStateAnnotation.js'
 
 export const routePlannerToolOutput = (state: typeof AgentStateAnnotation.State) => {
   if (state.planner_has_error) {

@@ -1,4 +1,4 @@
-import { BASE_COLORS } from '@constants/BASE_COLORS.ts'
+import { BASE_COLORS } from '@constants/BASE_COLORS.js'
 
 export interface IWorkspaceRawString {
   _id: string

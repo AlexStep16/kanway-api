@@ -1,6 +1,6 @@
-import { ErrorMessages } from '@/enums/ErrorMessages.ts'
+import { ErrorMessages } from '@/enums/ErrorMessages.js'
 import { z } from 'zod'
-import { initializeDependencies } from '@/infrastructure/di/initializeDependencies.ts'
+import { initializeDependencies } from '@/infrastructure/di/initializeDependencies.js'
 
 const { services } = initializeDependencies()
 

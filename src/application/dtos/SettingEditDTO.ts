@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { SettingDTOSchema } from '@dtos/SettingDTO.ts'
+import { SettingDTOSchema } from '@dtos/SettingDTO.js'
 
 export const SettingEditDTOSchema = SettingDTOSchema.partial()
 

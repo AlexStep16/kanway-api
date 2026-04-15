@@ -1,4 +1,4 @@
-import { TASK_COLORS_TITLES } from '@/constants/TASK_COLORS.ts'
+import { TASK_COLORS_TITLES } from '@/constants/TASK_COLORS.js'
 import { Types } from 'mongoose'
 
 export interface ITaskRaw {

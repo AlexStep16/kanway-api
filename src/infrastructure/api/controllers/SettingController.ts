@@ -1,7 +1,7 @@
-import SuccessResponse from '@application/services/SuccessResponse.ts'
+import SuccessResponse from '@application/services/SuccessResponse.js'
 import { Request, Response, NextFunction } from 'express'
-import { SettingService } from '@application/services/SettingService.ts'
-import { IUser } from '@/domain/entities/IUser.ts'
+import { SettingService } from '@application/services/SettingService.js'
+import { IUser } from '@/domain/entities/IUser.js'
 
 export class SettingController {
   protected service: SettingService

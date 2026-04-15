@@ -1,6 +1,6 @@
 import { Types } from 'mongoose'
-import { OperationTypesEnum } from '@domain/enums/OperationTypesEnum.ts'
-import { OperationLogStatusesEnum } from '../enums/OperationLogStatusesEnum.ts'
+import { OperationTypesEnum } from '@domain/enums/OperationTypesEnum.js'
+import { OperationLogStatusesEnum } from '../enums/OperationLogStatusesEnum.js'
 
 export interface IOperationLog {
   id: Types.ObjectId

@@ -1,10 +1,10 @@
-import { IWorkspaceRaw } from '@entities/IWorkspaceRaw.ts'
-import WorkspaceModel from '@models/WorkspaceModel.ts'
-import { IWorkspaceCriteria } from '@criterias/IWorkspaceCriteria.ts'
+import { IWorkspaceRaw } from '@entities/IWorkspaceRaw.js'
+import WorkspaceModel from '@models/WorkspaceModel.js'
+import { IWorkspaceCriteria } from '@criterias/IWorkspaceCriteria.js'
 import { FilterQuery, Types } from 'mongoose'
-import { BaseRepository } from '@repositories/BaseRepository.ts'
-import { IWorkspace } from '@entities/IWorkspace.ts'
-import { IWorkspaceCreatePayload } from '@interfaces/IWorkspaceCreatePayload.ts'
+import { BaseRepository } from '@repositories/BaseRepository.js'
+import { IWorkspace } from '@entities/IWorkspace.js'
+import { IWorkspaceCreatePayload } from '@interfaces/IWorkspaceCreatePayload.js'
 
 export default class WorkspaceRepository extends BaseRepository<
   IWorkspaceRaw,

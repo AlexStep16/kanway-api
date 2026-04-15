@@ -1,15 +1,15 @@
 import { RunnableConfig } from '@langchain/core/runnables'
-import { AgentDependencies } from '@/application/ai/agent/types/AgentDependencies.ts'
-import { AgentStateAnnotation } from '@/application/ai/agent/AgentStateAnnotation.ts'
+import { AgentDependencies } from '@/application/ai/agent/types/AgentDependencies.js'
+import { AgentStateAnnotation } from '@/application/ai/agent/AgentStateAnnotation.js'
 import { ChatPromptTemplate } from '@langchain/core/prompts'
-import { CoderPrompt } from '../../prompts/CoderPrompt.ts'
+import { CoderPrompt } from '../../prompts/CoderPrompt.js'
 import { Types } from 'mongoose'
 import { dispatchCustomEvent } from '@langchain/core/callbacks/dispatch'
-import { CustomEvents } from '@/enums/CustomEvents.ts'
-import { Configurable } from '../../interfaces/Configurable.ts'
+import { CustomEvents } from '@/enums/CustomEvents.js'
+import { Configurable } from '../../interfaces/Configurable.js'
 import { AIMessage } from '@langchain/core/messages'
-import { extractPythonCode } from '@/utils/extractPythonCode.ts'
-import { STEP_MESSAGES } from '@/constants/STEP_MESSAGES.ts'
+import { extractPythonCode } from '@/utils/extractPythonCode.js'
+import { STEP_MESSAGES } from '@/constants/STEP_MESSAGES.js'
 
 export const makeCoderNode = (deps: AgentDependencies) => {
   return async (state: typeof AgentStateAnnotation.State, config: RunnableConfig) => {

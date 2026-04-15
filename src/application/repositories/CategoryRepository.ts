@@ -1,10 +1,10 @@
-import { ICategoryRaw } from '@entities/ICategoryRaw.ts'
-import CategoryModel from '@models/CategoryModel.ts'
-import { ICategoryCriteria } from '@criterias/ICategoryCriteria.ts'
+import { ICategoryRaw } from '@entities/ICategoryRaw.js'
+import CategoryModel from '@models/CategoryModel.js'
+import { ICategoryCriteria } from '@criterias/ICategoryCriteria.js'
 import { FilterQuery, Types } from 'mongoose'
-import { BaseRepository } from '@repositories/BaseRepository.ts'
-import { ICategory } from '@entities/ICategory.ts'
-import { ICategoryCreatePayload } from '@interfaces/ICategoryCreatePayload.ts'
+import { BaseRepository } from '@repositories/BaseRepository.js'
+import { ICategory } from '@entities/ICategory.js'
+import { ICategoryCreatePayload } from '@interfaces/ICategoryCreatePayload.js'
 
 export default class CategoryRepository extends BaseRepository<
   ICategoryRaw,

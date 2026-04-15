@@ -1,4 +1,4 @@
-import { ITaskPopulated } from '@/application/interfaces/ITaskPopulated.ts'
+import { ITaskPopulated } from '@/application/interfaces/ITaskPopulated.js'
 
 interface CompressedTask {
   id: string

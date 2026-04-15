@@ -1,5 +1,5 @@
-import { ToolResultTypesEnum } from '@/domain/enums/ToolResultTypesEnum.ts'
-import { ToolResult } from './ToolResult.ts'
+import { ToolResultTypesEnum } from '@/domain/enums/ToolResultTypesEnum.js'
+import { ToolResult } from './ToolResult.js'
 
 export class ConfirmationEntityToolResult extends ToolResult {
   constructor(meta: { toolCallId: string; logId: string }) {

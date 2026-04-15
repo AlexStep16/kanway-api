@@ -1,11 +1,11 @@
 import { Router } from 'express'
-import WorkspaceController from '@controllers/WorkspaceController.ts'
-import { jwtAuthMiddleware } from '@infrastructure/auth/passportJWTStrategy.ts'
-import { validationMiddleware } from '@/infrastructure/middlewares/validations/validationMiddleware.ts'
-import { WorkspaceDTOSchema } from '@dtos/WorkspaceDTO.ts'
-import { WorkspaceEditDTOSchema } from '@dtos/WorkspaceEditDTO.ts'
-import { patchEntitiesLimiter, postEntitiesLimiter } from '@/limiters.ts'
-import { WorkspaceMoveDTOSchema } from '@/application/dtos/WorkspaceMoveDTO.ts'
+import WorkspaceController from '@controllers/WorkspaceController.js'
+import { jwtAuthMiddleware } from '@infrastructure/auth/passportJWTStrategy.js'
+import { validationMiddleware } from '@/infrastructure/middlewares/validations/validationMiddleware.js'
+import { WorkspaceDTOSchema } from '@dtos/WorkspaceDTO.js'
+import { WorkspaceEditDTOSchema } from '@dtos/WorkspaceEditDTO.js'
+import { patchEntitiesLimiter, postEntitiesLimiter } from '@/limiters.js'
+import { WorkspaceMoveDTOSchema } from '@/application/dtos/WorkspaceMoveDTO.js'
 
 interface IWorkspaceRawController extends WorkspaceController {}
 

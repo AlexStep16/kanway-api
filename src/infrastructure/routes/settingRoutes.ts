@@ -1,9 +1,9 @@
 import { Router } from 'express'
-import { jwtAuthMiddleware } from '@infrastructure/auth/passportJWTStrategy.ts'
-import { validationMiddleware } from '@/infrastructure/middlewares/validations/validationMiddleware.ts'
-import { SettingController } from '@controllers/SettingController.ts'
-import { SettingEditDTOSchema } from '@dtos/SettingEditDTO.ts'
-import { patchEntitiesLimiter } from '@/limiters.ts'
+import { jwtAuthMiddleware } from '@infrastructure/auth/passportJWTStrategy.js'
+import { validationMiddleware } from '@/infrastructure/middlewares/validations/validationMiddleware.js'
+import { SettingController } from '@controllers/SettingController.js'
+import { SettingEditDTOSchema } from '@dtos/SettingEditDTO.js'
+import { patchEntitiesLimiter } from '@/limiters.js'
 
 export default (controller: SettingController): Router => {
   const router = Router({ mergeParams: true })

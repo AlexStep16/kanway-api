@@ -1,4 +1,4 @@
-import { IUser } from '@entities/IUser.ts'
+import { IUser } from '@entities/IUser.js'
 import { ClientSession } from 'mongoose'
 
 export interface IEditNoLogService<TCriteria, TEntity, TEditDTO> {
@@ -6,6 +6,6 @@ export interface IEditNoLogService<TCriteria, TEntity, TEditDTO> {
     data: TEditDTO,
     criteria: TCriteria,
     user: IUser,
-    session?: ClientSession
+    session?: ClientSession,
   ): Promise<TEntity[]>
 }

@@ -1,5 +1,5 @@
 import { Schema, model } from 'mongoose'
-import { IChatMessageRaw } from '@entities/IChatMessageRaw.ts'
+import { IChatMessageRaw } from '@entities/IChatMessageRaw.js'
 
 const ChatMessageSchema = new Schema<IChatMessageRaw>(
   {

@@ -1,6 +1,6 @@
 import { model, Schema } from 'mongoose'
-import { ISettingRaw } from '@entities/ISettingRaw.ts'
-import { AiConfirmationTypeEnum } from '@domain/enums/AiConfirmationTypeEnum.ts'
+import { ISettingRaw } from '@entities/ISettingRaw.js'
+import { AiConfirmationTypeEnum } from '@domain/enums/AiConfirmationTypeEnum.js'
 
 export const SettingSchema = new Schema<ISettingRaw>(
   {
@@ -27,7 +27,7 @@ export const SettingSchema = new Schema<ISettingRaw>(
       required: true,
     },
   },
-  { timestamps: true }
+  { timestamps: true },
 )
 
 const Setting = model<ISettingRaw>('Setting', SettingSchema)

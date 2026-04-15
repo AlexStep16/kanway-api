@@ -1,11 +1,11 @@
-import { IUser } from '@entities/IUser.ts'
+import { IUser } from '@entities/IUser.js'
 import { ClientSession } from 'mongoose'
-import { IResponseWithLog } from '@interfaces/IResponseWithLog.ts'
+import { IResponseWithLog } from '@interfaces/IResponseWithLog.js'
 
 export interface ICreateManyService<TCreateDTO, TEntity> {
   createMany(
     data: TCreateDTO[],
     user: IUser,
-    session?: ClientSession
+    session?: ClientSession,
   ): Promise<IResponseWithLog<TEntity[]>>
 }

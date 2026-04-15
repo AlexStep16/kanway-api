@@ -1,4 +1,4 @@
-import { IPaymentMethodType } from '@/application/interfaces/IPaymentMethodType.ts'
+import { IPaymentMethodType } from '@/application/interfaces/IPaymentMethodType.js'
 import { Types } from 'mongoose'
 
 export interface IPaymentMethodRaw {

@@ -1,5 +1,5 @@
 import { Schema, model } from 'mongoose'
-import { ICheckpointRaw } from '@entities/ICheckpointRaw.ts'
+import { ICheckpointRaw } from '@entities/ICheckpointRaw.js'
 
 const CheckpointSchema = new Schema<ICheckpointRaw>(
   {

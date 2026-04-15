@@ -1,5 +1,5 @@
 import { model, Schema } from 'mongoose'
-import { ISubscriptionRaw } from '@entities/ISubscriptionRaw.ts'
+import { ISubscriptionRaw } from '@entities/ISubscriptionRaw.js'
 
 export const SubscriptionSchema = new Schema<ISubscriptionRaw>({
   id: {

@@ -1,5 +1,5 @@
-import { initializeDependencies } from './infrastructure/di/initializeDependencies.ts'
-import connectToDatabase from './infrastructure/db/connectToDatabase.ts'
+import { initializeDependencies } from './infrastructure/di/initializeDependencies.js'
+import connectToDatabase from './infrastructure/db/connectToDatabase.js'
 import utc from 'dayjs/plugin/utc.js'
 import timezone from 'dayjs/plugin/timezone.js'
 import duration from 'dayjs/plugin/duration.js'

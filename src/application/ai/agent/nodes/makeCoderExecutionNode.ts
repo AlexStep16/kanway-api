@@ -1,7 +1,7 @@
 import { RunnableConfig } from '@langchain/core/runnables'
-import { AgentStateAnnotation } from '@/application/ai/agent/AgentStateAnnotation.ts'
-import { executeCode } from '../../helpers/executeCode.ts'
-import { Configurable } from '@/application/ai/interfaces/Configurable.ts'
+import { AgentStateAnnotation } from '@/application/ai/agent/AgentStateAnnotation.js'
+import { executeCode } from '../../helpers/executeCode.js'
+import { Configurable } from '@/application/ai/interfaces/Configurable.js'
 import { HumanMessage } from '@langchain/core/messages'
 
 export const makeCoderExecutionNode = () => {

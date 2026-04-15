@@ -1,9 +1,9 @@
 import { ClientSession, Types } from 'mongoose'
-import { BoardService } from './BoardService.ts'
-import { WorkspaceService } from './WorkspaceService.ts'
-import { SUBSCRIPTION_LIMITS } from '@/constants/SUBSCRIPTION_LIMITS.ts'
-import { IUser } from '@/domain/entities/IUser.ts'
-import { AppError } from '@/domain/errors/AppError.ts'
+import { BoardService } from './BoardService.js'
+import { WorkspaceService } from './WorkspaceService.js'
+import { SUBSCRIPTION_LIMITS } from '@/constants/SUBSCRIPTION_LIMITS.js'
+import { IUser } from '@/domain/entities/IUser.js'
+import { AppError } from '@/domain/errors/AppError.js'
 
 export class LimitService {
   private boardService: BoardService

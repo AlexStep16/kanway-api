@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express'
 import { ZodSchema, z } from 'zod'
-import { ValidationError } from '@errors/ValidationError.ts'
+import { ValidationError } from '@errors/ValidationError.js'
 
 export const validationMiddleware = (schema: ZodSchema) => {
   return async (req: Request, _: Response, next: NextFunction) => {

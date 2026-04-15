@@ -1,10 +1,10 @@
-import OperationLogModel from '@models/OperationLogModel.ts'
-import { IOperationLogRaw } from '@entities/IOperationLogRaw.ts'
-import { BaseRepository } from '@repositories/BaseRepository.ts'
-import { IOperationLogCriteria } from '@interfaces/criterias/IOperationLogCriteria.ts'
+import OperationLogModel from '@models/OperationLogModel.js'
+import { IOperationLogRaw } from '@entities/IOperationLogRaw.js'
+import { BaseRepository } from '@repositories/BaseRepository.js'
+import { IOperationLogCriteria } from '@interfaces/criterias/IOperationLogCriteria.js'
 import { FilterQuery, Types } from 'mongoose'
-import { IOperationLog } from '@entities/IOperationLog.ts'
-import { IOperationLogCreatePayload } from '../interfaces/IOperationLogCreatePayload.ts'
+import { IOperationLog } from '@entities/IOperationLog.js'
+import { IOperationLogCreatePayload } from '../interfaces/IOperationLogCreatePayload.js'
 
 export default class OperationLogRepository extends BaseRepository<
   IOperationLogRaw,

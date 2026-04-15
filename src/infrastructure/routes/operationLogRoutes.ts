@@ -1,7 +1,7 @@
 import { Router } from 'express'
-import { jwtAuthMiddleware } from '@infrastructure/auth/passportJWTStrategy.ts'
-import { OperationLogController } from '@controllers/OperationLogController.ts'
-import { patchEntitiesLimiter } from '@/limiters.ts'
+import { jwtAuthMiddleware } from '@infrastructure/auth/passportJWTStrategy.js'
+import { OperationLogController } from '@controllers/OperationLogController.js'
+import { patchEntitiesLimiter } from '@/limiters.js'
 
 export default (controller: OperationLogController): Router => {
   const router = Router({ mergeParams: true })

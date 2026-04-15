@@ -1,9 +1,9 @@
-import SubscriptionRepository from '@repositories/SubscriptionRepository.ts'
-import { ISubscription } from '@entities/ISubscription.ts'
-import { SystemFields } from '@infrastructure/types/SystemFields.ts'
-import { BaseService } from './BaseService.ts'
-import { ISubscriptionRaw } from '@/domain/entities/ISubscriptionRaw.ts'
-import { ISubscriptionCriteria } from '../interfaces/criterias/ISubscriptionCriteria.ts'
+import SubscriptionRepository from '@repositories/SubscriptionRepository.js'
+import { ISubscription } from '@entities/ISubscription.js'
+import { SystemFields } from '@infrastructure/types/SystemFields.js'
+import { BaseService } from './BaseService.js'
+import { ISubscriptionRaw } from '@/domain/entities/ISubscriptionRaw.js'
+import { ISubscriptionCriteria } from '../interfaces/criterias/ISubscriptionCriteria.js'
 
 export class SubscriptionService extends BaseService<
   ISubscriptionRaw,

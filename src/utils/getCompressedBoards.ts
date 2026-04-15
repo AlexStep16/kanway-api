@@ -1,4 +1,4 @@
-import { IBoardPopulated } from '@/application/interfaces/IBoardPopulated.ts'
+import { IBoardPopulated } from '@/application/interfaces/IBoardPopulated.js'
 
 interface CompressedBoard {
   id: string

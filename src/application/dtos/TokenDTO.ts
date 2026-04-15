@@ -1,4 +1,4 @@
-import { TokenTypesEnum } from '@/domain/enums/TokenTypesEnum.ts'
+import { TokenTypesEnum } from '@/domain/enums/TokenTypesEnum.js'
 
 export interface TokenDTO {
   token: string

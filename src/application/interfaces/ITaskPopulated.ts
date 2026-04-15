@@ -1,4 +1,4 @@
-import { ITask } from '@/domain/entities/ITask.ts'
+import { ITask } from '@/domain/entities/ITask.js'
 import { Types } from 'mongoose'
 
 export type ITaskPopulated = ITask<

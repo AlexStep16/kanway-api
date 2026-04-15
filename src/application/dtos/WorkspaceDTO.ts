@@ -1,6 +1,6 @@
-import { ErrorMessages } from '@/enums/ErrorMessages.ts'
+import { ErrorMessages } from '@/enums/ErrorMessages.js'
 import { z } from 'zod'
-import { BASE_COLORS } from '@constants/BASE_COLORS.ts'
+import { BASE_COLORS } from '@constants/BASE_COLORS.js'
 
 export const WorkspaceDTOSchema = z.object({
   id: z.string(ErrorMessages.WORKSPACE_ID_INVALID).optional(),

@@ -1,12 +1,12 @@
 import { Router } from 'express'
-import TaskController from '@controllers/TaskController.ts'
-import { jwtAuthMiddleware } from '@infrastructure/auth/passportJWTStrategy.ts'
-import { validationMiddleware } from '@/infrastructure/middlewares/validations/validationMiddleware.ts'
-import { TaskDTOSchema } from '@dtos/TaskDTO.ts'
-import { TaskEditDTOSchema } from '@dtos/TaskEditDTO.ts'
-import { TaskEditManyDTOSchema } from '@dtos/TaskEditManyDTO.ts'
-import { patchTasksLimiter, postTasksLimiter } from '@/limiters.ts'
-import { TaskMoveDTOSchema } from '@/application/dtos/TaskMoveDTO.ts'
+import TaskController from '@controllers/TaskController.js'
+import { jwtAuthMiddleware } from '@infrastructure/auth/passportJWTStrategy.js'
+import { validationMiddleware } from '@/infrastructure/middlewares/validations/validationMiddleware.js'
+import { TaskDTOSchema } from '@dtos/TaskDTO.js'
+import { TaskEditDTOSchema } from '@dtos/TaskEditDTO.js'
+import { TaskEditManyDTOSchema } from '@dtos/TaskEditManyDTO.js'
+import { patchTasksLimiter, postTasksLimiter } from '@/limiters.js'
+import { TaskMoveDTOSchema } from '@/application/dtos/TaskMoveDTO.js'
 
 interface ITaskRawController extends TaskController {}
 

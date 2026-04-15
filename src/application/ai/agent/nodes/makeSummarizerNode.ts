@@ -1,11 +1,11 @@
 import { RunnableConfig } from '@langchain/core/runnables'
-import { AgentDependencies } from '@/application/ai/agent/types/AgentDependencies.ts'
-import { AgentStateAnnotation } from '@/application/ai/agent/AgentStateAnnotation.ts'
+import { AgentDependencies } from '@/application/ai/agent/types/AgentDependencies.js'
+import { AgentStateAnnotation } from '@/application/ai/agent/AgentStateAnnotation.js'
 import { ChatPromptTemplate } from '@langchain/core/prompts'
 import { dispatchCustomEvent } from '@langchain/core/callbacks/dispatch'
-import { CustomEvents } from '@/enums/CustomEvents.ts'
+import { CustomEvents } from '@/enums/CustomEvents.js'
 import { Types } from 'mongoose'
-import { SummarizerPrompt } from '../../prompts/SummarizerPrompt.ts'
+import { SummarizerPrompt } from '../../prompts/SummarizerPrompt.js'
 import { AIMessage, AIMessageChunk, HumanMessage, RemoveMessage } from '@langchain/core/messages'
 
 export const makeSummarizerNode = (deps: AgentDependencies): any => {

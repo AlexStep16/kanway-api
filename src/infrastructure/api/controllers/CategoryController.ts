@@ -1,12 +1,12 @@
-import { CategoryService } from '@application/services/CategoryService.ts'
-import { ICategory } from '@entities/ICategory.ts'
-import { CategoryDTO } from '@application/dtos/CategoryDTO.ts'
-import { BaseController } from '@controllers/BaseController.ts'
-import { ICategoryCriteria } from '@interfaces/criterias/ICategoryCriteria.ts'
+import { CategoryService } from '@application/services/CategoryService.js'
+import { ICategory } from '@entities/ICategory.js'
+import { CategoryDTO } from '@application/dtos/CategoryDTO.js'
+import { BaseController } from '@controllers/BaseController.js'
+import { ICategoryCriteria } from '@interfaces/criterias/ICategoryCriteria.js'
 import { Request, Response, NextFunction } from 'express'
-import SuccessResponse from '@application/services/SuccessResponse.ts'
-import { CategoryEditDTO } from '@dtos/CategoryEditDTO.ts'
-import { ICategoryPopulated } from '@/application/interfaces/ICategoryPopulated.ts'
+import SuccessResponse from '@application/services/SuccessResponse.js'
+import { CategoryEditDTO } from '@dtos/CategoryEditDTO.js'
+import { ICategoryPopulated } from '@/application/interfaces/ICategoryPopulated.js'
 
 export default class CategoryController extends BaseController<
   ICategory,

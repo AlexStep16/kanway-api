@@ -1,5 +1,5 @@
-import SuccessResponse from '@application/services/SuccessResponse.ts'
-import { SubscriptionService } from '@application/services/SubscriptionService.ts'
+import SuccessResponse from '@application/services/SuccessResponse.js'
+import { SubscriptionService } from '@application/services/SubscriptionService.js'
 import { Request, Response, NextFunction } from 'express'
 
 export class SubscriptionController {

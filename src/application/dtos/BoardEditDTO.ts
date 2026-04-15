@@ -1,6 +1,6 @@
 import { z } from 'zod'
-import { BoardDTOSchema } from '@/application/dtos/BoardDTO.ts'
-import { ErrorMessages } from '@/enums/ErrorMessages.ts'
+import { BoardDTOSchema } from '@/application/dtos/BoardDTO.js'
+import { ErrorMessages } from '@/enums/ErrorMessages.js'
 
 const objectIdRegex = /^[0-9a-fA-F]{24}$/
 

@@ -1,10 +1,10 @@
 import { Router } from 'express'
-import { jwtAuthMiddleware } from '@infrastructure/auth/passportJWTStrategy.ts'
-import { validationMiddleware } from '@/infrastructure/middlewares/validations/validationMiddleware.ts'
-import { UserController } from '@controllers/UserController.ts'
-import { UserEditSchemaDTO } from '@dtos/UserEditDTO.ts'
+import { jwtAuthMiddleware } from '@infrastructure/auth/passportJWTStrategy.js'
+import { validationMiddleware } from '@/infrastructure/middlewares/validations/validationMiddleware.js'
+import { UserController } from '@controllers/UserController.js'
+import { UserEditSchemaDTO } from '@dtos/UserEditDTO.js'
 import multer from 'multer'
-import { emailLimiter, patchUserLimiter } from '@/limiters.ts'
+import { emailLimiter, patchUserLimiter } from '@/limiters.js'
 
 const upload = multer({ dest: 'uploads/' })
 

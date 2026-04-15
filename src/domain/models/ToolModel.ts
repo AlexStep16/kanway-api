@@ -1,5 +1,5 @@
 import { model, Schema } from 'mongoose'
-import { IToolRaw } from '@entities/IToolRaw.ts'
+import { IToolRaw } from '@entities/IToolRaw.js'
 
 const ToolSchema = new Schema<IToolRaw>(
   {

@@ -1,8 +1,8 @@
-import SuccessResponse from '@application/services/SuccessResponse.ts'
+import SuccessResponse from '@application/services/SuccessResponse.js'
 import { Request, Response, NextFunction } from 'express'
-import { IUser } from '@/domain/entities/IUser.ts'
-import { OperationLogService } from '@/application/services/OperationLogService.ts'
-import { NotFoundError } from '@/domain/errors/NotFound.ts'
+import { IUser } from '@/domain/entities/IUser.js'
+import { OperationLogService } from '@/application/services/OperationLogService.js'
+import { NotFoundError } from '@/domain/errors/NotFound.js'
 
 export class OperationLogController {
   protected service: OperationLogService

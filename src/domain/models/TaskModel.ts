@@ -1,6 +1,6 @@
 import { model, Schema } from 'mongoose'
-import { ITaskRaw } from '@entities/ITaskRaw.ts'
-import { TASK_COLORS_TITLES } from '@/constants/TASK_COLORS.ts'
+import { ITaskRaw } from '@entities/ITaskRaw.js'
+import { TASK_COLORS_TITLES } from '@/constants/TASK_COLORS.js'
 
 export const TaskSchema = new Schema<ITaskRaw>(
   {

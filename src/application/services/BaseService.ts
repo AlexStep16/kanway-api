@@ -1,6 +1,6 @@
 import { ClientSession, FilterQuery, PopulateOptions, ProjectionType, Types } from 'mongoose'
-import { BaseRepository } from '../repositories/BaseRepository.ts'
-import { SystemFields } from '@infrastructure/types/SystemFields.ts'
+import { BaseRepository } from '../repositories/BaseRepository.js'
+import { SystemFields } from '@infrastructure/types/SystemFields.js'
 
 export abstract class BaseService<
   TRawEntity,

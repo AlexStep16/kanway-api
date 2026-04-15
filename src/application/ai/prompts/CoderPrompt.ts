@@ -1,5 +1,5 @@
-import { PythonSdk } from './PythonSdk.ts'
-import { EntitySchemes } from './EntitySchemes.ts'
+import { PythonSdk } from './PythonSdk.js'
+import { EntitySchemes } from './EntitySchemes.js'
 
 export const CoderPrompt = `
 ### ROLE & CONTEXT

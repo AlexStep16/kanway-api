@@ -1,11 +1,11 @@
-import { TokenTypesEnum } from '@/domain/enums/TokenTypesEnum.ts'
+import { TokenTypesEnum } from '@/domain/enums/TokenTypesEnum.js'
 import jwt from 'jsonwebtoken'
-import TokenRepository from '@repositories/TokenRepository.ts'
-import { TokenGenerationError } from '@errors/TokenGenerationError.ts'
+import TokenRepository from '@repositories/TokenRepository.js'
+import { TokenGenerationError } from '@errors/TokenGenerationError.js'
 import { Types } from 'mongoose'
-import { IToken } from '@entities/IToken.ts'
-import { TokenDTO } from '../dtos/TokenDTO.ts'
-import { toMongoCaseKeys, toServerCaseKeys } from '@/utils/objectTransformers.ts'
+import { IToken } from '@entities/IToken.js'
+import { TokenDTO } from '../dtos/TokenDTO.js'
+import { toMongoCaseKeys, toServerCaseKeys } from '@/utils/objectTransformers.js'
 
 const KEY = process.env.JWT_KEY || 'FF123ABC-456D-789E-F012-3456789ABCDF'
 

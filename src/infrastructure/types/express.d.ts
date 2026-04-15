@@ -1,4 +1,4 @@
-import { IUser } from '@entities/IUser.ts'
+import { IUser } from '@entities/IUser.js'
 import { RateLimitInfo } from 'express-rate-limit'
 
 declare global {

@@ -1,8 +1,8 @@
 import express, { Router } from 'express'
-import SupportController from '@controllers/SupportController.ts'
-import { supportLimiter } from '@/limiters.ts'
-import { validationMiddleware } from '../middlewares/validations/validationMiddleware.ts'
-import { SupportSchemaDTO } from '@/application/dtos/SupportDTO.ts'
+import SupportController from '@controllers/SupportController.js'
+import { supportLimiter } from '@/limiters.js'
+import { validationMiddleware } from '../middlewares/validations/validationMiddleware.js'
+import { SupportSchemaDTO } from '@/application/dtos/SupportDTO.js'
 
 export default (controller: SupportController): Router => {
   const router = express.Router()

@@ -1,5 +1,5 @@
 import { Types } from 'mongoose'
-import { SubscriptionPlanEnum } from '@domain/enums/SubscriptionPlanEnum.ts'
+import { SubscriptionPlanEnum } from '@domain/enums/SubscriptionPlanEnum.js'
 
 export interface ISubscriptionRaw {
   _id: Types.ObjectId

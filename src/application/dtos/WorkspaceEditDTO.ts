@@ -1,6 +1,6 @@
 import { z } from 'zod'
-import { WorkspaceDTOSchema } from '@/application/dtos/WorkspaceDTO.ts'
-import { ErrorMessages } from '@/enums/ErrorMessages.ts'
+import { WorkspaceDTOSchema } from '@/application/dtos/WorkspaceDTO.js'
+import { ErrorMessages } from '@/enums/ErrorMessages.js'
 
 const objectIdRegex = /^[0-9a-fA-F]{24}$/
 

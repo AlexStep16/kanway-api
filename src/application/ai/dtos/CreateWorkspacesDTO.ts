@@ -1,5 +1,5 @@
-import { BASE_COLORS } from '@/constants/BASE_COLORS.ts'
-import { ErrorMessages } from '@/enums/ErrorMessages.ts'
+import { BASE_COLORS } from '@/constants/BASE_COLORS.js'
+import { ErrorMessages } from '@/enums/ErrorMessages.js'
 import { z } from 'zod'
 
 export const CreateWorkspaceDTOSchema = z

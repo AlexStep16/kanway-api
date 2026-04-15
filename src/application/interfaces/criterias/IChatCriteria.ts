@@ -1,4 +1,4 @@
-import { IBaseCriteria } from './IBaseCriteria.ts'
+import { IBaseCriteria } from './IBaseCriteria.js'
 
 export interface IChatCriteria extends IBaseCriteria {
   threadId?: string

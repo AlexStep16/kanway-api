@@ -1,9 +1,9 @@
-import { WorkspaceService } from '@application/services/WorkspaceService.ts'
-import { IWorkspace } from '@entities/IWorkspace.ts'
-import { WorkspaceDTO } from '@application/dtos/WorkspaceDTO.ts'
-import { BaseController } from '@controllers/BaseController.ts'
-import { IWorkspaceCriteria } from '@interfaces/criterias/IWorkspaceCriteria.ts'
-import { WorkspaceEditDTO } from '@dtos/WorkspaceEditDTO.ts'
+import { WorkspaceService } from '@application/services/WorkspaceService.js'
+import { IWorkspace } from '@entities/IWorkspace.js'
+import { WorkspaceDTO } from '@application/dtos/WorkspaceDTO.js'
+import { BaseController } from '@controllers/BaseController.js'
+import { IWorkspaceCriteria } from '@interfaces/criterias/IWorkspaceCriteria.js'
+import { WorkspaceEditDTO } from '@dtos/WorkspaceEditDTO.js'
 
 export default class WorkspaceController extends BaseController<
   IWorkspace,

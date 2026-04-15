@@ -1,6 +1,6 @@
 import { z } from 'zod'
-import { ErrorMessages } from '@/enums/ErrorMessages.ts'
-import { BoardEditDTOSchema } from './BoardEditDTO.ts'
+import { ErrorMessages } from '@/enums/ErrorMessages.js'
+import { BoardEditDTOSchema } from './BoardEditDTO.js'
 
 export const BoardEditManyDTOSchema = z.array(BoardEditDTOSchema, {
   error: ErrorMessages.BOARDS_BULK_UPDATE_INVALID,

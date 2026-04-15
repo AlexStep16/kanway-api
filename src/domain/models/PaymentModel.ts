@@ -1,6 +1,6 @@
 import { model, Schema } from 'mongoose'
-import { IPaymentRaw } from '@entities/IPaymentRaw.ts'
-import { PaymentStatusesEnum } from '../enums/PaymentStatusesEnum.ts'
+import { IPaymentRaw } from '@entities/IPaymentRaw.js'
+import { PaymentStatusesEnum } from '../enums/PaymentStatusesEnum.js'
 
 export const PaymentSchema = new Schema<IPaymentRaw>(
   {

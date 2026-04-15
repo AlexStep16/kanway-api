@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import SandboxController from '../api/controllers/SandboxController.ts'
+import SandboxController from '../api/controllers/SandboxController.js'
 
 export default (controller: SandboxController): Router => {
   const router = Router({ mergeParams: true })

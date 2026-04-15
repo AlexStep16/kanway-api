@@ -1,4 +1,4 @@
-import { AgentStateAnnotation } from '@/application/ai/agent/AgentStateAnnotation.ts'
+import { AgentStateAnnotation } from '@/application/ai/agent/AgentStateAnnotation.js'
 import { HumanMessage } from '@langchain/core/messages'
 import { interrupt } from '@langchain/langgraph'
 

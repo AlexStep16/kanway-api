@@ -1,7 +1,7 @@
-import { IUser } from '@domain/entities/IUser.ts'
-import { IOperationLog } from '@domain/entities/IOperationLog.ts'
+import { IUser } from '@domain/entities/IUser.js'
+import { IOperationLog } from '@domain/entities/IOperationLog.js'
 import { ClientSession } from 'mongoose'
-import { IResponseWithLog } from '../IResponseWithLog.ts'
+import { IResponseWithLog } from '../IResponseWithLog.js'
 
 export interface IRevertableService {
   revert(

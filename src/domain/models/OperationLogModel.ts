@@ -1,7 +1,7 @@
 import { Schema, model } from 'mongoose'
-import { IOperationLogRaw } from '@entities/IOperationLogRaw.ts'
-import { OperationTypesEnum } from '@domain/enums/OperationTypesEnum.ts'
-import { OperationLogStatusesEnum } from '../enums/OperationLogStatusesEnum.ts'
+import { IOperationLogRaw } from '@entities/IOperationLogRaw.js'
+import { OperationTypesEnum } from '@domain/enums/OperationTypesEnum.js'
+import { OperationLogStatusesEnum } from '../enums/OperationLogStatusesEnum.js'
 
 export const OperationLogSchema = new Schema<IOperationLogRaw>(
   {

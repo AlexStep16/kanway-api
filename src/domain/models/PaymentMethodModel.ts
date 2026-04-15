@@ -1,5 +1,5 @@
 import { model, Schema } from 'mongoose'
-import { IPaymentMethodRaw } from '@entities/IPaymentMethodRaw.ts'
+import { IPaymentMethodRaw } from '@entities/IPaymentMethodRaw.js'
 
 export const PaymentMethodSchema = new Schema<IPaymentMethodRaw>({
   service_id: {

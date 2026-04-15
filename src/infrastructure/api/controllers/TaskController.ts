@@ -1,13 +1,13 @@
-import { TaskService } from '@application/services/TaskService.ts'
-import { ITask } from '@entities/ITask.ts'
-import { TaskDTO } from '@application/dtos/TaskDTO.ts'
-import { BaseController } from '@controllers/BaseController.ts'
-import { ITaskCriteria } from '@interfaces/criterias/ITaskCriteria.ts'
+import { TaskService } from '@application/services/TaskService.js'
+import { ITask } from '@entities/ITask.js'
+import { TaskDTO } from '@application/dtos/TaskDTO.js'
+import { BaseController } from '@controllers/BaseController.js'
+import { ITaskCriteria } from '@interfaces/criterias/ITaskCriteria.js'
 import { Request, Response, NextFunction } from 'express'
-import SuccessResponse from '@application/services/SuccessResponse.ts'
-import { TaskEditDTO } from '@dtos/TaskEditDTO.ts'
-import { ITaskPopulated } from '@/application/interfaces/ITaskPopulated.ts'
-import { TaskMoveDTO } from '@/application/dtos/TaskMoveDTO.ts'
+import SuccessResponse from '@application/services/SuccessResponse.js'
+import { TaskEditDTO } from '@dtos/TaskEditDTO.js'
+import { ITaskPopulated } from '@/application/interfaces/ITaskPopulated.js'
+import { TaskMoveDTO } from '@/application/dtos/TaskMoveDTO.js'
 
 export default class TaskController extends BaseController<
   ITask,

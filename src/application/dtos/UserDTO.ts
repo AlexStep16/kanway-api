@@ -1,6 +1,6 @@
-import { SubscriptionPlanEnum } from '@/domain/enums/SubscriptionPlanEnum.ts'
-import { ErrorMessages } from '@/enums/ErrorMessages.ts'
-import { BASE_COLORS } from '@constants/BASE_COLORS.ts'
+import { SubscriptionPlanEnum } from '@/domain/enums/SubscriptionPlanEnum.js'
+import { ErrorMessages } from '@/enums/ErrorMessages.js'
+import { BASE_COLORS } from '@constants/BASE_COLORS.js'
 import { z } from 'zod'
 
 export const UserDTOSchema = z.object({

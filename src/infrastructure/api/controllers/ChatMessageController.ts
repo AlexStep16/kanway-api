@@ -1,7 +1,7 @@
-import SuccessResponse from '@/application/services/SuccessResponse.ts'
+import SuccessResponse from '@/application/services/SuccessResponse.js'
 import { NextFunction, Request, Response } from 'express'
-import { IChatMessageCriteria } from '@/application/interfaces/criterias/IChatMessageCriteria.ts'
-import { ChatMessageService } from '@/application/services/ChatMessageService.ts'
+import { IChatMessageCriteria } from '@/application/interfaces/criterias/IChatMessageCriteria.js'
+import { ChatMessageService } from '@/application/services/ChatMessageService.js'
 
 export default class ChatMessageController {
   protected service: ChatMessageService

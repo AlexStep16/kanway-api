@@ -1,5 +1,5 @@
-import { IChatMessageRoles } from '../IChatMessageRoles.ts'
-import { IBaseCriteria } from './IBaseCriteria.ts'
+import { IChatMessageRoles } from '../IChatMessageRoles.js'
+import { IBaseCriteria } from './IBaseCriteria.js'
 
 export interface IChatMessageCriteria extends IBaseCriteria {
   chatId?: string

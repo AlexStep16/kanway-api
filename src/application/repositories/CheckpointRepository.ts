@@ -1,9 +1,9 @@
-import Checkpoint from '@models/Checkpoint.ts'
-import { BaseRepository } from '@repositories/BaseRepository.ts'
-import { ICheckpointCriteria } from '../interfaces/criterias/ICheckpointCriteria.ts'
+import Checkpoint from '@models/Checkpoint.js'
+import { BaseRepository } from '@repositories/BaseRepository.js'
+import { ICheckpointCriteria } from '../interfaces/criterias/ICheckpointCriteria.js'
 import { FilterQuery } from 'mongoose'
-import { ICheckpointRaw } from '@/domain/entities/ICheckpointRaw.ts'
-import { ICheckpoint } from '@/domain/entities/ICheckpoint.ts'
+import { ICheckpointRaw } from '@/domain/entities/ICheckpointRaw.js'
+import { ICheckpoint } from '@/domain/entities/ICheckpoint.js'
 
 export default class CheckpointRepository extends BaseRepository<
   ICheckpointRaw,

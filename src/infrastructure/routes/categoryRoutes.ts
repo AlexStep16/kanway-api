@@ -1,12 +1,12 @@
 import { Router } from 'express'
-import CategoryController from '@controllers/CategoryController.ts'
-import { jwtAuthMiddleware } from '@infrastructure/auth/passportJWTStrategy.ts'
-import { validationMiddleware } from '@/infrastructure/middlewares/validations/validationMiddleware.ts'
-import { CategoryDTOSchema } from '@dtos/CategoryDTO.ts'
-import { CategoryEditDTOSchema } from '@dtos/CategoryEditDTO.ts'
-import { CategoryEditManyDTOSchema } from '@dtos/CategoryEditManyDTO.ts'
-import { patchEntitiesLimiter, postEntitiesLimiter } from '@/limiters.ts'
-import { CategoryMoveDTOSchema } from '@/application/dtos/CategoryMoveDTO.ts'
+import CategoryController from '@controllers/CategoryController.js'
+import { jwtAuthMiddleware } from '@infrastructure/auth/passportJWTStrategy.js'
+import { validationMiddleware } from '@/infrastructure/middlewares/validations/validationMiddleware.js'
+import { CategoryDTOSchema } from '@dtos/CategoryDTO.js'
+import { CategoryEditDTOSchema } from '@dtos/CategoryEditDTO.js'
+import { CategoryEditManyDTOSchema } from '@dtos/CategoryEditManyDTO.js'
+import { patchEntitiesLimiter, postEntitiesLimiter } from '@/limiters.js'
+import { CategoryMoveDTOSchema } from '@/application/dtos/CategoryMoveDTO.js'
 
 interface ICategoryRawController extends CategoryController {}
 

@@ -1,12 +1,12 @@
-import { AbstractToolExecutor } from './AbstractToolExecutor.ts'
-import { PendingToolCall } from '../agent/AgentStateAnnotation.ts'
-import { GeneralToolsExecutor } from './GeneralToolsExecutor.ts'
-import { TaskToolsExecutorService } from './TaskToolsExecutorService.ts'
-import { CategoryToolsExecutorService } from './CategoryToolsExecutorService.ts'
-import { WorkspaceToolsExecutorService } from './WorkspaceToolsExecutorService.ts'
-import { BoardToolsExecutorService } from './BoardToolsExecutorService.ts'
-import { ToolResult } from '../tools/helpers/ToolResult.ts'
-import { FailedToolResult } from '../tools/helpers/FailedToolResult.ts'
+import { AbstractToolExecutor } from './AbstractToolExecutor.js'
+import { PendingToolCall } from '../agent/AgentStateAnnotation.js'
+import { GeneralToolsExecutor } from './GeneralToolsExecutor.js'
+import { TaskToolsExecutorService } from './TaskToolsExecutorService.js'
+import { CategoryToolsExecutorService } from './CategoryToolsExecutorService.js'
+import { WorkspaceToolsExecutorService } from './WorkspaceToolsExecutorService.js'
+import { BoardToolsExecutorService } from './BoardToolsExecutorService.js'
+import { ToolResult } from '../tools/helpers/ToolResult.js'
+import { FailedToolResult } from '../tools/helpers/FailedToolResult.js'
 
 export interface DispatchPayload {
   toolCall: PendingToolCall

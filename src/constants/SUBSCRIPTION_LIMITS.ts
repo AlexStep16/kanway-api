@@ -1,4 +1,4 @@
-import { SubscriptionPlanEnum } from '@/domain/enums/SubscriptionPlanEnum.ts'
+import { SubscriptionPlanEnum } from '@/domain/enums/SubscriptionPlanEnum.js'
 
 export const SUBSCRIPTION_LIMITS = {
   [SubscriptionPlanEnum.Basic]: {

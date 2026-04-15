@@ -1,10 +1,10 @@
 import express, { Router } from 'express'
-import { jwtAuthMiddleware } from '@infrastructure/auth/passportJWTStrategy.ts'
-import ChatController from '@controllers/ChatController.ts'
-import { validationMiddleware } from '@/infrastructure/middlewares/validations/validationMiddleware.ts'
-import { ChatSendDTOSchema } from '@dtos/ChatSendDTO.ts'
-import { aiLimiter, patchEntitiesLimiter } from '@/limiters.ts'
-import { ChatEditDTOSchema } from '@/application/dtos/ChatEditDTO.ts'
+import { jwtAuthMiddleware } from '@infrastructure/auth/passportJWTStrategy.js'
+import ChatController from '@controllers/ChatController.js'
+import { validationMiddleware } from '@/infrastructure/middlewares/validations/validationMiddleware.js'
+import { ChatSendDTOSchema } from '@dtos/ChatSendDTO.js'
+import { aiLimiter, patchEntitiesLimiter } from '@/limiters.js'
+import { ChatEditDTOSchema } from '@/application/dtos/ChatEditDTO.js'
 
 export default (controller: ChatController): Router => {
   const router = express.Router()

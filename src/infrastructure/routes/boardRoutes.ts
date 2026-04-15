@@ -1,11 +1,11 @@
 import { Router } from 'express'
-import BoardController from '@controllers/BoardController.ts'
-import { jwtAuthMiddleware } from '@infrastructure/auth/passportJWTStrategy.ts'
-import { validationMiddleware } from '@/infrastructure/middlewares/validations/validationMiddleware.ts'
-import { BoardDTOSchema } from '@dtos/BoardDTO.ts'
-import { BoardEditDTOSchema } from '@dtos/BoardEditDTO.ts'
-import { patchEntitiesLimiter, postEntitiesLimiter } from '@/limiters.ts'
-import { BoardMoveDTOSchema } from '@/application/dtos/BoardMoveDTO.ts'
+import BoardController from '@controllers/BoardController.js'
+import { jwtAuthMiddleware } from '@infrastructure/auth/passportJWTStrategy.js'
+import { validationMiddleware } from '@/infrastructure/middlewares/validations/validationMiddleware.js'
+import { BoardDTOSchema } from '@dtos/BoardDTO.js'
+import { BoardEditDTOSchema } from '@dtos/BoardEditDTO.js'
+import { patchEntitiesLimiter, postEntitiesLimiter } from '@/limiters.js'
+import { BoardMoveDTOSchema } from '@/application/dtos/BoardMoveDTO.js'
 
 interface IBoardRawController extends BoardController {}
 

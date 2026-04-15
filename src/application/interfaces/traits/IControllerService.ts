@@ -1,6 +1,6 @@
-import { IUser } from '@/domain/entities/IUser.ts'
+import { IUser } from '@/domain/entities/IUser.js'
 import { ClientSession, FilterQuery, Types } from 'mongoose'
-import { IResponseWithLog } from '../IResponseWithLog.ts'
+import { IResponseWithLog } from '../IResponseWithLog.js'
 
 export interface IControllerService<
   TEntity,

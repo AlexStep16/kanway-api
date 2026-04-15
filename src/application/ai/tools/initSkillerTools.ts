@@ -1,6 +1,6 @@
 import { tool } from '@langchain/core/tools'
-import { SuccessToolResult } from './helpers/SuccessToolResult.ts'
-import { SelectSkillsDTOSchema } from '../dtos/SelectSkillsDTO.ts'
+import { SuccessToolResult } from './helpers/SuccessToolResult.js'
+import { SelectSkillsDTOSchema } from '../dtos/SelectSkillsDTO.js'
 
 export function initSkillerTools() {
   const selectSkills = tool(

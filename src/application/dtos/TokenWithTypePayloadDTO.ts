@@ -1,5 +1,5 @@
-import { TokenTypesEnum } from '@/domain/enums/TokenTypesEnum.ts'
-import { ErrorMessages } from '@/enums/ErrorMessages.ts'
+import { TokenTypesEnum } from '@/domain/enums/TokenTypesEnum.js'
+import { ErrorMessages } from '@/enums/ErrorMessages.js'
 import { z } from 'zod'
 
 export const TokenWithTypePayloadSchemaDTO = z.object({

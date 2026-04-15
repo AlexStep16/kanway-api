@@ -10,10 +10,10 @@ import {
   Types,
   UpdateWriteOpResult,
 } from 'mongoose'
-import { SingleUpdateDTO } from '../dtos/SingleUpdateDTO.ts'
-import { SystemFields } from '@/infrastructure/types/SystemFields.ts'
-import { toMongoCaseKeys, toServerCaseKeys } from '@/utils/objectTransformers.ts'
-import { SafeUpdateData } from '@/infrastructure/types/SafeUpdateData.ts'
+import { SingleUpdateDTO } from '../dtos/SingleUpdateDTO.js'
+import { SystemFields } from '@/infrastructure/types/SystemFields.js'
+import { toMongoCaseKeys, toServerCaseKeys } from '@/utils/objectTransformers.js'
+import { SafeUpdateData } from '@/infrastructure/types/SafeUpdateData.js'
 
 export abstract class BaseRepository<
   TRawEntity,

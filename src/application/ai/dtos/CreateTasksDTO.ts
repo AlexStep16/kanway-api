@@ -1,5 +1,5 @@
-import { TASK_COLORS_TITLES } from '@/constants/TASK_COLORS.ts'
-import { ErrorMessages } from '@/enums/ErrorMessages.ts'
+import { TASK_COLORS_TITLES } from '@/constants/TASK_COLORS.js'
+import { ErrorMessages } from '@/enums/ErrorMessages.js'
 import { z } from 'zod'
 
 export const CreateTaskDTOSchema = z

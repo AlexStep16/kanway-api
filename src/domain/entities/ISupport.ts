@@ -1,5 +1,5 @@
 import { Types } from 'mongoose'
-import { ThemesEnum } from '../enums/ThemesEnum.ts'
+import { ThemesEnum } from '../enums/ThemesEnum.js'
 
 export interface ISupport {
   id: Types.ObjectId

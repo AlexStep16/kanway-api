@@ -1,5 +1,5 @@
 import { Types } from 'mongoose'
-import { TASK_COLORS_TITLES } from '@constants/TASK_COLORS.ts'
+import { TASK_COLORS_TITLES } from '@constants/TASK_COLORS.js'
 
 export interface ITaskCreatePayload {
   id?: string

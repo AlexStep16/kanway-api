@@ -1,6 +1,6 @@
 import { Router } from 'express'
-import { jwtAuthMiddleware } from '@infrastructure/auth/passportJWTStrategy.ts'
-import { SubscriptionController } from '@controllers/SubscriptionController.ts'
+import { jwtAuthMiddleware } from '@infrastructure/auth/passportJWTStrategy.js'
+import { SubscriptionController } from '@controllers/SubscriptionController.js'
 
 export default (controller: SubscriptionController): Router => {
   const router = Router({ mergeParams: true })

@@ -1,5 +1,5 @@
-import { ToolDispatcherService } from '@/application/ai/services/ToolDispatcherService.ts'
-import SuccessResponse from '@/application/services/SuccessResponse.ts'
+import { ToolDispatcherService } from '@/application/ai/services/ToolDispatcherService.js'
+import SuccessResponse from '@/application/services/SuccessResponse.js'
 import { NextFunction, Request, Response } from 'express'
 
 export default class SandboxController {

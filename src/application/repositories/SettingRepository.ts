@@ -1,9 +1,9 @@
-import SettingModel from '@models/SettingModel.ts'
-import { BaseRepository } from '@repositories/BaseRepository.ts'
-import { ISettingRaw } from '@entities/ISettingRaw.ts'
-import { ISettingCriteria } from '@criterias/ISettingCriteria.ts'
+import SettingModel from '@models/SettingModel.js'
+import { BaseRepository } from '@repositories/BaseRepository.js'
+import { ISettingRaw } from '@entities/ISettingRaw.js'
+import { ISettingCriteria } from '@criterias/ISettingCriteria.js'
 import { FilterQuery, Types } from 'mongoose'
-import { ISetting } from '@entities/ISetting.ts'
+import { ISetting } from '@entities/ISetting.js'
 
 export default class SettingRepository extends BaseRepository<
   ISettingRaw,

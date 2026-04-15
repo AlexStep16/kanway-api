@@ -1,4 +1,4 @@
-import { TASK_COLORS_MAP, TASK_COLORS_TITLES } from '@/constants/TASK_COLORS.ts'
+import { TASK_COLORS_MAP, TASK_COLORS_TITLES } from '@/constants/TASK_COLORS.js'
 
 export function getColorByNameAndTone(
   name: (typeof TASK_COLORS_TITLES)[number],

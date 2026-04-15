@@ -1,8 +1,8 @@
 import { Worker, Job } from 'bullmq'
 import * as Sentry from '@sentry/node'
-import { initializeDependencies } from '../di/initializeDependencies.ts'
-import connectToDatabase from '../db/connectToDatabase.ts'
-import { AppError } from '@/domain/errors/AppError.ts'
+import { initializeDependencies } from '../di/initializeDependencies.js'
+import connectToDatabase from '../db/connectToDatabase.js'
+import { AppError } from '@/domain/errors/AppError.js'
 
 const dependencies = initializeDependencies()
 

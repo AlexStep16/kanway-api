@@ -1,6 +1,6 @@
-import { ErrorMessages } from '@/enums/ErrorMessages.ts'
-import { SubscriptionPlanEnum } from '@/domain/enums/SubscriptionPlanEnum.ts'
-import { PaymentStatusesEnum } from '@/domain/enums/PaymentStatusesEnum.ts'
+import { ErrorMessages } from '@/enums/ErrorMessages.js'
+import { SubscriptionPlanEnum } from '@/domain/enums/SubscriptionPlanEnum.js'
+import { PaymentStatusesEnum } from '@/domain/enums/PaymentStatusesEnum.js'
 import { z } from 'zod'
 
 export const PaymentDTOSchema = z.object({

@@ -1,14 +1,14 @@
 import { RunnableConfig } from '@langchain/core/runnables'
-import { AgentDependencies } from '@/application/ai/agent/types/AgentDependencies.ts'
-import { AgentStateAnnotation } from '@/application/ai/agent/AgentStateAnnotation.ts'
+import { AgentDependencies } from '@/application/ai/agent/types/AgentDependencies.js'
+import { AgentStateAnnotation } from '@/application/ai/agent/AgentStateAnnotation.js'
 import { ChatPromptTemplate } from '@langchain/core/prompts'
-import { PlannerPrompt } from '../../prompts/PlannerPrompt.ts'
-import { initPlannerTools } from '../../tools/initPlannerTools.ts'
-import { Configurable } from '@/application/ai/interfaces/Configurable.ts'
+import { PlannerPrompt } from '../../prompts/PlannerPrompt.js'
+import { initPlannerTools } from '../../tools/initPlannerTools.js'
+import { Configurable } from '@/application/ai/interfaces/Configurable.js'
 import { dispatchCustomEvent } from '@langchain/core/callbacks/dispatch'
-import { CustomEvents } from '@/enums/CustomEvents.ts'
+import { CustomEvents } from '@/enums/CustomEvents.js'
 import { Types } from 'mongoose'
-import { STEP_MESSAGES } from '@/constants/STEP_MESSAGES.ts'
+import { STEP_MESSAGES } from '@/constants/STEP_MESSAGES.js'
 
 export const makePlannerNode = (deps: AgentDependencies) => {
   return async (state: typeof AgentStateAnnotation.State, config: RunnableConfig) => {

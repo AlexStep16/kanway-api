@@ -1,9 +1,9 @@
-import Chat from '@models/Chat.ts'
-import { IChatRaw } from '@entities/IChatRaw.ts'
-import { BaseRepository } from '@repositories/BaseRepository.ts'
-import { IChatCriteria } from '@interfaces/criterias/IChatCriteria.ts'
+import Chat from '@models/Chat.js'
+import { IChatRaw } from '@entities/IChatRaw.js'
+import { BaseRepository } from '@repositories/BaseRepository.js'
+import { IChatCriteria } from '@interfaces/criterias/IChatCriteria.js'
 import { FilterQuery, Types } from 'mongoose'
-import { IChat } from '@entities/IChat.ts'
+import { IChat } from '@entities/IChat.js'
 
 export default class ChatRepository extends BaseRepository<IChatRaw, IChat, IChatCriteria> {
   constructor() {

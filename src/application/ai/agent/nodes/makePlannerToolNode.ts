@@ -1,9 +1,9 @@
 import { RunnableConfig } from '@langchain/core/runnables'
-import { AgentStateAnnotation } from '@/application/ai/agent/AgentStateAnnotation.ts'
+import { AgentStateAnnotation } from '@/application/ai/agent/AgentStateAnnotation.js'
 import { AIMessage, HumanMessage } from '@langchain/core/messages'
-import { initPlannerTools } from '../../tools/initPlannerTools.ts'
+import { initPlannerTools } from '../../tools/initPlannerTools.js'
 import { DynamicStructuredTool } from '@langchain/core/tools'
-import { ToolResult } from '../../tools/helpers/ToolResult.ts'
+import { ToolResult } from '../../tools/helpers/ToolResult.js'
 import z, { ZodAny } from 'zod'
 
 export const makePlannerToolNode = () => {

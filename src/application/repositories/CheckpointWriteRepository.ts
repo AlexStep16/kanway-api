@@ -1,9 +1,9 @@
-import CheckpointWrite from '@models/CheckpointWrite.ts'
-import { BaseRepository } from '@repositories/BaseRepository.ts'
-import { ICheckpointWriteCriteria } from '../interfaces/criterias/ICheckpointWriteCriteria.ts'
+import CheckpointWrite from '@models/CheckpointWrite.js'
+import { BaseRepository } from '@repositories/BaseRepository.js'
+import { ICheckpointWriteCriteria } from '../interfaces/criterias/ICheckpointWriteCriteria.js'
 import { FilterQuery } from 'mongoose'
-import { ICheckpointWriteRaw } from '@/domain/entities/ICheckpointWriteRaw.ts'
-import { ICheckpointWrite } from '@/domain/entities/ICheckpointWrite.ts'
+import { ICheckpointWriteRaw } from '@/domain/entities/ICheckpointWriteRaw.js'
+import { ICheckpointWrite } from '@/domain/entities/ICheckpointWrite.js'
 
 export default class CheckpointWriteRepository extends BaseRepository<
   ICheckpointWriteRaw,

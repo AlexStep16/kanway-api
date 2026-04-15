@@ -1,4 +1,4 @@
-import { ToolResultTypesEnum } from '@/domain/enums/ToolResultTypesEnum.ts'
+import { ToolResultTypesEnum } from '@/domain/enums/ToolResultTypesEnum.js'
 
 export class ToolResult {
   public success: boolean

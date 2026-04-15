@@ -1,4 +1,4 @@
-import { ICategoryPopulated } from '@/application/interfaces/ICategoryPopulated.ts'
+import { ICategoryPopulated } from '@/application/interfaces/ICategoryPopulated.js'
 
 interface CompressedCategory {
   id: string

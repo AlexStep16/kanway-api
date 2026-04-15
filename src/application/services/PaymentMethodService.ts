@@ -1,13 +1,13 @@
-import { toServerCaseKeys } from '@utils/objectTransformers.ts'
-import { SystemFields } from '@infrastructure/types/SystemFields.ts'
-import PaymentMethodRepository from '@repositories/PaymentMethodRepository.ts'
-import { IPaymentMethod } from '@/domain/entities/IPaymentMethod.ts'
-import { IPaymentMethodRaw } from '@/domain/entities/IPaymentMethodRaw.ts'
-import { PaymentMethodDTO } from '@dtos/PaymentMethodDTO.ts'
+import { toServerCaseKeys } from '@utils/objectTransformers.js'
+import { SystemFields } from '@infrastructure/types/SystemFields.js'
+import PaymentMethodRepository from '@repositories/PaymentMethodRepository.js'
+import { IPaymentMethod } from '@/domain/entities/IPaymentMethod.js'
+import { IPaymentMethodRaw } from '@/domain/entities/IPaymentMethodRaw.js'
+import { PaymentMethodDTO } from '@dtos/PaymentMethodDTO.js'
 import { ClientSession, Types } from 'mongoose'
-import { UserService } from '@application/services/UserService.ts'
-import { BaseService } from './BaseService.ts'
-import { IPaymentMethodCriteria } from '../interfaces/criterias/IPaymentMethodCriteria.ts'
+import { UserService } from '@application/services/UserService.js'
+import { BaseService } from './BaseService.js'
+import { IPaymentMethodCriteria } from '../interfaces/criterias/IPaymentMethodCriteria.js'
 
 export class PaymentMethodService extends BaseService<
   IPaymentMethodRaw,
