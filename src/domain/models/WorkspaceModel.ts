@@ -1,6 +1,6 @@
 import { model, Schema } from 'mongoose'
-import { IWorkspaceRaw } from '@entities/IWorkspaceRaw.ts'
-import { BASE_COLORS } from '@/constants/BASE_COLORS.ts'
+import { IWorkspaceRaw } from '@entities/IWorkspaceRaw.js'
+import { BASE_COLORS } from '@/constants/BASE_COLORS.js'
 
 export const WorkspaceSchema = new Schema<IWorkspaceRaw>(
   {

@@ -1,10 +1,10 @@
-import { IBoardRaw } from '@entities/IBoardRaw.ts'
-import BoardModel from '@models/BoardModel.ts'
-import { IBoardCriteria } from '@criterias/IBoardCriteria.ts'
+import { IBoardRaw } from '@entities/IBoardRaw.js'
+import BoardModel from '@models/BoardModel.js'
+import { IBoardCriteria } from '@criterias/IBoardCriteria.js'
 import { FilterQuery, Types } from 'mongoose'
-import { BaseRepository } from '@repositories/BaseRepository.ts'
-import { IBoard } from '@entities/IBoard.ts'
-import { IBoardCreatePayload } from '@interfaces/IBoardCreatePayload.ts'
+import { BaseRepository } from '@repositories/BaseRepository.js'
+import { IBoard } from '@entities/IBoard.js'
+import { IBoardCreatePayload } from '@interfaces/IBoardCreatePayload.js'
 
 export default class BoardRepository extends BaseRepository<
   IBoardRaw,

@@ -1,5 +1,5 @@
 import { model, Schema } from 'mongoose'
-import { ICategoryRaw } from '@entities/ICategoryRaw.ts'
+import { ICategoryRaw } from '@entities/ICategoryRaw.js'
 
 export const CategorySchema = new Schema<ICategoryRaw>(
   {

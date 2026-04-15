@@ -1,5 +1,5 @@
 import { model, Schema } from 'mongoose'
-import { IBoardRaw } from '@entities/IBoardRaw.ts'
+import { IBoardRaw } from '@entities/IBoardRaw.js'
 
 export const BoardSchema = new Schema<IBoardRaw>(
   {

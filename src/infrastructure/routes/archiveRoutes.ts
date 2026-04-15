@@ -1,6 +1,6 @@
 import express, { Router } from 'express'
-import ArchiveController from '@controllers/ArchiveController.ts'
-import { jwtAuthMiddleware } from '@infrastructure/auth/passportJWTStrategy.ts'
+import ArchiveController from '@controllers/ArchiveController.js'
+import { jwtAuthMiddleware } from '@infrastructure/auth/passportJWTStrategy.js'
 
 export default (controller: ArchiveController): Router => {
   const router = express.Router()

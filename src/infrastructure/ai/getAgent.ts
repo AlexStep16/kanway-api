@@ -1,8 +1,8 @@
 import { MongoDBSaver } from '@langchain/langgraph-checkpoint-mongodb'
-import { createReActAgent } from '@/application/ai/agent/createReActAgent.ts'
+import { createReActAgent } from '@/application/ai/agent/createReActAgent.js'
 import { MongoClient } from 'mongodb'
 import { CompiledStateGraph } from '@langchain/langgraph' // Тип скомпилированного графа
-import { initAiModels } from './initAiModels.ts'
+import { initAiModels } from './initAiModels.js'
 
 // Переменная для хранения единственного экземпляра (Singleton)
 let agentInstance: CompiledStateGraph<any, any, any> | null = null

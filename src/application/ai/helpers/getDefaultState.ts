@@ -1,4 +1,4 @@
-import { AgentStateAnnotation } from '../agent/AgentStateAnnotation.ts'
+import { AgentStateAnnotation } from '../agent/AgentStateAnnotation.js'
 
 export function getDefaultState(): typeof AgentStateAnnotation.State {
   return {

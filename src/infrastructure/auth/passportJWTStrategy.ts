@@ -1,10 +1,10 @@
 import passport from 'passport'
 import { Request } from 'express'
 import { Strategy as JwtStrategy } from 'passport-jwt'
-import { UserService } from '@application/services/UserService.ts'
-import UserRepository from '@repositories/UserRepository.ts'
+import { UserService } from '@application/services/UserService.js'
+import UserRepository from '@repositories/UserRepository.js'
 import * as Sentry from '@sentry/node'
-import { initializeDependencies } from '../di/initializeDependencies.ts'
+import { initializeDependencies } from '../di/initializeDependencies.js'
 
 const dependencies = initializeDependencies()
 
