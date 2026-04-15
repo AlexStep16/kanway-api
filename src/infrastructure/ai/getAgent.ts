@@ -36,7 +36,6 @@ export async function getAgent(dependencies: any) {
     {
       services: {
         toolDispatcherService: dependencies.services.toolDispatcherService,
-        agentSkillService: dependencies.services.agentSkillService,
         //contextExternalFetchService: dependencies.services.contextExternalFetchService,
         //vectorSearchService: dependencies.services.vectorSearchService,
         //userService: dependencies.services.userService,

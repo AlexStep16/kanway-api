@@ -8,7 +8,6 @@ import { EmbeddingService } from '@infrastructure/services/EmbeddingService.ts'
 import { MongoDBAtlasVectorSearch } from '@langchain/mongodb'
 import { MongoClient } from 'mongodb'
 import { Types } from 'mongoose'
-import { IAgentSkill } from '@/domain/entities/IAgentSkill.ts'
 
 export class VectorSearchService {
   protected embeddingService: EmbeddingService
@@ -198,35 +197,5 @@ export class VectorSearchService {
     }
 
     return tools
-  }
-
-  public async similaritySearchAgentSkills(
-    query: string,
-    topK: number = 2,
-  ): Promise<Array<IAgentSkill>> {
-    const collection = this.mongoClient.db(process.env.DATABASE_NAME).collection('agentskills')
-
-    const vectorstore = new MongoDBAtlasVectorSearch(this.embeddingService.getEmbeddingModel(), {
-      collection,
-      indexName: process.env.AGENT_INSTRUCTIONS_INDEX_NAME,
-      textKey: 'example',
-      embeddingKey: 'embeddings',
-    })
-
-    const queryEmbedding = await this.embeddingService.getEmbeddings(query.trim().toLowerCase())
-    const documents = await vectorstore.similaritySearchVectorWithScore(queryEmbedding, topK)
-
-    const agentSkills = []
-
-    for (const [doc] of documents) {
-      const agentSkill = {
-        ...doc.metadata,
-        example: doc.pageContent,
-      }
-
-      agentSkills.push(toServerCaseKeys<IAgentSkill>(agentSkill))
-    }
-
-    return agentSkills
   }
 }

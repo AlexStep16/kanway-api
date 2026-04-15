@@ -3,6 +3,7 @@ import { AgentStateAnnotation } from '../agent/AgentStateAnnotation.ts'
 export function getDefaultState(): typeof AgentStateAnnotation.State {
   return {
     messages: [],
+    final_messages: [],
 
     coder_messages: [],
     coder_has_error: false,

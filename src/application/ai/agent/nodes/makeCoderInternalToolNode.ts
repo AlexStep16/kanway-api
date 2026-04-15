@@ -9,7 +9,6 @@ import { ConfirmationEntityToolResult } from '../../tools/helpers/ConfirmationEn
 import { ToolResultTypesEnum } from '@/domain/enums/ToolResultTypesEnum.ts'
 import { FailedToolResult } from '../../tools/helpers/FailedToolResult.ts'
 import { HumanMessage } from '@langchain/core/messages'
-import mongoose from 'mongoose'
 
 export const makeCoderInternalToolNode = (deps: AgentDependencies) => {
   return async (state: typeof AgentStateAnnotation.State, config: RunnableConfig) => {
@@ -50,18 +49,12 @@ export const makeCoderInternalToolNode = (deps: AgentDependencies) => {
       return outputs
     }
 
-    const session = await mongoose.startSession()
-    session.startTransaction()
-
     for (const pendingToolCall of filteredPendingToolCalls) {
-      const result = (await deps.services.toolDispatcherService.dispatch(
-        {
-          toolCall: pendingToolCall,
-          userId: user.id.toString(),
-          config,
-        },
-        session,
-      )) as ToolResult
+      const result = (await deps.services.toolDispatcherService.dispatch({
+        toolCall: pendingToolCall,
+        userId: user.id.toString(),
+        config,
+      })) as ToolResult
 
       if (result instanceof ConfirmationEntityToolResult) {
         await dispatchCustomEvent(CustomEvents.OPERATION, result.meta)
@@ -73,13 +66,12 @@ export const makeCoderInternalToolNode = (deps: AgentDependencies) => {
         )
         outputs.internal_tool_calls_have_error = true
 
-        session.abortTransaction()
-
         break
       } else {
         const toolResultMessage = new HumanMessage(result.content)
 
         outputs.planner_messages!.push(toolResultMessage)
+        outputs.coder_messages!.push(toolResultMessage)
         outputs.final_messages!.push(toolResultMessage)
       }
 
@@ -89,9 +81,6 @@ export const makeCoderInternalToolNode = (deps: AgentDependencies) => {
         },
       ]
     }
-
-    if (!outputs.internal_tool_calls_have_error) await session.commitTransaction()
-    session.endSession()
 
     return outputs
   }

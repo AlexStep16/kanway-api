@@ -17,14 +17,6 @@ export const BoardSchema = new Schema<IBoardRaw>(
       ref: 'User',
       required: true,
     },
-    tasks_count: {
-      type: Number,
-      default: 0,
-    },
-    categories_count: {
-      type: Number,
-      default: 0,
-    },
     is_deleted: {
       type: Boolean,
       default: false,

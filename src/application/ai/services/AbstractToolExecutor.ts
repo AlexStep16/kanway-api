@@ -11,7 +11,7 @@ export abstract class AbstractToolExecutor {
     return Object.keys(this.toolRegistry)
   }
 
-  public async executeTool(payload: DispatchPayload, session?: ClientSession) {
+  public async executeTool(payload: DispatchPayload) {
     const toolFunc = this.toolRegistry[payload.toolCall.name]
 
     if (!toolFunc) {
@@ -20,6 +20,6 @@ export abstract class AbstractToolExecutor {
       )
     }
 
-    return await toolFunc(payload, session)
+    return await toolFunc(payload)
   }
 }

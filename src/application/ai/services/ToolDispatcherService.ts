@@ -7,7 +7,6 @@ import { WorkspaceToolsExecutorService } from './WorkspaceToolsExecutorService.t
 import { BoardToolsExecutorService } from './BoardToolsExecutorService.ts'
 import { ToolResult } from '../tools/helpers/ToolResult.ts'
 import { FailedToolResult } from '../tools/helpers/FailedToolResult.ts'
-import { ClientSession } from 'mongoose'
 
 export interface DispatchPayload {
   toolCall: PendingToolCall
@@ -42,7 +41,7 @@ export class ToolDispatcherService {
     }
   }
 
-  public async dispatch(payload: DispatchPayload, session?: ClientSession): Promise<ToolResult> {
+  public async dispatch(payload: DispatchPayload): Promise<ToolResult> {
     const executor = this.router.get(payload.toolCall.name)
 
     if (!executor) {
@@ -50,7 +49,7 @@ export class ToolDispatcherService {
     }
 
     try {
-      return await executor.executeTool(payload, session)
+      return await executor.executeTool(payload)
     } catch (error) {
       return new FailedToolResult(error instanceof Error ? error.message : String(error))
     }

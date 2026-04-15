@@ -44,8 +44,6 @@ import { ChatService } from '@application/services/ChatService.ts'
 import ChatRepository from '@application/repositories/ChatRepository.ts'
 import ChatController from '@controllers/ChatController.ts'
 import ChatMessageController from '@controllers/ChatMessageController.ts'
-import AgentSkillRepository from '@repositories/AgentSkillRepository.ts'
-import { AgentSkillService } from '@application/services/AgentSkillService.ts'
 import SupportController from '../api/controllers/SupportController.ts'
 import SupportRepository from '@/application/repositories/SupportRepository.ts'
 import { BaseService } from '@/application/services/BaseService.ts'
@@ -76,7 +74,6 @@ export function initializeDependencies() {
   const paymentMethodRepository = new PaymentMethodRepository()
   const chatMessageRepository = new ChatMessageRepository()
   const chatRespository = new ChatRepository()
-  const agentSkillRepository = new AgentSkillRepository()
   const supportRepository = new SupportRepository()
   const checkpointRepository = new CheckpointRepository()
   const checkpointWriteRepository = new CheckpointWriteRepository()
@@ -258,7 +255,6 @@ export function initializeDependencies() {
     checkpointWriteRepository,
     checkpointRepository,
   )
-  const agentSkillService = new AgentSkillService(agentSkillRepository, embeddingService)
   /** AI SERVICES END */
 
   const taskToolsExecutorService = new TaskToolsExecutorService(
@@ -354,7 +350,6 @@ export function initializeDependencies() {
       toolDispatcherService,
       chatMessageService,
       chatService,
-      agentSkillService,
     },
     controllers: {
       authController,

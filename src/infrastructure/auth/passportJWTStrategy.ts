@@ -4,6 +4,9 @@ import { Strategy as JwtStrategy } from 'passport-jwt'
 import { UserService } from '@application/services/UserService.ts'
 import UserRepository from '@repositories/UserRepository.ts'
 import * as Sentry from '@sentry/node'
+import { initializeDependencies } from '../di/initializeDependencies.ts'
+
+const dependencies = initializeDependencies()
 
 const KEY = process.env.JWT_KEY || 'FF123ABC-456D-789E-F012-3456789ABCDF'
 
@@ -26,7 +29,7 @@ passport.use(
     async (jwtPayload: { user_id: string }, done: (err: any, user?: any) => void) => {
       try {
         const userRepository = new UserRepository()
-        const userService = new UserService(userRepository)
+        const userService = new UserService(userRepository, dependencies.services.emailService)
 
         const user = await userService.getById(jwtPayload.user_id)
 
@@ -40,8 +43,8 @@ passport.use(
 
         return done(err)
       }
-    }
-  )
+    },
+  ),
 )
 
 export const jwtAuthMiddleware = passport.authenticate('jwt', { session: false })

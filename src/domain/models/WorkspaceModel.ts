@@ -21,18 +21,6 @@ export const WorkspaceSchema = new Schema<IWorkspaceRaw>(
       type: Boolean,
       default: false,
     },
-    tasks_count: {
-      type: Number,
-      default: 0,
-    },
-    categories_count: {
-      type: Number,
-      default: 0,
-    },
-    boards_count: {
-      type: Number,
-      default: 0,
-    },
     embeddings: {
       type: [Number],
       required: true,

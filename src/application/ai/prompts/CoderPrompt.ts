@@ -36,6 +36,11 @@ ${EntitySchemes}
 - **Technical Layer (English):** All Python code, logic, logs, and 'print' keys.
 - **Content Layer (Russian):** Task/Board names, descriptions, tags, and all plain text output intended for the user.
 
+### ERROR RECOVERY & IDEMPOTENCY
+- **Analyze History:** If a previous execution failed, check the history for IDs of already created entities. 
+- **Resume, Don't Restart:** Do not re-create entities that already exist or were successfully created in a prior (interrupted) run. 
+- **Partial Success:** If you created a Board but failed at Tasks, use the existing Board ID in your second attempt.
+
 ### CONTEXT VARIABLES
 - Active Workspace: '{workspace}'
 - Active Board: '{board}'
