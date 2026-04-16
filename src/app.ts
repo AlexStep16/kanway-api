@@ -47,13 +47,13 @@ await connectToDatabase()
 const app = express()
 
 const frontUrl = process.env.FRONT_URL || 'https://kanway.ru'
-const frontUrlWithoutProtocol = frontUrl.split('https://')[1]
+const frontUrlWww = process.env.FRONT_URL_WWW || 'https://www.kanway.ru'
 
 app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')))
 
 app.use(
   cors({
-    origin: [frontUrl, 'https://www.' + frontUrlWithoutProtocol, 'http://localhost:3001'],
+    origin: [frontUrl, frontUrlWww, 'http://localhost:3001'],
     credentials: true,
   }),
 )
