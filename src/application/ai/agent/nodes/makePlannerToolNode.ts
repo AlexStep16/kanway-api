@@ -1,6 +1,6 @@
 import { RunnableConfig } from '@langchain/core/runnables'
 import { AgentStateAnnotation } from '@/application/ai/agent/AgentStateAnnotation.js'
-import { AIMessage, HumanMessage } from '@langchain/core/messages'
+import { HumanMessage } from '@langchain/core/messages'
 import { initPlannerTools } from '../../tools/initPlannerTools.js'
 import { DynamicStructuredTool } from '@langchain/core/tools'
 import { ToolResult } from '../../tools/helpers/ToolResult.js'
@@ -75,7 +75,7 @@ export const makePlannerToolNode = () => {
 
         const beautifiedPlan = plan.map((step, index) => `${index + 1}. ${step}`).join('\n')
 
-        const planMessage = new AIMessage(beautifiedPlan)
+        const planMessage = new HumanMessage(beautifiedPlan)
 
         outputs.final_messages!.push(planMessage)
         outputs.coder_messages!.push(planMessage)

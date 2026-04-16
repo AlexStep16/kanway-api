@@ -1,4 +1,5 @@
 import { ChatFireworks } from '@langchain/community/chat_models/fireworks'
+import { ChatOpenAI } from '@langchain/openai'
 
 /* Example of thinking model
   const coderModel = new ChatFireworks({
@@ -11,13 +12,13 @@ import { ChatFireworks } from '@langchain/community/chat_models/fireworks'
   })*/
 
 export function initAiModels() {
-  const plannerModel = new ChatFireworks({
-    model: 'accounts/fireworks/models/glm-4p7',
+  const plannerModel = new ChatOpenAI({
+    model: 'gpt-5.4-mini-2026-03-17',
     temperature: 0,
   })
 
   const coderModel = new ChatFireworks({
-    model: 'accounts/fireworks/models/glm-4p7',
+    model: 'gpt-5.4-mini-2026-03-17',
     temperature: 0,
   })
 
