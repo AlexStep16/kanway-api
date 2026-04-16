@@ -12,12 +12,12 @@ import { ChatFireworks } from '@langchain/community/chat_models/fireworks'
 
 export function initAiModels() {
   const plannerModel = new ChatFireworks({
-    model: 'accounts/fireworks/models/glm-4.7',
+    model: 'accounts/fireworks/models/glm-4p7',
     temperature: 0,
   })
 
   const coderModel = new ChatFireworks({
-    model: 'accounts/fireworks/models/glm-4.7',
+    model: 'accounts/fireworks/models/glm-4p7',
     temperature: 0,
   })
 
