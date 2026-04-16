@@ -8,9 +8,9 @@
     "dev": "concurrently \"npm run start:api\" \"npm run start:agent\" \"npm run start:subscriptions\"",
     "lint": "eslint src --ext .ts"
   },
-  "name": "kanbar-backend",
+  "name": "kanway-backend",
   "private": true,
-  "version": "1.0.0",
+  "version": "0.0.1",
   "type": "module",
   "dependencies": {
     "@a2seven/yoo-checkout": "^1.1.4",
