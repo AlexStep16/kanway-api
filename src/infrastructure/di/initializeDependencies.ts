@@ -59,7 +59,7 @@ import CheckpointWriteRepository from '@/application/repositories/CheckpointWrit
 import CheckpointRepository from '@/application/repositories/CheckpointRepository.js'
 
 export function initializeDependencies() {
-  const mongoClient = new MongoClient(process.env.MONGODB_URI || '')
+  const mongoClient = new MongoClient(process.env.MONGO_URL || '')
 
   const userRepository = new UserRepository()
   const tokenRepository = new TokenRepository()

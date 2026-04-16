@@ -20,7 +20,7 @@ export async function getAgent(dependencies: any) {
 
   // 3. Подключаемся к Mongo (безопасно)
   if (!mongoClient) {
-    mongoClient = new MongoClient(process.env.MONGODB_URI || '')
+    mongoClient = new MongoClient(process.env.MONGO_URL || '')
     await mongoClient.connect() // Явное ожидание подключения
     console.log('✅ Connected to MongoDB for Agent Checkpoints')
   }
