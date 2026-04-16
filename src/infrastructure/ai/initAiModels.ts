@@ -1,5 +1,6 @@
 import { ChatFireworks } from '@langchain/community/chat_models/fireworks'
 import { ChatVertexAI } from '@langchain/google-vertexai'
+import { ChatOpenAI } from '@langchain/openai'
 
 /* Example of thinking model
   const coderModel = new ChatFireworks({
@@ -20,7 +21,7 @@ export function initAiModels() {
     model: 'gemini-3-flash-preview',
   })
 
-  const summarizerModel = new ChatFireworks({
+  const summarizerModel = new ChatOpenAI({
     model: 'accounts/fireworks/models/gpt-oss-20b',
     temperature: 0,
   })
