@@ -1,5 +1,4 @@
 import { ChatFireworks } from '@langchain/community/chat_models/fireworks'
-import { ChatVertexAI } from '@langchain/google-vertexai'
 
 /* Example of thinking model
   const coderModel = new ChatFireworks({
@@ -12,12 +11,14 @@ import { ChatVertexAI } from '@langchain/google-vertexai'
   })*/
 
 export function initAiModels() {
-  const plannerModel = new ChatVertexAI({
-    model: 'gemini-3-flash-preview',
+  const plannerModel = new ChatFireworks({
+    model: 'accounts/fireworks/models/glm-4.7',
+    temperature: 0,
   })
 
-  const coderModel = new ChatVertexAI({
-    model: 'gemini-3-flash-preview',
+  const coderModel = new ChatFireworks({
+    model: 'accounts/fireworks/models/glm-4.7',
+    temperature: 0,
   })
 
   const summarizerModel = new ChatFireworks({
