@@ -17,7 +17,7 @@ export function initAiModels() {
     temperature: 0,
   })
 
-  const coderModel = new ChatFireworks({
+  const coderModel = new ChatOpenAI({
     model: 'gpt-5.4-mini-2026-03-17',
     temperature: 0,
   })
