@@ -1,6 +1,6 @@
 {
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && tsc-alias",
     "start": "node dist/index.js",
     "start:api": "tsx watch src/app.ts",
     "start:agent": "tsx watch src/infrastructure/workers/RunAgentWorker.ts",
@@ -90,6 +90,7 @@
     "globals": "^15.3.0",
     "nodemon": "^3.1.10",
     "sharp": "^0.33.5",
+    "tsc-alias": "^1.8.16",
     "tsx": "^4.20.6",
     "typescript": "^5.9.3"
   },
