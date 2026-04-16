@@ -15,6 +15,7 @@ export default class AuthController {
     const credentials = req.body as RegisterCredentialsDTO
 
     try {
+      throw new Error('Регистрация отключена на время бета-тестирования')
       const { user, serialized } = await this.service.register(credentials)
 
       res.setHeader('Set-Cookie', serialized)

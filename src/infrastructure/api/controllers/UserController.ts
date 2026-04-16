@@ -81,7 +81,7 @@ export class UserController {
     }
   }
 
-  public async logout(_: Request, res: Response, next: NextFunction) {
+  public logout(_: Request, res: Response, next: NextFunction) {
     try {
       res.clearCookie('token', {
         httpOnly: true,
