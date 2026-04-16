@@ -28,7 +28,8 @@ export default class SandboxController {
 
   public test = async (_req: Request, res: Response, next: NextFunction) => {
     try {
-      const response = await fetch('http://localhost:8000/execute', {
+      const url = (process.env.PYTHON_SANDBOX_URL || 'http://localhost:8000') + '/execute'
+      const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

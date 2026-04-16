@@ -7,7 +7,8 @@ export async function executeCode(
   inheritableMetadata: Record<string, any>,
   payload: Record<string, any> = {},
 ) {
-  const response = await fetch('http://localhost:8000/execute', {
+  const url = (process.env.PYTHON_SANDBOX_URL || 'http://localhost:8000') + '/execute'
+  const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
