@@ -5,7 +5,7 @@ dotenv.config()
 
 const connectToDatabase = async () => {
   try {
-    await connect(process.env.MONGO_URL || 'mongodb://localhost:27017/boardai')
+    await connect(process.env.MONGO_URL || 'mongodb://localhost:27017/kanway')
     console.log('Connected to MongoDB')
   } catch (error) {
     console.error('Error connecting to MongoDB', error)

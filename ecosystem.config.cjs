@@ -4,6 +4,7 @@ module.exports = {
     {
       name: 'kanway-api',
       script: './dist/app.js',
+      env_file: '.env',
       env: {
         NODE_ENV: 'production',
         HTTPS_PROXY: 'socks5h://127.0.0.1:1080',
@@ -13,6 +14,7 @@ module.exports = {
     {
       name: 'kanway-worker-agent',
       script: './dist/infrastructure/workers/RunAgentWorker.js',
+      env_file: '.env',
       env: {
         NODE_ENV: 'production',
         HTTPS_PROXY: 'socks5h://127.0.0.1:1080',
@@ -21,6 +23,7 @@ module.exports = {
     {
       name: 'kanway-worker-subs',
       script: './dist/infrastructure/workers/SubscriptionWorker.js',
+      env_file: '.env',
       env: {
         NODE_ENV: 'production',
       },
