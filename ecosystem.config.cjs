@@ -34,13 +34,5 @@ module.exports = {
         ...envConfig,
       },
     },
-    {
-      name: 'kanway-test-ws',
-      script: './testSocks.js',
-      env_file: '.env',
-      env: {
-        ...envConfig,
-      },
-    },
   ],
 }
