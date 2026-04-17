@@ -1,6 +1,7 @@
 import { ChatFireworks } from '@langchain/community/chat_models/fireworks'
 import { ChatOpenAI } from '@langchain/openai'
 import { SocksProxyAgent } from 'socks-proxy-agent'
+import nodeFetch from 'node-fetch'
 
 /* Example of thinking model
   const coderModel = new ChatFireworks({
@@ -18,20 +19,13 @@ export function initAiModels() {
   const plannerModel = new ChatOpenAI({
     model: 'gpt-5.4-mini-2026-03-17',
     temperature: 0,
-    configuration: {
-      fetchOptions: {
-        agent,
-      },
-    },
   })
 
   const coderModel = new ChatOpenAI({
     model: 'gpt-5.4-mini-2026-03-17',
     temperature: 0,
     configuration: {
-      fetchOptions: {
-        agent,
-      },
+      fetch: (url: any, options: any) => nodeFetch(url, { ...options, agent }) as any,
     },
   })
 
