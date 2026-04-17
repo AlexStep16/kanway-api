@@ -22,6 +22,13 @@ import getLastHumanMessage from '@/application/ai/helpers/getLastHumanMessage.js
 import { langgraphQueue } from '../queues/index.js'
 import { AgentStateAnnotation } from '@/application/ai/agent/AgentStateAnnotation.js'
 import { AgentEventsHandler } from '@/application/ai/callbacks/AgentEventsHandler.js'
+import { bootstrap } from 'global-agent'
+import { setGlobalDispatcher, ProxyAgent } from 'undici'
+
+bootstrap()
+
+const proxyAgent = new ProxyAgent('http://127.0.0.1:1080')
+setGlobalDispatcher(proxyAgent)
 
 const dependencies = initializeDependencies()
 
