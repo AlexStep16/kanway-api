@@ -24,6 +24,7 @@ module.exports = {
       env: {
         ...envConfig,
         HTTPS_PROXY: 'socks5h://127.0.0.1:1080',
+        HTTP_PROXY: 'socks5h://127.0.0.1:1080',
       },
     },
     {
@@ -32,6 +33,8 @@ module.exports = {
       env_file: '.env',
       env: {
         ...envConfig,
+        HTTPS_PROXY: 'socks5h://127.0.0.1:1080',
+        HTTP_PROXY: 'socks5h://127.0.0.1:1080',
       },
     },
   ],
