@@ -1,9 +1,10 @@
 import WebSocket from 'ws'
 import { SocksProxyAgent } from 'socks-proxy-agent'
+import path from 'path'
+import dotenv from 'dotenv'
 
-const path = require('path')
 const envConfig =
-  require('dotenv').config({
+  dotenv.config({
     path: path.join(__dirname, '.env'),
   }).parsed || {}
 
