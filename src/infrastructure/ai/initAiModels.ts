@@ -1,6 +1,6 @@
 import { ChatFireworks } from '@langchain/community/chat_models/fireworks'
 import { ChatOpenAI } from '@langchain/openai'
-import { ProxyAgent } from 'undici'
+import { SocksProxyAgent } from 'socks-proxy-agent'
 //import { ProxyAgent } from 'undici'
 
 /* Example of thinking model
@@ -19,7 +19,7 @@ export function initAiModels() {
     temperature: 0,
     configuration: {
       fetchOptions: {
-        dispatcher: new ProxyAgent('http://127.0.0.1:1080'),
+        agent: new SocksProxyAgent('socks5h://127.0.0.1:1080'),
       },
     },
   })
@@ -29,7 +29,7 @@ export function initAiModels() {
     temperature: 0,
     configuration: {
       fetchOptions: {
-        dispatcher: new ProxyAgent('http://127.0.0.1:1080'),
+        agent: new SocksProxyAgent('socks5h://127.0.0.1:1080'),
       },
     },
   })
