@@ -14,7 +14,6 @@ module.exports = {
       env: {
         ...envConfig,
         HTTP_PROXY: 'http://127.0.0.1:1080',
-        NO_PROXY: 'api.openai.com',
       },
     },
     {
@@ -24,7 +23,6 @@ module.exports = {
       env: {
         ...envConfig,
         HTTP_PROXY: 'http://127.0.0.1:1080',
-        NO_PROXY: 'api.openai.com',
       },
     },
     {
@@ -34,7 +32,6 @@ module.exports = {
       env: {
         ...envConfig,
         HTTP_PROXY: 'http://127.0.0.1:1080',
-        NO_PROXY: 'api.openai.com',
       },
     },
   ],
