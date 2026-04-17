@@ -26,6 +26,7 @@ export function startOpenAIProxy(port: number) {
     })
 
     openaiWs.on('open', () => {
+      console.log('Соединение с OpenAI установлено.')
       openaiWs.send(
         JSON.stringify({
           type: 'transcription_session.update',
