@@ -1,6 +1,7 @@
 async function emailTest() {
   const verificationUrl = 'https://kanway.ru/verify-email?token=1234567890'
-
+  console.log(process.env)
+  console.log(process.env.UNISENDER_API_KEY)
   const inputBody = {
     message: {
       recipients: [
