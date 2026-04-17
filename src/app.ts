@@ -16,11 +16,11 @@ import cors from 'cors'
 import { Redis } from 'ioredis'
 import { generalLimiter } from './limiters.js'
 import { bootstrap } from 'global-agent'
-import { setGlobalDispatcher, Socks5ProxyAgent } from 'undici'
+import { setGlobalDispatcher, ProxyAgent } from 'undici'
 
 bootstrap()
 
-const proxyAgent = new Socks5ProxyAgent('socks5h://127.0.0.1:1080')
+const proxyAgent = new ProxyAgent('http://127.0.0.1:1080')
 setGlobalDispatcher(proxyAgent)
 
 const redis = new Redis()

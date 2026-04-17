@@ -4,11 +4,11 @@ import { initializeDependencies } from '../di/initializeDependencies.js'
 import connectToDatabase from '../db/connectToDatabase.js'
 import { AppError } from '@/domain/errors/AppError.js'
 import { bootstrap } from 'global-agent'
-import { setGlobalDispatcher, Socks5ProxyAgent } from 'undici'
+import { setGlobalDispatcher, ProxyAgent } from 'undici'
 
 bootstrap()
 
-const proxyAgent = new Socks5ProxyAgent('socks5h://127.0.0.1:1080')
+const proxyAgent = new ProxyAgent('http://127.0.0.1:1080')
 setGlobalDispatcher(proxyAgent)
 
 const dependencies = initializeDependencies()
