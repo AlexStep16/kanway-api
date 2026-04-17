@@ -1,8 +1,10 @@
 import WebSocket, { WebSocketServer } from 'ws'
+import { SocksProxyAgent } from 'socks-proxy-agent'
 
 export function startOpenAIProxy(port: number) {
   const wss = new WebSocketServer({ port })
   const openAIRealtimeUrl = 'wss://api.openai.com/v1/realtime?intent=transcription'
+  const agent = new SocksProxyAgent('socks5h://127.0.0.1:1080')
 
   function floatTo16BitPCM(float32Buffer: Float32Array): Buffer {
     const pcm16Buffer = Buffer.alloc(float32Buffer.length * 2)
@@ -16,6 +18,7 @@ export function startOpenAIProxy(port: number) {
 
   wss.on('connection', (clientWs) => {
     const openaiWs = new WebSocket(openAIRealtimeUrl, {
+      agent: agent,
       headers: {
         Authorization: 'Bearer ' + process.env.OPENAI_API_KEY,
         'OpenAI-Beta': 'realtime=v1',
@@ -36,7 +39,7 @@ export function startOpenAIProxy(port: number) {
               type: 'semantic_vad',
             },
           },
-        })
+        }),
       )
     })
     openaiWs.on('error', (err) => console.error('Ошибка OpenAI WS:', err))
@@ -71,7 +74,7 @@ export function startOpenAIProxy(port: number) {
         const float32Array = new Float32Array(
           alignedBuffer.buffer,
           alignedBuffer.byteOffset,
-          alignedBuffer.length / 4
+          alignedBuffer.length / 4,
         )
 
         const pcm16Buffer = floatTo16BitPCM(float32Array)
@@ -82,7 +85,7 @@ export function startOpenAIProxy(port: number) {
           JSON.stringify({
             type: 'input_audio_buffer.append',
             audio: base64Chunk,
-          })
+          }),
         )
       } else {
         try {
