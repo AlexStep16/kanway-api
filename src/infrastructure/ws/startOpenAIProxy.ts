@@ -16,35 +16,35 @@ export function startOpenAIProxy(port: number) {
     return pcm16Buffer
   }
 
-  wss.on('connection', (clientWs) => {
-    const openaiWs = new WebSocket(openAIRealtimeUrl, {
-      agent: agent,
-      headers: {
-        Authorization: 'Bearer ' + process.env.OPENAI_API_KEY,
-        'OpenAI-Beta': 'realtime=v1',
-      },
-    })
+  const openaiWs = new WebSocket(openAIRealtimeUrl, {
+    agent: agent,
+    headers: {
+      Authorization: 'Bearer ' + process.env.OPENAI_API_KEY,
+      'OpenAI-Beta': 'realtime=v1',
+    },
+  })
 
-    openaiWs.on('open', () => {
-      console.log('-----------------CONNNECTED-------------------')
-      openaiWs.send(
-        JSON.stringify({
-          type: 'transcription_session.update',
-          session: {
-            input_audio_transcription: {
-              language: 'ru',
-              model: 'gpt-4o-transcribe',
-              prompt: "Respond in Russian and don't hallucinate. Be as accurate as possible.",
-            },
-            turn_detection: {
-              type: 'semantic_vad',
-            },
+  openaiWs.on('open', () => {
+    console.log('-----------------CONNNECTED-------------------')
+    openaiWs.send(
+      JSON.stringify({
+        type: 'transcription_session.update',
+        session: {
+          input_audio_transcription: {
+            language: 'ru',
+            model: 'gpt-4o-transcribe',
+            prompt: "Respond in Russian and don't hallucinate. Be as accurate as possible.",
           },
-        }),
-      )
-    })
-    openaiWs.on('error', (err) => console.error('Ошибка OpenAI WS:', err))
+          turn_detection: {
+            type: 'semantic_vad',
+          },
+        },
+      }),
+    )
+  })
+  openaiWs.on('error', (err) => console.error('Ошибка OpenAI WS:', err))
 
+  wss.on('connection', (clientWs) => {
     openaiWs.on('message', (data: string) => {
       if (clientWs.readyState === WebSocket.OPEN) {
         try {
