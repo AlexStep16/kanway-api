@@ -19,7 +19,7 @@ export function initAiModels() {
     temperature: 0,
     configuration: {
       fetchOptions: {
-        dispatcher: new ProxyAgent('http://127.0.0.1:1080'),
+        dispatcher: new ProxyAgent('socks5h://127.0.0.1:1080'),
       },
     },
   })
@@ -29,7 +29,7 @@ export function initAiModels() {
     temperature: 0,
     configuration: {
       fetchOptions: {
-        dispatcher: new ProxyAgent('http://127.0.0.1:1080'),
+        dispatcher: new ProxyAgent('socks5h://127.0.0.1:1080'),
       },
     },
   })
