@@ -132,6 +132,9 @@ importers:
       node-cron:
         specifier: ^3.0.3
         version: 3.0.3
+      node-fetch:
+        specifier: ^3.3.2
+        version: 3.3.2
       nodemailer:
         specifier: ^6.9.15
         version: 6.10.1
