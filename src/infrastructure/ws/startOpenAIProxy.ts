@@ -1,10 +1,10 @@
 import WebSocket, { WebSocketServer } from 'ws'
-import { SocksProxyAgent } from 'socks-proxy-agent'
+import { HttpsProxyAgent } from 'https-proxy-agent'
 
 export function startOpenAIProxy(port: number) {
   const wss = new WebSocketServer({ port })
   const openAIRealtimeUrl = 'wss://api.openai.com/v1/realtime?intent=transcription'
-  const agent = new SocksProxyAgent('socks5h://127.0.0.1:1080')
+  const agent = new HttpsProxyAgent('http://127.0.0.1:1080')
 
   function floatTo16BitPCM(float32Buffer: Float32Array): Buffer {
     const pcm16Buffer = Buffer.alloc(float32Buffer.length * 2)
