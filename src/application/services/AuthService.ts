@@ -161,23 +161,19 @@ export class AuthService {
   }
 
   public async confirmEmail(token: string): Promise<IUser> {
-    try {
-      const tokenModel = await this.tokenService.getToken(token, TokenTypesEnum.EMAIL_CONFIRMATION)
+    const tokenModel = await this.tokenService.getToken(token, TokenTypesEnum.EMAIL_CONFIRMATION)
 
-      if (!tokenModel) throw new AppError(ErrorMessages.TOKEN_NOT_FOUND, 404)
-      if (tokenModel.isActive === false) throw new AppError(ErrorMessages.TOKEN_EXPIRED, 410)
+    if (!tokenModel) throw new AppError(ErrorMessages.TOKEN_NOT_FOUND, 404)
+    if (tokenModel.isActive === false) throw new AppError(ErrorMessages.TOKEN_EXPIRED, 410)
 
-      const user = await this.userService.getById(tokenModel.userId.toString())
+    const user = await this.userService.getById(tokenModel.userId.toString())
 
-      if (!user) throw new AppError(ErrorMessages.USER_NOT_FOUND, 404)
-      if (user.isConfirmed) throw new AppError(ErrorMessages.USER_ALREADY_CONFIRMED, 409)
+    if (!user) throw new AppError(ErrorMessages.USER_NOT_FOUND, 404)
+    if (user.isConfirmed) throw new AppError(ErrorMessages.USER_ALREADY_CONFIRMED, 409)
 
-      await this.userService.edit({ isConfirmed: true }, { id: tokenModel.userId.toString() })
+    await this.userService.edit({ isConfirmed: true }, { id: tokenModel.userId.toString() })
 
-      return user
-    } catch (error) {
-      throw error
-    }
+    return user
   }
 
   public async validateToken(token: string, type: TokenTypesEnum): Promise<void> {

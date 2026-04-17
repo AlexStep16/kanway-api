@@ -42,7 +42,7 @@ export class EmailService {
       throw new NotFoundError(ErrorMessages.TOKEN_NOT_FOUND)
     }
 
-    const verificationUrl = `https://kanway.com/verify?token=${tokenModel.token}`
+    const verificationUrl = `https://kanway.ru/verify?token=${tokenModel.token}`
 
     try {
       const templatePath = path.resolve('email-templates/verify-email.html')
@@ -85,7 +85,7 @@ export class EmailService {
       )
 
       const responseBody = await response.json()
-
+      console.log(responseBody)
       if (responseBody?.status === 'error')
         Sentry.captureException(new AppError(responseBody.message, 500))
     } catch (err: unknown) {
@@ -111,7 +111,7 @@ export class EmailService {
       throw new NotFoundError(ErrorMessages.TOKEN_NOT_FOUND)
     }
 
-    const recoveryUrl = `https://kanway.com/password-recovery?token=${tokenModel.token}`
+    const recoveryUrl = `https://kanway.ru/password-recovery?token=${tokenModel.token}`
     try {
       const templatePath = path.resolve('email-templates/password-recovery.html')
 
