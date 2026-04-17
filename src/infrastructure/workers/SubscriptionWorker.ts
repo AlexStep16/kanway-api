@@ -3,13 +3,6 @@ import * as Sentry from '@sentry/node'
 import { initializeDependencies } from '../di/initializeDependencies.js'
 import connectToDatabase from '../db/connectToDatabase.js'
 import { AppError } from '@/domain/errors/AppError.js'
-import { bootstrap } from 'global-agent'
-import { setGlobalDispatcher, ProxyAgent } from 'undici'
-
-bootstrap()
-
-const proxyAgent = new ProxyAgent('http://127.0.0.1:1080')
-setGlobalDispatcher(proxyAgent)
 
 const dependencies = initializeDependencies()
 
