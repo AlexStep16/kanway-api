@@ -15,10 +15,7 @@ import cookieParser from 'cookie-parser'
 import cors from 'cors'
 import { Redis } from 'ioredis'
 import { generalLimiter } from './limiters.js'
-import { bootstrap } from 'global-agent'
 import { setGlobalDispatcher, EnvHttpProxyAgent } from 'undici'
-
-bootstrap()
 
 const proxyAgent = new EnvHttpProxyAgent()
 setGlobalDispatcher(proxyAgent)
