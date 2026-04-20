@@ -6,6 +6,7 @@ import { BoardDTOSchema } from '@dtos/BoardDTO.js'
 import { BoardEditDTOSchema } from '@dtos/BoardEditDTO.js'
 import { patchEntitiesLimiter, postEntitiesLimiter } from '@/limiters.js'
 import { BoardMoveDTOSchema } from '@/application/dtos/BoardMoveDTO.js'
+import { confirmationMiddleware } from '../auth/confirmationMiddleware.js'
 
 interface IBoardRawController extends BoardController {}
 
@@ -13,6 +14,7 @@ export default (controller: IBoardRawController): Router => {
   const router = Router({ mergeParams: true })
 
   router.use(jwtAuthMiddleware)
+  router.use(confirmationMiddleware)
 
   router.get('/', controller.getAll)
   router.get('/count', controller.getCount)

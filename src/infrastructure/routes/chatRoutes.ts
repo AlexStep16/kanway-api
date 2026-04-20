@@ -5,11 +5,13 @@ import { validationMiddleware } from '@/infrastructure/middlewares/validations/v
 import { ChatSendDTOSchema } from '@dtos/ChatSendDTO.js'
 import { aiLimiter, patchEntitiesLimiter } from '@/limiters.js'
 import { ChatEditDTOSchema } from '@/application/dtos/ChatEditDTO.js'
+import { confirmationMiddleware } from '../auth/confirmationMiddleware.js'
 
 export default (controller: ChatController): Router => {
   const router = express.Router()
 
   router.use(jwtAuthMiddleware)
+  router.use(confirmationMiddleware)
 
   router.get('/', controller.getAll)
   router.get('/:id', controller.getById)

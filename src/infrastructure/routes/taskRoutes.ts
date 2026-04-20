@@ -7,6 +7,7 @@ import { TaskEditDTOSchema } from '@dtos/TaskEditDTO.js'
 import { TaskEditManyDTOSchema } from '@dtos/TaskEditManyDTO.js'
 import { patchTasksLimiter, postTasksLimiter } from '@/limiters.js'
 import { TaskMoveDTOSchema } from '@/application/dtos/TaskMoveDTO.js'
+import { confirmationMiddleware } from '../auth/confirmationMiddleware.js'
 
 interface ITaskRawController extends TaskController {}
 
@@ -14,6 +15,7 @@ export default (controller: ITaskRawController): Router => {
   const router = Router({ mergeParams: true })
 
   router.use(jwtAuthMiddleware)
+  router.use(confirmationMiddleware)
 
   router.get('/', controller.getAll)
   router.get('/:id', controller.getById)

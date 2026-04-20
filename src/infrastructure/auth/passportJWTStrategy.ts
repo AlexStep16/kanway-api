@@ -34,7 +34,7 @@ passport.use(
         const user = await userService.getById(jwtPayload.user_id)
 
         if (!user) {
-          return done(null, false)
+          throw new Error('Пользователь не найден')
         }
 
         return done(null, user)

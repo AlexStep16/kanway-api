@@ -160,7 +160,7 @@ export class AuthService {
     await this.emailService.sendPasswordRecoveryEmailToUser(user)
   }
 
-  public async confirmEmail(token: string): Promise<IUser> {
+  public async verifyToken(token: string): Promise<IUser> {
     const tokenModel = await this.tokenService.getToken(token, TokenTypesEnum.EMAIL_CONFIRMATION)
 
     if (!tokenModel) throw new AppError(ErrorMessages.TOKEN_NOT_FOUND, 404)

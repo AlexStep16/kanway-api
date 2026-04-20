@@ -10,6 +10,7 @@ import { TokenTypesEnum } from '@/domain/enums/TokenTypesEnum.js'
 import { Redis } from 'ioredis'
 import { AppError } from '@/domain/errors/AppError.js'
 import dayjs from 'dayjs'
+import { randomInt } from 'node:crypto'
 
 const redis = new Redis()
 
@@ -42,7 +43,9 @@ export class EmailService {
       throw new NotFoundError(ErrorMessages.TOKEN_NOT_FOUND)
     }
 
-    const verificationUrl = `https://kanway.ru/verify?token=${tokenModel.token}`
+    const verificationUrl = `https://kanway.ru/verify-email?token=${tokenModel.token}`
+    const otpCode = randomInt(100000, 999999).toString()
+    await redis.set(`otp:${user.email}`, otpCode, 'EX', 600)
 
     try {
       const templatePath = path.resolve('email-templates/verify-email.html')
@@ -56,12 +59,13 @@ export class EmailService {
               email: user.email,
               substitutions: {
                 confirmation_link: verificationUrl,
+                otp_code: otpCode,
               },
             },
           ],
           body: {
             html: htmlContent,
-            plaintext: `Подтвердите почту по ссылке: ${verificationUrl}`,
+            plaintext: `Код подтверждения: ${otpCode}`,
           },
           subject: 'Подтверждение почты',
           from_email: 'noreply@kanway.ru',

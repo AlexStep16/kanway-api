@@ -7,6 +7,7 @@ import { CategoryEditDTOSchema } from '@dtos/CategoryEditDTO.js'
 import { CategoryEditManyDTOSchema } from '@dtos/CategoryEditManyDTO.js'
 import { patchEntitiesLimiter, postEntitiesLimiter } from '@/limiters.js'
 import { CategoryMoveDTOSchema } from '@/application/dtos/CategoryMoveDTO.js'
+import { confirmationMiddleware } from '../auth/confirmationMiddleware.js'
 
 interface ICategoryRawController extends CategoryController {}
 
@@ -14,6 +15,7 @@ export default (controller: ICategoryRawController): Router => {
   const router = Router({ mergeParams: true })
 
   router.use(jwtAuthMiddleware)
+  router.use(confirmationMiddleware)
 
   router.get('/', controller.getAll)
   router.get('/:id', controller.getById)

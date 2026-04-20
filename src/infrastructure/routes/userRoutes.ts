@@ -19,6 +19,7 @@ export default (controller: UserController): Router => {
   router.patch('/', patchUserLimiter, validationMiddleware(UserEditSchemaDTO), controller.update)
   router.delete('/', controller.delete)
   router.post('/send/verify', emailLimiter, controller.sendVerificationEmail.bind(controller))
+  router.post('/verify/otp', controller.verifyOTP.bind(controller))
   router.post('/logout', controller.logout.bind(controller))
 
   return router

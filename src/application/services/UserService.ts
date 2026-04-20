@@ -19,6 +19,9 @@ import sharp from 'sharp'
 import { rm } from 'fs/promises'
 import { EmailService } from '@/infrastructure/services/EmailService.js'
 import { getCreditsUsed } from '@/utils/getCreditsUsed.js'
+import { Redis } from 'ioredis'
+
+const redis = new Redis()
 
 export class UserService implements ICreateUserService<IUser, RegisterCredentialsDTO> {
   private repository: UserRepository
@@ -178,5 +181,46 @@ export class UserService implements ICreateUserService<IUser, RegisterCredential
     await this.repository.decrementFieldByCriteria({ id: userId }, 'credits', finalAmount)
 
     return finalAmount
+  }
+
+  public async verifyOTP(code: string, email: string): Promise<IUser> {
+    const key = `otp:${email}`
+    const attemptsKey = `otp_attempts:${email}`
+    const MAX_ATTEMPTS = 5
+
+    const attempts = await redis.get(attemptsKey)
+    if (attempts && parseInt(attempts) >= MAX_ATTEMPTS) {
+      await redis.del(key)
+      throw new AppError(ErrorMessages.TOO_MANY_ATTEMPTS, 429)
+    }
+
+    const redisCode = await redis.get(key)
+
+    if (!redisCode) throw new AppError(ErrorMessages.OTP_EXPIRED, 410)
+    if (redisCode !== code) {
+      const currentAttempts = await redis.incr(attemptsKey)
+
+      if (currentAttempts === 1) {
+        await redis.expire(attemptsKey, 600)
+      }
+
+      if (currentAttempts >= MAX_ATTEMPTS) {
+        await redis.del(key)
+        throw new AppError(ErrorMessages.TOO_MANY_ATTEMPTS, 429)
+      }
+
+      throw new AppError(ErrorMessages.OTP_INVALID, 400)
+    }
+
+    const user = await this.getByEmail(email)
+
+    if (!user) throw new AppError(ErrorMessages.USER_NOT_FOUND, 404)
+    if (user.isConfirmed) throw new AppError(ErrorMessages.USER_ALREADY_CONFIRMED, 409)
+
+    await this.edit({ isConfirmed: true }, { id: user.id.toString() })
+
+    await redis.del(key)
+
+    return user
   }
 }

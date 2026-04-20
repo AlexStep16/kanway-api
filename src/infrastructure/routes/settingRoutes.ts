@@ -4,11 +4,13 @@ import { validationMiddleware } from '@/infrastructure/middlewares/validations/v
 import { SettingController } from '@controllers/SettingController.js'
 import { SettingEditDTOSchema } from '@dtos/SettingEditDTO.js'
 import { patchEntitiesLimiter } from '@/limiters.js'
+import { confirmationMiddleware } from '../auth/confirmationMiddleware.js'
 
 export default (controller: SettingController): Router => {
   const router = Router({ mergeParams: true })
 
   router.use(jwtAuthMiddleware)
+  router.use(confirmationMiddleware)
 
   router.get('/', controller.get)
   router.patch(

@@ -129,6 +129,10 @@ export enum ErrorMessages {
   TOKEN_EXPIRED = 'Срок действия токена истек.',
   TOKEN_TYPE_REQUIRED = 'Требуется тип токена.',
 
+  OTP_EXPIRED = 'Срок действия OTP кода истек.',
+  OTP_INVALID = 'Неверный OTP код.',
+  TOO_MANY_ATTEMPTS = 'Вы исчерпали лимит попыток. Запросите код заново.',
+
   SUBSCRIPTION_PLAN_NOT_FOUND = 'План подписки не найден. Обратитесь в поддержку.',
   SUBSCRIPTION_PLAN_INVALID = 'Неверный план подписки.',
   INVALID_ID_FORMAT = 'Неверный формат идентификатора.',

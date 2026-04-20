@@ -41,7 +41,7 @@ export default (controller: AuthController): Router => {
     validationMiddleware(TokenWithTypePayloadSchemaDTO),
     controller.validateToken.bind(controller),
   )
-  router.post('/verify', controller.confirmEmail.bind(controller))
+  router.post('/verify/token', controller.verifyToken.bind(controller))
   router.post('/password/recovery', controller.changeUserPassword.bind(controller))
 
   return router

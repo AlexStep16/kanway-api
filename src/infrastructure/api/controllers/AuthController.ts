@@ -15,7 +15,6 @@ export default class AuthController {
     const credentials = req.body as RegisterCredentialsDTO
 
     try {
-      throw new Error('Регистрация отключена на время бета-тестирования')
       const { user, serialized } = await this.service.register(credentials)
 
       res.setHeader('Set-Cookie', serialized)
@@ -102,11 +101,11 @@ export default class AuthController {
     }
   }
 
-  public async confirmEmail(req: Request, res: Response, next: NextFunction) {
+  public async verifyToken(req: Request, res: Response, next: NextFunction) {
     try {
       const { token } = req.body
 
-      await this.service.confirmEmail(token)
+      await this.service.verifyToken(token)
 
       return res.status(200).json(new SuccessResponse(null))
     } catch (error) {

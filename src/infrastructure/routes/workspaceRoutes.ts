@@ -6,6 +6,7 @@ import { WorkspaceDTOSchema } from '@dtos/WorkspaceDTO.js'
 import { WorkspaceEditDTOSchema } from '@dtos/WorkspaceEditDTO.js'
 import { patchEntitiesLimiter, postEntitiesLimiter } from '@/limiters.js'
 import { WorkspaceMoveDTOSchema } from '@/application/dtos/WorkspaceMoveDTO.js'
+import { confirmationMiddleware } from '../auth/confirmationMiddleware.js'
 
 interface IWorkspaceRawController extends WorkspaceController {}
 
@@ -13,6 +14,7 @@ export default (controller: IWorkspaceRawController): Router => {
   const router = Router()
 
   router.use(jwtAuthMiddleware)
+  router.use(confirmationMiddleware)
 
   router.get('/', controller.getAll)
   router.get('/count', controller.getCount)
