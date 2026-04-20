@@ -2,7 +2,7 @@ import { NextFunction } from 'express'
 import { Request, Response } from 'express'
 import { AppError } from '@/domain/errors/AppError.js'
 
-export const confirmationMiddleware = (req: Request, res: Response, next: NextFunction) => {
+export const confirmationMiddleware = (req: Request, _res: Response, next: NextFunction) => {
   try {
     const user = req.user!
 
