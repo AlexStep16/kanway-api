@@ -28,7 +28,7 @@ dayjs.extend(timezone)
 dayjs.extend(customParseFormat)
 
 Sentry.init({
-  dsn: 'https://2aa4717bdc17380896b4b44e49d09363@o4510595293249536.ingest.de.sentry.io/4510595296264272',
+  dsn: 'https://523ce3ec8a363ff541dc44105a630e28@o4510595293249536.ingest.de.sentry.io/4511252866793552',
   enableLogs: true,
   sendDefaultPii: true,
 })
