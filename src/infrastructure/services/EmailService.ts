@@ -74,7 +74,7 @@ export class EmailService {
           track_read: 0,
         },
       }
-
+      console.log(process.env.UNISENDER_API_KEY)
       const response = await fetch(
         'https://go2.unisender.ru/ru/transactional/api/v1/email/send.json',
         {
@@ -89,7 +89,7 @@ export class EmailService {
       )
 
       const responseBody = await response.json()
-      console.log(responseBody)
+
       if (responseBody?.status === 'error')
         Sentry.captureException(new AppError(responseBody.message, 500))
     } catch (err: unknown) {
