@@ -66,9 +66,9 @@ export const makeCoderExecutionNode = () => {
     } finally {
       outputs.coder_iterations = (state.coder_iterations || 0) + 1
 
-      if (outputs.coder_iterations > 4 && outputs.coder_has_error) {
+      if (outputs.coder_iterations > 2 && outputs.coder_has_error) {
         outputs.planner_messages!.push(
-          new HumanMessage('The code has been executed 5 times with errors.'),
+          new HumanMessage('The code has been executed 3 times with errors.'),
           ...outputs.coder_errors!,
         )
       }

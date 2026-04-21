@@ -5,7 +5,7 @@ import { UserService } from '@application/services/UserService.js'
 import UserRepository from '@repositories/UserRepository.js'
 import * as Sentry from '@sentry/node'
 import { initializeDependencies } from '../di/initializeDependencies.js'
-import { AppError } from '@/domain/errors/AppError.js'
+import { UserNotFoundError } from '@/domain/errors/UserAuthError.js'
 
 const dependencies = initializeDependencies()
 
@@ -35,7 +35,7 @@ passport.use(
         const user = await userService.getById(jwtPayload.user_id)
 
         if (!user) {
-          throw new AppError('Пользователь не найден', 404)
+          throw new UserNotFoundError()
         }
 
         return done(null, user)

@@ -30,6 +30,16 @@ export class AuthService {
     this.settingService = settingService
   }
 
+  private _getTokenSerialized(token: string) {
+    return serialize('token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 60 * 60 * 24 * 30,
+      path: '/',
+    })
+  }
+
   public async register(
     credentials: RegisterCredentialsDTO,
   ): Promise<{ user: IUser; serialized: string }> {
@@ -43,13 +53,7 @@ export class AuthService {
 
       const token = this.tokenService.generateToken(newUser[0].id, 60 * 60 * 24 * 30)
 
-      const serialized = serialize('token', token, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
-        maxAge: 60 * 60 * 24 * 30,
-        path: '/',
-      })
+      const serialized = this._getTokenSerialized(token)
 
       await this.settingService.create(
         {
@@ -88,13 +92,7 @@ export class AuthService {
 
     const token = this.tokenService.generateToken(user.id, 60 * 60 * 24 * 30)
 
-    const serialized = serialize('token', token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 60 * 60 * 24 * 30,
-      path: '/',
-    })
+    const serialized = this._getTokenSerialized(token)
 
     return {
       user,

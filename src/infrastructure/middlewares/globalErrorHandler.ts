@@ -2,10 +2,25 @@ import { AppError } from '@errors/AppError.js'
 import { Request, Response, NextFunction } from 'express'
 import * as Sentry from '@sentry/node'
 import { ValidationError } from '@/domain/errors/ValidationError.js'
+import { UserNotFoundError } from '@/domain/errors/UserAuthError.js'
+import { serialize } from 'cookie'
 
 export const globalErrorHandler = (err: any, _r: Request, res: Response, _n: NextFunction) => {
   if (process.env.NODE_ENV === 'development') {
     console.error(err)
+  }
+
+  if (err instanceof UserNotFoundError) {
+    res.setHeader(
+      'Set-Cookie',
+      serialize('token', '', {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 0,
+        path: '/',
+      }),
+    )
   }
 
   if (err instanceof AppError || err instanceof ValidationError) {
