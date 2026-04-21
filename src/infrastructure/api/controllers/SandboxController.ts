@@ -29,88 +29,109 @@ export default class SandboxController {
   public test = async (_req: Request, res: Response, next: NextFunction) => {
     try {
       const url = (process.env.PYTHON_SANDBOX_URL || 'http://localhost:8000') + '/execute'
+      console.log(url)
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           code: `
-# -*- coding: utf-8 -*-
+board_id = "69e738a9bc647559a34999ea"
 
-# Доступные глобальные переменные:
-# payload – словарь, переданный Планировщику с описанием создаваемой доски,
-#           категорий и задач.
+# Fetch all tasks on the active board
+tasks_resp = search_tasks(mongo_filter={"board": board_id}, limit=200)
+tasks = tasks_resp.get("items", [])
 
-# -------------------- 1. Получаем данные из payload --------------------
-board_name = payload.get("board_name")
-board_workspace_id = payload.get("board_workspace_id")
-categories_payload = payload.get("categories", [])
-
-# -------------------- 2. Создаём доску --------------------
-board_payload = [
-    {
-        "name": board_name,
-        "workspace": board_workspace_id,
-        "is_favorite": False,          # у доски действительно есть поле is_favorite
-    }
-]
-
-board_ids = create_boards(board_payload)
-board_id = board_ids[0]  # одна доска
-
-print(f"✅ Создана доска «{board_name}» (ID: {board_id})")
-
-# -------------------- 3. Создаём категории --------------------
-category_payloads = []
-category_names = []          # сохраняем порядок, чтобы сопоставить ID позже
-for cat in categories_payload:
-    category_payloads.append(
+# Print essential task data for analysis
+print({
+    "board_id": board_id,
+    "tasks_count": len(tasks),
+    "tasks": [
         {
-            "name": cat["name"],
-            "board": board_id,
-            "workspace": board_workspace_id,
-            # поле is_favorite в категории не поддерживается – его убираем
+            "id": t.get("_id"),
+            "name": t.get("name"),
+            "category": t.get("category"),
+            "is_completed": t.get("is_completed"),
+            "tags": t.get("tags", []),
+            "priority": t.get("priority"),
+            "due_date": t.get("due_date"),
         }
+        for t in tasks
+    ],
+})
+
+# Identify completed tasks on the active board
+completed_tasks = [t for t in tasks if t.get("is_completed") is True]
+
+# If there are completed tasks, move them back to a working stage based on launch phase
+# Heuristic:
+# - Prefer categories whose names suggest active work stages
+# - Avoid categories whose names suggest completion/archive
+categories_resp = search_categories(mongo_filter={"board": board_id}, limit=100)
+categories = categories_resp.get("items", [])
+
+working_keywords = [
+    "план", "backlog", "todo", "to do", "в работе", "работа", "разработка",
+    "дизайн", "контент", "маркетинг", "запуск", "подготовка", "тест", "review"
+]
+completed_keywords = ["done", "готово", "completed", "заверш", "архив", "archive"]
+
+working_categories = []
+for c in categories:
+    name = (c.get("name") or "").lower()
+    if any(k in name for k in working_keywords) and not any(k in name for k in completed_keywords):
+        working_categories.append(c)
+
+# Fallback: if no obvious working category exists, use any non-completed category
+if not working_categories:
+    for c in categories:
+        name = (c.get("name") or "").lower()
+        if not any(k in name for k in completed_keywords):
+            working_categories.append(c)
+
+# If still ambiguous, ask user to choose the target category
+target_category_id = None
+if len(working_categories) == 1:
+    target_category_id = working_categories[0].get("_id")
+elif len(working_categories) > 1:
+    selected = resolve_ambiguous(
+        entity_type="category",
+        ids=[c.get("_id") for c in working_categories],
+        min_select=1,
+        max_select=1,
+        id=board_id,
     )
-    category_names.append(cat["name"])
+    target_category_id = selected[0] if selected else None
 
-category_ids = create_categories(category_payloads)
+# Move completed tasks to the selected working category and mark them as not completed
+if completed_tasks and target_category_id:
+    updates = []
+    for t in completed_tasks:
+        updates.append({
+            "_id": t.get("_id"),
+            "category": target_category_id,
+            "is_completed": False,
+        })
+    update_tasks(updates)
 
-# Сопоставляем имена категорий с их ID
-category_map = dict(zip(category_names, category_ids))
+# Verify completed stage is empty after the move
+tasks_after_resp = search_tasks(mongo_filter={"board": board_id, "is_completed": True}, limit=200)
+remaining_completed = tasks_after_resp.get("items", [])
 
-for name, cid in category_map.items():
-    print(f"🔖 Категория «{name}» создана (ID: {cid})")
-
-# -------------------- 4. Создаём задачи --------------------
-task_payloads = []
-task_info = []   # [(name, category_name)]
-
-for cat in categories_payload:
-    cat_name = cat["name"]
-    cat_id = category_map[cat_name]
-    for task in cat.get("tasks", []):
-        task_name = task["name"]
-        task_payloads.append(
-            {
-                "name": task_name,
-                "category": cat_id,
-                "board": board_id,
-                "workspace": board_workspace_id,
-                "is_completed": False,
-            }
-        )
-        task_info.append((task_name, cat_name))
-
-if task_payloads:
-    task_ids = create_tasks(task_payloads)
-else:
-    task_ids = []
-
-# Выводим информацию о созданных задачах
-for (t_name, c_name), t_id in zip(task_info, task_ids):
-    print(f"✅ Задача «{t_name}» в категории «{c_name}» (ID: {t_id})")`,
+print({
+    "moved_tasks_count": len(completed_tasks) if target_category_id else 0,
+    "target_category_id": target_category_id,
+    "remaining_completed_count": len(remaining_completed),
+    "remaining_completed_tasks": [
+        {
+            "id": t.get("_id"),
+            "name": t.get("name"),
+            "category": t.get("category"),
+        }
+        for t in remaining_completed
+    ],
+})`,
           config: {},
-          user_id: '67da84f0a2e3729760781559',
+          user_id: '69e735c8bea70b6721b5afe0',
           payload: {
             board_name: 'Контент‑план: Дизайн‑блог',
             board_workspace_id: '69b9753802918145c4e83227',

@@ -18,7 +18,7 @@ export function startOpenAIProxy(port: number) {
 
   wss.on('connection', (clientWs) => {
     const openaiWs = new WebSocket(openAIRealtimeUrl, {
-      agent: agent,
+      agent: process.env.NODE_ENV === 'development' ? undefined : agent,
       headers: {
         Authorization: 'Bearer ' + process.env.OPENAI_API_KEY,
         'OpenAI-Beta': 'realtime=v1',

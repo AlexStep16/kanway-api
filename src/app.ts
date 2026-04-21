@@ -18,7 +18,7 @@ import { generalLimiter } from './limiters.js'
 import { setGlobalDispatcher, EnvHttpProxyAgent } from 'undici'
 
 const proxyAgent = new EnvHttpProxyAgent()
-setGlobalDispatcher(proxyAgent)
+if (process.env.NODE_ENV === 'production') setGlobalDispatcher(proxyAgent)
 
 const redis = new Redis()
 

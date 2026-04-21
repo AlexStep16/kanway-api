@@ -6,7 +6,7 @@ import { AppError } from '@/domain/errors/AppError.js'
 import { setGlobalDispatcher, EnvHttpProxyAgent } from 'undici'
 
 const proxyAgent = new EnvHttpProxyAgent()
-setGlobalDispatcher(proxyAgent)
+if (process.env.NODE_ENV === 'production') setGlobalDispatcher(proxyAgent)
 
 const dependencies = initializeDependencies()
 
