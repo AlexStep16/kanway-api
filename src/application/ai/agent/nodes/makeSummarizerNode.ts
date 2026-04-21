@@ -17,7 +17,7 @@ export const makeSummarizerNode = (deps: AgentDependencies): any => {
       name: 'Сжимаю чат',
     })
 
-    const { summarizerModel } = deps.models
+    const { SUMMARIZER } = deps.models
 
     const messagesToSummarize = state.messages.slice(0, 20)
     const remainingMessages = state.messages.map((msg) => ({ ...msg, id: undefined })).slice(20)
@@ -43,7 +43,7 @@ export const makeSummarizerNode = (deps: AgentDependencies): any => {
       }
     }
 
-    const chain = prompt.pipe(summarizerModel)
+    const chain = prompt.pipe(SUMMARIZER)
 
     const response = await chain.invoke({ chat_history: chatHistory.join('\n') })
 

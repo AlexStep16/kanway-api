@@ -10,6 +10,7 @@ import { Configurable } from '../../interfaces/Configurable.js'
 import { AIMessage } from '@langchain/core/messages'
 import { extractPythonCode } from '@/utils/extractPythonCode.js'
 import { STEP_MESSAGES } from '@/constants/STEP_MESSAGES.js'
+import { ModelsEnum } from '@/domain/enums/ModelsEnum.js'
 
 export const makeCoderNode = (deps: AgentDependencies) => {
   return async (state: typeof AgentStateAnnotation.State, config: RunnableConfig) => {
@@ -33,13 +34,15 @@ export const makeCoderNode = (deps: AgentDependencies) => {
       coder_steps_count: state.coder_steps_count + 1,
     }
 
-    const { coderModel } = deps.models
+    const { CODER, CODER_PRO } = deps.models
+
+    const modelToUse = configurable.modelType === ModelsEnum.KANWAY_PRO ? CODER_PRO : CODER
 
     const history = state.coder_messages.slice(-50)
 
     const prompt = ChatPromptTemplate.fromMessages([['system', CoderPrompt], ...history])
 
-    const chain = prompt.pipe(coderModel)
+    const chain = prompt.pipe(modelToUse)
 
     const response = await chain.invoke({
       board: configurable.activeBoard,

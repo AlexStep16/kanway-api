@@ -4,16 +4,13 @@ export const SUBSCRIPTION_LIMITS = {
   [SubscriptionPlanEnum.Basic]: {
     workspaces: 1,
     boards: 5,
-    aiMessages: 20,
   },
   [SubscriptionPlanEnum.Premium]: {
-    workspaces: Infinity,
-    boards: Infinity,
-    aiMessages: 300,
+    workspaces: 5,
+    boards: 20,
   },
-  [SubscriptionPlanEnum.Business]: {
+  [SubscriptionPlanEnum.Architector]: {
     workspaces: Infinity,
     boards: Infinity,
-    aiMessages: Infinity,
   },
 }

@@ -3,7 +3,7 @@ import { SubscriptionPlanEnum } from '@domain/enums/SubscriptionPlanEnum.js'
 
 export interface ISubscriptionRaw {
   _id: Types.ObjectId
-  id: SubscriptionPlanEnum
+  subscription_id: SubscriptionPlanEnum
   name: string
   price: number
   currency: string

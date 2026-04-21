@@ -2,7 +2,7 @@ import { model, Schema } from 'mongoose'
 import { ISubscriptionRaw } from '@entities/ISubscriptionRaw.js'
 
 export const SubscriptionSchema = new Schema<ISubscriptionRaw>({
-  id: {
+  subscription_id: {
     type: Number,
     required: true,
   },

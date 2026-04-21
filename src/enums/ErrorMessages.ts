@@ -124,6 +124,8 @@ export enum ErrorMessages {
   CHAT_NAME_LESS_THAN_1 = 'Название чата не должно быть пустым.',
   CHAT_NAME_MORE_THAN_100 = 'Название чата не должно превышать 100 символов.',
 
+  MODEL_TYPE_INVALID = 'Неверный тип модели.',
+
   TOKEN_REQUIRED = 'Требуется токен.',
   INVALID_TOKEN_FORMAT = 'Неверный формат токена.',
   TOKEN_EXPIRED = 'Срок действия токена истек.',

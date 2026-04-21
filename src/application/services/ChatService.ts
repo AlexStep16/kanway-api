@@ -36,6 +36,8 @@ import CheckpointWriteRepository from '../repositories/CheckpointWriteRepository
 import CheckpointRepository from '../repositories/CheckpointRepository.js'
 import { ChatEditDTO } from '../dtos/ChatEditDTO.js'
 import { ErrorMessages } from '@/enums/ErrorMessages.js'
+import { ModelsEnum } from '@/domain/enums/ModelsEnum.js'
+import { SubscriptionPlanEnum } from '@/domain/enums/SubscriptionPlanEnum.js'
 
 const MAX_RETRIES = 3
 
@@ -112,6 +114,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     data: {
       threadId: string
       chatId: string
+      modelType: ModelsEnum
       timezone: string
       isChatNameNeeded?: boolean
       userMessage: string
@@ -143,14 +146,17 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       task.tags.forEach((tag) => tagsSet.add(tag))
     })
     const tagsList = Array.from(tagsSet).join(', ')
+    const modelType =
+      user.subscriptionId === SubscriptionPlanEnum.Basic ? ModelsEnum.KANWAY_LITE : data.modelType
 
     const config: RunnableConfig<Configurable> = {
-      recursionLimit: 60,
+      recursionLimit: 30,
       configurable: {
         thread_id: data.threadId,
         user,
         chatId: data.chatId,
         activeBoard: data.activeBoard,
+        modelType,
         activeWorkspace: data.activeWorkspace,
         currentDate: dayjs.tz(dayjs(), data.timezone).toISOString(),
         categoriesList: categoriesList.length > 0 ? categoriesList : 'No categories',
@@ -321,6 +327,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       {
         threadId: threadId,
         chatId: chat.id.toString(),
+        modelType: data.modelType || ModelsEnum.KANWAY_LITE,
         timezone: data.timezone,
         stepMessageId: stepMessage.id.toHexString(),
         isChatNameNeeded,
@@ -436,6 +443,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
         activeWorkspace: workspace,
         stepMessageId: lastStepperMessageId || '',
         userMessage: lastUserMessage ? lastUserMessage.content : '',
+        modelType: data.modelType || ModelsEnum.KANWAY_LITE,
       },
       externalSession,
     )
@@ -640,6 +648,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
         timezone: data.timezone || 'UTC',
         stepMessageId: lastStepperMessage ? lastStepperMessage.id.toHexString() : '',
         userMessage: lastUserMessage ? lastUserMessage.content : '',
+        modelType: data.modelType || ModelsEnum.KANWAY_LITE,
       },
       externalSession,
     )
@@ -771,6 +780,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
         timezone: data.timezone || 'UTC',
         stepMessageId: lastStepperMessage ? lastStepperMessage.id.toHexString() : '',
         userMessage: lastUserMessage ? lastUserMessage.content : '',
+        modelType: data.modelType || ModelsEnum.KANWAY_LITE,
       },
       externalSession,
     )

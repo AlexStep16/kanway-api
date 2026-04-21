@@ -6,9 +6,11 @@ export interface AgentDependencies {
     toolDispatcherService: ToolDispatcherService
   }
   models: {
-    plannerModel: BaseChatModel
-    coderModel: BaseChatModel
-    summarizerModel: BaseChatModel
-    chatNameModel: BaseChatModel
+    PLANNER: BaseChatModel
+    CODER: BaseChatModel
+    PLANNER_PRO: BaseChatModel
+    CODER_PRO: BaseChatModel
+    SUMMARIZER: BaseChatModel
+    CHAT_NAME: BaseChatModel
   }
 }

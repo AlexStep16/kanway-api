@@ -53,6 +53,13 @@ export default class ChatController {
     }
 
     const sentIds = new Set<string>()
+    const healthCheckInterval = setInterval(() => {
+      if (res.writableEnded) {
+        clearInterval(healthCheckInterval)
+        return
+      }
+      res.write(':ping\n\n')
+    }, 5000)
 
     const sendEvent = (event: any) => {
       const eventId = event.id || JSON.stringify(event)
@@ -98,6 +105,13 @@ export default class ChatController {
 
     req.on('close', async () => {
       await closeConnection()
+      if (job) {
+        await job.updateData({
+          ...job.data,
+          __abortSignal: true,
+        })
+      }
+      clearInterval(healthCheckInterval)
     })
   }
 

@@ -5,7 +5,7 @@
     "start:api": "tsx watch src/app.ts",
     "start:agent": "tsx watch src/infrastructure/workers/RunAgentWorker.ts",
     "start:subscriptions": "tsx watch src/infrastructure/workers/SubscriptionWorker.ts",
-    "dev": "concurrently \"npm run start:api\" \"npm run start:agent\" \"npm run start:subscriptions\"",
+    "dev": "concurrently \"pnpm run start:api\" \"pnpm run start:agent\" \"pnpm run start:subscriptions\"",
     "lint": "eslint src --ext .ts"
   },
   "name": "kanway-api",

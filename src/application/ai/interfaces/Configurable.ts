@@ -1,5 +1,6 @@
 import { IUser } from '@/domain/entities/IUser.js'
 import { AiConfirmationTypeEnum } from '@/domain/enums/AiConfirmationTypeEnum.js'
+import { ModelsEnum } from '@/domain/enums/ModelsEnum.js'
 
 export interface Configurable {
   thread_id: string
@@ -13,6 +14,7 @@ export interface Configurable {
     id: string
     name: string
   }
+  modelType: ModelsEnum
   currentDate: string
   categoriesList: string
   tagsList: string

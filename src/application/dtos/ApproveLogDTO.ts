@@ -1,3 +1,4 @@
+import { ModelsEnum } from '@/domain/enums/ModelsEnum.js'
 import { BaseAgentDTO } from './BaseAgentDTO.js'
 
 export interface ApproveLogDTO extends BaseAgentDTO {
@@ -5,4 +6,5 @@ export interface ApproveLogDTO extends BaseAgentDTO {
   selectedIds: string[]
   isConfirmed: boolean
   threadId: string
+  modelType: ModelsEnum
 }

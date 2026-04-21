@@ -20,13 +20,13 @@ export const makeChatNameNode = (deps: AgentDependencies): any => {
       name: 'Придумываю название чату',
     })
 
-    const { chatNameModel } = deps.models
+    const { CHAT_NAME } = deps.models
 
     const lastAIMessage = getLastAiMessage(state.final_messages)
 
     const prompt = ChatPromptTemplate.fromMessages([['system', ChatNamePrompt]])
 
-    const chain = prompt.pipe(chatNameModel)
+    const chain = prompt.pipe(CHAT_NAME)
 
     const response = await chain.invoke({
       user_message: configurable.userMessage,

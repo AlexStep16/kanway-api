@@ -7,7 +7,6 @@ import { globalErrorHandler } from '@middlewares/globalErrorHandler.js'
 import dayjs from 'dayjs'
 import utc from 'dayjs/plugin/utc.js'
 import timezone from 'dayjs/plugin/timezone.js'
-//import { initSubscriptions } from './initSubscriptions.js'
 import * as Sentry from '@sentry/node'
 import customParseFormat from 'dayjs/plugin/customParseFormat.js'
 import path from 'path'
@@ -16,6 +15,9 @@ import cors from 'cors'
 import { Redis } from 'ioredis'
 import { generalLimiter } from './limiters.js'
 import { setGlobalDispatcher, EnvHttpProxyAgent } from 'undici'
+import { initializeDependencies } from './infrastructure/di/initializeDependencies.js'
+
+const dependencies = initializeDependencies()
 
 const proxyAgent = new EnvHttpProxyAgent()
 if (process.env.NODE_ENV === 'production') setGlobalDispatcher(proxyAgent)
@@ -72,4 +74,4 @@ startOpenAIProxy(8080)
 
 app.use(globalErrorHandler)
 
-//initSubscriptions() //mock
+dependencies.services.subscriptionService.initSubscriptions()

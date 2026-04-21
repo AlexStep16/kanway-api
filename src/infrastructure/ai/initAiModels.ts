@@ -12,29 +12,41 @@ import { ChatOpenAI } from '@langchain/openai'
   })*/
 
 export function initAiModels() {
-  const plannerModel = new ChatOpenAI({
+  const PLANNER = new ChatOpenAI({
     model: 'gpt-5.4-mini-2026-03-17',
     temperature: 0,
   })
 
-  const coderModel = new ChatOpenAI({
+  const CODER = new ChatOpenAI({
     model: 'gpt-5.4-mini-2026-03-17',
     temperature: 0,
   })
 
-  const summarizerModel = new ChatFireworks({
+  const PLANNER_PRO = new ChatOpenAI({
+    model: 'gpt-5.4',
+    temperature: 0,
+  })
+
+  const CODER_PRO = new ChatOpenAI({
+    model: 'gpt-5.4',
+    temperature: 0,
+  })
+
+  const SUMMARIZER = new ChatFireworks({
     model: 'accounts/fireworks/models/gpt-oss-20b',
     temperature: 0,
   })
 
-  const chatNameModel = new ChatFireworks({
+  const CHAT_NAME = new ChatFireworks({
     model: 'accounts/fireworks/models/gpt-oss-20b',
   })
 
   return {
-    plannerModel,
-    coderModel,
-    summarizerModel,
-    chatNameModel,
+    PLANNER,
+    CODER,
+    PLANNER_PRO,
+    CODER_PRO,
+    SUMMARIZER,
+    CHAT_NAME,
   }
 }

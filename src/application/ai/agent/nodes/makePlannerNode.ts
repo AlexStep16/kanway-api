@@ -9,6 +9,7 @@ import { dispatchCustomEvent } from '@langchain/core/callbacks/dispatch'
 import { CustomEvents } from '@/enums/CustomEvents.js'
 import { Types } from 'mongoose'
 import { STEP_MESSAGES } from '@/constants/STEP_MESSAGES.js'
+import { ModelsEnum } from '@/domain/enums/ModelsEnum.js'
 
 export const makePlannerNode = (deps: AgentDependencies) => {
   return async (state: typeof AgentStateAnnotation.State, config: RunnableConfig) => {
@@ -18,6 +19,8 @@ export const makePlannerNode = (deps: AgentDependencies) => {
       name: STEP_MESSAGES.Planner[stepIndex],
     })
 
+    const configurable = config.configurable as Configurable
+
     const outputs: Partial<typeof AgentStateAnnotation.State> = {
       tool_calls: [],
       final_messages: state.final_messages,
@@ -25,9 +28,9 @@ export const makePlannerNode = (deps: AgentDependencies) => {
       planner_steps_count: state.planner_steps_count + 1,
     }
 
-    const { plannerModel } = deps.models
+    const { PLANNER, PLANNER_PRO } = deps.models
 
-    const configurable = config.configurable as Configurable
+    const modelToUse = configurable.modelType === ModelsEnum.KANWAY_PRO ? PLANNER_PRO : PLANNER
 
     const history = state.messages.slice(-50)
 
@@ -39,11 +42,11 @@ export const makePlannerNode = (deps: AgentDependencies) => {
       ...state.planner_messages,
     ])
 
-    if (!plannerModel.bindTools) {
+    if (!modelToUse.bindTools) {
       throw new Error('Planner model does not support tool binding.')
     }
 
-    const chain = prompt.pipe(plannerModel.bindTools(plannerTools))
+    const chain = prompt.pipe(modelToUse.bindTools(plannerTools))
 
     const response = await chain.invoke({
       board: configurable.activeBoard || 'Нет активной доски',
@@ -53,8 +56,6 @@ export const makePlannerNode = (deps: AgentDependencies) => {
       tags_list: configurable.tagsList,
       aiName: configurable.aiName,
     })
-
-    console.log(response)
 
     await dispatchCustomEvent(CustomEvents.TOKENS_ADDED, response.usage_metadata?.total_tokens || 0)
 

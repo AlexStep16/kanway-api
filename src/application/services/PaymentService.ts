@@ -86,10 +86,10 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
     }
   }
 
-  private _getBusinessCreatePayload(user: IUser): ICreatePayment {
+  private _getArchitectorCreatePayload(user: IUser): ICreatePayment {
     return {
       amount: {
-        value: '999.00',
+        value: '2499.00',
         currency: 'RUB',
       },
       confirmation: {
@@ -102,10 +102,10 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
         },
         items: [
           {
-            description: 'Бизнес подписка Kanway',
+            description: 'Kanway | Полкупка подписки - Архитектор',
             quantity: '1',
             amount: {
-              value: '999.00',
+              value: '2499.00',
               currency: 'RUB',
             },
             vat_code: 1,
@@ -115,7 +115,7 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
         ],
       },
       capture: true,
-      description: 'Оплата бизнес подписки',
+      description: 'Kanway | Полкупка подписки - Архитектор',
       save_payment_method: true,
     }
   }
@@ -123,7 +123,7 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
   private _getPremiumCreatePayload(user: IUser): ICreatePayment {
     return {
       amount: {
-        value: '599.00',
+        value: '999.00',
         currency: 'RUB',
       },
       confirmation: {
@@ -136,10 +136,10 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
         },
         items: [
           {
-            description: 'Премиум подписка Kanway',
+            description: 'Kanway | Полкупка подписки - Премиум',
             quantity: '1',
             amount: {
-              value: '599.00',
+              value: '999.00',
               currency: 'RUB',
             },
             vat_code: 1,
@@ -149,14 +149,14 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
         ],
       },
       capture: true,
-      description: 'Оплата премиум подписки',
+      description: 'Kanway | Полкупка подписки - Премиум',
       save_payment_method: true,
     }
   }
 
   private _getCreatePayloadByPlan(user: IUser, plan: SubscriptionPlanEnum): ICreatePayment | null {
-    if (plan === SubscriptionPlanEnum.Business) {
-      return this._getBusinessCreatePayload(user)
+    if (plan === SubscriptionPlanEnum.Architector) {
+      return this._getArchitectorCreatePayload(user)
     } else if (plan === SubscriptionPlanEnum.Premium) {
       return this._getPremiumCreatePayload(user)
     } else return null
@@ -198,7 +198,7 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
       throw new AppError('Пользователь уже имеет активную подписку.', 500)
     }
 
-    const createPayload: ICreatePayment | null = await this._getCreatePayloadByPlan(user, plan)
+    const createPayload: ICreatePayment | null = this._getCreatePayloadByPlan(user, plan)
 
     if (!createPayload) {
       throw new AppError('Неверный план подписки.', 400)
@@ -215,7 +215,7 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
       const daysRemaining = end.diff(now, 'day', true)
       const daysInMonth = now.daysInMonth()
 
-      const oldPlanPrice = user.subscriptionId === SubscriptionPlanEnum.Premium ? 599 : 999
+      const oldPlanPrice = parseInt(createPayload.amount.value)
 
       const unusedValue = oldPlanPrice * (daysRemaining / daysInMonth)
       finalAmount = newPlanPrice - unusedValue
@@ -229,7 +229,7 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
   }
 
   public async buySubscription(user: IUser, plan: SubscriptionPlanEnum) {
-    const createPayload: ICreatePayment | null = await this._getCreatePayloadByPlan(user, plan)
+    const createPayload: ICreatePayment | null = this._getCreatePayloadByPlan(user, plan)
 
     if (!createPayload) {
       throw new AppError('Неверный план подписки.', 400)
@@ -317,9 +317,7 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
 
     const paymentMethod = paymentMethods[0]
 
-    const plan = user.subscriptionId
-    const planText = plan === SubscriptionPlanEnum.Business ? 'Бизнес' : 'Премиум'
-    const amount = plan === SubscriptionPlanEnum.Business ? '999.00' : '599.00'
+    const payload = this._getCreatePayloadByPlan(user, user.subscriptionId)
 
     const dateKey = new Date().toISOString().slice(0, 10)
     const idempotenceKey = `auto_${userId}_${dateKey}`
@@ -327,22 +325,22 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
     const payment = await checkout.createPayment(
       {
         amount: {
-          value: amount,
+          value: payload!.amount.value,
           currency: 'RUB',
         },
         capture: true,
         payment_method_id: paymentMethod.serviceId,
-        description: `Продление ${planText} подписки Kanway`,
+        description: payload!.description || 'Kanway | Продление подписки',
       },
       idempotenceKey,
     )
 
     const paymentData = {
       serviceId: payment.id,
-      description: `Продление ${planText} подписки Kanway`,
+      description: payload!.description || 'Kanway | Продление подписки',
       amount: payment.amount.value,
       currency: payment.amount.currency,
-      type: plan,
+      type: user.subscriptionId,
       status: payment.status as PaymentStatusesEnum,
     }
 
@@ -415,7 +413,7 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
     }
 
     const subscriptionName =
-      paymentModel.type === SubscriptionPlanEnum.Business ? 'Бизнес' : 'Премиум'
+      paymentModel.type === SubscriptionPlanEnum.Architector ? 'Архитектор' : 'Премиум'
 
     await this.emailService.sendPaymentSuccessEmail(user, {
       subscription_name: subscriptionName,
