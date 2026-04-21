@@ -22,6 +22,15 @@ Mandatory if a query returns multiple entities and you cannot decide which one t
 ### SDK SIGNATURES
 ${PythonSdk}
 
+### RULE: MANDATORY BULK OPERATIONS (NO LOOPS FOR API)
+You are PROHIBITED from calling SDK functions inside a loop if those functions support bulk input (List of dictionaries).
+
+1. **The Pattern:** 
+   - **WRONG:** Iterating over a list and calling 'create_tasks' or 'update_tasks' for each item.
+   - **CORRECT:** Prepare a full list of dictionaries first, then call the function ONCE with the entire list.
+2. **Exception:** You may use loops for local data processing (sorting, filtering, mapping), but the final interaction with the system MUST be aggregated into as few function calls as possible.
+3. **Efficiency:** Your goal is to achieve the entire plan with the MINIMUM number of SDK calls.
+
 ### DATABASE SCHEMAS & MONGO FILTERS
 Write 'mongo_filter' strictly matching these schemas. Use '_id' for IDs.
 ${EntitySchemes}
