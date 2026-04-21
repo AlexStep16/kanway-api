@@ -123,7 +123,7 @@ export class UserService implements ICreateUserService<IUser, RegisterCredential
   public async validateCredentials(email: string, passwordPlain: string): Promise<IUser> {
     const normalizedEmail = email.toLowerCase().trim()
     const user = await this.repository.findByEmail(normalizedEmail)
-
+    console.log(user)
     if (!user) {
       throw new AppError(ErrorMessages.INVALID_CREDENTIALS, 401)
     }
