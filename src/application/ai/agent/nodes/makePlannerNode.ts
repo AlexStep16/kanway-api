@@ -54,6 +54,8 @@ export const makePlannerNode = (deps: AgentDependencies) => {
       aiName: configurable.aiName,
     })
 
+    console.log(response)
+
     await dispatchCustomEvent(CustomEvents.TOKENS_ADDED, response.usage_metadata?.total_tokens || 0)
 
     outputs.tool_calls = response.tool_calls || []

@@ -8,8 +8,13 @@ export const ExecutePlanDTOSchema = z
         'The list of instructions for the coder to execute. Each item should be a clear, concise instruction.',
       ),
     payload: z
-      .record(z.string(), z.any())
-      .describe('The payload containing necessary data for executing the plan.'),
+      .looseObject({})
+      .describe(
+        'MANDATORY: ALL technical values (IDs, titles, dates, names) MUST be here. ' +
+          'The Python Executor will CRASH if this object is empty. ' +
+          "Example: {'target_id': '69b...', 'new_name': 'Work'}",
+      )
+      .optional(),
   })
   .describe(
     'ONE-STEP RULE: For 95% of requests (Creation, Updates, Metadata Moves), this array MUST contain exactly ONE string. ' +
