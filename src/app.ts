@@ -2,7 +2,6 @@ import dotenv from 'dotenv'
 import connectToDatabase from '@db/connectToDatabase.js'
 import express from 'express'
 import { createApiRouter } from '@/createApiRouter.js'
-import { startOpenAIProxy } from '@/infrastructure/ws/startOpenAIProxy.js'
 import { globalErrorHandler } from '@middlewares/globalErrorHandler.js'
 import dayjs from 'dayjs'
 import utc from 'dayjs/plugin/utc.js'
@@ -16,6 +15,15 @@ import { Redis } from 'ioredis'
 import { generalLimiter } from './limiters.js'
 import { setGlobalDispatcher, EnvHttpProxyAgent } from 'undici'
 import { initializeDependencies } from './infrastructure/di/initializeDependencies.js'
+import { Server } from 'socket.io'
+import http from 'http'
+import { setupOpenAISocket } from './infrastructure/ws/setupOpenAISocket.js'
+import * as cookie from 'cookie'
+import jwt from 'jsonwebtoken'
+import { AppError } from './domain/errors/AppError.js'
+import { ErrorMessages } from './enums/ErrorMessages.js'
+
+const KEY = process.env.JWT_KEY || 'FF123ABC-456D-789E-F012-3456789ABCDF'
 
 const dependencies = initializeDependencies()
 
@@ -68,10 +76,56 @@ app.set('trust proxy', 1) // Enable if behind a proxy (e.g., Heroku, Nginx)
 
 app.use('/api', apiRouter)
 
-app.listen(3333, '0.0.0.0')
+const server = http.createServer(app)
 
-startOpenAIProxy(8080)
+const io = new Server(server, {
+  cors: {
+    origin: [frontUrl, frontUrlWww, 'http://localhost:3001'],
+    methods: ['GET', 'POST'],
+    credentials: true,
+  },
+})
+
+io.use(async (socket, next) => {
+  const cookieString = socket.handshake.headers.cookie
+
+  if (!cookieString) {
+    return next(new AppError(ErrorMessages.USER_NOT_AUTHORIZED, 401))
+  }
+
+  // 2. Парсим куки
+  const cookies = cookie.parse(cookieString)
+  const token = cookies['token']
+
+  if (!token) {
+    return next(new AppError(ErrorMessages.USER_NOT_AUTHORIZED, 401))
+  }
+
+  try {
+    const decoded = jwt.verify(token, KEY) as { user_id: string }
+
+    const user = await dependencies.services.userService.getById(decoded.user_id)
+
+    if (!user) {
+      return next(new AppError(ErrorMessages.USER_NOT_AUTHORIZED, 401))
+    }
+
+    if (user.credits <= 0) {
+      return next(new AppError(ErrorMessages.CREDITS_LOW, 402))
+    }
+
+    socket.data.userId = decoded.user_id
+
+    next()
+  } catch {
+    next(new AppError(ErrorMessages.USER_NOT_AUTHORIZED, 401))
+  }
+})
+
+setupOpenAISocket(io)
 
 app.use(globalErrorHandler)
+
+server.listen(3333, '0.0.0.0')
 
 dependencies.services.subscriptionService.initSubscriptions()

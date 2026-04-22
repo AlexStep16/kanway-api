@@ -20,6 +20,7 @@ import { rm } from 'fs/promises'
 import { EmailService } from '@/infrastructure/services/EmailService.js'
 import { getCreditsUsed } from '@/utils/getCreditsUsed.js'
 import { Redis } from 'ioredis'
+import { ModelsEnum } from '@/domain/enums/ModelsEnum.js'
 
 const redis = new Redis()
 
@@ -46,6 +47,7 @@ export class UserService implements ICreateUserService<IUser, RegisterCredential
       paymentRetriesCount: 0,
       credits: 50,
       isTipsCompleted: false,
+      audioTokensUsed: 0,
     }
 
     const result = await this.repository.create(user, session)
@@ -123,7 +125,7 @@ export class UserService implements ICreateUserService<IUser, RegisterCredential
   public async validateCredentials(email: string, passwordPlain: string): Promise<IUser> {
     const normalizedEmail = email.toLowerCase().trim()
     const user = await this.repository.findByEmail(normalizedEmail)
-    console.log(user)
+
     if (!user) {
       throw new AppError(ErrorMessages.INVALID_CREDENTIALS, 401)
     }
@@ -172,15 +174,51 @@ export class UserService implements ICreateUserService<IUser, RegisterCredential
   public async payCreditsByTokens(
     tokensUsed: number,
     userId: string,
+    modelType: ModelsEnum,
     userCredits?: number,
+    externalSession?: ClientSession,
   ): Promise<number> {
-    let finalAmount = getCreditsUsed(tokensUsed)
+    let finalAmount = getCreditsUsed(tokensUsed, modelType)
 
     if (userCredits !== undefined && userCredits < finalAmount) finalAmount = userCredits
 
-    await this.repository.decrementFieldByCriteria({ id: userId }, 'credits', finalAmount)
+    await this.repository.decrementFieldByCriteria(
+      { id: userId },
+      'credits',
+      finalAmount,
+      externalSession,
+    )
 
     return finalAmount
+  }
+
+  public async chargeAudioUsage(
+    audioTokensUsed: number,
+    user: IUser,
+    externalSession?: ClientSession,
+  ): Promise<number> {
+    const chargedAudioTokens = await this.payCreditsByTokens(
+      audioTokensUsed,
+      user.id.toString(),
+      ModelsEnum.KANWAY_AUDIO,
+      user.credits,
+      externalSession,
+    )
+
+    await this.edit(
+      {
+        audioTokensUsed: 0,
+      },
+      { id: user.id.toString() },
+      user,
+      externalSession,
+    )
+
+    return chargedAudioTokens
+  }
+
+  public async appendUsedAudioTokens(tokensUsed: number, userId: string): Promise<void> {
+    await this.repository.decrementFieldByCriteria({ id: userId }, 'audio_tokens_used', -tokensUsed)
   }
 
   public async verifyOTP(code: string, email: string): Promise<IUser> {

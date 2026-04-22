@@ -12,6 +12,7 @@ export enum ErrorMessages {
   INVALID_EMAIL_FORMAT = 'Неверный формат электронной почты.',
   TOKEN_GENERATION_FAILED = 'Не удалось сгенерировать токен.',
   TOKEN_NOT_FOUND = 'Токен не найден.',
+  USER_NOT_AUTHORIZED = 'Пользователь не авторизован.',
 
   WORKSPACE_NAME_REQUIRED = 'Требуется название пространства.',
   WORKSPACE_NAME_INVALID = 'Неверное название пространства.',

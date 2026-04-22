@@ -12,6 +12,7 @@ export interface IUserRaw {
   avatar_url?: string
   timezone: string
   is_confirmed: boolean
+  audio_tokens_used: number
   subscription_id: SubscriptionPlanEnum
   subscription_until?: Date | null
   is_subscription_active?: boolean

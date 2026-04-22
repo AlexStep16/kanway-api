@@ -13,6 +13,7 @@ import { OperationLogService } from '@/application/services/OperationLogService.
 import { getCreditsUsed } from '@/utils/getCreditsUsed.js'
 import { ChatService } from '@/application/services/ChatService.js'
 import { Redis } from 'ioredis'
+import { ModelsEnum } from '@/domain/enums/ModelsEnum.js'
 
 export class AgentEventsHandler extends BaseCallbackHandler {
   name = 'AgentEventsHandler'
@@ -33,6 +34,8 @@ export class AgentEventsHandler extends BaseCallbackHandler {
   public jobHistory: any[] = []
   public totalTokensUsed = 0
   public redisClient = new Redis()
+  public modelType = ModelsEnum.KANWAY_LITE
+  public chargedAudioTokens = 0
 
   constructor(
     job: Job,
@@ -49,6 +52,8 @@ export class AgentEventsHandler extends BaseCallbackHandler {
     this.operationLogService = operationLogService
     this.configurable = configurable
     this.stepsMessage = stepMessage
+    this.modelType = configurable.modelType
+    this.chargedAudioTokens = configurable.chargedAudioTokens || 0
 
     this.steps = Array.isArray(stepMessage.content) ? stepMessage.content : []
   }
@@ -126,11 +131,11 @@ export class AgentEventsHandler extends BaseCallbackHandler {
 
   async updateStepsMessage() {
     if (this.stepsMessage) {
-      const creditsUsed = getCreditsUsed(this.totalTokensUsed)
+      const creditsUsed = getCreditsUsed(this.totalTokensUsed, this.modelType)
 
       const dto: Partial<ChatMessageDTO> = {
         content: this.steps,
-        creditsUsed,
+        creditsUsed: creditsUsed + this.chargedAudioTokens,
       }
 
       await this.editChatMessage(
@@ -219,11 +224,8 @@ export class AgentEventsHandler extends BaseCallbackHandler {
     }
 
     if (event === CustomEvents.FINAL_RESPONSE) {
-      const creditsUsed = getCreditsUsed(this.totalTokensUsed)
-
       await this.updateAssistantMessage({
         content: data.text,
-        creditsUsed,
       })
     }
 

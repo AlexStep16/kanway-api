@@ -63,6 +63,10 @@ export const UserSchema = new Schema<IUserRaw, IUserRawStatics, IUserRawMethods>
       type: Number,
       default: 50,
     },
+    audio_tokens_used: {
+      type: Number,
+      default: 0,
+    },
     is_tips_completed: {
       type: Boolean,
       default: false,

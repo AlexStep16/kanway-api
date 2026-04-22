@@ -17,6 +17,7 @@ export interface Configurable {
   modelType: ModelsEnum
   currentDate: string
   categoriesList: string
+  chargedAudioTokens?: number
   tagsList: string
   timezone: string
   userMessage: string

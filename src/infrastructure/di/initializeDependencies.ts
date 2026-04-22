@@ -245,6 +245,7 @@ export function initializeDependencies() {
   const chatMessageService = new ChatMessageService(chatMessageRepository, operationLogService)
   const chatService = new ChatService(
     chatRespository,
+    userService,
     operationLogService,
     chatMessageService,
     settingService,

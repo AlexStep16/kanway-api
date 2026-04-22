@@ -38,11 +38,13 @@ import { ChatEditDTO } from '../dtos/ChatEditDTO.js'
 import { ErrorMessages } from '@/enums/ErrorMessages.js'
 import { ModelsEnum } from '@/domain/enums/ModelsEnum.js'
 import { SubscriptionPlanEnum } from '@/domain/enums/SubscriptionPlanEnum.js'
+import { UserService } from './UserService.js'
 
 const MAX_RETRIES = 3
 
 export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
   protected repository: ChatRepository
+  protected userService: UserService
   protected operationLogService: OperationLogService
   protected chatMessageService: ChatMessageService
   protected settingService: SettingService
@@ -55,6 +57,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
 
   constructor(
     chatRepository: ChatRepository,
+    userService: UserService,
     operationLogService: OperationLogService,
     chatMessageService: ChatMessageService,
     settingService: SettingService,
@@ -68,6 +71,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     super(chatRepository)
 
     this.repository = chatRepository
+    this.userService = userService
     this.operationLogService = operationLogService
     this.chatMessageService = chatMessageService
     this.settingService = settingService
@@ -118,6 +122,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       timezone: string
       isChatNameNeeded?: boolean
       userMessage: string
+      chargedAudioTokens?: number
       stepMessageId: string
       activeBoard: { id: string; name: string } | null
       activeWorkspace: { id: string; name: string }
@@ -164,6 +169,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
         timezone: data.timezone,
         isChatNameNeeded: !!data.isChatNameNeeded,
         userMessage: data.userMessage,
+        chargedAudioTokens: data.chargedAudioTokens,
 
         aiName: userSetting.aiName || 'Kanway',
         aiConfirmationType: userSetting.aiConfirmationType,
@@ -211,12 +217,21 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     let chat: IChat | null = null
     let toolsWithNoDecision = 0
     let isChatNameNeeded = false
+    let chargedAudioTokens = 0
 
     const messages: BaseMessage[] = []
     const threadId = data.threadId || new Types.ObjectId().toString()
 
     if (user.credits === 0) {
       throw new AppError(ErrorMessages.CREDITS_LOW, 403)
+    }
+
+    if (user.audioTokensUsed >= 2500) {
+      chargedAudioTokens = await this.userService.chargeAudioUsage(
+        user.audioTokensUsed,
+        user,
+        externalSession,
+      )
     }
 
     const { board, workspace } = await this._getActiveEntities(
@@ -332,6 +347,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
         stepMessageId: stepMessage.id.toHexString(),
         isChatNameNeeded,
         activeBoard: board,
+        chargedAudioTokens,
         activeWorkspace: workspace,
         userMessage: data.message || '',
       },

@@ -184,12 +184,6 @@ export const RunAgentWorker = new Worker(
         }
       }
 
-      await dependencies.services.userService.payCreditsByTokens(
-        agentEventsHandler.totalTokensUsed,
-        configurable.user.id.toString(),
-        configurable.user.credits,
-      )
-
       return { status: 'completed' }
     } catch (error: any) {
       console.error('Error in RunAgentWorker:', error)
@@ -215,6 +209,13 @@ export const RunAgentWorker = new Worker(
 
       throw error
     } finally {
+      dependencies.services.userService.payCreditsByTokens(
+        agentEventsHandler.totalTokensUsed,
+        configurable.user.id.toString(),
+        configurable.modelType,
+        configurable.user.credits,
+      )
+
       clearInterval(checkInterval)
 
       const agent = await getAgent(dependencies)
