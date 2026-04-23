@@ -43,6 +43,18 @@ export class PaymentController {
     }
   }
 
+  public buyCredits = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { itemId } = req.body
+
+      const result = await this.service.buyCredits(req.user!, itemId)
+
+      res.status(200).json(new SuccessResponse(result))
+    } catch (error) {
+      next(error)
+    }
+  }
+
   public upgradeSubscription = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { subscriptionId } = req.body
