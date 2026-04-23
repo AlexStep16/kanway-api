@@ -110,7 +110,7 @@ io.use(async (socket, next) => {
       return next(new AppError(ErrorMessages.USER_NOT_AUTHORIZED, 401))
     }
 
-    if (user.credits <= 0) {
+    if (user.credits <= 0 && user.paidCredits <= 0) {
       return next(new AppError(ErrorMessages.CREDITS_LOW, 402))
     }
 

@@ -325,16 +325,16 @@ export class EmailService {
       Sentry.captureException(new AppError(responseBody.message, 500))
   }
 
-  public async sendPaymentSuccessEmail(
+  public async sendPaymentSubSuccessEmail(
     user: IUser,
     data: {
-      subscription_name: string
+      purpose: string
       amount: string
       date: string
       next_billing_date: string
     },
   ) {
-    const templatePath = path.resolve('email-templates/payment-success.html')
+    const templatePath = path.resolve('email-templates/payment-success-sub.html')
 
     const htmlContent = await fs.promises.readFile(templatePath, 'utf8')
 
@@ -347,7 +347,7 @@ export class EmailService {
           {
             email: user.email,
             substitutions: {
-              subscription_name: data.subscription_name,
+              purpose: data.purpose,
               amount: data.amount,
               date,
               next_billing_date: nextBillingDate,
@@ -359,6 +359,63 @@ export class EmailService {
           plaintext: `Поздравляем! Ваш платеж прошёл успешно.`,
         },
         subject: 'Успешная оплата подписки — Kanway.',
+        from_email: 'noreply@kanway.ru',
+        from_name: 'Kanway',
+        track_links: 0,
+        track_read: 0,
+      },
+    }
+
+    const response = await fetch(
+      'https://go2.unisender.ru/ru/transactional/api/v1/email/send.json',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          'X-API-KEY': process.env.UNISENDER_API_KEY || '',
+        },
+        body: JSON.stringify(inputBody),
+      },
+    )
+
+    const responseBody = await response.json()
+
+    if (responseBody?.status === 'error')
+      Sentry.captureException(new AppError(responseBody.message, 500))
+  }
+
+  public async sendPaymentCreditsSuccessEmail(
+    user: IUser,
+    data: {
+      purpose: string
+      amount: string
+      date: string
+    },
+  ) {
+    const templatePath = path.resolve('email-templates/payment-success-credits.html')
+
+    const htmlContent = await fs.promises.readFile(templatePath, 'utf8')
+
+    const date = dayjs(data.date).format('DD.MM.YYYY HH:mm')
+
+    const inputBody = {
+      message: {
+        recipients: [
+          {
+            email: user.email,
+            substitutions: {
+              purpose: data.purpose,
+              amount: data.amount,
+              date,
+            },
+          },
+        ],
+        body: {
+          html: htmlContent,
+          plaintext: `Поздравляем! Ваш платеж прошёл успешно.`,
+        },
+        subject: 'Успешная оплата кредитов — Kanway.',
         from_email: 'noreply@kanway.ru',
         from_name: 'Kanway',
         track_links: 0,

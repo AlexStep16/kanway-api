@@ -222,7 +222,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     const messages: BaseMessage[] = []
     const threadId = data.threadId || new Types.ObjectId().toString()
 
-    if (user.credits === 0) {
+    if (user.credits <= 0 && user.paidCredits <= 0) {
       throw new AppError(ErrorMessages.CREDITS_LOW, 403)
     }
 

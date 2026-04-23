@@ -1,0 +1,8 @@
+export enum PaymentItemIdEnum {
+  BASIC = 0,
+  PREMIUM = 1,
+  ARCHITECTOR = 2,
+  CREDIT_PACK_SMALL = 3,
+  CREDIT_PACK_MEDIUM = 4,
+  CREDIT_PACK_LARGE = 5,
+}

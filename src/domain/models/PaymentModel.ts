@@ -1,6 +1,8 @@
 import { model, Schema } from 'mongoose'
 import { IPaymentRaw } from '@entities/IPaymentRaw.js'
 import { PaymentStatusesEnum } from '../enums/PaymentStatusesEnum.js'
+import { PaymentTypeEnum } from '../enums/PaymentTypeEnum.js'
+import { PaymentItemIdEnum } from '../enums/PaymentItemIdEnum.js'
 
 export const PaymentSchema = new Schema<IPaymentRaw>(
   {
@@ -20,8 +22,14 @@ export const PaymentSchema = new Schema<IPaymentRaw>(
       type: String,
       required: true,
     },
-    type: {
+    category: {
+      type: String,
+      enum: PaymentTypeEnum,
+      required: true,
+    },
+    item_id: {
       type: Number,
+      enum: PaymentItemIdEnum,
       required: true,
     },
     status: {

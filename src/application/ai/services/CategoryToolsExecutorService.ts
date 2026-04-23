@@ -58,6 +58,15 @@ export class CategoryToolsExecutorService extends AbstractToolExecutor {
   }
 
   public async searchCategories(payload: DispatchPayload, session?: ClientSession) {
+    await dispatchCustomEvent(
+      CustomEvents.STEP_ADD,
+      {
+        id: new Types.ObjectId().toString(),
+        name: 'Ищу категории',
+      },
+      payload.config,
+    )
+
     const HARD_SEARCH_LIMIT = 2000
 
     const { toolCall, userId } = payload

@@ -14,7 +14,7 @@ import { ICreateUserService } from '@traits/ICreateUserService.js'
 import { SystemFields } from '@infrastructure/types/SystemFields.js'
 import { SubscriptionPlanEnum } from '@domain/enums/SubscriptionPlanEnum.js'
 
-import { ClientSession, Types } from 'mongoose'
+import { ClientSession, Types, UpdateWriteOpResult } from 'mongoose'
 import sharp from 'sharp'
 import { rm } from 'fs/promises'
 import { EmailService } from '@/infrastructure/services/EmailService.js'
@@ -48,6 +48,7 @@ export class UserService implements ICreateUserService<IUser, RegisterCredential
       credits: 50,
       isTipsCompleted: false,
       audioTokensUsed: 0,
+      paidCredits: 0,
     }
 
     const result = await this.repository.create(user, session)
@@ -171,25 +172,51 @@ export class UserService implements ICreateUserService<IUser, RegisterCredential
     await this.emailService.sendVerifyEmailToUser(user)
   }
 
-  public async payCreditsByTokens(
-    tokensUsed: number,
+  public async spendCredits(
+    tokens: number,
     userId: string,
     modelType: ModelsEnum,
-    userCredits?: number,
-    externalSession?: ClientSession,
-  ): Promise<number> {
-    let finalAmount = getCreditsUsed(tokensUsed, modelType)
+    session?: ClientSession,
+  ) {
+    const user = await this.getById(userId)
 
-    if (userCredits !== undefined && userCredits < finalAmount) finalAmount = userCredits
+    if (!user) throw new AppError(ErrorMessages.USER_NOT_FOUND, 404)
 
-    await this.repository.decrementFieldByCriteria(
+    const amount = getCreditsUsed(tokens, modelType)
+
+    let leftover = amount
+    let newCredits = user.credits
+    let newPaidCredits = user.paidCredits
+
+    if (newCredits >= leftover) {
+      newCredits -= leftover
+      leftover = 0
+    } else {
+      leftover -= newCredits
+      newCredits = 0
+    }
+
+    if (leftover > 0) {
+      if (newPaidCredits >= leftover) {
+        newPaidCredits -= leftover
+        leftover = 0
+      } else {
+        newPaidCredits = 0
+        leftover = 0
+      }
+    }
+
+    await this.edit(
+      {
+        credits: newCredits,
+        paidCredits: newPaidCredits,
+      },
       { id: userId },
-      'credits',
-      finalAmount,
-      externalSession,
+      undefined,
+      session,
     )
 
-    return finalAmount
+    return amount
   }
 
   public async chargeAudioUsage(
@@ -197,11 +224,10 @@ export class UserService implements ICreateUserService<IUser, RegisterCredential
     user: IUser,
     externalSession?: ClientSession,
   ): Promise<number> {
-    const chargedAudioTokens = await this.payCreditsByTokens(
+    const chargedAudioTokens = await this.spendCredits(
       audioTokensUsed,
       user.id.toString(),
       ModelsEnum.KANWAY_AUDIO,
-      user.credits,
       externalSession,
     )
 
@@ -215,6 +241,19 @@ export class UserService implements ICreateUserService<IUser, RegisterCredential
     )
 
     return chargedAudioTokens
+  }
+
+  public async addPaidCredits(
+    userId: string,
+    credits: number,
+    session?: ClientSession,
+  ): Promise<UpdateWriteOpResult> {
+    return await this.repository.decrementFieldByCriteria(
+      { id: userId },
+      'paid_credits',
+      -credits,
+      session,
+    )
   }
 
   public async appendUsedAudioTokens(tokensUsed: number, userId: string): Promise<void> {

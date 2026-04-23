@@ -41,6 +41,7 @@ export const UserDTOSchema = z.object({
         : ErrorMessages.INVALID_PAYMENT_METHOD_ID,
   }),
   credits: z.number().optional(),
+  paidCredits: z.number().optional(),
   subscriptionId: z
     .enum(SubscriptionPlanEnum, {
       error: () => ({ message: ErrorMessages.SUBSCRIPTION_PLAN_INVALID }),

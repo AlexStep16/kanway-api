@@ -18,12 +18,29 @@ import { ErrorMessages } from '@/enums/ErrorMessages.js'
 import { subscriptionQueue } from '@/infrastructure/queues/SubscriptionQueue.js'
 import { IPaymentMethod } from '@/domain/entities/IPaymentMethod.js'
 import dayjs from 'dayjs'
+import { CREDIT_PACKS_DATA } from '@/constants/CREDIT_PACKS_DATA.js'
+import { PaymentTypeEnum } from '@/domain/enums/PaymentTypeEnum.js'
+import { SUBSCRIPTION_PLAN_TO_ITEM_ID } from '@/constants/SUBSCRIPTION_PLAN_TO_ITEM_ID.js'
+import { PaymentItemIdEnum } from '@/domain/enums/PaymentItemIdEnum.js'
+import { SUBSCRIPTION_ITEM_ID_TO_PLAN } from '@/constants/SUBSCRIPTION_ITEM_ID_TO_PLAN.js'
+import { SUBSCRIPTION_PLAN_TO_CREDITS } from '@/constants/SUBSCRIPTION_PLAN_TO_CREDITS.js'
+
+type CreditItemId =
+  | PaymentItemIdEnum.CREDIT_PACK_SMALL
+  | PaymentItemIdEnum.CREDIT_PACK_MEDIUM
+  | PaymentItemIdEnum.CREDIT_PACK_LARGE
+type SubscriptionItemId =
+  | PaymentItemIdEnum.BASIC
+  | PaymentItemIdEnum.PREMIUM
+  | PaymentItemIdEnum.ARCHITECTOR
 
 export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentCriteria> {
   protected repository: PaymentRepository
   protected userService: UserService
   protected paymentMethodService: PaymentMethodService
   protected emailService: EmailService
+
+  private checkout: YooCheckout
 
   constructor(
     paymentRepository: PaymentRepository,
@@ -37,6 +54,11 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
     this.userService = userService
     this.paymentMethodService = paymentMethodService
     this.emailService = emailService
+
+    this.checkout = new YooCheckout({
+      shopId: process.env.YOO_SHOP_ID ?? '',
+      secretKey: process.env.YOO_SECRET ?? '',
+    })
   }
 
   public async create(
@@ -46,7 +68,8 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
   ): Promise<IPayment> {
     const payment: Omit<IPayment, SystemFields> = {
       serviceId: data.serviceId,
-      type: data.type,
+      itemId: data.itemId,
+      category: data.category,
       description: data.description,
       amount: data.amount,
       currency: data.currency,
@@ -59,22 +82,20 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
 
   public async createPayment(
     createPayload: ICreatePayment,
-    plan: SubscriptionPlanEnum,
     userId: Types.ObjectId,
+    category: PaymentTypeEnum,
+    itemId: PaymentItemIdEnum,
   ) {
-    const checkout = new YooCheckout({
-      shopId: process.env.YOO_SHOP_ID ?? '',
-      secretKey: process.env.YOO_SECRET ?? '',
-    })
-
     const idempotenceKey = crypto.randomUUID()
-    const payment = await checkout.createPayment(createPayload, idempotenceKey)
+
+    const payment = await this.checkout.createPayment(createPayload, idempotenceKey)
     const paymentData = {
       serviceId: payment.id,
       description: createPayload.description ?? 'Subscription Payment',
       amount: createPayload.amount.value,
       currency: createPayload.amount.currency,
-      type: plan,
+      category,
+      itemId,
       status: payment.status as PaymentStatusesEnum,
     }
 
@@ -86,28 +107,22 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
     }
   }
 
-  private _getArchitectorCreatePayload(user: IUser): ICreatePayment {
+  private _getCreditPackPayload(user: IUser, itemId: CreditItemId): ICreatePayment {
+    const pack = CREDIT_PACKS_DATA[itemId]
+
     return {
-      amount: {
-        value: '2499.00',
-        currency: 'RUB',
-      },
+      amount: { value: pack.amount, currency: 'RUB' },
       confirmation: {
         type: 'redirect',
-        return_url: 'http://localhost:3000/payment/confirmation',
+        return_url: `${process.env.FRONT_URL || 'https://kanway.ru'}/payment/success`,
       },
       receipt: {
-        customer: {
-          email: user.email,
-        },
+        customer: { email: user.email },
         items: [
           {
-            description: 'Kanway | Полкупка подписки - Архитектор',
+            description: `Kanway | Пакет: ${pack.label}`,
             quantity: '1',
-            amount: {
-              value: '2499.00',
-              currency: 'RUB',
-            },
+            amount: { value: pack.amount, currency: 'RUB' },
             vat_code: 1,
             payment_mode: 'full_payment',
             payment_subject: 'service',
@@ -115,33 +130,33 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
         ],
       },
       capture: true,
-      description: 'Kanway | Полкупка подписки - Архитектор',
-      save_payment_method: true,
+      description: `Покупка пакета кредитов: ${pack.label}`,
+      metadata: {
+        paymentType: PaymentTypeEnum.CREDIT_PACK,
+        itemId,
+      },
     }
   }
 
-  private _getPremiumCreatePayload(user: IUser): ICreatePayment {
+  private _getSubscriptionPayload(user: IUser, plan: SubscriptionPlanEnum): ICreatePayment {
+    const isArch = plan === SubscriptionPlanEnum.Architector
+    const amount = isArch ? '2499.00' : '999.00'
+    const description = `Kanway | Подписка - ${isArch ? 'Архитектор' : 'Премиум'}`
+    const returnUrlSuffix = isArch ? 'confirmation' : 'premium/confirmation'
+
     return {
-      amount: {
-        value: '999.00',
-        currency: 'RUB',
-      },
+      amount: { value: amount, currency: 'RUB' },
       confirmation: {
         type: 'redirect',
-        return_url: 'http://localhost:3000/payment/premium/confirmation',
+        return_url: `${process.env.FRONT_URL || 'https://kanway.ru'}/payment/${returnUrlSuffix}`,
       },
       receipt: {
-        customer: {
-          email: user.email,
-        },
+        customer: { email: user.email },
         items: [
           {
-            description: 'Kanway | Полкупка подписки - Премиум',
+            description,
             quantity: '1',
-            amount: {
-              value: '999.00',
-              currency: 'RUB',
-            },
+            amount: { value: amount, currency: 'RUB' },
             vat_code: 1,
             payment_mode: 'full_payment',
             payment_subject: 'service',
@@ -149,17 +164,13 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
         ],
       },
       capture: true,
-      description: 'Kanway | Полкупка подписки - Премиум',
+      description,
+      metadata: {
+        paymentType: PaymentTypeEnum.SUBSCRIPTION,
+        itemId: SUBSCRIPTION_PLAN_TO_ITEM_ID[plan],
+      },
       save_payment_method: true,
     }
-  }
-
-  private _getCreatePayloadByPlan(user: IUser, plan: SubscriptionPlanEnum): ICreatePayment | null {
-    if (plan === SubscriptionPlanEnum.Architector) {
-      return this._getArchitectorCreatePayload(user)
-    } else if (plan === SubscriptionPlanEnum.Premium) {
-      return this._getPremiumCreatePayload(user)
-    } else return null
   }
 
   public async downgradeSubscription(user: IUser, plan: SubscriptionPlanEnum) {
@@ -198,7 +209,7 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
       throw new AppError('Пользователь уже имеет активную подписку.', 500)
     }
 
-    const createPayload: ICreatePayment | null = this._getCreatePayloadByPlan(user, plan)
+    const createPayload: ICreatePayment | null = this._getSubscriptionPayload(user, plan)
 
     if (!createPayload) {
       throw new AppError('Неверный план подписки.', 400)
@@ -225,11 +236,16 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
 
     createPayload.amount.value = Math.floor(finalAmount).toFixed(2)
 
-    return await this.createPayment(createPayload, plan, user.id)
+    return await this.createPayment(
+      createPayload,
+      user.id,
+      PaymentTypeEnum.SUBSCRIPTION,
+      SUBSCRIPTION_PLAN_TO_ITEM_ID[plan],
+    )
   }
 
   public async buySubscription(user: IUser, plan: SubscriptionPlanEnum) {
-    const createPayload: ICreatePayment | null = this._getCreatePayloadByPlan(user, plan)
+    const createPayload: ICreatePayment | null = this._getSubscriptionPayload(user, plan)
 
     if (!createPayload) {
       throw new AppError('Неверный план подписки.', 400)
@@ -239,7 +255,12 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
       throw new AppError('Пользователь уже имеет активную подписку.', 500)
     }
 
-    return await this.createPayment(createPayload, plan, user.id)
+    return await this.createPayment(
+      createPayload,
+      user.id,
+      PaymentTypeEnum.SUBSCRIPTION,
+      SUBSCRIPTION_PLAN_TO_ITEM_ID[plan],
+    )
   }
 
   public async cancelSubscription(user: IUser) {
@@ -269,6 +290,11 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
     )
   }
 
+  public async buyCredits(user: IUser, itemId: CreditItemId) {
+    const createPayload = this._getCreditPackPayload(user, itemId)
+    return await this.createPayment(createPayload, user.id, PaymentTypeEnum.CREDIT_PACK, itemId)
+  }
+
   private async _revertToBasicPlan(userId: string) {
     await this.userService.edit(
       {
@@ -282,11 +308,6 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
 
   public async autoChargeSubscription(userId: string) {
     const user = await this.userService.getById(userId)
-
-    const checkout = new YooCheckout({
-      shopId: process.env.YOO_SHOP_ID ?? '',
-      secretKey: process.env.YOO_SECRET ?? '',
-    })
 
     if (!user) return
 
@@ -317,12 +338,12 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
 
     const paymentMethod = paymentMethods[0]
 
-    const payload = this._getCreatePayloadByPlan(user, user.subscriptionId)
+    const payload = this._getSubscriptionPayload(user, user.subscriptionId)
 
     const dateKey = new Date().toISOString().slice(0, 10)
     const idempotenceKey = `auto_${userId}_${dateKey}`
 
-    const payment = await checkout.createPayment(
+    const payment = await this.checkout.createPayment(
       {
         amount: {
           value: payload!.amount.value,
@@ -340,24 +361,28 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
       description: payload!.description || 'Kanway | Продление подписки',
       amount: payment.amount.value,
       currency: payment.amount.currency,
-      type: user.subscriptionId,
+      category: PaymentTypeEnum.SUBSCRIPTION,
+      itemId: SUBSCRIPTION_PLAN_TO_ITEM_ID[user.subscriptionId],
       status: payment.status as PaymentStatusesEnum,
     }
 
     await this.create(paymentData, new Types.ObjectId(userId))
   }
 
-  private async _handleSuccessNotification(
+  private async _updateSubscriptionAndNotifyUser(
     checkedPayment: Payment,
     paymentModel: IPayment,
     session: ClientSession,
     user: IUser,
   ) {
     const nextBillingDate = dayjs().add(1, 'month').toDate()
+    const itemId = paymentModel.itemId as SubscriptionItemId
+    const creditsAmount = SUBSCRIPTION_PLAN_TO_CREDITS[SUBSCRIPTION_ITEM_ID_TO_PLAN[itemId]]
 
     await this.userService.edit(
       {
-        subscriptionId: paymentModel.type,
+        subscriptionId: SUBSCRIPTION_ITEM_ID_TO_PLAN[itemId],
+        credits: creditsAmount,
         paymentRetriesCount: 0,
         isSubscriptionActive: true,
         pendingChangePlan: null,
@@ -412,11 +437,10 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
       )
     }
 
-    const subscriptionName =
-      paymentModel.type === SubscriptionPlanEnum.Architector ? 'Архитектор' : 'Премиум'
+    const subscriptionName = itemId === PaymentItemIdEnum.PREMIUM ? 'Премиум' : 'Архитектор'
 
-    await this.emailService.sendPaymentSuccessEmail(user, {
-      subscription_name: subscriptionName,
+    await this.emailService.sendPaymentSubSuccessEmail(user, {
+      purpose: `Подписка - ${subscriptionName}`,
       amount: paymentModel.amount,
       date: new Date().toISOString(),
       next_billing_date: nextBillingDate.toISOString(),
@@ -434,11 +458,38 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
     )
   }
 
+  private async _handleSuccessNotification(
+    checkedPayment: Payment,
+    paymentModel: IPayment,
+    session: ClientSession,
+    user: IUser,
+  ) {
+    const metadata = checkedPayment.metadata
+    const isCreditPack = metadata?.paymentType === PaymentTypeEnum.CREDIT_PACK
+    if (isCreditPack) {
+      const itemId = paymentModel.itemId as CreditItemId
+      const creditsToAdd = CREDIT_PACKS_DATA[itemId].credits
+
+      await this.userService.addPaidCredits(user.id.toString(), creditsToAdd, session)
+
+      const creditPackLabel = CREDIT_PACKS_DATA[itemId].label
+
+      await this.emailService.sendPaymentCreditsSuccessEmail(user, {
+        purpose: creditPackLabel,
+        amount: paymentModel.amount,
+        date: new Date().toISOString(),
+      })
+    } else {
+      await this._updateSubscriptionAndNotifyUser(checkedPayment, paymentModel, session, user)
+    }
+  }
+
   private async _handleCanceledNotification(
     paymentModel: IPayment,
     session: ClientSession,
     user: IUser,
   ) {
+    if (paymentModel.category === PaymentTypeEnum.CREDIT_PACK) return
     if (user.isSubscriptionActive === false) return
 
     const newCount = (user.paymentRetriesCount || 0) + 1
@@ -495,11 +546,6 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
     event: WebHookEvents
     object: Payment
   }) {
-    const checkout = new YooCheckout({
-      shopId: process.env.YOO_SHOP_ID ?? '',
-      secretKey: process.env.YOO_SECRET ?? '',
-    })
-
     const payment = notification.object
 
     const payments = await this.getByCriteria({
@@ -514,7 +560,7 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
 
     const user = await this.userService.getById(paymentModel.userId.toString())
 
-    const checkedPayment = await checkout.getPayment(payment.id)
+    const checkedPayment = await this.checkout.getPayment(payment.id)
 
     if (!user) {
       throw new AppError(ErrorMessages.USER_NOT_FOUND, 500)

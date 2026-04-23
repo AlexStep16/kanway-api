@@ -34,8 +34,7 @@ export class SubscriptionService extends BaseService<
   }
 
   public async initSubscriptions() {
-    const existingSubscriptionsCount = await this.repository.getCountByFilter({})
-    if (existingSubscriptionsCount > 0) return
+    await this.repository.deleteMany({})
 
     const subscriptionsData: Omit<ISubscription, SystemFields>[] = [
       {
@@ -45,7 +44,7 @@ export class SubscriptionService extends BaseService<
         currency: 'RUB',
         interval: 'month',
         limitWorkspaces: 1,
-        limitBoards: 1,
+        limitBoards: 5,
       },
       {
         subscriptionId: SubscriptionPlanEnum.Premium,

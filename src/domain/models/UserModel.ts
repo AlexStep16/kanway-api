@@ -61,7 +61,11 @@ export const UserSchema = new Schema<IUserRaw, IUserRawStatics, IUserRawMethods>
     },
     credits: {
       type: Number,
-      default: 50,
+      default: 20,
+    },
+    paid_credits: {
+      type: Number,
+      default: 0,
     },
     audio_tokens_used: {
       type: Number,

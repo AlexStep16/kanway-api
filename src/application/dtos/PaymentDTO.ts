@@ -1,12 +1,16 @@
 import { ErrorMessages } from '@/enums/ErrorMessages.js'
-import { SubscriptionPlanEnum } from '@/domain/enums/SubscriptionPlanEnum.js'
 import { PaymentStatusesEnum } from '@/domain/enums/PaymentStatusesEnum.js'
 import { z } from 'zod'
+import { PaymentTypeEnum } from '@/domain/enums/PaymentTypeEnum.js'
+import { PaymentItemIdEnum } from '@/domain/enums/PaymentItemIdEnum.js'
 
 export const PaymentDTOSchema = z.object({
   serviceId: z.string().min(1, ErrorMessages.PAYMENT_SERVICE_ID_REQUIRED),
-  type: z.enum(SubscriptionPlanEnum, {
+  category: z.enum(PaymentTypeEnum, {
     error: () => ({ message: ErrorMessages.PAYMENT_TYPE_INVALID }),
+  }),
+  itemId: z.enum(PaymentItemIdEnum, {
+    error: () => ({ message: ErrorMessages.SUBSCRIPTION_PLAN_INVALID }),
   }),
   description: z
     .string()

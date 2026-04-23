@@ -209,11 +209,10 @@ export const RunAgentWorker = new Worker(
 
       throw error
     } finally {
-      dependencies.services.userService.payCreditsByTokens(
+      dependencies.services.userService.spendCredits(
         agentEventsHandler.totalTokensUsed,
         configurable.user.id.toString(),
         configurable.modelType,
-        configurable.user.credits,
       )
 
       clearInterval(checkInterval)

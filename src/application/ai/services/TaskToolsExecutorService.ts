@@ -60,6 +60,15 @@ export class TaskToolsExecutorService extends AbstractToolExecutor {
   }
 
   public async searchTasks(payload: DispatchPayload, session?: ClientSession) {
+    await dispatchCustomEvent(
+      CustomEvents.STEP_ADD,
+      {
+        id: new Types.ObjectId().toString(),
+        name: 'Ищу задачи',
+      },
+      payload.config,
+    )
+
     const HARD_SEARCH_LIMIT = 2000
 
     const { toolCall, userId } = payload
