@@ -41,11 +41,11 @@ export default class AuthController {
 
   public async yandex(req: Request, res: Response, next: NextFunction) {
     try {
-      const { user, serialized } = await this.service.yandex(req.body.token)
+      await this.service.yandex(req.body.token)
 
-      res.setHeader('Set-Cookie', serialized)
+      /*res.setHeader('Set-Cookie', serialized)*/
 
-      return res.status(200).json(new SuccessResponse(user))
+      return res.status(200).json(new SuccessResponse(null))
     } catch (error) {
       next(error)
     }
