@@ -34,6 +34,6 @@ export default class UserRepository extends BaseRepository<IUserRaw, IUser, IUse
 
   public async getPasswordHashById(id: Types.ObjectId): Promise<string | null> {
     const user = await this.model.findById(id, { password_hash: 1 }).lean()
-    return user ? user.password_hash : null
+    return user ? (user.password_hash ?? null) : null
   }
 }

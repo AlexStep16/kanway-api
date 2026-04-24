@@ -31,6 +31,7 @@ export default (controller: AuthController): Router => {
     emailLimiter,
     controller.sendResetPasswordEmailByToken.bind(controller),
   )
+  router.post('/yandex', controller.yandex.bind(controller))
   router.post(
     '/send/verify/:token',
     emailLimiter,

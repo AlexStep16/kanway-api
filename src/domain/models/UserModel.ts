@@ -27,7 +27,6 @@ export const UserSchema = new Schema<IUserRaw, IUserRawStatics, IUserRawMethods>
     },
     password_hash: {
       type: String,
-      required: true,
       select: false,
     },
     role: {
@@ -90,10 +89,7 @@ export const UserSchema = new Schema<IUserRaw, IUserRawStatics, IUserRawMethods>
     phone: {
       type: String,
     },
-    ya_avatar_id: {
-      type: String,
-    },
-    ya_id: {
+    yandex_client_id: {
       type: String,
     },
     payment_method_id: {
@@ -112,7 +108,7 @@ export const UserSchema = new Schema<IUserRaw, IUserRawStatics, IUserRawMethods>
 )
 
 UserSchema.pre('save', async function (next) {
-  if (!this.isModified('password_hash')) return next()
+  if (!this.isModified('password_hash') || !this.password_hash) return next()
   try {
     this.password_hash = await bcrypt.hash(this.password_hash, SALT_ROUNDS)
     next()
@@ -125,8 +121,9 @@ UserSchema.statics.findByEmailWithPassword = async function (email: string) {
   return this.findOne({ email }).select('+password_hash').lean()
 }
 
-UserSchema.methods.comparePassword = function (password: string) {
-  return bcrypt.compare(password, this.password_hash)
+UserSchema.methods.comparePassword = async function (password: string) {
+  if (!this.password_hash) return false
+  return await bcrypt.compare(password, this.password_hash)
 }
 
 export const UserModel = model<IUserRaw, IUserRawStatics>('User', UserSchema)

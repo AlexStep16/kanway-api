@@ -79,6 +79,19 @@ export class AuthService {
     }
   }
 
+  public async yandex(token: string) {
+    const userInfoResponse = await fetch('https://login.yandex.ru/info?format=json', {
+      headers: {
+        Authorization: `OAuth ${token}`,
+      },
+    })
+    const userInfo = await userInfoResponse.json()
+
+    console.log(userInfo) /*
+
+    const user = await this.userService.getByEmail(userInfo.email)*/
+  }
+
   public async checkEmailUnique(email: string): Promise<boolean> {
     const user = await this.userService.getByEmail(email)
 

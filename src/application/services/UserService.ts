@@ -131,7 +131,7 @@ export class UserService implements ICreateUserService<IUser, RegisterCredential
       throw new AppError(ErrorMessages.INVALID_CREDENTIALS, 401)
     }
 
-    const isMatch = await bcrypt.compare(passwordPlain, user.password_hash)
+    const isMatch = await bcrypt.compare(passwordPlain, user.password_hash!)
 
     if (!isMatch) {
       throw new AppError(ErrorMessages.INVALID_CREDENTIALS, 401)

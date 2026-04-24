@@ -5,7 +5,7 @@ export interface IUser {
   id: Types.ObjectId
   username?: string
   email: string
-  passwordHash: string
+  passwordHash?: string
   avatarUrl?: string
   timezone: string
   role?: string
@@ -21,8 +21,7 @@ export interface IUser {
   avatarColor: string
   isTipsCompleted?: boolean
   phone?: string
-  yaAvatarId?: string
-  yaId?: string
+  yandexClientId?: string
   paymentMethodId?: string | null
   paymentRetriesCount: number
   pendingChangePlan?: SubscriptionPlanEnum | null
