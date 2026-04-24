@@ -12,6 +12,7 @@ import { TokenTypesEnum } from '@/domain/enums/TokenTypesEnum.js'
 import { ErrorMessages } from '@/enums/ErrorMessages.js'
 import { AppError } from '@/domain/errors/AppError.js'
 import { YandexAuthDTO } from '../dtos/YandexAuthDTO.js'
+import { YandexUser } from '../interfaces/YandexUser.js'
 
 export class AuthService {
   private userService: UserService
@@ -41,6 +42,25 @@ export class AuthService {
     })
   }
 
+  public async initNewUser(newUser: IUser, session?: mongoose.ClientSession): Promise<string> {
+    await this.emailService.sendVerifyEmailToUser(newUser)
+
+    const token = this.tokenService.generateToken(newUser.id, 60 * 60 * 24 * 30)
+
+    const serialized = this._getTokenSerialized(token)
+
+    await this.settingService.create(
+      {
+        aiName: 'Kanway',
+        aiConfirmationType: AiConfirmationTypeEnum.ONLY_FOR_SENSITIVE,
+      },
+      newUser.id,
+      session,
+    )
+
+    return serialized
+  }
+
   public async register(
     credentials: RegisterCredentialsDTO,
   ): Promise<{ user: IUser; serialized: string }> {
@@ -50,20 +70,7 @@ export class AuthService {
     try {
       const newUser = await this.userService.create(credentials, session)
 
-      await this.emailService.sendVerifyEmailToUser(newUser[0])
-
-      const token = this.tokenService.generateToken(newUser[0].id, 60 * 60 * 24 * 30)
-
-      const serialized = this._getTokenSerialized(token)
-
-      await this.settingService.create(
-        {
-          aiName: 'Kanway',
-          aiConfirmationType: AiConfirmationTypeEnum.ONLY_FOR_SENSITIVE,
-        },
-        newUser[0].id,
-        session,
-      )
+      const serialized = await this.initNewUser(newUser[0], session)
 
       await session.commitTransaction()
 
@@ -80,17 +87,63 @@ export class AuthService {
     }
   }
 
-  public async yandex(payload: YandexAuthDTO): Promise<void> {
-    const userInfoResponse = await fetch('https://login.yandex.ru/info?format=json', {
-      headers: {
-        Authorization: `OAuth ${payload.access_token}`,
-      },
-    })
-    const userInfo = await userInfoResponse.json()
+  public async yandex(payload: YandexAuthDTO) {
+    const session = await mongoose.startSession()
+    session.startTransaction()
 
-    console.log(userInfo) /*
+    try {
+      const userInfoResponse = await fetch('https://login.yandex.ru/info?format=json', {
+        headers: {
+          Authorization: `OAuth ${payload.access_token}`,
+        },
+      })
+      const userInfo = (await userInfoResponse.json()) as YandexUser
 
-    const user = await this.userService.getByEmail(userInfo.email)*/
+      const user = await this.userService.getByEmail(userInfo.default_email)
+
+      if (!user) {
+        const newUser = await this.userService.createYandexUser({
+          email: userInfo.default_email,
+          clientId: userInfo.client_id,
+          timezone: payload.timezone,
+        })
+
+        const serialized = await this.initNewUser(newUser[0], session)
+
+        await session.commitTransaction()
+
+        return {
+          user: newUser[0],
+          serialized,
+        }
+      } else {
+        if (!user.yandexClientId) {
+          await this.userService.edit(
+            { yandexClientId: userInfo.client_id },
+            { id: user.id.toString() },
+            undefined,
+            session,
+          )
+        }
+
+        const token = this.tokenService.generateToken(user.id, 60 * 60 * 24 * 30)
+
+        const serialized = this._getTokenSerialized(token)
+
+        await session.commitTransaction()
+
+        return {
+          user,
+          serialized,
+        }
+      }
+    } catch (error) {
+      await session.abortTransaction()
+
+      throw error
+    } finally {
+      session.endSession()
+    }
   }
 
   public async checkEmailUnique(email: string): Promise<boolean> {

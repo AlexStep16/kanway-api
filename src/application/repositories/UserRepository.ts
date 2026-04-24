@@ -5,7 +5,12 @@ import { IUserCriteria } from '../interfaces/criterias/IUserCriteria.js'
 import { FilterQuery, Types } from 'mongoose'
 import { IUser } from '@/domain/entities/IUser.js'
 
-export default class UserRepository extends BaseRepository<IUserRaw, IUser, IUserCriteria> {
+export default class UserRepository extends BaseRepository<
+  IUserRaw,
+  IUser,
+  IUserCriteria,
+  Partial<IUser>
+> {
   constructor() {
     super(UserModel)
   }

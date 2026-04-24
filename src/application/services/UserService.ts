@@ -11,7 +11,6 @@ import { IUserCriteria } from '@interfaces/criterias/IUserCriteria.js'
 import UserRepository from '@repositories/UserRepository.js'
 import { SALT_ROUNDS } from '@constants/SALT_ROUNDS.js'
 import { ICreateUserService } from '@traits/ICreateUserService.js'
-import { SystemFields } from '@infrastructure/types/SystemFields.js'
 import { SubscriptionPlanEnum } from '@domain/enums/SubscriptionPlanEnum.js'
 
 import { ClientSession, Types, UpdateWriteOpResult } from 'mongoose'
@@ -21,6 +20,7 @@ import { EmailService } from '@/infrastructure/services/EmailService.js'
 import { getCreditsUsed } from '@/utils/getCreditsUsed.js'
 import { Redis } from 'ioredis'
 import { ModelsEnum } from '@/domain/enums/ModelsEnum.js'
+import { YandexUserDTO } from '../dtos/YandexUserDTO.js'
 
 const redis = new Redis()
 
@@ -37,18 +37,25 @@ export class UserService implements ICreateUserService<IUser, RegisterCredential
     credentials: RegisterCredentialsDTO,
     session?: ClientSession,
   ): Promise<IUser[]> {
-    const user: Omit<IUser, SystemFields> = {
+    const user: Partial<IUser> = {
       email: credentials.email.toLowerCase(),
       passwordHash: credentials.password,
       timezone: credentials.timezone,
       subscriptionId: SubscriptionPlanEnum.Basic,
-      isConfirmed: false,
       avatarColor: BASE_COLORS[Math.floor(Math.random() * 7)],
-      paymentRetriesCount: 0,
-      credits: 20,
-      isTipsCompleted: false,
-      audioTokensUsed: 0,
-      paidCredits: 0,
+    }
+
+    const result = await this.repository.create(user, session)
+
+    return [toServerCaseKeys(result)]
+  }
+
+  public async createYandexUser(data: YandexUserDTO, session?: ClientSession): Promise<IUser[]> {
+    const user: Partial<IUser> = {
+      email: data.email.toLowerCase(),
+      timezone: data.timezone,
+      subscriptionId: SubscriptionPlanEnum.Basic,
+      avatarColor: BASE_COLORS[Math.floor(Math.random() * 7)],
     }
 
     const result = await this.repository.create(user, session)

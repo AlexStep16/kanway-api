@@ -78,6 +78,9 @@ export enum ErrorMessages {
   TIMEZONE_REQUIRED = 'Требуется часовой пояс.',
   INVALID_TIMEZONE = 'Неверный часовой пояс.',
 
+  YANDEX_CLIENT_ID_REQUIRED = 'Требуется идентификатор клиента Яндекс.',
+  INVALID_YANDEX_CLIENT_ID_FORMAT = 'Неверный формат идентификатора клиента Яндекс.',
+
   SETTING_AI_NAME_TOO_SHORT = 'Название ИИ должно содержать не менее 1 символа.',
   SETTING_AI_NAME_TOO_LONG = 'Название ИИ не должно превышать 50 символов.',
   SETTING_AI_CONFIRMATION_TYPE_REQUIRED = 'Требуется тип подтверждения ИИ.',

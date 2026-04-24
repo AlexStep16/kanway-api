@@ -13,6 +13,7 @@ export const UserDTOSchema = z.object({
     error: (iss) =>
       iss.input === undefined ? ErrorMessages.EMAIL_REQUIRED : ErrorMessages.INVALID_EMAIL_FORMAT,
   }),
+  yandexClientId: z.string().optional(),
   password: z
     .string({
       error: (iss) =>
