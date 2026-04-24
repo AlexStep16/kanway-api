@@ -11,6 +11,7 @@ import { AiConfirmationTypeEnum } from '@/domain/enums/AiConfirmationTypeEnum.js
 import { TokenTypesEnum } from '@/domain/enums/TokenTypesEnum.js'
 import { ErrorMessages } from '@/enums/ErrorMessages.js'
 import { AppError } from '@/domain/errors/AppError.js'
+import { YandexAuthDTO } from '../dtos/YandexAuthDTO.js'
 
 export class AuthService {
   private userService: UserService
@@ -79,10 +80,10 @@ export class AuthService {
     }
   }
 
-  public async yandex(token: string) {
+  public async yandex(payload: YandexAuthDTO): Promise<void> {
     const userInfoResponse = await fetch('https://login.yandex.ru/info?format=json', {
       headers: {
-        Authorization: `OAuth ${token}`,
+        Authorization: `OAuth ${payload.access_token}`,
       },
     })
     const userInfo = await userInfoResponse.json()

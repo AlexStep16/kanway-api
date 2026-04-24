@@ -3,6 +3,7 @@ import { RegisterCredentialsDTO } from '@/application/dtos/RegisterCredentialsDT
 import { AuthService } from '@application/services/AuthService.js'
 import { NextFunction, Request, Response } from 'express'
 import { LoginCredentialsDTO } from '@/application/dtos/LoginCredentialsDTO.js'
+import { YandexAuthDTO } from '@/application/dtos/YandexAuthDTO.js'
 
 export default class AuthController {
   protected service: AuthService
@@ -41,7 +42,7 @@ export default class AuthController {
 
   public async yandex(req: Request, res: Response, next: NextFunction) {
     try {
-      await this.service.yandex(req.body.token)
+      await this.service.yandex(req.body as YandexAuthDTO)
 
       /*res.setHeader('Set-Cookie', serialized)*/
 
