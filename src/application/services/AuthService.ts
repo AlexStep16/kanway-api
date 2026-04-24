@@ -42,8 +42,14 @@ export class AuthService {
     })
   }
 
-  public async initNewUser(newUser: IUser, session?: mongoose.ClientSession): Promise<string> {
-    await this.emailService.sendVerifyEmailToUser(newUser)
+  public async initNewUser(
+    newUser: IUser,
+    session?: mongoose.ClientSession,
+    confirmationNeeded = true,
+  ): Promise<string> {
+    if (confirmationNeeded) {
+      await this.emailService.sendVerifyEmailToUser(newUser)
+    }
 
     const token = this.tokenService.generateToken(newUser.id, 60 * 60 * 24 * 30)
 
@@ -98,7 +104,7 @@ export class AuthService {
         },
       })
       const userInfo = (await userInfoResponse.json()) as YandexUser
-      console.log(userInfo)
+
       const user = await this.userService.getByEmail(userInfo.default_email)
 
       if (!user) {
@@ -108,7 +114,7 @@ export class AuthService {
           timezone: payload.timezone,
         })
 
-        const serialized = await this.initNewUser(newUser[0], session)
+        const serialized = await this.initNewUser(newUser[0], session, false)
 
         await session.commitTransaction()
 

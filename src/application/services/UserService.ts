@@ -54,6 +54,7 @@ export class UserService implements ICreateUserService<IUser, RegisterCredential
     const user: Partial<IUser> = {
       email: data.email.toLowerCase(),
       timezone: data.timezone,
+      isConfirmed: true,
       subscriptionId: SubscriptionPlanEnum.Basic,
       avatarColor: BASE_COLORS[Math.floor(Math.random() * 7)],
     }
