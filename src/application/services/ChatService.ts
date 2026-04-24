@@ -226,6 +226,16 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       throw new AppError(ErrorMessages.CREDITS_LOW, 403)
     }
 
+    if (
+      data.modelType === ModelsEnum.KANWAY_PRO &&
+      user.subscriptionId === SubscriptionPlanEnum.Basic
+    ) {
+      throw new AppError(
+        'Модель Kanway Pro доступна только для пользователей с платной подпиской.',
+        403,
+      )
+    }
+
     if (user.audioTokensUsed >= 2500) {
       chargedAudioTokens = await this.userService.chargeAudioUsage(
         user.audioTokensUsed,

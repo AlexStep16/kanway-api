@@ -45,7 +45,7 @@ export class UserService implements ICreateUserService<IUser, RegisterCredential
       isConfirmed: false,
       avatarColor: BASE_COLORS[Math.floor(Math.random() * 7)],
       paymentRetriesCount: 0,
-      credits: 50,
+      credits: 20,
       isTipsCompleted: false,
       audioTokensUsed: 0,
       paidCredits: 0,
