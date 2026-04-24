@@ -98,7 +98,7 @@ export class AuthService {
         },
       })
       const userInfo = (await userInfoResponse.json()) as YandexUser
-
+      console.log(userInfo)
       const user = await this.userService.getByEmail(userInfo.default_email)
 
       if (!user) {
