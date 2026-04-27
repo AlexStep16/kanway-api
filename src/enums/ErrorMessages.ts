@@ -72,6 +72,8 @@ export enum ErrorMessages {
 
   USER_ID_INVALID = 'Неверный идентификатор пользователя.',
   USERNAME_TOO_SHORT = 'Имя пользователя должно содержать не менее 1 символа.',
+  USERNAME_INVALID = 'Неверное имя пользователя.',
+  USERNAME_REQUIRED = 'Требуется имя пользователя.',
   USERNAME_TOO_LONG = 'Имя пользователя не должно превышать 50 символов.',
   USER_COLOR_REQUIRED = 'Требуется цвет пользователя.',
   USER_ALREADY_CONFIRMED = 'Пользователь уже подтвержден.',
@@ -137,7 +139,9 @@ export enum ErrorMessages {
 
   OTP_EXPIRED = 'Срок действия OTP кода истек.',
   OTP_INVALID = 'Неверный OTP код.',
-  TOO_MANY_ATTEMPTS = 'Вы исчерпали лимит попыток. Запросите код заново.',
+  OTP_TOO_MANY_ATTEMPTS = 'Вы исчерпали лимит попыток. Запросите код заново.',
+
+  TOO_MANY_ATTEMPTS = 'Слишком много попыток. Попробуйте позже.',
 
   SUBSCRIPTION_PLAN_NOT_FOUND = 'План подписки не найден. Обратитесь в поддержку.',
   SUBSCRIPTION_PLAN_INVALID = 'Неверный план подписки.',

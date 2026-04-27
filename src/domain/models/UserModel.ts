@@ -29,6 +29,10 @@ export const UserSchema = new Schema<IUserRaw, IUserRawStatics, IUserRawMethods>
       type: String,
       select: false,
     },
+    is_initialized: {
+      type: Boolean,
+      default: false,
+    },
     role: {
       type: String,
       enum: ['user', 'admin'],

@@ -171,6 +171,7 @@ export function initializeDependencies() {
     categoryService,
     taskService,
     limitService,
+    userService,
   )
   /* WORKSPACE SERVICES END */
 
@@ -310,7 +311,7 @@ export function initializeDependencies() {
     generalToolsExecutor,
   )
 
-  const authController = new AuthController(authService)
+  const authController = new AuthController(authService, userService)
   const workspaceController = new WorkspaceController(workspaceService)
   const boardController = new BoardController(boardService)
   const categoryController = new CategoryController(categoryService)

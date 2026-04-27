@@ -29,6 +29,8 @@ import { LimitService } from './LimitService.js'
 import { OperationLogStatusesEnum } from '@/domain/enums/OperationLogStatusesEnum.js'
 import { LexoRank } from 'lexorank'
 import { WorkspaceMoveDTO } from '../dtos/WorkspaceMoveDTO.js'
+import { WelcomeDTO } from '../dtos/WelcomeDTO.js'
+import { UserService } from './UserService.js'
 
 const MAX_RETRIES = 3
 
@@ -46,6 +48,7 @@ export class WorkspaceService extends BaseService<
   protected categoryService: CategoryService
   protected taskService: TaskService
   protected limitService: LimitService
+  protected userService: UserService
 
   constructor(
     workspaceRepository: WorkspaceRepository,
@@ -55,6 +58,7 @@ export class WorkspaceService extends BaseService<
     categoryService: CategoryService,
     taskService: TaskService,
     limitService: LimitService,
+    userService: UserService,
   ) {
     super(workspaceRepository)
 
@@ -65,6 +69,7 @@ export class WorkspaceService extends BaseService<
     this.categoryService = categoryService
     this.taskService = taskService
     this.limitService = limitService
+    this.userService = userService
   }
 
   private async _retryExecutor<T>(executor: (session: ClientSession) => Promise<T>): Promise<T> {
@@ -1086,5 +1091,42 @@ export class WorkspaceService extends BaseService<
     await this._prepareMainEditFields(rest, workspacePayload, workspacesToUpdate, isDryRun)
 
     return workspacePayload
+  }
+
+  public async welcome(payload: WelcomeDTO, user: IUser): Promise<IWorkspace> {
+    const session = await mongoose.startSession()
+
+    session.startTransaction()
+
+    const { workspaceName, workspaceColor, username } = payload
+
+    try {
+      const newWorkspace = await this.create(
+        {
+          name: workspaceName,
+          color: workspaceColor,
+        },
+        user,
+        session,
+      )
+
+      await this.userService.edit(
+        {
+          username,
+        },
+        { id: user.id.toString() },
+        user,
+        session,
+      )
+
+      session.commitTransaction()
+
+      return newWorkspace.data[0]
+    } catch (error) {
+      await session.abortTransaction()
+      throw error
+    } finally {
+      session.endSession()
+    }
   }
 }

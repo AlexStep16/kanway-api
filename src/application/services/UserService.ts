@@ -39,7 +39,6 @@ export class UserService implements ICreateUserService<IUser, RegisterCredential
   ): Promise<IUser[]> {
     const user: Partial<IUser> = {
       email: credentials.email.toLowerCase(),
-      passwordHash: credentials.password,
       timezone: credentials.timezone,
       subscriptionId: SubscriptionPlanEnum.Basic,
       avatarColor: BASE_COLORS[Math.floor(Math.random() * 7)],
@@ -56,7 +55,7 @@ export class UserService implements ICreateUserService<IUser, RegisterCredential
       timezone: data.timezone,
       yandexClientId: data.clientId,
       isConfirmed: true,
-
+      username: data.username,
       subscriptionId: SubscriptionPlanEnum.Basic,
       avatarColor: BASE_COLORS[Math.floor(Math.random() * 7)],
     }
@@ -278,7 +277,7 @@ export class UserService implements ICreateUserService<IUser, RegisterCredential
     const attempts = await redis.get(attemptsKey)
     if (attempts && parseInt(attempts) >= MAX_ATTEMPTS) {
       await redis.del(key)
-      throw new AppError(ErrorMessages.TOO_MANY_ATTEMPTS, 429)
+      throw new AppError(ErrorMessages.OTP_TOO_MANY_ATTEMPTS, 429)
     }
 
     const redisCode = await redis.get(key)
@@ -293,7 +292,7 @@ export class UserService implements ICreateUserService<IUser, RegisterCredential
 
       if (currentAttempts >= MAX_ATTEMPTS) {
         await redis.del(key)
-        throw new AppError(ErrorMessages.TOO_MANY_ATTEMPTS, 429)
+        throw new AppError(ErrorMessages.OTP_TOO_MANY_ATTEMPTS, 429)
       }
 
       throw new AppError(ErrorMessages.OTP_INVALID, 400)
@@ -309,5 +308,36 @@ export class UserService implements ICreateUserService<IUser, RegisterCredential
     await redis.del(key)
 
     return user
+  }
+
+  public async checkEmailExists(email: string, ip?: string): Promise<boolean> {
+    const normalizedEmail = email.toLowerCase().trim()
+
+    let limitKey = `auth_limit:${normalizedEmail}`
+    if (ip) {
+      limitKey = `auth_limit:${normalizedEmail}:${ip}`
+    }
+    const MAX_ATTEMPTS = 5
+    const WINDOW_SECONDS = 60
+
+    const currentAttempts = await redis.incr(limitKey)
+
+    if (currentAttempts === 1) {
+      await redis.expire(limitKey, WINDOW_SECONDS)
+    }
+
+    if (currentAttempts > MAX_ATTEMPTS) {
+      const ttl = await redis.ttl(limitKey)
+      throw new AppError(
+        `Слишком много попыток. Попробуйте через ${ttl > 0 ? ttl : WINDOW_SECONDS} сек.`,
+        429,
+      )
+    }
+
+    const count = await this.repository.getCount({
+      email: normalizedEmail,
+    })
+
+    return count > 0
   }
 }

@@ -4,12 +4,15 @@ import { AuthService } from '@application/services/AuthService.js'
 import { NextFunction, Request, Response } from 'express'
 import { LoginCredentialsDTO } from '@/application/dtos/LoginCredentialsDTO.js'
 import { YandexAuthDTO } from '@/application/dtos/YandexAuthDTO.js'
+import { UserService } from '@/application/services/UserService.js'
 
 export default class AuthController {
   protected service: AuthService
+  protected userService: UserService
 
-  constructor(serviceInstance: AuthService) {
+  constructor(serviceInstance: AuthService, userServiceInstance: UserService) {
     this.service = serviceInstance
+    this.userService = userServiceInstance
   }
 
   public async register(req: Request, res: Response, next: NextFunction) {
@@ -121,6 +124,18 @@ export default class AuthController {
       await this.service.verifyToken(token)
 
       return res.status(200).json(new SuccessResponse(null))
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  public async checkEmailExists(req: Request, res: Response, next: NextFunction) {
+    try {
+      const email = req.body.email as string
+
+      const exists = await this.userService.checkEmailExists(email, req.ip)
+
+      return res.status(200).json(new SuccessResponse(exists))
     } catch (error) {
       next(error)
     }

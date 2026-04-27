@@ -48,7 +48,7 @@ export class AuthService {
     confirmationNeeded = true,
   ): Promise<string> {
     if (confirmationNeeded) {
-      await this.emailService.sendVerifyEmailToUser(newUser)
+      //await this.emailService.sendVerifyEmailToUser(newUser)
     }
 
     const token = this.tokenService.generateToken(newUser.id, 60 * 60 * 24 * 30)
@@ -109,6 +109,7 @@ export class AuthService {
 
       if (!user) {
         const newUser = await this.userService.createYandexUser({
+          username: userInfo.display_name,
           email: userInfo.default_email,
           clientId: userInfo.client_id,
           timezone: payload.timezone,

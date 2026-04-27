@@ -12,6 +12,10 @@ export const YandexUserSchema = z.object({
         ? ErrorMessages.YANDEX_CLIENT_ID_REQUIRED
         : ErrorMessages.INVALID_YANDEX_CLIENT_ID_FORMAT,
   }),
+  username: z.string({
+    error: (iss) =>
+      iss.input === undefined ? ErrorMessages.USERNAME_REQUIRED : ErrorMessages.USERNAME_INVALID,
+  }),
   timezone: z.string({
     error: (iss) =>
       iss.input === undefined ? ErrorMessages.TIMEZONE_REQUIRED : ErrorMessages.INVALID_TIMEZONE,

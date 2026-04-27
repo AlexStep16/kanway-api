@@ -6,6 +6,7 @@ import { LoginCredentialsSchema } from '@/application/dtos/LoginCredentialsDTO.j
 import { PasswordRecoveryLinkSchema } from '@/application/dtos/PasswordRecoveryLinkDTO.js'
 import { TokenWithTypePayloadSchemaDTO } from '@/application/dtos/TokenWithTypePayloadDTO.js'
 import { emailLimiter } from '@/limiters.js'
+import { CheckEmailExistsSchemaDTO } from '@/application/dtos/CheckEmailExistsDTO.js'
 
 export default (controller: AuthController): Router => {
   const router = express.Router()
@@ -41,6 +42,11 @@ export default (controller: AuthController): Router => {
     '/verify/token',
     validationMiddleware(TokenWithTypePayloadSchemaDTO),
     controller.validateToken.bind(controller),
+  )
+  router.post(
+    '/check-email',
+    validationMiddleware(CheckEmailExistsSchemaDTO),
+    controller.checkEmailExists.bind(controller),
   )
   router.post('/verify/token', controller.verifyToken.bind(controller))
   router.post('/password/recovery', controller.changeUserPassword.bind(controller))
