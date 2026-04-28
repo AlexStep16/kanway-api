@@ -74,8 +74,6 @@ export class EmailService {
         },
       }
 
-      return
-
       const response = await fetch(
         'https://go2.unisender.ru/ru/transactional/api/v1/email/send.json',
         {

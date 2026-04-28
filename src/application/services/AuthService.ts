@@ -118,7 +118,7 @@ export class AuthService {
       })
 
       const accessTokenData = await accessTokenResponse.json()
-      console.log(accessTokenData)
+
       if (!accessTokenData.access_token) {
         throw new AppError(ErrorMessages.YANDEX_AUTH_FAILED, 400)
       }
