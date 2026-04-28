@@ -100,19 +100,21 @@ export class AuthService {
     session.startTransaction()
 
     try {
+      const params = new URLSearchParams()
+      params.append('grant_type', 'authorization_code')
+      params.append('code', payload.code)
+      params.append('client_id', process.env.YANDEX_CLIENT_ID || '')
+      params.append('client_secret', process.env.YANDEX_CLIENT_SECRET || '')
+      if (payload.codeVerifier) params.append('code_verifier', payload.codeVerifier)
+      if (payload.deviceId) params.append('device_id', payload.deviceId)
+      params.append('redirect_uri', 'https://kanway.ru/yandex/suggest/token')
+
       const accessTokenResponse = await fetch('https://oauth.yandex.ru/token', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
         },
-        body: JSON.stringify({
-          grant_type: 'authorization_code',
-          code: payload.code,
-          code_verifier: payload.codeVerifier,
-          client_id: process.env.YANDEX_CLIENT_ID,
-          device_id: payload.deviceId,
-          redirect_uri: 'https://kanway.ru/yandex/suggest/token',
-        }),
+        body: params.toString(),
       })
 
       const accessTokenData = await accessTokenResponse.json()
@@ -181,19 +183,21 @@ export class AuthService {
     session.startTransaction()
 
     try {
+      const params = new URLSearchParams()
+      params.append('grant_type', 'authorization_code')
+      params.append('code', payload.code)
+      params.append('client_id', process.env.VK_CLIENT_ID || '')
+      params.append('client_secret', process.env.VK_CLIENT_SECRET || '')
+      if (payload.codeVerifier) params.append('code_verifier', payload.codeVerifier)
+      if (payload.deviceId) params.append('device_id', payload.deviceId)
+      params.append('redirect_uri', 'https://kanway.ru/vk/suggest/token')
+
       const accessTokenResponse = await fetch('https://id.vk.ru/oauth2/auth', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
         },
-        body: JSON.stringify({
-          grant_type: 'authorization_code',
-          code: payload.code,
-          code_verifier: payload.codeVerifier,
-          client_id: process.env.VK_CLIENT_ID,
-          device_id: payload.deviceId,
-          redirect_uri: 'https://kanway.ru/vk/suggest/token',
-        }),
+        body: params.toString(),
       })
 
       const accessTokenData = await accessTokenResponse.json()
