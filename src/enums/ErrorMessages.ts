@@ -82,6 +82,11 @@ export enum ErrorMessages {
 
   YANDEX_CLIENT_ID_REQUIRED = 'Требуется идентификатор клиента Яндекс.',
   INVALID_YANDEX_CLIENT_ID_FORMAT = 'Неверный формат идентификатора клиента Яндекс.',
+  YANDEX_AUTH_FAILED = 'Аутентификация через Яндекс не удалась.',
+
+  VK_CLIENT_ID_REQUIRED = 'Требуется идентификатор клиента ВКонтакте.',
+  INVALID_VK_CLIENT_ID_FORMAT = 'Неверный формат идентификатора клиента ВКонтакте.',
+  VK_AUTH_FAILED = 'Аутентификация через ВКонтакте не удалась.',
 
   SETTING_AI_NAME_TOO_SHORT = 'Название ИИ должно содержать не менее 1 символа.',
   SETTING_AI_NAME_TOO_LONG = 'Название ИИ не должно превышать 50 символов.',

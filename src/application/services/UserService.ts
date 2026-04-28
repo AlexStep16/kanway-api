@@ -21,6 +21,7 @@ import { getCreditsUsed } from '@/utils/getCreditsUsed.js'
 import { Redis } from 'ioredis'
 import { ModelsEnum } from '@/domain/enums/ModelsEnum.js'
 import { YandexUserDTO } from '../dtos/YandexUserDTO.js'
+import { VkUserDTO } from '../dtos/VkUserDTO.js'
 
 const redis = new Redis()
 
@@ -54,6 +55,22 @@ export class UserService implements ICreateUserService<IUser, RegisterCredential
       email: data.email.toLowerCase(),
       timezone: data.timezone,
       yandexClientId: data.clientId,
+      isConfirmed: true,
+      username: data.username,
+      subscriptionId: SubscriptionPlanEnum.Basic,
+      avatarColor: BASE_COLORS[Math.floor(Math.random() * 7)],
+    }
+
+    const result = await this.repository.create(user, session)
+
+    return [toServerCaseKeys(result)]
+  }
+
+  public async createVkUser(data: VkUserDTO, session?: ClientSession): Promise<IUser[]> {
+    const user: Partial<IUser> = {
+      email: data.email.toLowerCase(),
+      timezone: data.timezone,
+      vkClientId: data.clientId,
       isConfirmed: true,
       username: data.username,
       subscriptionId: SubscriptionPlanEnum.Basic,
@@ -269,7 +286,7 @@ export class UserService implements ICreateUserService<IUser, RegisterCredential
     await this.repository.decrementFieldByCriteria({ id: userId }, 'audio_tokens_used', -tokensUsed)
   }
 
-  public async verifyOTP(code: string, email: string): Promise<IUser> {
+  public async verifyOTPEmailConfirm(code: string, email: string): Promise<IUser> {
     const key = `otp:${email}`
     const attemptsKey = `otp_attempts:${email}`
     const MAX_ATTEMPTS = 5
@@ -291,7 +308,7 @@ export class UserService implements ICreateUserService<IUser, RegisterCredential
       }
 
       if (currentAttempts >= MAX_ATTEMPTS) {
-        await redis.del(key)
+        await Promise.all([redis.del(key), redis.del(attemptsKey)])
         throw new AppError(ErrorMessages.OTP_TOO_MANY_ATTEMPTS, 429)
       }
 
@@ -305,9 +322,61 @@ export class UserService implements ICreateUserService<IUser, RegisterCredential
 
     await this.edit({ isConfirmed: true }, { id: user.id.toString() })
 
-    await redis.del(key)
+    await Promise.all([redis.del(key), redis.del(attemptsKey)])
 
     return user
+  }
+
+  public async verifyOTPLogin(code: string, email: string): Promise<IUser> {
+    const key = `auth:otp:${email}`
+    const attemptsKey = `auth:otp_attempts:${email}`
+    const MAX_ATTEMPTS = 5
+
+    const attempts = await redis.get(attemptsKey)
+    if (attempts && parseInt(attempts) >= MAX_ATTEMPTS) {
+      await redis.del(key)
+      throw new AppError(ErrorMessages.OTP_TOO_MANY_ATTEMPTS, 429)
+    }
+
+    const redisObj = await redis.get(key)
+    const redisData = redisObj ? JSON.parse(redisObj) : null
+
+    if (!redisData) throw new AppError(ErrorMessages.OTP_EXPIRED, 410)
+    const token = redisData.token
+    const magicKey = `auth:magic:${token}`
+
+    if (redisData.code !== code) {
+      const currentAttempts = await redis.incr(attemptsKey)
+
+      if (currentAttempts === 1) {
+        await redis.expire(attemptsKey, 600)
+      }
+
+      if (currentAttempts >= MAX_ATTEMPTS) {
+        await Promise.all([redis.del(key), redis.del(magicKey)])
+        throw new AppError(ErrorMessages.OTP_TOO_MANY_ATTEMPTS, 429)
+      }
+
+      throw new AppError(ErrorMessages.OTP_INVALID, 400)
+    }
+
+    const user = await this.getByEmail(email)
+
+    if (!user) throw new AppError(ErrorMessages.USER_NOT_FOUND, 404)
+
+    await Promise.all([redis.del(key), redis.del(attemptsKey), redis.del(magicKey)])
+
+    return user
+  }
+
+  public async sendMagicLink(email: string): Promise<void> {
+    const user = await this.getByEmail(email)
+
+    if (!user) {
+      throw new AppError(ErrorMessages.USER_NOT_FOUND, 404)
+    }
+
+    return await this.emailService.sendMagicLink(user)
   }
 
   public async checkEmailExists(email: string, ip?: string): Promise<boolean> {

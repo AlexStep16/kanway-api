@@ -22,6 +22,7 @@ export interface IUser {
   isTipsCompleted?: boolean
   phone?: string
   yandexClientId?: string
+  vkClientId?: string
   paymentMethodId?: string | null
   paymentRetriesCount: number
   pendingChangePlan?: SubscriptionPlanEnum | null

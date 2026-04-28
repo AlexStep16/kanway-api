@@ -13,6 +13,8 @@ import { ErrorMessages } from '@/enums/ErrorMessages.js'
 import { AppError } from '@/domain/errors/AppError.js'
 import { YandexAuthDTO } from '../dtos/YandexAuthDTO.js'
 import { YandexUser } from '../interfaces/YandexUser.js'
+import { VkAuthDTO } from '../dtos/VkAuthDTO.js'
+import { VkUser } from '../interfaces/VkUser.js'
 
 export class AuthService {
   private userService: UserService
@@ -98,9 +100,30 @@ export class AuthService {
     session.startTransaction()
 
     try {
+      const accessTokenResponse = await fetch('https://oauth.yandex.ru/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: JSON.stringify({
+          grant_type: 'authorization_code',
+          code: payload.code,
+          code_verifier: payload.codeVerifier,
+          client_id: process.env.YANDEX_CLIENT_ID,
+          device_id: payload.deviceId,
+          redirect_uri: 'https://kanway.ru/yandex/suggest/token',
+        }),
+      })
+
+      const accessTokenData = await accessTokenResponse.json()
+
+      if (!accessTokenData.access_token) {
+        throw new AppError(ErrorMessages.YANDEX_AUTH_FAILED, 400)
+      }
+
       const userInfoResponse = await fetch('https://login.yandex.ru/info?format=json', {
         headers: {
-          Authorization: `OAuth ${payload.access_token}`,
+          Authorization: `OAuth ${accessTokenData.access_token}`,
         },
       })
       const userInfo = (await userInfoResponse.json()) as YandexUser
@@ -153,6 +176,92 @@ export class AuthService {
     }
   }
 
+  public async vk(payload: VkAuthDTO) {
+    const session = await mongoose.startSession()
+    session.startTransaction()
+
+    try {
+      const accessTokenResponse = await fetch('https://id.vk.ru/oauth2/auth', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: JSON.stringify({
+          grant_type: 'authorization_code',
+          code: payload.code,
+          code_verifier: payload.codeVerifier,
+          client_id: process.env.VK_CLIENT_ID,
+          device_id: payload.deviceId,
+          redirect_uri: 'https://kanway.ru/vk/suggest/token',
+        }),
+      })
+
+      const accessTokenData = await accessTokenResponse.json()
+
+      if (!accessTokenData.access_token) {
+        throw new AppError(ErrorMessages.VK_AUTH_FAILED, 400)
+      }
+
+      const userInfoResponse = await fetch('https://id.vk.ru/oauth2/auth', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: JSON.stringify({
+          client_id: process.env.VK_CLIENT_ID,
+          id_token: accessTokenData.access_token,
+        }),
+      })
+      const userInfo = (await userInfoResponse.json()) as VkUser
+
+      const user = await this.userService.getByEmail(userInfo.email)
+
+      if (!user) {
+        const newUser = await this.userService.createVkUser({
+          username: userInfo.first_name + ' ' + userInfo.last_name,
+          email: userInfo.email,
+          clientId: userInfo.user_id,
+          timezone: payload.timezone,
+        })
+
+        const serialized = await this.initNewUser(newUser[0], session, false)
+
+        await session.commitTransaction()
+
+        return {
+          user: newUser[0],
+          serialized,
+        }
+      } else {
+        if (!user.vkClientId) {
+          await this.userService.edit(
+            { vkClientId: userInfo.user_id },
+            { id: user.id.toString() },
+            undefined,
+            session,
+          )
+        }
+
+        const token = this.tokenService.generateToken(user.id, 60 * 60 * 24 * 30)
+
+        const serialized = this._getTokenSerialized(token)
+
+        await session.commitTransaction()
+
+        return {
+          user,
+          serialized,
+        }
+      }
+    } catch (error) {
+      await session.abortTransaction()
+
+      throw error
+    } finally {
+      session.endSession()
+    }
+  }
+
   public async checkEmailUnique(email: string): Promise<boolean> {
     const user = await this.userService.getByEmail(email)
 
@@ -163,6 +272,22 @@ export class AuthService {
     credentials: LoginCredentialsDTO,
   ): Promise<{ user: IUser; serialized: string }> {
     const user = await this.userService.validateCredentials(credentials.email, credentials.password)
+
+    const token = this.tokenService.generateToken(user.id, 60 * 60 * 24 * 30)
+
+    const serialized = this._getTokenSerialized(token)
+
+    return {
+      user,
+      serialized,
+    }
+  }
+
+  public async verifyOTPLogin(
+    code: string,
+    email: string,
+  ): Promise<{ user: IUser; serialized: string }> {
+    const user = await this.userService.verifyOTPLogin(code, email)
 
     const token = this.tokenService.generateToken(user.id, 60 * 60 * 24 * 30)
 
@@ -207,6 +332,20 @@ export class AuthService {
   }
 
   public async sendVerificationEmailByToken(token: string): Promise<void> {
+    const tokenModel = await this.tokenService.getToken(token, TokenTypesEnum.EMAIL_CONFIRMATION)
+
+    if (!tokenModel) throw new AppError(ErrorMessages.TOKEN_NOT_FOUND, 404)
+
+    const user = await this.userService.getById(tokenModel.userId!.toString())
+
+    if (!user) throw new AppError(ErrorMessages.USER_NOT_FOUND, 404)
+
+    if (user.isConfirmed) throw new AppError(ErrorMessages.USER_ALREADY_CONFIRMED, 409)
+
+    await this.emailService.sendVerifyEmailToUser(user)
+  }
+
+  public async sendMagicLink(token: string): Promise<void> {
     const tokenModel = await this.tokenService.getToken(token, TokenTypesEnum.EMAIL_CONFIRMATION)
 
     if (!tokenModel) throw new AppError(ErrorMessages.TOKEN_NOT_FOUND, 404)

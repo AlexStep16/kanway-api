@@ -33,11 +33,13 @@ export default (controller: AuthController): Router => {
     controller.sendResetPasswordEmailByToken.bind(controller),
   )
   router.post('/yandex', controller.yandex.bind(controller))
+  router.post('/vk', controller.vk.bind(controller))
   router.post(
     '/send/verify/:token',
     emailLimiter,
     controller.sendVerificationEmailByToken.bind(controller),
   )
+  router.post('/send/magic-link', emailLimiter, controller.sendMagicLink.bind(controller))
   router.post(
     '/verify/token',
     validationMiddleware(TokenWithTypePayloadSchemaDTO),
@@ -50,6 +52,7 @@ export default (controller: AuthController): Router => {
   )
   router.post('/verify/token', controller.verifyToken.bind(controller))
   router.post('/password/recovery', controller.changeUserPassword.bind(controller))
+  router.post('/verify/otp-login', controller.verifyOTPLogin.bind(controller))
 
   return router
 }

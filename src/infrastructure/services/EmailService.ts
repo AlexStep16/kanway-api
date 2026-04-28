@@ -26,8 +26,81 @@ export class EmailService {
     this.tokenService = tokenService
   }
 
+  public async sendMagicLink(user: IUser) {
+    const key = `limit:resend_magic_link:${user.email}_` + TokenTypesEnum.EMAIL_CONFIRMATION
+
+    const ttl = await redis.ttl(key)
+
+    if (ttl > 0) {
+      throw new AppError(`Слишком много запросов. Попробуйте через ${ttl} секунд(ы).`, 429)
+    }
+
+    await redis.set(key, 'locked', 'EX', SEND_INTERVAL - SLACK_TIME)
+
+    const token = this.tokenService.generateToken(user.id, 60 * 10)
+
+    const verificationUrl = `https://kanway.ru/verify-login?token=${token}`
+    const otpCode = randomInt(100000, 999999).toString()
+    console.log(otpCode)
+
+    await redis.set(`auth:otp:${user.email}`, JSON.stringify({ code: otpCode, token }), 'EX', 600)
+    await redis.set(`auth:magic:${token}`, user.id.toString(), 'EX', 600)
+
+    try {
+      const templatePath = path.resolve('email-templates/verify-login.html')
+
+      const htmlContent = await fs.promises.readFile(templatePath, 'utf8')
+
+      const inputBody = {
+        message: {
+          recipients: [
+            {
+              email: user.email,
+              substitutions: {
+                confirmation_link: verificationUrl,
+                otp_code: otpCode,
+              },
+            },
+          ],
+          body: {
+            html: htmlContent,
+            plaintext: `Код подтверждения: ${otpCode}`,
+          },
+          subject: 'Код для входа в Kanway',
+          from_email: 'noreply@kanway.ru',
+          from_name: 'Kanway',
+          track_links: 0,
+          track_read: 0,
+        },
+      }
+
+      return
+
+      const response = await fetch(
+        'https://go2.unisender.ru/ru/transactional/api/v1/email/send.json',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+            'X-API-KEY': process.env.UNISENDER_API_KEY || '',
+          },
+          body: JSON.stringify(inputBody),
+        },
+      )
+
+      const responseBody = await response.json()
+
+      if (responseBody?.status === 'error')
+        Sentry.captureException(new AppError(responseBody.message, 500))
+    } catch (err: unknown) {
+      await redis.del(key)
+      throw err
+    }
+  }
+
   public async sendVerifyEmailToUser(user: IUser) {
-    const key = `limit:resend_email:${user.email}_` + TokenTypesEnum.EMAIL_CONFIRMATION
+    const key = `limit:resend_verify_email:${user.email}_` + TokenTypesEnum.EMAIL_CONFIRMATION
 
     const ttl = await redis.ttl(key)
 

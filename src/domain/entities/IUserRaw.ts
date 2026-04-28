@@ -23,6 +23,7 @@ export interface IUserRaw {
   is_tips_completed?: boolean
   phone?: string
   yandex_client_id?: string
+  vk_client_id?: string
   payment_method_id?: string | null
   payment_retries_count: number
   pending_change_plan?: SubscriptionPlanEnum | null

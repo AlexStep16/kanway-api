@@ -96,11 +96,11 @@ export class UserController {
     }
   }
 
-  public async verifyOTP(req: Request, res: Response, next: NextFunction) {
+  public async verifyOTPEmailConfirm(req: Request, res: Response, next: NextFunction) {
     try {
       const { code } = req.body
 
-      await this.service.verifyOTP(code, req.user!.email)
+      await this.service.verifyOTPEmailConfirm(code, req.user!.email)
 
       return res.status(200).json(new SuccessResponse(null))
     } catch (error) {

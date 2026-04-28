@@ -1,4 +1,4 @@
-export interface YandexAuthDTO {
+export interface VkAuthDTO {
   code: string
   state: string
   codeVerifier: string

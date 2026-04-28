@@ -96,6 +96,9 @@ export const UserSchema = new Schema<IUserRaw, IUserRawStatics, IUserRawMethods>
     yandex_client_id: {
       type: String,
     },
+    vk_client_id: {
+      type: String,
+    },
     payment_method_id: {
       type: String,
     },
