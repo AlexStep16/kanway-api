@@ -100,7 +100,7 @@ export class AuthService {
     session.startTransaction()
 
     try {
-      const accessTokenResponse = await fetch('https://oauth.yandex.ru/', {
+      const accessTokenResponse = await fetch('https://oauth.yandex.ru/token', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
