@@ -3,7 +3,6 @@ import { AuthService } from '@application/services/AuthService.js'
 import { UserService } from '@application/services/UserService.js'
 import UserRepository from '@repositories/UserRepository.js'
 import { EmailService } from '@infrastructure/services/EmailService.js'
-import TokenRepository from '@repositories/TokenRepository.js'
 import { TokenService } from '@application/services/TokenService.js'
 import WorkspaceController from '@controllers/WorkspaceController.js'
 import { WorkspaceService } from '@application/services/WorkspaceService.js'
@@ -62,7 +61,6 @@ export function initializeDependencies() {
   const mongoClient = new MongoClient(process.env.MONGO_URL || '')
 
   const userRepository = new UserRepository()
-  const tokenRepository = new TokenRepository()
   const workspaceRepository = new WorkspaceRepository()
   const operationLogRepository = new OperationLogRepository()
   const boardRepository = new BoardRepository()
@@ -112,8 +110,8 @@ export function initializeDependencies() {
   /* SUBSCRIPTION SERVICES END */
 
   /* AUTH SERVICES START */
-  const tokenService = new TokenService(tokenRepository)
-  const emailService = new EmailService(tokenRepository, tokenService)
+  const tokenService = new TokenService()
+  const emailService = new EmailService(tokenService)
   const userService = new UserService(userRepository, emailService)
   const authService = new AuthService(userService, emailService, tokenService, settingService)
   /* AUTH SERVICES END */

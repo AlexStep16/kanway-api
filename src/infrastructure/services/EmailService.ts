@@ -1,16 +1,13 @@
-import TokenRepository from '@repositories/TokenRepository.js'
 import { TokenService } from '@application/services/TokenService.js'
-import { NotFoundError } from '@errors/NotFound.js'
-import { ErrorMessages } from '@/enums/ErrorMessages.js'
 import path from 'path'
 import * as Sentry from '@sentry/node'
 import * as fs from 'node:fs'
 import { IUser } from '@/domain/entities/IUser.js'
-import { TokenTypesEnum } from '@/domain/enums/TokenTypesEnum.js'
 import { Redis } from 'ioredis'
 import { AppError } from '@/domain/errors/AppError.js'
 import dayjs from 'dayjs'
-import { randomInt } from 'node:crypto'
+import { TokenKeysEnum } from '@/domain/enums/TokenKeysEnum.js'
+import crypto from 'crypto'
 
 const redis = new Redis()
 
@@ -18,33 +15,35 @@ const SEND_INTERVAL = 60
 const SLACK_TIME = 2
 
 export class EmailService {
-  protected tokenRepository: TokenRepository
   protected tokenService: TokenService
 
-  constructor(tokenRepository: TokenRepository, tokenService: TokenService) {
-    this.tokenRepository = tokenRepository
+  constructor(tokenService: TokenService) {
     this.tokenService = tokenService
   }
 
   public async sendMagicLink(user: IUser) {
-    const key = `limit:resend_magic_link:${user.email}_` + TokenTypesEnum.EMAIL_CONFIRMATION
+    const token = crypto.randomBytes(32).toString('hex')
 
-    const ttl = await redis.ttl(key)
+    const linkKey = `${TokenKeysEnum.LOGIN_VERIFICATION}:${token}`
+    const otpKey = `${TokenKeysEnum.LOGIN_OTP_VERIFICATION}:${user.email}`
+    const limitKey = `limit:${TokenKeysEnum.LOGIN_VERIFICATION}:${user.email}`
+
+    const ttl = await redis.ttl(limitKey)
 
     if (ttl > 0) {
       throw new AppError(`Слишком много запросов. Попробуйте через ${ttl} секунд(ы).`, 429)
     }
 
-    await redis.set(key, 'locked', 'EX', SEND_INTERVAL - SLACK_TIME)
-
-    const token = this.tokenService.generateToken(user.id, 60 * 10)
-
     const verificationUrl = `https://kanway.ru/verify-login?token=${token}`
-    const otpCode = randomInt(100000, 999999).toString()
-    console.log(otpCode)
+    const otpCode = crypto.randomInt(100000, 999999).toString()
 
-    await redis.set(`auth:otp:${user.email}`, JSON.stringify({ code: otpCode, token }), 'EX', 600)
-    await redis.set(`auth:magic:${token}`, user.id.toString(), 'EX', 600)
+    await redis
+      .multi()
+      .set(limitKey, 'locked', 'EX', SEND_INTERVAL)
+      .set(linkKey, user.id.toString(), 'EX', 600)
+      .set(otpKey, JSON.stringify({ code: otpCode, userId: user.id, token }), 'EX', 600)
+      .exec()
+    console.log(token)
 
     try {
       const templatePath = path.resolve('email-templates/verify-login.html')
@@ -74,7 +73,7 @@ export class EmailService {
         },
       }
 
-      const response = await fetch(
+      /*const response = await fetch(
         'https://go2.unisender.ru/ru/transactional/api/v1/email/send.json',
         {
           method: 'POST',
@@ -90,33 +89,35 @@ export class EmailService {
       const responseBody = await response.json()
 
       if (responseBody?.status === 'error')
-        Sentry.captureException(new AppError(responseBody.message, 500))
+        Sentry.captureException(new AppError(responseBody.message, 500))*/
     } catch (err: unknown) {
-      await redis.del(key)
+      await Promise.all([redis.del(limitKey), redis.del(otpKey), redis.del(linkKey)])
       throw err
     }
   }
 
   public async sendVerifyEmailToUser(user: IUser) {
-    const key = `limit:resend_verify_email:${user.email}_` + TokenTypesEnum.EMAIL_CONFIRMATION
+    const token = crypto.randomBytes(32).toString('hex')
 
-    const ttl = await redis.ttl(key)
+    const linkKey = `${TokenKeysEnum.EMAIL_VERIFICATION}:${token}`
+    const otpKey = `${TokenKeysEnum.EMAIL_OTP_VERIFICATION}:${user.email}`
+    const limitKey = `limit:${TokenKeysEnum.EMAIL_VERIFICATION}:${user.email}`
+
+    const ttl = await redis.ttl(limitKey)
 
     if (ttl > 0) {
       throw new AppError(`Слишком много запросов. Попробуйте через ${ttl} секунд(ы).`, 429)
     }
+    const verificationUrl = `https://kanway.ru/verify-email?token=${token}`
+    const otpCode = crypto.randomInt(100000, 999999).toString()
 
-    await redis.set(key, 'locked', 'EX', SEND_INTERVAL - SLACK_TIME)
-
-    const tokenModel = await this.tokenService.generateAndSaveConfirmationToken(user.id)
-
-    if (!tokenModel) {
-      throw new NotFoundError(ErrorMessages.TOKEN_NOT_FOUND)
-    }
-
-    const verificationUrl = `https://kanway.ru/verify-email?token=${tokenModel.token}`
-    const otpCode = randomInt(100000, 999999).toString()
-    await redis.set(`otp:${user.email}`, otpCode, 'EX', 600)
+    await redis
+      .multi()
+      .set(limitKey, 'locked', 'EX', SEND_INTERVAL)
+      .set(linkKey, user.id.toString(), 'EX', 600)
+      .set(otpKey, JSON.stringify({ code: otpCode, userId: user.id, token }), 'EX', 600)
+      .exec()
+    console.log(token)
 
     try {
       const templatePath = path.resolve('email-templates/verify-email.html')
@@ -146,7 +147,7 @@ export class EmailService {
         },
       }
 
-      const response = await fetch(
+      /*const response = await fetch(
         'https://go2.unisender.ru/ru/transactional/api/v1/email/send.json',
         {
           method: 'POST',
@@ -162,31 +163,36 @@ export class EmailService {
       const responseBody = await response.json()
 
       if (responseBody?.status === 'error')
-        Sentry.captureException(new AppError(responseBody.message, 500))
+        Sentry.captureException(new AppError(responseBody.message, 500))*/
     } catch (err: unknown) {
-      await redis.del(key)
+      await Promise.all([redis.del(limitKey), redis.del(linkKey), redis.del(otpKey)])
+
       throw err
     }
   }
 
   public async sendPasswordRecoveryEmailToUser(user: IUser) {
-    const key = `limit:resend_email:${user.email}_` + TokenTypesEnum.RESET_PASSWORD
+    const token = crypto.randomBytes(32).toString('hex')
 
-    const ttl = await redis.ttl(key)
+    const linkKey = `${TokenKeysEnum.PASSWORD_RECOVERY}:${token}`
+    const limitKey = `limit:${TokenKeysEnum.PASSWORD_RECOVERY}:${user.email}`
+
+    const ttl = await redis.ttl(limitKey)
 
     if (ttl > 0) {
       throw new AppError(`Слишком много запросов. Попробуйте через ${ttl} секунд(ы).`, 429)
     }
 
-    await redis.set(key, 'locked', 'EX', SEND_INTERVAL - SLACK_TIME)
+    const recoveryUrl = `https://kanway.ru/password-recovery?token=${token}`
 
-    const tokenModel = await this.tokenService.generateAndSaveResetToken(user.id)
+    await redis
+      .multi()
+      .set(limitKey, 'locked', 'EX', SEND_INTERVAL - SLACK_TIME)
+      .set(linkKey, user.id.toString(), 'EX', 600)
+      .exec()
 
-    if (!tokenModel) {
-      throw new NotFoundError(ErrorMessages.TOKEN_NOT_FOUND)
-    }
+    console.log(token)
 
-    const recoveryUrl = `https://kanway.ru/password-recovery?token=${tokenModel.token}`
     try {
       const templatePath = path.resolve('email-templates/password-recovery.html')
 
@@ -214,7 +220,7 @@ export class EmailService {
         },
       }
 
-      const response = await fetch(
+      /*const response = await fetch(
         'https://go2.unisender.ru/ru/transactional/api/v1/email/send.json',
         {
           method: 'POST',
@@ -230,9 +236,9 @@ export class EmailService {
       const responseBody = await response.json()
 
       if (responseBody?.status === 'error')
-        Sentry.captureException(new AppError(responseBody.message, 500))
+        Sentry.captureException(new AppError(responseBody.message, 500))*/
     } catch (err: unknown) {
-      await redis.del(key)
+      await Promise.all([redis.del(limitKey), redis.del(linkKey)])
       throw err
     }
   }

@@ -68,35 +68,11 @@ export default class AuthController {
     }
   }
 
-  public async sendVerificationEmailByToken(req: Request, res: Response, next: NextFunction) {
-    try {
-      const token = req.params.token
-
-      await this.service.sendVerificationEmailByToken(token)
-
-      return res.status(200).json(new SuccessResponse(null))
-    } catch (error) {
-      next(error)
-    }
-  }
-
   public async sendResetPasswordEmail(req: Request, res: Response, next: NextFunction) {
     try {
       const email = req.body.email.toLowerCase().trim()
 
       await this.service.sendResetPasswordEmail(email)
-
-      return res.status(200).json(new SuccessResponse(null))
-    } catch (error) {
-      next(error)
-    }
-  }
-
-  public async sendResetPasswordEmailByToken(req: Request, res: Response, next: NextFunction) {
-    try {
-      const token = req.params.token
-
-      await this.service.sendResetPasswordEmailByToken(token)
 
       return res.status(200).json(new SuccessResponse(null))
     } catch (error) {
@@ -118,23 +94,11 @@ export default class AuthController {
     }
   }
 
-  public async validateToken(req: Request, res: Response, next: NextFunction) {
-    try {
-      const { token, type } = req.body
-
-      await this.service.validateToken(token, type)
-
-      return res.status(200).json(new SuccessResponse(null))
-    } catch (error) {
-      next(error)
-    }
-  }
-
-  public async verifyToken(req: Request, res: Response, next: NextFunction) {
+  public async validateRecoveryToken(req: Request, res: Response, next: NextFunction) {
     try {
       const { token } = req.body
 
-      await this.service.verifyToken(token)
+      await this.service.validateRecoveryToken(token)
 
       return res.status(200).json(new SuccessResponse(null))
     } catch (error) {
@@ -154,15 +118,55 @@ export default class AuthController {
     }
   }
 
+  public async verifyLinkEmail(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { token } = req.body
+
+      const { serialized } = await this.service.verifyLinkEmail(token)
+
+      res.setHeader('Set-Cookie', serialized)
+
+      return res.status(200).json(new SuccessResponse(null))
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  public async verifyLinkLogin(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { token } = req.body
+
+      const { serialized } = await this.service.verifyLinkLogin(token)
+
+      res.setHeader('Set-Cookie', serialized)
+
+      return res.status(200).json(new SuccessResponse(null))
+    } catch (error) {
+      next(error)
+    }
+  }
+
   public async verifyOTPLogin(req: Request, res: Response, next: NextFunction) {
     try {
       const { code, email } = req.body
 
-      const { user, serialized } = await this.service.verifyOTPLogin(code, email)
+      const { serialized } = await this.service.verifyOTPLogin(code, email)
 
       res.setHeader('Set-Cookie', serialized)
 
-      return res.status(200).json(new SuccessResponse(user))
+      return res.status(200).json(new SuccessResponse(null))
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  public async verifyOTPEmail(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { code } = req.body
+
+      await this.userService.verifyOTPEmail(code, req.user!.email)
+
+      return res.status(200).json(new SuccessResponse(null))
     } catch (error) {
       next(error)
     }
@@ -172,7 +176,7 @@ export default class AuthController {
     try {
       const { email } = req.body
 
-      await this.userService.sendMagicLink(email)
+      await this.service.sendMagicLink(email)
 
       return res.status(200).json(new SuccessResponse(null))
     } catch (error) {

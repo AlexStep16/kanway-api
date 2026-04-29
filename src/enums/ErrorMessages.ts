@@ -10,8 +10,6 @@ export enum ErrorMessages {
   PASSWORD_TOO_LONG = 'Пароль не должен превышать 100 символов.',
   PASSWORD_SAME_AS_OLD = 'Новый пароль не должен совпадать с текущим.',
   INVALID_EMAIL_FORMAT = 'Неверный формат электронной почты.',
-  TOKEN_GENERATION_FAILED = 'Не удалось сгенерировать токен.',
-  TOKEN_NOT_FOUND = 'Токен не найден.',
   USER_NOT_AUTHORIZED = 'Пользователь не авторизован.',
 
   WORKSPACE_NAME_REQUIRED = 'Требуется название пространства.',
@@ -84,9 +82,10 @@ export enum ErrorMessages {
   INVALID_YANDEX_CLIENT_ID_FORMAT = 'Неверный формат идентификатора клиента Яндекс.',
   YANDEX_AUTH_FAILED = 'Аутентификация через Яндекс не удалась.',
 
-  VK_CLIENT_ID_REQUIRED = 'Требуется идентификатор клиента ВКонтакте.',
-  INVALID_VK_CLIENT_ID_FORMAT = 'Неверный формат идентификатора клиента ВКонтакте.',
-  VK_AUTH_FAILED = 'Аутентификация через ВКонтакте не удалась.',
+  VK_CLIENT_ID_REQUIRED = 'Требуется идентификатор клиента VK.',
+  INVALID_VK_CLIENT_ID_FORMAT = 'Неверный формат идентификатора клиента VK.',
+  VK_AUTH_FAILED = 'Аутентификация через VK не удалась.',
+  VK_EMAIL_REQUIRED = 'Email должен быть указан в профиле VK.',
 
   SETTING_AI_NAME_TOO_SHORT = 'Название ИИ должно содержать не менее 1 символа.',
   SETTING_AI_NAME_TOO_LONG = 'Название ИИ не должно превышать 50 символов.',
@@ -121,7 +120,7 @@ export enum ErrorMessages {
   PAYMENT_METHOD_EXPIRY_YEAR_INVALID = 'Неверный год истечения срока действия метода оплаты.',
   PAYMENT_METHOD_ID_REQUIRED = 'Требуется идентификатор метода оплаты.',
   INVALID_PAYMENT_METHOD_ID = 'Неверный идентификатор метода оплаты.',
-  PAYMENT_METHOD_PAYMENT_ID_REQUIRED = 'Требуется идентификатор платежа оплаты.',
+  PAYMENT_METHOD_PAYMENT_ID_REQUIRED = 'Требуется идентификатор платежа метода оплаты.',
 
   OPERATION_LOGS_NOT_FOUND = 'Записи журнала операций не найдены.',
   OPERATION_LOG_NOT_FOUND = 'Запись журнала операций не найдена.',
@@ -139,13 +138,12 @@ export enum ErrorMessages {
 
   TOKEN_REQUIRED = 'Требуется токен.',
   INVALID_TOKEN_FORMAT = 'Неверный формат токена.',
-  TOKEN_EXPIRED = 'Срок действия токена истек.',
-  TOKEN_TYPE_REQUIRED = 'Требуется тип токена.',
+  TOKEN_INVALID_OR_EXPIRED = 'Токен истек или недействителен.',
+  TOKEN_GENERATION_FAILED = 'Не удалось сгенерировать токен.',
 
-  OTP_EXPIRED = 'Срок действия OTP кода истек.',
-  OTP_INVALID = 'Неверный OTP код.',
-  OTP_TOO_MANY_ATTEMPTS = 'Вы исчерпали лимит попыток. Запросите код заново.',
+  OTP_INVALID_OR_EXPIRED = 'OTP код истек или недействителен.',
 
+  TOO_MANY_ATTEMPTS_EXPIRED = 'Вы исчерпали лимит попыток. Запросите код заново.',
   TOO_MANY_ATTEMPTS = 'Слишком много попыток. Попробуйте позже.',
 
   SUBSCRIPTION_PLAN_NOT_FOUND = 'План подписки не найден. Обратитесь в поддержку.',

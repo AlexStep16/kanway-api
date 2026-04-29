@@ -22,6 +22,7 @@ import { Redis } from 'ioredis'
 import { ModelsEnum } from '@/domain/enums/ModelsEnum.js'
 import { YandexUserDTO } from '../dtos/YandexUserDTO.js'
 import { VkUserDTO } from '../dtos/VkUserDTO.js'
+import { TokenKeysEnum } from '@/domain/enums/TokenKeysEnum.js'
 
 const redis = new Redis()
 
@@ -286,21 +287,24 @@ export class UserService implements ICreateUserService<IUser, RegisterCredential
     await this.repository.decrementFieldByCriteria({ id: userId }, 'audio_tokens_used', -tokensUsed)
   }
 
-  public async verifyOTPEmailConfirm(code: string, email: string): Promise<IUser> {
-    const key = `otp:${email}`
-    const attemptsKey = `otp_attempts:${email}`
+  public async verifyOTPEmail(code: string, email: string): Promise<string> {
+    const otpKey = `${TokenKeysEnum.EMAIL_OTP_VERIFICATION}:${email}`
+    const attemptsKey = `attempts:${otpKey}`
     const MAX_ATTEMPTS = 5
 
     const attempts = await redis.get(attemptsKey)
     if (attempts && parseInt(attempts) >= MAX_ATTEMPTS) {
-      await redis.del(key)
-      throw new AppError(ErrorMessages.OTP_TOO_MANY_ATTEMPTS, 429)
+      await redis.del(otpKey)
+      throw new AppError(ErrorMessages.TOO_MANY_ATTEMPTS_EXPIRED, 429)
     }
 
-    const redisCode = await redis.get(key)
+    const redisData = await redis.get(otpKey)
 
-    if (!redisCode) throw new AppError(ErrorMessages.OTP_EXPIRED, 410)
-    if (redisCode !== code) {
+    if (!redisData) throw new AppError(ErrorMessages.OTP_INVALID_OR_EXPIRED, 410)
+
+    const data = JSON.parse(redisData) as { userId: string; code: string; token: string }
+
+    if (data.code !== code) {
       const currentAttempts = await redis.incr(attemptsKey)
 
       if (currentAttempts === 1) {
@@ -308,44 +312,65 @@ export class UserService implements ICreateUserService<IUser, RegisterCredential
       }
 
       if (currentAttempts >= MAX_ATTEMPTS) {
-        await Promise.all([redis.del(key), redis.del(attemptsKey)])
-        throw new AppError(ErrorMessages.OTP_TOO_MANY_ATTEMPTS, 429)
+        await Promise.all([redis.del(otpKey), redis.del(attemptsKey)])
+        throw new AppError(ErrorMessages.TOO_MANY_ATTEMPTS_EXPIRED, 429)
       }
 
-      throw new AppError(ErrorMessages.OTP_INVALID, 400)
+      throw new AppError(ErrorMessages.OTP_INVALID_OR_EXPIRED, 400)
     }
 
-    const user = await this.getByEmail(email)
+    const linkKey = `${TokenKeysEnum.EMAIL_VERIFICATION}:${data.token}`
 
-    if (!user) throw new AppError(ErrorMessages.USER_NOT_FOUND, 404)
-    if (user.isConfirmed) throw new AppError(ErrorMessages.USER_ALREADY_CONFIRMED, 409)
+    await this.edit({ isConfirmed: true }, { id: data.userId })
 
-    await this.edit({ isConfirmed: true }, { id: user.id.toString() })
+    await Promise.all([redis.del(otpKey), redis.del(attemptsKey), redis.del(linkKey)])
 
-    await Promise.all([redis.del(key), redis.del(attemptsKey)])
-
-    return user
+    return data.userId
   }
 
-  public async verifyOTPLogin(code: string, email: string): Promise<IUser> {
-    const key = `auth:otp:${email}`
-    const attemptsKey = `auth:otp_attempts:${email}`
+  public async verifyLinkEmail(token: string): Promise<string> {
+    const linkKey = `${TokenKeysEnum.EMAIL_VERIFICATION}:${token}`
+    const attemptsKey = `attempts:${linkKey}`
     const MAX_ATTEMPTS = 5
 
     const attempts = await redis.get(attemptsKey)
     if (attempts && parseInt(attempts) >= MAX_ATTEMPTS) {
-      await redis.del(key)
-      throw new AppError(ErrorMessages.OTP_TOO_MANY_ATTEMPTS, 429)
+      await redis.del(linkKey)
+      throw new AppError(ErrorMessages.TOO_MANY_ATTEMPTS_EXPIRED, 429)
     }
 
-    const redisObj = await redis.get(key)
-    const redisData = redisObj ? JSON.parse(redisObj) : null
+    const userId = await redis.get(linkKey)
 
-    if (!redisData) throw new AppError(ErrorMessages.OTP_EXPIRED, 410)
-    const token = redisData.token
+    if (!userId) throw new AppError(ErrorMessages.TOKEN_INVALID_OR_EXPIRED, 410)
+
+    await this.edit({ isConfirmed: true }, { id: userId })
+
+    await Promise.all([redis.del(linkKey), redis.del(attemptsKey)])
+
+    return userId
+  }
+
+  public async verifyOTPLogin(code: string, email: string): Promise<string> {
+    const otpKey = `${TokenKeysEnum.LOGIN_OTP_VERIFICATION}:${email}`
+    const attemptsKey = `attempts:${otpKey}`
+    const MAX_ATTEMPTS = 5
+
+    const attempts = await redis.get(attemptsKey)
+    if (attempts && parseInt(attempts) >= MAX_ATTEMPTS) {
+      await redis.del(otpKey)
+      throw new AppError(ErrorMessages.TOO_MANY_ATTEMPTS_EXPIRED, 429)
+    }
+
+    const redisData = await redis.get(otpKey)
+
+    if (!redisData) throw new AppError(ErrorMessages.OTP_INVALID_OR_EXPIRED, 410)
+
+    const data = JSON.parse(redisData) as { userId: string; code: string; token: string }
+
+    const token = data.token
     const magicKey = `auth:magic:${token}`
 
-    if (redisData.code !== code) {
+    if (data.code !== code) {
       const currentAttempts = await redis.incr(attemptsKey)
 
       if (currentAttempts === 1) {
@@ -353,30 +378,43 @@ export class UserService implements ICreateUserService<IUser, RegisterCredential
       }
 
       if (currentAttempts >= MAX_ATTEMPTS) {
-        await Promise.all([redis.del(key), redis.del(magicKey)])
-        throw new AppError(ErrorMessages.OTP_TOO_MANY_ATTEMPTS, 429)
+        await Promise.all([redis.del(otpKey), redis.del(magicKey)])
+        throw new AppError(ErrorMessages.TOO_MANY_ATTEMPTS_EXPIRED, 429)
       }
 
-      throw new AppError(ErrorMessages.OTP_INVALID, 400)
+      throw new AppError(ErrorMessages.OTP_INVALID_OR_EXPIRED, 400)
     }
 
-    const user = await this.getByEmail(email)
+    const linkKey = `${TokenKeysEnum.LOGIN_VERIFICATION}:${token}`
 
-    if (!user) throw new AppError(ErrorMessages.USER_NOT_FOUND, 404)
+    await Promise.all([
+      redis.del(otpKey),
+      redis.del(attemptsKey),
+      redis.del(magicKey),
+      redis.del(linkKey),
+    ])
 
-    await Promise.all([redis.del(key), redis.del(attemptsKey), redis.del(magicKey)])
-
-    return user
+    return data.userId
   }
 
-  public async sendMagicLink(email: string): Promise<void> {
-    const user = await this.getByEmail(email)
+  public async verifyLinkLogin(token: string): Promise<string> {
+    const linkKey = `${TokenKeysEnum.LOGIN_VERIFICATION}:${token}`
+    const attemptsKey = `attempts:${linkKey}`
+    const MAX_ATTEMPTS = 5
 
-    if (!user) {
-      throw new AppError(ErrorMessages.USER_NOT_FOUND, 404)
+    const attempts = await redis.get(attemptsKey)
+    if (attempts && parseInt(attempts) >= MAX_ATTEMPTS) {
+      await redis.del(linkKey)
+      throw new AppError(ErrorMessages.TOO_MANY_ATTEMPTS_EXPIRED, 429)
     }
 
-    return await this.emailService.sendMagicLink(user)
+    const userId = await redis.get(linkKey)
+
+    if (!userId) throw new AppError(ErrorMessages.TOKEN_INVALID_OR_EXPIRED, 410)
+
+    await Promise.all([redis.del(linkKey), redis.del(attemptsKey)])
+
+    return userId
   }
 
   public async checkEmailExists(email: string, ip?: string): Promise<boolean> {
