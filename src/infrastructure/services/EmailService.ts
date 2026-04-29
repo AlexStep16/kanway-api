@@ -43,7 +43,6 @@ export class EmailService {
       .set(linkKey, user.id.toString(), 'EX', 600)
       .set(otpKey, JSON.stringify({ code: otpCode, userId: user.id, token }), 'EX', 600)
       .exec()
-    console.log(token)
 
     try {
       const templatePath = path.resolve('email-templates/verify-login.html')
@@ -73,7 +72,7 @@ export class EmailService {
         },
       }
 
-      /*const response = await fetch(
+      const response = await fetch(
         'https://go2.unisender.ru/ru/transactional/api/v1/email/send.json',
         {
           method: 'POST',
@@ -89,7 +88,7 @@ export class EmailService {
       const responseBody = await response.json()
 
       if (responseBody?.status === 'error')
-        Sentry.captureException(new AppError(responseBody.message, 500))*/
+        Sentry.captureException(new AppError(responseBody.message, 500))
     } catch (err: unknown) {
       await Promise.all([redis.del(limitKey), redis.del(otpKey), redis.del(linkKey)])
       throw err
@@ -117,7 +116,6 @@ export class EmailService {
       .set(linkKey, user.id.toString(), 'EX', 600)
       .set(otpKey, JSON.stringify({ code: otpCode, userId: user.id, token }), 'EX', 600)
       .exec()
-    console.log(token)
 
     try {
       const templatePath = path.resolve('email-templates/verify-email.html')
@@ -147,7 +145,7 @@ export class EmailService {
         },
       }
 
-      /*const response = await fetch(
+      const response = await fetch(
         'https://go2.unisender.ru/ru/transactional/api/v1/email/send.json',
         {
           method: 'POST',
@@ -163,7 +161,7 @@ export class EmailService {
       const responseBody = await response.json()
 
       if (responseBody?.status === 'error')
-        Sentry.captureException(new AppError(responseBody.message, 500))*/
+        Sentry.captureException(new AppError(responseBody.message, 500))
     } catch (err: unknown) {
       await Promise.all([redis.del(limitKey), redis.del(linkKey), redis.del(otpKey)])
 
@@ -190,8 +188,6 @@ export class EmailService {
       .set(limitKey, 'locked', 'EX', SEND_INTERVAL - SLACK_TIME)
       .set(linkKey, user.id.toString(), 'EX', 600)
       .exec()
-
-    console.log(token)
 
     try {
       const templatePath = path.resolve('email-templates/password-recovery.html')
@@ -220,7 +216,7 @@ export class EmailService {
         },
       }
 
-      /*const response = await fetch(
+      const response = await fetch(
         'https://go2.unisender.ru/ru/transactional/api/v1/email/send.json',
         {
           method: 'POST',
@@ -236,7 +232,7 @@ export class EmailService {
       const responseBody = await response.json()
 
       if (responseBody?.status === 'error')
-        Sentry.captureException(new AppError(responseBody.message, 500))*/
+        Sentry.captureException(new AppError(responseBody.message, 500))
     } catch (err: unknown) {
       await Promise.all([redis.del(limitKey), redis.del(linkKey)])
       throw err
