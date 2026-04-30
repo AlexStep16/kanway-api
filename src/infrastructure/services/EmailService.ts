@@ -8,6 +8,7 @@ import { AppError } from '@/domain/errors/AppError.js'
 import dayjs from 'dayjs'
 import { TokenKeysEnum } from '@/domain/enums/TokenKeysEnum.js'
 import crypto from 'crypto'
+import { AllowedAuthStepsEnum } from '@/enums/AllowedAuthStepsEnum.js'
 
 const redis = new Redis()
 
@@ -34,7 +35,8 @@ export class EmailService {
       throw new AppError(`Слишком много запросов. Попробуйте через ${ttl} секунд(ы).`, 429)
     }
 
-    const verificationUrl = `https://kanway.ru/verify-login?token=${token}`
+    const encodedEmail = Buffer.from(user.email).toString('base64')
+    const verificationUrl = `https://kanway.ru/auth/${AllowedAuthStepsEnum.VERIFY_LOGIN}/${encodeURIComponent(encodedEmail)}?token=${token}`
     const otpCode = crypto.randomInt(100000, 999999).toString()
 
     await redis
@@ -107,7 +109,8 @@ export class EmailService {
     if (ttl > 0) {
       throw new AppError(`Слишком много запросов. Попробуйте через ${ttl} секунд(ы).`, 429)
     }
-    const verificationUrl = `https://kanway.ru/verify-email?token=${token}`
+    const encodedEmail = Buffer.from(user.email).toString('base64')
+    const verificationUrl = `https://kanway.ru/auth/${AllowedAuthStepsEnum.VERIFY_EMAIL}/${encodeURIComponent(encodedEmail)}?token=${token}`
     const otpCode = crypto.randomInt(100000, 999999).toString()
 
     await redis
@@ -182,7 +185,8 @@ export class EmailService {
       throw new AppError(`Слишком много запросов. Попробуйте через ${ttl} секунд(ы).`, 429)
     }
 
-    const recoveryUrl = `https://kanway.ru/password-recovery?token=${token}`
+    const encodedEmail = Buffer.from(user.email).toString('base64')
+    const recoveryUrl = `https://kanway.ru/auth/${AllowedAuthStepsEnum.VERIFY_PASSWORD}/${encodeURIComponent(encodedEmail)}?token=${token}`
     const otpCode = crypto.randomInt(100000, 999999).toString()
 
     await redis
