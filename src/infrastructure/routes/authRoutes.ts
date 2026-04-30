@@ -7,6 +7,8 @@ import { PasswordRecoveryLinkSchema } from '@/application/dtos/PasswordRecoveryL
 import { emailLimiter } from '@/limiters.js'
 import { CheckEmailExistsSchemaDTO } from '@/application/dtos/CheckEmailExistsDTO.js'
 import { TokenSchemaDTO } from '@/application/dtos/TokenDTO.js'
+import { validateResetToken } from '../middlewares/validations/validateResetToken.js'
+import { PasswordRecoverySchema } from '@/application/dtos/PasswordRecoveryDTO.js'
 
 export default (controller: AuthController): Router => {
   const router = express.Router()
@@ -40,16 +42,26 @@ export default (controller: AuthController): Router => {
     validationMiddleware(TokenSchemaDTO),
     controller.verifyLinkLogin.bind(controller),
   )
+  router.post(
+    '/verify/token/password',
+    validationMiddleware(TokenSchemaDTO),
+    controller.verifyLinkPassword.bind(controller),
+  )
   router.post('/verify/otp/login', controller.verifyOTPLogin.bind(controller))
   router.post('/verify/otp/email', controller.verifyOTPEmail.bind(controller))
-  router.post('/validate/token/recovery', controller.validateRecoveryToken.bind(controller))
+  router.post('/verify/otp/password', controller.verifyOTPPassword.bind(controller))
 
   router.post(
     '/check-email',
     validationMiddleware(CheckEmailExistsSchemaDTO),
     controller.checkEmailExists.bind(controller),
   )
-  router.post('/password/recovery', controller.changeUserPassword.bind(controller))
+  router.post(
+    '/password/recovery',
+    validateResetToken,
+    validationMiddleware(PasswordRecoverySchema),
+    controller.changeUserPassword.bind(controller),
+  )
 
   return router
 }

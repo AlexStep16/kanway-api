@@ -2,10 +2,6 @@ import { ErrorMessages } from '@/enums/ErrorMessages.js'
 import { z } from 'zod'
 
 export const PasswordRecoverySchema = z.object({
-  token: z.string({
-    error: (iss) =>
-      iss.input === undefined ? ErrorMessages.TOKEN_REQUIRED : ErrorMessages.INVALID_TOKEN_FORMAT,
-  }),
   password: z
     .string({
       error: (iss) =>

@@ -82,25 +82,13 @@ export default class AuthController {
 
   public async changeUserPassword(req: Request, res: Response, next: NextFunction) {
     try {
-      const { token, password } = req.body
+      const { password } = req.body
 
-      const { user, serialized } = await this.service.changeUserPassword(token, password)
+      const { user, serialized } = await this.service.changeUserPassword(req.userId!, password)
 
       res.setHeader('Set-Cookie', serialized)
 
       return res.status(200).json(new SuccessResponse(user))
-    } catch (error) {
-      next(error)
-    }
-  }
-
-  public async validateRecoveryToken(req: Request, res: Response, next: NextFunction) {
-    try {
-      const { token } = req.body
-
-      await this.service.validateRecoveryToken(token)
-
-      return res.status(200).json(new SuccessResponse(null))
     } catch (error) {
       next(error)
     }
@@ -146,6 +134,20 @@ export default class AuthController {
     }
   }
 
+  public async verifyLinkPassword(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { token } = req.body
+
+      const { serialized } = await this.service.verifyLinkPassword(token)
+
+      res.setHeader('Set-Cookie', serialized)
+
+      return res.status(200).json(new SuccessResponse(null))
+    } catch (error) {
+      next(error)
+    }
+  }
+
   public async verifyOTPLogin(req: Request, res: Response, next: NextFunction) {
     try {
       const { code, email } = req.body
@@ -162,9 +164,25 @@ export default class AuthController {
 
   public async verifyOTPEmail(req: Request, res: Response, next: NextFunction) {
     try {
-      const { code } = req.body
+      const { code, email } = req.body
 
-      await this.userService.verifyOTPEmail(code, req.user!.email)
+      const { serialized } = await this.service.verifyOTPEmail(code, email)
+
+      res.setHeader('Set-Cookie', serialized)
+
+      return res.status(200).json(new SuccessResponse(null))
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  public async verifyOTPPassword(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { code, email } = req.body
+
+      const { serialized } = await this.service.verifyOTPPassword(code, email)
+
+      res.setHeader('Set-Cookie', serialized)
 
       return res.status(200).json(new SuccessResponse(null))
     } catch (error) {

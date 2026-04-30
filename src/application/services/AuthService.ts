@@ -14,10 +14,6 @@ import { YandexAuthDTO } from '../dtos/YandexAuthDTO.js'
 import { YandexUser } from '../interfaces/YandexUser.js'
 import { VkAuthDTO } from '../dtos/VkAuthDTO.js'
 import { VkUser } from '../interfaces/VkUser.js'
-import { Redis } from 'ioredis'
-import { TokenKeysEnum } from '@/domain/enums/TokenKeysEnum.js'
-
-const redis = new Redis()
 
 export class AuthService {
   private userService: UserService
@@ -37,12 +33,16 @@ export class AuthService {
     this.settingService = settingService
   }
 
-  private _getTokenSerialized(token: string) {
-    return serialize('token', token, {
+  private _getTokenSerialized(
+    token: string,
+    name: string = 'token',
+    maxAge: number = 60 * 60 * 24 * 30,
+  ): string {
+    return serialize(name, token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
-      maxAge: 60 * 60 * 24 * 30,
+      maxAge,
       path: '/',
     })
   }
@@ -296,6 +296,17 @@ export class AuthService {
     }
   }
 
+  public async verifyOTPEmail(code: string, email: string): Promise<{ serialized: string }> {
+    const userId = await this.userService.verifyOTPEmail(code, email)
+
+    const token = this._getUserIdToken(userId)
+    const serialized = this._getTokenSerialized(token)
+
+    return {
+      serialized,
+    }
+  }
+
   public async verifyOTPLogin(code: string, email: string): Promise<{ serialized: string }> {
     const userId = await this.userService.verifyOTPLogin(code, email)
 
@@ -307,18 +318,22 @@ export class AuthService {
     }
   }
 
+  public async verifyOTPPassword(code: string, email: string): Promise<{ serialized: string }> {
+    const userId = await this.userService.verifyOTPPassword(code, email)
+
+    const token = this._getUserIdToken(userId)
+    const serialized = this._getTokenSerialized(token, 'reset_token', 60 * 15)
+
+    return {
+      serialized,
+    }
+  }
+
   public async changeUserPassword(
-    token: string,
+    userId: string,
     password: string,
   ): Promise<{ user: IUser; serialized: string }> {
-    const linkKey = `${TokenKeysEnum.PASSWORD_RECOVERY}:${token}`
-    const userId = await redis.get(linkKey)
-
-    if (!userId) throw new AppError(ErrorMessages.TOKEN_INVALID_OR_EXPIRED, 404)
-
     const updatedUser = await this.userService.edit({ password }, { id: userId })
-
-    await redis.del(linkKey)
 
     const jwtToken = this._getUserIdToken(userId)
     const serialized = this._getTokenSerialized(jwtToken)
@@ -385,9 +400,16 @@ export class AuthService {
     }
   }
 
-  public async validateRecoveryToken(token: string): Promise<void> {
-    const redisData = await redis.get(`${TokenKeysEnum.PASSWORD_RECOVERY}:${token}`)
+  public async verifyLinkPassword(token: string): Promise<{
+    serialized: string
+  }> {
+    const userId = await this.userService.verifyLinkPassword(token)
 
-    if (!redisData) throw new AppError(ErrorMessages.TOKEN_INVALID_OR_EXPIRED, 404)
+    const resetToken = this._getUserIdToken(userId)
+    const serialized = this._getTokenSerialized(resetToken, 'reset_token', 60 * 15)
+
+    return {
+      serialized,
+    }
   }
 }

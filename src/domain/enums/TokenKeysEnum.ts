@@ -4,4 +4,5 @@ export enum TokenKeysEnum {
   LOGIN_VERIFICATION = 'auth:login:verification',
   LOGIN_OTP_VERIFICATION = 'auth:login:otp:verification',
   PASSWORD_RECOVERY = 'auth:password:recovery',
+  PASSWORD_OTP_RECOVERY = 'auth:password:otp:recovery',
 }

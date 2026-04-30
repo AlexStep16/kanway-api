@@ -6,6 +6,7 @@ declare global {
     interface User extends IUser {}
     interface Request {
       rateLimit?: RateLimitInfo
+      userId?: string
     }
   }
 }

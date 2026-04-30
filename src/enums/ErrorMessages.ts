@@ -141,6 +141,8 @@ export enum ErrorMessages {
   TOKEN_INVALID_OR_EXPIRED = 'Токен истек или недействителен.',
   TOKEN_GENERATION_FAILED = 'Не удалось сгенерировать токен.',
 
+  SESSION_EXPIRED = 'Сессия истекла.',
+
   OTP_INVALID_OR_EXPIRED = 'OTP код истек или недействителен.',
 
   TOO_MANY_ATTEMPTS_EXPIRED = 'Вы исчерпали лимит попыток. Запросите код заново.',

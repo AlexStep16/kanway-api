@@ -62,7 +62,7 @@ export class EmailService {
           ],
           body: {
             html: htmlContent,
-            plaintext: `Код подтверждения: ${otpCode}`,
+            plaintext: `Код подтверждения: ${otpCode}. Также можно войти по ссылке: ${verificationUrl}`,
           },
           subject: 'Код для входа в Kanway',
           from_email: 'noreply@kanway.ru',
@@ -135,7 +135,7 @@ export class EmailService {
           ],
           body: {
             html: htmlContent,
-            plaintext: `Код подтверждения: ${otpCode}`,
+            plaintext: `Код подтверждения: ${otpCode}. Также можно подтвердить почту по ссылке: ${verificationUrl}`,
           },
           subject: 'Подтверждение почты',
           from_email: 'noreply@kanway.ru',
@@ -173,6 +173,7 @@ export class EmailService {
     const token = crypto.randomBytes(32).toString('hex')
 
     const linkKey = `${TokenKeysEnum.PASSWORD_RECOVERY}:${token}`
+    const otpKey = `${TokenKeysEnum.PASSWORD_OTP_RECOVERY}:${user.email}`
     const limitKey = `limit:${TokenKeysEnum.PASSWORD_RECOVERY}:${user.email}`
 
     const ttl = await redis.ttl(limitKey)
@@ -182,11 +183,13 @@ export class EmailService {
     }
 
     const recoveryUrl = `https://kanway.ru/password-recovery?token=${token}`
+    const otpCode = crypto.randomInt(100000, 999999).toString()
 
     await redis
       .multi()
       .set(limitKey, 'locked', 'EX', SEND_INTERVAL - SLACK_TIME)
       .set(linkKey, user.id.toString(), 'EX', 600)
+      .set(otpKey, JSON.stringify({ code: otpCode, userId: user.id, token }), 'EX', 600)
       .exec()
 
     try {
@@ -201,12 +204,13 @@ export class EmailService {
               email: user.email,
               substitutions: {
                 recovery_link: recoveryUrl,
+                otp_code: otpCode,
               },
             },
           ],
           body: {
             html: htmlContent,
-            plaintext: `Восстановите пароль по ссылке: ${recoveryUrl}`,
+            plaintext: `Ваш код для восстановления пароля: ${otpCode}. Также можно восстановить пароль по ссылке: ${recoveryUrl}`,
           },
           subject: 'Восстановление пароля',
           from_email: 'noreply@kanway.ru',
@@ -234,7 +238,7 @@ export class EmailService {
       if (responseBody?.status === 'error')
         Sentry.captureException(new AppError(responseBody.message, 500))
     } catch (err: unknown) {
-      await Promise.all([redis.del(limitKey), redis.del(linkKey)])
+      await Promise.all([redis.del(limitKey), redis.del(linkKey), redis.del(otpKey)])
       throw err
     }
   }
