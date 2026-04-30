@@ -208,29 +208,26 @@ export class AuthService {
         throw new AppError(ErrorMessages.VK_AUTH_FAILED, 400)
       }
 
-      const userInfoResponse = await fetch('https://id.vk.ru/oauth2/auth', {
+      const paramsUserInfo = new URLSearchParams()
+      paramsUserInfo.append('client_id', process.env.VK_CLIENT_ID || '')
+      paramsUserInfo.append('id_token', accessTokenData.access_token || '')
+
+      const userInfoResponse = await fetch('https://id.vk.ru/oauth2/public_info', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
         },
-        body: JSON.stringify({
-          client_id: process.env.VK_CLIENT_ID,
-          id_token: accessTokenData.access_token,
-        }),
+        body: paramsUserInfo.toString(),
       })
       const userInfo = (await userInfoResponse.json()) as VkUser
 
-      if (!userInfo.email) {
-        throw new AppError(ErrorMessages.VK_EMAIL_REQUIRED, 400)
-      }
-
-      const user = await this.userService.getByEmail(userInfo.email)
+      const user = await this.userService.getByEmail(userInfo.user.email)
 
       if (!user) {
         const newUser = await this.userService.createVkUser({
-          username: userInfo.first_name + ' ' + userInfo.last_name,
-          email: userInfo.email,
-          clientId: userInfo.user_id,
+          username: userInfo.user.first_name + ' ' + userInfo.user.last_name,
+          email: userInfo.user.email,
+          clientId: userInfo.user.user_id,
           timezone: payload.timezone,
         })
 
@@ -245,7 +242,7 @@ export class AuthService {
       } else {
         if (!user.vkClientId) {
           await this.userService.edit(
-            { vkClientId: userInfo.user_id },
+            { vkClientId: userInfo.user.user_id },
             { id: user.id.toString() },
             undefined,
             session,
