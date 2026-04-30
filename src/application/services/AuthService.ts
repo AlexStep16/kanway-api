@@ -204,7 +204,7 @@ export class AuthService {
 
       const accessTokenData = await accessTokenResponse.json()
 
-      if (!accessTokenData.access_token) {
+      if (!accessTokenData.id_token) {
         throw new AppError(ErrorMessages.VK_AUTH_FAILED, 400)
       }
 
