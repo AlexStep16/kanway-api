@@ -210,7 +210,7 @@ export class AuthService {
 
       const paramsUserInfo = new URLSearchParams()
       paramsUserInfo.append('client_id', process.env.VK_CLIENT_ID || '')
-      paramsUserInfo.append('id_token', accessTokenData.access_token || '')
+      paramsUserInfo.append('id_token', accessTokenData.id_token || '')
 
       const userInfoResponse = await fetch('https://id.vk.ru/oauth2/public_info', {
         method: 'POST',
