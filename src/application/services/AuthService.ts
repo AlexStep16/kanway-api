@@ -230,7 +230,6 @@ export class AuthService {
         body: paramsUserInfo.toString(),
       })
       const userInfo = (await userInfoResponse.json()) as VkUser
-      userInfo.user.email = undefined // MOCK FOR TESTING
 
       const users = await this.userService.getByCriteria({ vkClientId: userInfo.user.user_id })
 
@@ -259,7 +258,7 @@ export class AuthService {
             serialized,
           }
         } else {
-          if (userInfo.user.email) {
+          /*if (userInfo.user.email) {
             const newUser = await this.userService.createVkUser({
               username: userInfo.user.first_name + ' ' + userInfo.user.last_name,
               avatarUrl: userInfo.user.avatar,
@@ -276,23 +275,23 @@ export class AuthService {
               user: newUser[0],
               serialized,
             }
-          } else {
-            const registrationData: ProviderDTO = {
-              provider: ProvidersEnum.VK,
-              clientId: userInfo.user.user_id,
-              avatarUrl: userInfo.user.avatar,
-              username: `${userInfo.user.first_name} ${userInfo.user.last_name}`,
-            }
-            const serialized = this._getTokenSerialized(
-              JSON.stringify(registrationData),
-              'finish_sign_up_token',
-              60 * 15,
-            )
-
-            return {
-              serialized,
-            }
+          } else {*/
+          const registrationData: ProviderDTO = {
+            provider: ProvidersEnum.VK,
+            clientId: userInfo.user.user_id,
+            avatarUrl: userInfo.user.avatar,
+            username: `${userInfo.user.first_name} ${userInfo.user.last_name}`,
           }
+          const serialized = this._getTokenSerialized(
+            JSON.stringify(registrationData),
+            'finish_sign_up_token',
+            60 * 15,
+          )
+
+          return {
+            serialized,
+          }
+          //}
         }
       } else {
         const user = users[0]
