@@ -104,11 +104,13 @@ io.use(async (socket, next) => {
   try {
     const decoded = jwt.verify(token, KEY) as { user_id: string }
 
-    const user = await dependencies.services.userService.getById(decoded.user_id)
+    const users = await dependencies.services.userService.getByCriteria({ id: decoded.user_id })
 
-    if (!user) {
+    if (!users || users.length === 0) {
       return next(new AppError(ErrorMessages.USER_NOT_AUTHORIZED, 401))
     }
+
+    const user = users[0]
 
     if (user.credits <= 0 && user.paidCredits <= 0) {
       return next(new AppError(ErrorMessages.CREDITS_LOW, 402))

@@ -54,7 +54,12 @@ export class PaymentMethodService extends BaseService<
   ): Promise<void> {
     await this.repository.deleteMany({ id }, userId, session)
     // If the deleted payment method was the user's selected payment method, unset it
-    const user = await this.userService.getById(userId.toString())
+    const users = await this.userService.getByCriteria(
+      { id: userId.toString() },
+      undefined,
+      session,
+    )
+    const user = users[0]
     if (user && user.paymentMethodId === id) {
       const paymentMethods = await this.repository.findByCriteria({}, session, undefined, userId)
 

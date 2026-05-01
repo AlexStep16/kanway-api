@@ -46,6 +46,11 @@ export class EmailService {
       .set(otpKey, JSON.stringify({ code: otpCode, userId: user.id, token }), 'EX', 600)
       .exec()
 
+    if (process.env.NODE_ENV === 'development') {
+      console.log(otpCode, token)
+      return
+    }
+
     try {
       const templatePath = path.resolve('email-templates/verify-login.html')
 
@@ -119,7 +124,10 @@ export class EmailService {
       .set(linkKey, user.id.toString(), 'EX', 600)
       .set(otpKey, JSON.stringify({ code: otpCode, userId: user.id, token }), 'EX', 600)
       .exec()
-
+    if (process.env.NODE_ENV === 'development') {
+      console.log(otpCode, token)
+      return
+    }
     try {
       const templatePath = path.resolve('email-templates/verify-email.html')
 
@@ -195,7 +203,10 @@ export class EmailService {
       .set(linkKey, user.id.toString(), 'EX', 600)
       .set(otpKey, JSON.stringify({ code: otpCode, userId: user.id, token }), 'EX', 600)
       .exec()
-
+    if (process.env.NODE_ENV === 'development') {
+      console.log(otpCode, token)
+      return
+    }
     try {
       const templatePath = path.resolve('email-templates/password-recovery.html')
 

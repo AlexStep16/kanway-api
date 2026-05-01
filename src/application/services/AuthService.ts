@@ -1,10 +1,10 @@
 import { IUser } from '@entities/IUser.js'
-import { RegisterCredentialsDTO } from '@/application/dtos/RegisterCredentialsDTO.js'
+import { SignupCredentialsDTO } from '@/application/dtos/SignupCredentialsDTO.js'
 import { UserService } from '@application/services/UserService.js'
 import { EmailService } from '@infrastructure/services/EmailService.js'
 import { serialize } from 'cookie'
 import { TokenService } from '@application/services/TokenService.js'
-import { LoginCredentialsDTO } from '@/application/dtos/LoginCredentialsDTO.js'
+import { SigninCredentialsDTO } from '@/application/dtos/SigninCredentialsDTO.js'
 import mongoose from 'mongoose'
 import { SettingService } from '@application/services/SettingService.js'
 import { AiConfirmationTypeEnum } from '@/domain/enums/AiConfirmationTypeEnum.js'
@@ -14,6 +14,9 @@ import { YandexAuthDTO } from '../dtos/YandexAuthDTO.js'
 import { YandexUser } from '../interfaces/YandexUser.js'
 import { VkAuthDTO } from '../dtos/VkAuthDTO.js'
 import { VkUser } from '../interfaces/VkUser.js'
+import { ProvidersEnum } from '@/domain/enums/ProvidersEnum.js'
+import { FinishSignupCredentialsDTO } from '../dtos/FinishSignupCredentialsDTO.js'
+import { ProviderDTO } from '../dtos/ProviderDTO.js'
 
 export class AuthService {
   private userService: UserService
@@ -73,13 +76,13 @@ export class AuthService {
   }
 
   public async register(
-    credentials: RegisterCredentialsDTO,
+    credentials: SignupCredentialsDTO,
   ): Promise<{ user: IUser; serialized: string }> {
     const session = await mongoose.startSession()
     session.startTransaction()
 
     try {
-      const newUser = await this.userService.create(credentials, session)
+      const newUser = await this.userService.createWithCredentials(credentials, session)
 
       const serialized = await this.initNewUser(newUser[0], session)
 
@@ -133,9 +136,9 @@ export class AuthService {
       })
       const userInfo = (await userInfoResponse.json()) as YandexUser
 
-      const user = await this.userService.getByEmail(userInfo.default_email)
+      const users = await this.userService.getByCriteria({ email: userInfo.default_email })
 
-      if (!user) {
+      if (!users || users.length === 0) {
         const newUser = await this.userService.createYandexUser({
           username: userInfo.display_name,
           email: userInfo.default_email,
@@ -152,6 +155,8 @@ export class AuthService {
           serialized,
         }
       } else {
+        const user = users[0]
+
         if (!user.yandexClientId) {
           await this.userService.edit(
             { yandexClientId: userInfo.client_id },
@@ -220,34 +225,71 @@ export class AuthService {
         body: paramsUserInfo.toString(),
       })
       const userInfo = (await userInfoResponse.json()) as VkUser
+      userInfo.user.email = undefined // MOCK FOR TESTING
 
-      const user = await this.userService.getByEmail(userInfo.user.email)
+      const users = await this.userService.getByCriteria({ vkClientId: userInfo.user.user_id })
 
-      if (!user) {
-        const newUser = await this.userService.createVkUser({
-          username: userInfo.user.first_name + ' ' + userInfo.user.last_name,
-          email: userInfo.user.email,
-          clientId: userInfo.user.user_id,
-          timezone: payload.timezone,
-        })
+      if (!users || users.length === 0) {
+        const usersByEmail = await this.userService.getByCriteria({ email: userInfo.user.email })
 
-        const serialized = await this.initNewUser(newUser[0], session, false)
+        if (usersByEmail && usersByEmail.length > 0) {
+          const user = usersByEmail[0]
 
-        await session.commitTransaction()
+          if (!user.vkClientId) {
+            await this.userService.edit(
+              { vkClientId: userInfo.user.user_id },
+              { id: user.id.toString() },
+              undefined,
+              session,
+            )
+          }
 
-        return {
-          user: newUser[0],
-          serialized,
+          const token = this._getUserIdToken(user.id.toString())
+          const serialized = this._getTokenSerialized(token)
+
+          await session.commitTransaction()
+
+          return {
+            user,
+            serialized,
+          }
+        } else {
+          if (userInfo.user.email) {
+            const newUser = await this.userService.createVkUser({
+              username: userInfo.user.first_name + ' ' + userInfo.user.last_name,
+              email: userInfo.user.email,
+              clientId: userInfo.user.user_id,
+              timezone: payload.timezone,
+            })
+
+            const serialized = await this.initNewUser(newUser[0], session, false)
+
+            await session.commitTransaction()
+
+            return {
+              user: newUser[0],
+              serialized,
+            }
+          } else {
+            const registrationData: ProviderDTO = {
+              provider: ProvidersEnum.VK,
+              clientId: userInfo.user.user_id,
+              avatarUrl: userInfo.user.avatar,
+              username: `${userInfo.user.first_name} ${userInfo.user.last_name}`,
+            }
+            const serialized = this._getTokenSerialized(
+              JSON.stringify(registrationData),
+              'finish_sign_up_token',
+              60 * 15,
+            )
+
+            return {
+              serialized,
+            }
+          }
         }
       } else {
-        if (!user.vkClientId) {
-          await this.userService.edit(
-            { vkClientId: userInfo.user.user_id },
-            { id: user.id.toString() },
-            undefined,
-            session,
-          )
-        }
+        const user = users[0]
 
         const token = this._getUserIdToken(user.id.toString())
         const serialized = this._getTokenSerialized(token)
@@ -268,10 +310,45 @@ export class AuthService {
     }
   }
 
-  public async checkEmailUnique(email: string): Promise<boolean> {
-    const user = await this.userService.getByEmail(email)
+  public async finishSignup(
+    data: FinishSignupCredentialsDTO & ProviderDTO,
+  ): Promise<{ user: IUser; serialized: string }> {
+    const session = await mongoose.startSession()
+    session.startTransaction()
 
-    return !user
+    try {
+      const userData: Partial<IUser> = {
+        email: data.email.toLowerCase(),
+        username: data.username,
+        avatarUrl: data.avatarUrl,
+      }
+
+      if (data.provider === ProvidersEnum.VK) {
+        userData.vkClientId = data.clientId
+      }
+
+      const newUser = await this.userService.create(userData, session)
+      const serialized = await this.initNewUser(newUser[0], session, false)
+
+      await session.commitTransaction()
+
+      return {
+        user: newUser[0],
+        serialized,
+      }
+    } catch (error) {
+      await session.abortTransaction()
+
+      throw error
+    } finally {
+      session.endSession()
+    }
+  }
+
+  public async checkEmailUnique(email: string): Promise<boolean> {
+    const users = await this.userService.getByCriteria({ email })
+
+    return !users || users.length === 0
   }
 
   private _getUserIdToken(userId: string): string {
@@ -279,7 +356,7 @@ export class AuthService {
   }
 
   public async login(
-    credentials: LoginCredentialsDTO,
+    credentials: SigninCredentialsDTO,
   ): Promise<{ user: IUser; serialized: string }> {
     const user = await this.userService.validateCredentials(credentials.email, credentials.password)
 
@@ -342,31 +419,37 @@ export class AuthService {
   }
 
   public async sendVerificationEmail(email: string): Promise<void> {
-    const user = await this.userService.getByEmail(email)
+    const users = await this.userService.getByCriteria({ email })
 
-    if (!user) {
+    if (!users || users.length === 0) {
       throw new AppError(ErrorMessages.USER_NOT_FOUND, 404)
     }
+
+    const user = users[0]
 
     await this.emailService.sendVerifyEmailToUser(user)
   }
 
   public async sendResetPasswordEmail(email: string): Promise<void> {
-    const user = await this.userService.getByEmail(email)
+    const users = await this.userService.getByCriteria({ email })
 
-    if (!user) {
+    if (!users || users.length === 0) {
       throw new AppError(ErrorMessages.USER_NOT_FOUND, 404)
     }
+
+    const user = users[0]
 
     await this.emailService.sendPasswordRecoveryEmailToUser(user)
   }
 
   public async sendMagicLink(email: string): Promise<void> {
-    const user = await this.userService.getByEmail(email)
+    const users = await this.userService.getByCriteria({ email })
 
-    if (!user) {
+    if (!users || users.length === 0) {
       throw new AppError(ErrorMessages.USER_NOT_FOUND, 404)
     }
+
+    const user = users[0]
 
     await this.emailService.sendMagicLink(user)
   }

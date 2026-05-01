@@ -1,7 +1,7 @@
 import { ErrorMessages } from '@/enums/ErrorMessages.js'
 import { z } from 'zod'
 
-export const LoginCredentialsSchema = z.object({
+export const SigninCredentialsSchema = z.object({
   email: z.email({
     error: (iss) =>
       iss.input === undefined ? ErrorMessages.EMAIL_REQUIRED : ErrorMessages.INVALID_EMAIL_FORMAT,
@@ -16,4 +16,4 @@ export const LoginCredentialsSchema = z.object({
     .min(1, ErrorMessages.PASSWORD_TOO_SHORT_1),
 })
 
-export type LoginCredentialsDTO = z.infer<typeof LoginCredentialsSchema>
+export type SigninCredentialsDTO = z.infer<typeof SigninCredentialsSchema>

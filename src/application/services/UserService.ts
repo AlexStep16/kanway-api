@@ -3,14 +3,13 @@ import { IUser } from '@entities/IUser.js'
 import { AppError } from '@errors/AppError.js'
 import bcrypt from 'bcrypt'
 import { ErrorMessages } from '@/enums/ErrorMessages.js'
-import { RegisterCredentialsDTO } from '@/application/dtos/RegisterCredentialsDTO.js'
+import { SignupCredentialsDTO } from '@/application/dtos/SignupCredentialsDTO.js'
 import { BASE_COLORS } from '@constants/BASE_COLORS.js'
 import { toMongoCaseKeys, toServerCaseKeys } from '@/utils/objectTransformers.js'
 import { UserEditDTO } from '@dtos/UserEditDTO.js'
 import { IUserCriteria } from '@interfaces/criterias/IUserCriteria.js'
 import UserRepository from '@repositories/UserRepository.js'
 import { SALT_ROUNDS } from '@constants/SALT_ROUNDS.js'
-import { ICreateUserService } from '@traits/ICreateUserService.js'
 import { SubscriptionPlanEnum } from '@domain/enums/SubscriptionPlanEnum.js'
 
 import { ClientSession, Types, UpdateWriteOpResult } from 'mongoose'
@@ -23,24 +22,34 @@ import { ModelsEnum } from '@/domain/enums/ModelsEnum.js'
 import { YandexUserDTO } from '../dtos/YandexUserDTO.js'
 import { VkUserDTO } from '../dtos/VkUserDTO.js'
 import { TokenKeysEnum } from '@/domain/enums/TokenKeysEnum.js'
+import { BaseService } from './BaseService.js'
 
 const redis = new Redis()
 
-export class UserService implements ICreateUserService<IUser, RegisterCredentialsDTO> {
-  private repository: UserRepository
+export class UserService extends BaseService<IUserRaw, IUser, IUserCriteria> {
+  protected repository: UserRepository
   protected emailService: EmailService
 
   constructor(repository: UserRepository, emailService: EmailService) {
+    super(repository)
+
     this.repository = repository
     this.emailService = emailService
   }
 
-  public async create(
-    credentials: RegisterCredentialsDTO,
+  public async create(data: Partial<IUser>, session?: ClientSession): Promise<IUser[]> {
+    const result = await this.repository.create(data, session)
+
+    return [toServerCaseKeys(result)]
+  }
+
+  public async createWithCredentials(
+    credentials: SignupCredentialsDTO,
     session?: ClientSession,
   ): Promise<IUser[]> {
     const user: Partial<IUser> = {
       email: credentials.email.toLowerCase(),
+      passwordHash: credentials.password,
       timezone: credentials.timezone,
       subscriptionId: SubscriptionPlanEnum.Basic,
       avatarColor: BASE_COLORS[Math.floor(Math.random() * 7)],
@@ -137,19 +146,6 @@ export class UserService implements ICreateUserService<IUser, RegisterCredential
     await this.repository.deleteMany(criteria, userId)
   }
 
-  public async getById(id: string): Promise<IUser | null> {
-    const users = await this.repository.findByCriteria({ id })
-
-    return toServerCaseKeys(users[0])
-  }
-
-  public async getByEmail(email: string): Promise<IUser | null> {
-    const normalizedEmail = email.toLowerCase().trim()
-    const users = await this.repository.findByCriteria({ email: normalizedEmail })
-
-    return toServerCaseKeys(users[0])
-  }
-
   public async validateCredentials(email: string, passwordPlain: string): Promise<IUser> {
     const normalizedEmail = email.toLowerCase().trim()
     const user = await this.repository.findByEmail(normalizedEmail)
@@ -168,10 +164,10 @@ export class UserService implements ICreateUserService<IUser, RegisterCredential
   }
 
   public async me(id: Types.ObjectId): Promise<IUser | null> {
-    const user = await this.getById(id.toString())
+    const users = await this.getByCriteria({ id: id.toString() })
 
-    if (user) {
-      return user
+    if (users && users.length > 0) {
+      return users[0]
     }
 
     return null
@@ -205,9 +201,11 @@ export class UserService implements ICreateUserService<IUser, RegisterCredential
     modelType: ModelsEnum,
     session?: ClientSession,
   ) {
-    const user = await this.getById(userId)
+    const users = await this.getByCriteria({ id: userId }, undefined, session)
 
-    if (!user) throw new AppError(ErrorMessages.USER_NOT_FOUND, 404)
+    if (!users || users.length === 0) throw new AppError(ErrorMessages.USER_NOT_FOUND, 404)
+
+    const user = users[0]
 
     const amount = getCreditsUsed(tokens, modelType)
 

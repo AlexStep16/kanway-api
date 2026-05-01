@@ -1,27 +1,35 @@
 import express, { Router } from 'express'
 import AuthController from '@controllers/AuthController.js'
 import { validationMiddleware } from '../middlewares/validations/validationMiddleware.js'
-import { RegisterCredentialsSchema } from '@/application/dtos/RegisterCredentialsDTO.js'
-import { LoginCredentialsSchema } from '@/application/dtos/LoginCredentialsDTO.js'
 import { PasswordRecoveryLinkSchema } from '@/application/dtos/PasswordRecoveryLinkDTO.js'
 import { emailLimiter } from '@/limiters.js'
 import { CheckEmailExistsSchemaDTO } from '@/application/dtos/CheckEmailExistsDTO.js'
 import { TokenSchemaDTO } from '@/application/dtos/TokenDTO.js'
 import { validateResetToken } from '../middlewares/validations/validateResetToken.js'
 import { PasswordRecoverySchema } from '@/application/dtos/PasswordRecoveryDTO.js'
+import { SigninCredentialsSchema } from '@/application/dtos/SigninCredentialsDTO.js'
+import { FinishSignupCredentialsSchema } from '@/application/dtos/FinishSignupCredentialsDTO.js'
+import { SignupCredentialsSchema } from '@/application/dtos/SignupCredentialsDTO.js'
+import { validateFinishSignupToken } from '../middlewares/validations/validateFinishSignupToken.js'
 
 export default (controller: AuthController): Router => {
   const router = express.Router()
 
   router.post(
-    '/register',
-    validationMiddleware(RegisterCredentialsSchema),
+    '/sign-up',
+    validationMiddleware(SignupCredentialsSchema),
     controller.register.bind(controller),
   )
   router.post(
-    '/login',
-    validationMiddleware(LoginCredentialsSchema),
+    '/sign-in',
+    validationMiddleware(SigninCredentialsSchema),
     controller.login.bind(controller),
+  )
+  router.post(
+    '/sign-up/finish',
+    validateFinishSignupToken,
+    validationMiddleware(FinishSignupCredentialsSchema),
+    controller.finishSignup.bind(controller),
   )
   router.post(
     '/send/password/recovery',
@@ -46,6 +54,11 @@ export default (controller: AuthController): Router => {
     '/verify/token/password',
     validationMiddleware(TokenSchemaDTO),
     controller.verifyLinkPassword.bind(controller),
+  )
+  router.get(
+    '/check/finish-signup',
+    validateFinishSignupToken,
+    controller.checkSignup.bind(controller),
   )
   router.post('/verify/otp/login', controller.verifyOTPLogin.bind(controller))
   router.post('/verify/otp/email', controller.verifyOTPEmail.bind(controller))

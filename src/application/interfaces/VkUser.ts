@@ -5,6 +5,6 @@ export interface VkUser {
     last_name: string
     phone: string
     avatar: string
-    email: string
+    email?: string
   }
 }

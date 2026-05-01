@@ -1,11 +1,13 @@
 import SuccessResponse from '@/application/services/SuccessResponse.js'
-import { RegisterCredentialsDTO } from '@/application/dtos/RegisterCredentialsDTO.js'
+import { SignupCredentialsDTO } from '@/application/dtos/SignupCredentialsDTO.js'
 import { AuthService } from '@application/services/AuthService.js'
 import { NextFunction, Request, Response } from 'express'
-import { LoginCredentialsDTO } from '@/application/dtos/LoginCredentialsDTO.js'
+import { SigninCredentialsDTO } from '@/application/dtos/SigninCredentialsDTO.js'
 import { YandexAuthDTO } from '@/application/dtos/YandexAuthDTO.js'
 import { UserService } from '@/application/services/UserService.js'
 import { VkAuthDTO } from '@/application/dtos/VkAuthDTO.js'
+import { FinishSignupCredentialsDTO } from '@/application/dtos/FinishSignupCredentialsDTO.js'
+import { ProviderDTO } from '@/application/dtos/ProviderDTO.js'
 
 export default class AuthController {
   protected service: AuthService
@@ -17,7 +19,7 @@ export default class AuthController {
   }
 
   public async register(req: Request, res: Response, next: NextFunction) {
-    const credentials = req.body as RegisterCredentialsDTO
+    const credentials = req.body as SignupCredentialsDTO
 
     try {
       const { user, serialized } = await this.service.register(credentials)
@@ -31,7 +33,7 @@ export default class AuthController {
   }
 
   public async login(req: Request, res: Response, next: NextFunction) {
-    const credentials = req.body as LoginCredentialsDTO
+    const credentials = req.body as SigninCredentialsDTO
 
     try {
       const { user, serialized } = await this.service.login(credentials)
@@ -200,5 +202,24 @@ export default class AuthController {
     } catch (error) {
       next(error)
     }
+  }
+
+  public async finishSignup(req: Request, res: Response, next: NextFunction) {
+    try {
+      const data = req.body as FinishSignupCredentialsDTO
+      const providerData = req.providerData as ProviderDTO
+
+      const { user, serialized } = await this.service.finishSignup({ ...data, ...providerData })
+
+      res.setHeader('Set-Cookie', serialized)
+
+      return res.status(200).json(new SuccessResponse(user))
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  public checkSignup(req: Request, res: Response) {
+    return res.status(200).json(new SuccessResponse(req.providerData))
   }
 }

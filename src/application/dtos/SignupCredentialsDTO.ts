@@ -12,7 +12,7 @@ const checkEmailUnique = async (email: string) => {
   }
 }
 
-export const RegisterCredentialsSchema = z.object({
+export const SignupCredentialsSchema = z.object({
   email: z
     .email({
       error: (iss) =>
@@ -35,4 +35,4 @@ export const RegisterCredentialsSchema = z.object({
   }),
 })
 
-export type RegisterCredentialsDTO = z.infer<typeof RegisterCredentialsSchema>
+export type SignupCredentialsDTO = z.infer<typeof SignupCredentialsSchema>
