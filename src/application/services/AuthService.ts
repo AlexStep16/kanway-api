@@ -322,6 +322,33 @@ export class AuthService {
     session.startTransaction()
 
     try {
+      const users = await this.userService.getByCriteria({ email: data.email })
+
+      if (users && users.length > 0) {
+        const user = users[0]
+
+        if (data.provider === ProvidersEnum.VK) {
+          const updatedUser = await this.userService.edit(
+            { vkClientId: data.clientId },
+            { id: user.id.toString() },
+            undefined,
+            session,
+          )
+
+          const token = this._getUserIdToken(updatedUser.id.toString())
+          const serialized = this._getTokenSerialized(token)
+
+          await session.commitTransaction()
+
+          return {
+            user: updatedUser,
+            serialized,
+          }
+        }
+
+        throw new AppError(ErrorMessages.EMAIL_ALREADY_EXISTS, 400)
+      }
+
       const userData: Partial<IUser> = {
         email: data.email.toLowerCase(),
         username: data.username,
