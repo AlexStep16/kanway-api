@@ -222,7 +222,7 @@ export class AuthService {
       paramsUserInfo.append('client_id', process.env.VK_CLIENT_ID || '')
       paramsUserInfo.append('access_token', accessTokenData.access_token || '')
 
-      const userInfoResponse = await fetch('https://id.vk.ru/oauth2/public_info', {
+      const userInfoResponse = await fetch('https://id.vk.ru/oauth2/user_info', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
