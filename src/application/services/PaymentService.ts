@@ -307,11 +307,9 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
   }
 
   public async autoChargeSubscription(userId: string) {
-    const users = await this.userService.getByCriteria({ id: userId })
+    const user = await this.userService.getById(userId)
 
-    if (!users || users.length === 0) return
-
-    const user = users[0]
+    if (!user) return
 
     if (!user.isSubscriptionActive || !user.paymentMethodId) {
       return await this._revertToBasicPlan(userId)
@@ -560,18 +558,16 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
 
     const paymentModel = payments[0]
 
-    const users = await this.userService.getByCriteria({ id: paymentModel.userId.toString() })
+    const user = await this.userService.getById(paymentModel.userId.toString())
 
     const checkedPayment = await this.checkout.getPayment(payment.id)
 
-    if (!users || users.length === 0) {
+    if (!user) {
       throw new AppError(ErrorMessages.USER_NOT_FOUND, 500)
     }
     if (!checkedPayment) {
       throw new AppError(ErrorMessages.PAYMENT_NOT_FOUND, 500)
     }
-
-    const user = users[0]
 
     const session = await mongoose.startSession()
     session.startTransaction()

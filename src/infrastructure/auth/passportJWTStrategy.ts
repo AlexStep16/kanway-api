@@ -32,13 +32,11 @@ passport.use(
         const userRepository = new UserRepository()
         const userService = new UserService(userRepository, dependencies.services.emailService)
 
-        const users = await userService.getByCriteria({ id: jwtPayload.user_id })
+        const user = await userService.getById(jwtPayload.user_id)
 
-        if (!users || users.length === 0) {
+        if (!user) {
           throw new UserNotFoundError()
         }
-
-        const user = users[0]
 
         return done(null, user)
       } catch (err) {
