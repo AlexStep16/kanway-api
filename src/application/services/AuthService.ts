@@ -231,10 +231,14 @@ export class AuthService {
       })
       const userInfo = (await userInfoResponse.json()) as VkUser
 
-      const users = await this.userService.getByCriteria({ vkClientId: userInfo.user.user_id })
-      console.log(userInfo)
+      const users = userInfo.user.user_id
+        ? await this.userService.getByCriteria({ vkClientId: userInfo.user.user_id })
+        : []
+
       if (!users || users.length === 0) {
-        const usersByEmail = await this.userService.getByCriteria({ email: userInfo.user.email })
+        const usersByEmail = userInfo.user.email
+          ? await this.userService.getByCriteria({ email: userInfo.user.email })
+          : []
 
         if (usersByEmail && usersByEmail.length > 0) {
           const user = usersByEmail[0]
