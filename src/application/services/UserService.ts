@@ -69,6 +69,7 @@ export class UserService extends BaseService<IUserRaw, IUser, IUserCriteria> {
       username: data.username,
       subscriptionId: SubscriptionPlanEnum.Basic,
       avatarColor: BASE_COLORS[Math.floor(Math.random() * 7)],
+      avatarUrl: data.avatarUrl,
     }
 
     const result = await this.repository.create(user, session)
@@ -85,6 +86,7 @@ export class UserService extends BaseService<IUserRaw, IUser, IUserCriteria> {
       username: data.username,
       subscriptionId: SubscriptionPlanEnum.Basic,
       avatarColor: BASE_COLORS[Math.floor(Math.random() * 7)],
+      avatarUrl: data.avatarUrl,
     }
 
     const result = await this.repository.create(user, session)

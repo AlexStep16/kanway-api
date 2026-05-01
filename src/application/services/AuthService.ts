@@ -139,9 +139,14 @@ export class AuthService {
       const users = await this.userService.getByCriteria({ email: userInfo.default_email })
 
       if (!users || users.length === 0) {
+        const avatarUrl = userInfo.is_avatar_empty
+          ? undefined
+          : `https://avatars.yandex.net/get-yapic/${userInfo.default_avatar_id}/islands-68`
+
         const newUser = await this.userService.createYandexUser({
           username: userInfo.display_name,
           email: userInfo.default_email,
+          avatarUrl,
           clientId: userInfo.client_id,
           timezone: payload.timezone,
         })
@@ -257,6 +262,7 @@ export class AuthService {
           if (userInfo.user.email) {
             const newUser = await this.userService.createVkUser({
               username: userInfo.user.first_name + ' ' + userInfo.user.last_name,
+              avatarUrl: userInfo.user.avatar,
               email: userInfo.user.email,
               clientId: userInfo.user.user_id,
               timezone: payload.timezone,

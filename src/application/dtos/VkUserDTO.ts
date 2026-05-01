@@ -12,6 +12,7 @@ export const VkUserSchema = z.object({
         ? ErrorMessages.VK_CLIENT_ID_REQUIRED
         : ErrorMessages.INVALID_VK_CLIENT_ID_FORMAT,
   }),
+  avatarUrl: z.string().optional(),
   username: z.string({
     error: (iss) =>
       iss.input === undefined ? ErrorMessages.USERNAME_REQUIRED : ErrorMessages.USERNAME_INVALID,

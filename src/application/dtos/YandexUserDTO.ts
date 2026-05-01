@@ -16,6 +16,7 @@ export const YandexUserSchema = z.object({
     error: (iss) =>
       iss.input === undefined ? ErrorMessages.USERNAME_REQUIRED : ErrorMessages.USERNAME_INVALID,
   }),
+  avatarUrl: z.string().optional(),
   timezone: z.string({
     error: (iss) =>
       iss.input === undefined ? ErrorMessages.TIMEZONE_REQUIRED : ErrorMessages.INVALID_TIMEZONE,
