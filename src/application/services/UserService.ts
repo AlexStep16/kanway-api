@@ -22,17 +22,14 @@ import { ModelsEnum } from '@/domain/enums/ModelsEnum.js'
 import { YandexUserDTO } from '../dtos/YandexUserDTO.js'
 import { VkUserDTO } from '../dtos/VkUserDTO.js'
 import { TokenKeysEnum } from '@/domain/enums/TokenKeysEnum.js'
-import { BaseService } from './BaseService.js'
 
 const redis = new Redis()
 
-export class UserService extends BaseService<IUserRaw, IUser, IUserCriteria> {
+export class UserService {
   protected repository: UserRepository
   protected emailService: EmailService
 
   constructor(repository: UserRepository, emailService: EmailService) {
-    super(repository)
-
     this.repository = repository
     this.emailService = emailService
   }
@@ -165,11 +162,36 @@ export class UserService extends BaseService<IUserRaw, IUser, IUserCriteria> {
     return toServerCaseKeys(user)
   }
 
-  public async me(id: Types.ObjectId): Promise<IUser | null> {
-    const users = await this.getByCriteria({ id: id.toString() })
+  public async getByVkClientId(id: string, session?: ClientSession): Promise<IUser | null> {
+    if (!id) return null
 
-    if (users && users.length > 0) {
-      return users[0]
+    const users = await this.repository.findByCriteria({ vkClientId: id }, session)
+
+    return toServerCaseKeys(users[0])
+  }
+
+  public async getById(id: string, session?: ClientSession): Promise<IUser | null> {
+    if (!id) return null
+
+    const users = await this.repository.findByCriteria({ id }, session)
+
+    return toServerCaseKeys(users[0])
+  }
+
+  public async getByEmail(email: string, session?: ClientSession): Promise<IUser | null> {
+    if (!email) return null
+
+    const normalizedEmail = email.toLowerCase().trim()
+    const users = await this.repository.findByCriteria({ email: normalizedEmail }, session)
+
+    return toServerCaseKeys(users[0])
+  }
+
+  public async me(id: Types.ObjectId, session?: ClientSession): Promise<IUser | null> {
+    const user = await this.getById(id.toString(), session)
+
+    if (user) {
+      return user
     }
 
     return null
@@ -203,11 +225,9 @@ export class UserService extends BaseService<IUserRaw, IUser, IUserCriteria> {
     modelType: ModelsEnum,
     session?: ClientSession,
   ) {
-    const users = await this.getByCriteria({ id: userId }, undefined, session)
+    const user = await this.getById(userId, session)
 
-    if (!users || users.length === 0) throw new AppError(ErrorMessages.USER_NOT_FOUND, 404)
-
-    const user = users[0]
+    if (!user) throw new AppError(ErrorMessages.USER_NOT_FOUND, 404)
 
     const amount = getCreditsUsed(tokens, modelType)
 

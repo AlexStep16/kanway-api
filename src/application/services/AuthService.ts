@@ -136,9 +136,9 @@ export class AuthService {
       })
       const userInfo = (await userInfoResponse.json()) as YandexUser
 
-      const users = await this.userService.getByCriteria({ email: userInfo.default_email })
+      const user = await this.userService.getByEmail(userInfo.default_email)
 
-      if (!users || users.length === 0) {
+      if (!user) {
         const avatarUrl = userInfo.is_avatar_empty
           ? undefined
           : `https://avatars.yandex.net/get-yapic/${userInfo.default_avatar_id}/islands-68`
@@ -160,8 +160,6 @@ export class AuthService {
           serialized,
         }
       } else {
-        const user = users[0]
-
         if (!user.yandexClientId) {
           await this.userService.edit(
             { yandexClientId: userInfo.client_id },
@@ -231,17 +229,17 @@ export class AuthService {
       })
       const userInfo = (await userInfoResponse.json()) as VkUser
 
-      const users = userInfo.user.user_id
-        ? await this.userService.getByCriteria({ vkClientId: userInfo.user.user_id })
-        : []
+      const user = userInfo.user.user_id
+        ? await this.userService.getByVkClientId(userInfo.user.user_id)
+        : null
 
-      if (!users || users.length === 0) {
-        const usersByEmail = userInfo.user.email
-          ? await this.userService.getByCriteria({ email: userInfo.user.email })
-          : []
+      if (!user) {
+        const userByEmail = userInfo.user.email
+          ? await this.userService.getByEmail(userInfo.user.email)
+          : null
 
-        if (usersByEmail && usersByEmail.length > 0) {
-          const user = usersByEmail[0]
+        if (userByEmail) {
+          const user = userByEmail
 
           if (!user.vkClientId) {
             await this.userService.edit(
@@ -298,8 +296,6 @@ export class AuthService {
           //}
         }
       } else {
-        const user = users[0]
-
         const token = this._getUserIdToken(user.id.toString())
         const serialized = this._getTokenSerialized(token)
 
@@ -326,11 +322,9 @@ export class AuthService {
     session.startTransaction()
 
     try {
-      const users = await this.userService.getByCriteria({ email: data.email })
+      const user = await this.userService.getByEmail(data.email)
 
-      if (users && users.length > 0) {
-        const user = users[0]
-
+      if (user) {
         if (data.provider === ProvidersEnum.VK) {
           const updatedUser = await this.userService.edit(
             { vkClientId: data.clientId },
@@ -382,9 +376,11 @@ export class AuthService {
   }
 
   public async checkEmailUnique(email: string): Promise<boolean> {
-    const users = await this.userService.getByCriteria({ email })
+    if (!email) return true
 
-    return !users || users.length === 0
+    const user = await this.userService.getByEmail(email)
+
+    return !user
   }
 
   private _getUserIdToken(userId: string): string {
@@ -455,37 +451,31 @@ export class AuthService {
   }
 
   public async sendVerificationEmail(email: string): Promise<void> {
-    const users = await this.userService.getByCriteria({ email })
+    const user = await this.userService.getByEmail(email)
 
-    if (!users || users.length === 0) {
+    if (!user) {
       throw new AppError(ErrorMessages.USER_NOT_FOUND, 404)
     }
-
-    const user = users[0]
 
     await this.emailService.sendVerifyEmailToUser(user)
   }
 
   public async sendResetPasswordEmail(email: string): Promise<void> {
-    const users = await this.userService.getByCriteria({ email })
+    const user = await this.userService.getByEmail(email)
 
-    if (!users || users.length === 0) {
+    if (!user) {
       throw new AppError(ErrorMessages.USER_NOT_FOUND, 404)
     }
-
-    const user = users[0]
 
     await this.emailService.sendPasswordRecoveryEmailToUser(user)
   }
 
   public async sendMagicLink(email: string): Promise<void> {
-    const users = await this.userService.getByCriteria({ email })
+    const user = await this.userService.getByEmail(email)
 
-    if (!users || users.length === 0) {
+    if (!user) {
       throw new AppError(ErrorMessages.USER_NOT_FOUND, 404)
     }
-
-    const user = users[0]
 
     await this.emailService.sendMagicLink(user)
   }
