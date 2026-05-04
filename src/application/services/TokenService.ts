@@ -5,9 +5,9 @@ import { ErrorMessages } from '@/enums/ErrorMessages.js'
 const KEY = process.env.JWT_KEY || 'FF123ABC-456D-789E-F012-3456789ABCDF'
 
 export class TokenService {
-  public generateToken(userId: string, expiresIn: number): string {
+  public generateToken(payload: Record<string, unknown>, expiresIn: number): string {
     try {
-      const token = jwt.sign({ user_id: userId }, KEY, {
+      const token = jwt.sign(payload, KEY, {
         expiresIn,
       })
 

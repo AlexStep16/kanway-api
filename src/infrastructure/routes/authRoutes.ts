@@ -20,16 +20,21 @@ export default (controller: AuthController): Router => {
     validationMiddleware(SignupCredentialsSchema),
     controller.register.bind(controller),
   )
-  router.post(
-    '/sign-in',
-    validationMiddleware(SigninCredentialsSchema),
-    controller.login.bind(controller),
+  router.get(
+    '/sign-up/finish/check',
+    validateFinishSignupToken,
+    controller.checkSignup.bind(controller),
   )
   router.post(
     '/sign-up/finish',
     validateFinishSignupToken,
     validationMiddleware(FinishSignupCredentialsSchema),
     controller.finishSignup.bind(controller),
+  )
+  router.post(
+    '/sign-in',
+    validationMiddleware(SigninCredentialsSchema),
+    controller.login.bind(controller),
   )
   router.post(
     '/send/password/recovery',
@@ -54,11 +59,6 @@ export default (controller: AuthController): Router => {
     '/verify/token/password',
     validationMiddleware(TokenSchemaDTO),
     controller.verifyLinkPassword.bind(controller),
-  )
-  router.get(
-    '/check/finish-signup',
-    validateFinishSignupToken,
-    controller.checkSignup.bind(controller),
   )
   router.post('/verify/otp/login', controller.verifyOTPLogin.bind(controller))
   router.post('/verify/otp/email', controller.verifyOTPEmail.bind(controller))

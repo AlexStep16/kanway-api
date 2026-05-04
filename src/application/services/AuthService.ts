@@ -284,11 +284,12 @@ export class AuthService {
             avatarUrl: userInfo.user.avatar,
             username: `${userInfo.user.first_name} ${userInfo.user.last_name}`,
           }
-          const serialized = this._getTokenSerialized(
-            JSON.stringify(registrationData),
-            'finish_sign_up_token',
+
+          const token = this.tokenService.generateToken(
+            registrationData as Record<string, any>,
             60 * 15,
           )
+          const serialized = this._getTokenSerialized(token, 'finish_sign_up_token', 60 * 15)
 
           return {
             serialized,
@@ -384,7 +385,7 @@ export class AuthService {
   }
 
   private _getUserIdToken(userId: string): string {
-    return this.tokenService.generateToken(userId, 60 * 60 * 24 * 30)
+    return this.tokenService.generateToken({ user_id: userId }, 60 * 60 * 24 * 30)
   }
 
   public async login(
