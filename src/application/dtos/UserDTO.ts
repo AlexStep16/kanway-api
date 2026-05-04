@@ -30,6 +30,7 @@ export const UserDTOSchema = z.object({
         ? ErrorMessages.USER_COLOR_REQUIRED
         : 'Неверное значение для цвета. Допустимы: ' + BASE_COLORS.join(', '),
   }),
+  avatarUrl: z.string().optional(),
   timezone: z.string({
     error: (iss) =>
       iss.input === undefined ? ErrorMessages.TIMEZONE_REQUIRED : ErrorMessages.INVALID_TIMEZONE,

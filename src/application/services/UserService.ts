@@ -22,6 +22,7 @@ import { ModelsEnum } from '@/domain/enums/ModelsEnum.js'
 import { YandexUserDTO } from '../dtos/YandexUserDTO.js'
 import { VkUserDTO } from '../dtos/VkUserDTO.js'
 import { TokenKeysEnum } from '@/domain/enums/TokenKeysEnum.js'
+import { SignupServiceCredentialsDTO } from '../dtos/SignupServiceCredentialsDTO.js'
 
 const redis = new Redis()
 
@@ -34,14 +35,8 @@ export class UserService {
     this.emailService = emailService
   }
 
-  public async create(data: Partial<IUser>, session?: ClientSession): Promise<IUser[]> {
-    const result = await this.repository.create(data, session)
-
-    return [toServerCaseKeys(result)]
-  }
-
   public async createWithCredentials(
-    credentials: SignupCredentialsDTO,
+    credentials: SignupCredentialsDTO | SignupServiceCredentialsDTO,
     session?: ClientSession,
   ): Promise<IUser[]> {
     const user: Partial<IUser> = {

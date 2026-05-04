@@ -17,6 +17,7 @@ import { VkUser } from '../interfaces/VkUser.js'
 import { ProvidersEnum } from '@/domain/enums/ProvidersEnum.js'
 import { FinishSignupCredentialsDTO } from '../dtos/FinishSignupCredentialsDTO.js'
 import { ProviderDTO } from '../dtos/ProviderDTO.js'
+import { SignupServiceCredentialsDTO } from '../dtos/SignupServiceCredentialsDTO.js'
 
 export class AuthService {
   private userService: UserService
@@ -348,17 +349,18 @@ export class AuthService {
         throw new AppError(ErrorMessages.EMAIL_ALREADY_EXISTS, 400)
       }
 
-      const userData: Partial<IUser> = {
+      const userData: SignupServiceCredentialsDTO = {
         email: data.email.toLowerCase(),
         username: data.username,
         avatarUrl: data.avatarUrl,
+        timezone: data.timezone,
       }
 
       if (data.provider === ProvidersEnum.VK) {
         userData.vkClientId = data.clientId
       }
 
-      const newUser = await this.userService.create(userData, session)
+      const newUser = await this.userService.createWithCredentials(userData, session)
       const serialized = await this.initNewUser(newUser[0], session, false)
 
       await session.commitTransaction()
