@@ -11,6 +11,7 @@ import { AIMessage } from '@langchain/core/messages'
 import { extractPythonCode } from '@/utils/extractPythonCode.js'
 import { STEP_MESSAGES } from '@/constants/STEP_MESSAGES.js'
 import { ModelsEnum } from '@/domain/enums/ModelsEnum.js'
+import dayjs from 'dayjs'
 
 export const makeCoderNode = (deps: AgentDependencies) => {
   return async (state: typeof AgentStateAnnotation.State, config: RunnableConfig) => {
@@ -44,10 +45,13 @@ export const makeCoderNode = (deps: AgentDependencies) => {
 
     const chain = prompt.pipe(modelToUse)
 
+    const currentDate = dayjs(configurable.currentDate)
+
     const response = await chain.invoke({
       board: configurable.activeBoard,
       workspace: configurable.activeWorkspace,
-      current_date: configurable.currentDate,
+      current_timestamp: configurable.currentDate,
+      current_day_of_week: currentDate.format('dddd'),
       payload: state.current_payload,
     })
 

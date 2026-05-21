@@ -8,7 +8,6 @@ import { patchEntitiesLimiter, postEntitiesLimiter } from '@/limiters.js'
 import { WorkspaceMoveDTOSchema } from '@/application/dtos/WorkspaceMoveDTO.js'
 import { confirmationMiddleware } from '../auth/confirmationMiddleware.js'
 import { WelcomeDTOSchema } from '@/application/dtos/WelcomeDTO.js'
-import { validateUsername } from '../middlewares/validations/validateUsername.js'
 
 interface IWorkspaceRawController extends WorkspaceController {}
 
@@ -22,13 +21,7 @@ export default (controller: IWorkspaceRawController): Router => {
   router.get('/count', controller.getCount)
   router.get('/:id', controller.getById)
 
-  router.post(
-    '/',
-    validateUsername,
-    postEntitiesLimiter,
-    validationMiddleware(WorkspaceDTOSchema),
-    controller.create,
-  )
+  router.post('/', postEntitiesLimiter, validationMiddleware(WorkspaceDTOSchema), controller.create)
   router.patch(
     '/move',
     patchEntitiesLimiter,

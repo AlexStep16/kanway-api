@@ -53,7 +53,8 @@ ${EntitySchemes}
 ### CONTEXT VARIABLES
 - Active Workspace: '{workspace}'
 - Active Board: '{board}'
-- Current Date: '{current_date}'
+- Current Timestamp: '{current_timestamp}'
+- Current Day of Week: '{current_day_of_week}'
 - Global Payload:
   {payload}
 `

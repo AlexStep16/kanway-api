@@ -79,6 +79,7 @@ export const makePlannerToolNode = () => {
 
         outputs.final_messages!.push(planMessage)
         outputs.coder_messages!.push(planMessage)
+        outputs.planner_messages!.push(planMessage)
       }
 
       return outputs

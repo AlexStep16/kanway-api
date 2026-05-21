@@ -29,6 +29,7 @@ import { SafeUpdateData } from '@/infrastructure/types/SafeUpdateData.js'
 import { ITaskCreatePayload } from '../interfaces/ITaskCreatePayload.js'
 import { OperationLogStatusesEnum } from '@/domain/enums/OperationLogStatusesEnum.js'
 import { TaskMoveDTO } from '../dtos/TaskMoveDTO.js'
+import { LimitService } from './LimitService.js'
 
 const MAX_RETRIES = 3
 
@@ -45,6 +46,7 @@ export class TaskService extends BaseService<
   protected categoryService: CategoryService
   protected boardService: BoardService
   protected workspaceService: WorkspaceService
+  protected limitService: LimitService
 
   constructor(
     taskRepository: TaskRepository,
@@ -53,6 +55,7 @@ export class TaskService extends BaseService<
     categoryService: CategoryService,
     boardService: BoardService,
     workspaceService: WorkspaceService,
+    limitService: LimitService,
   ) {
     super(taskRepository)
 
@@ -62,6 +65,7 @@ export class TaskService extends BaseService<
     this.categoryService = categoryService
     this.boardService = boardService
     this.workspaceService = workspaceService
+    this.limitService = limitService
   }
 
   protected getPopulateOptions() {
@@ -105,15 +109,18 @@ export class TaskService extends BaseService<
 
   private async _executeCreateTransaction(
     data: TaskDTO,
-    userId: Types.ObjectId,
+    user: IUser,
     session: ClientSession,
     timezone: string,
   ): Promise<IResponseWithLog<ITaskPopulated[]>> {
+    /** LIMITS CHECK */
+    await this.limitService.checkTasksLimit(user, data.boardId, session)
+
     const tempClientId = data.id
 
     delete data.id // Remove temp client ID before creation
 
-    const taskPayload = await this.prepareTaskCreationPayload(data, userId, timezone)
+    const taskPayload = await this.prepareTaskCreationPayload(data, user.id, timezone)
 
     /* CREATE */
     const newTask = await this.repository.create(taskPayload, session)
@@ -126,13 +133,13 @@ export class TaskService extends BaseService<
         entitiesAfter: [newTask],
         dependencies: [],
       },
-      userId,
+      user.id,
       session,
     )
 
     const newTaskPopulated = await this.getByCriteria(
       { id: newTask.id.toString() },
-      userId,
+      user.id,
       session,
     )
 
@@ -149,27 +156,45 @@ export class TaskService extends BaseService<
     user: IUser,
     externalSession?: ClientSession,
   ): Promise<IResponseWithLog<ITaskPopulated[]> | ITaskCreatePayload> {
-    const userId = user.id
-
     if (externalSession) {
-      return this._executeCreateTransaction(data, userId, externalSession, user.timezone)
+      return this._executeCreateTransaction(data, user, externalSession, user.timezone)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeCreateTransaction(data, userId, session, user.timezone),
+        this._executeCreateTransaction(data, user, session, user.timezone),
       )
     }
   }
 
+  private async _checkTasksLimitByBoards(
+    data: { boardId: string }[],
+    user: IUser,
+    session: ClientSession,
+  ) {
+    if (data.length === 0) return
+
+    const uniqueBoardIds = [...new Set(data.map((task) => task.boardId))]
+
+    const incomingCounts: Record<string, number> = {}
+    for (const board of data) {
+      incomingCounts[board.boardId] = (incomingCounts[board.boardId] || 0) + 1
+    }
+
+    await this.limitService.checkTasksLimitByBoards(user, uniqueBoardIds, incomingCounts, session)
+  }
+
   private async _executeCreateManyTransaction(
     data: TaskDTO[],
-    userId: Types.ObjectId,
+    user: IUser,
     session: ClientSession,
     timezone: string,
     isDryRun: boolean = false,
   ): Promise<IResponseWithLog<ITaskPopulated[]>> {
+    /** LIMITS CHECK */
+    await this._checkTasksLimitByBoards(data, user, session)
+
     const tasksPayload = await this.prepareTasksCreationPayload(
       data,
-      userId,
+      user.id,
       timezone,
       session,
       isDryRun,
@@ -184,7 +209,7 @@ export class TaskService extends BaseService<
           dependencies: [],
           status: OperationLogStatusesEnum.PENDING,
         },
-        userId,
+        user.id,
         session,
       )
 
@@ -199,7 +224,7 @@ export class TaskService extends BaseService<
 
     const newTasksPopulated = await this.getByCriteria(
       { ids: newTasks.map((t) => t.id.toString()) },
-      userId,
+      user.id,
       session,
     )
 
@@ -215,7 +240,7 @@ export class TaskService extends BaseService<
         entitiesAfter: newTasks,
         dependencies: [],
       },
-      userId,
+      user.id,
       session,
     )
 
@@ -231,19 +256,17 @@ export class TaskService extends BaseService<
     externalSession?: ClientSession,
     isDryRun: boolean = false,
   ): Promise<IResponseWithLog<ITaskPopulated[]>> {
-    const userId = user.id
-
     if (externalSession) {
       return this._executeCreateManyTransaction(
         data,
-        userId,
+        user,
         externalSession,
         user.timezone,
         isDryRun,
       )
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeCreateManyTransaction(data, userId, session, user.timezone, isDryRun),
+        this._executeCreateManyTransaction(data, user, session, user.timezone, isDryRun),
       )
     }
   }
@@ -251,7 +274,7 @@ export class TaskService extends BaseService<
   private async _executeEditTransaction(
     data: Omit<TaskEditDTO, 'id'>,
     criteria: ITaskCriteria,
-    userId: Types.ObjectId,
+    user: IUser,
     session: ClientSession,
     timezone: string,
   ): Promise<IResponseWithLog<ITaskPopulated[]>> {
@@ -259,7 +282,7 @@ export class TaskService extends BaseService<
       criteria,
       session,
       undefined,
-      userId,
+      user.id,
     )
 
     if (tasksToUpdate.length === 0) throw new NotFoundError('Задачи для редактирования не найдены.')
@@ -272,21 +295,14 @@ export class TaskService extends BaseService<
       criteria,
       taskPayload,
       session,
-      userId,
+      user.id,
     )
 
     if (updateManyResult.modifiedCount === 0) throw new AppError('Не удалось обновить задачи.', 500)
 
-    const updatedTasks = await this.repository.findByCriteria<ITask>(
-      criteria,
-      session,
-      undefined,
-      userId,
-    )
-
     const sideEffects: Promise<any>[] = []
 
-    /* MOVE */
+    /* MOVED */
     const tasksToMove = tasksToUpdate.filter(
       (t) => data.categoryId !== undefined && t.category.toString() !== data.categoryId,
     )
@@ -294,11 +310,18 @@ export class TaskService extends BaseService<
     if (tasksToMove.length > 0) {
       await this.moveTasksByCategories(
         tasksToMove.map((task) => task.id.toString()),
-        userId,
+        user,
         session,
         true,
       )
     }
+
+    const updatedTasks = await this.repository.findByCriteria<ITask>(
+      criteria,
+      session,
+      undefined,
+      user.id,
+    )
 
     /* LOG */
     const logPromise = this.operationLogService.create(
@@ -309,7 +332,7 @@ export class TaskService extends BaseService<
         entitiesAfter: projectProperties<ITask>(updatedTasks, taskPayload),
         dependencies: [],
       },
-      userId,
+      user.id,
       session,
     )
 
@@ -319,7 +342,7 @@ export class TaskService extends BaseService<
 
     const log = await logPromise
 
-    const updatedTasksPopulated = await this.getByCriteria(criteria, userId, session)
+    const updatedTasksPopulated = await this.getByCriteria(criteria, user.id, session)
 
     return {
       data: updatedTasksPopulated,
@@ -333,20 +356,18 @@ export class TaskService extends BaseService<
     user: IUser,
     externalSession?: ClientSession,
   ): Promise<IResponseWithLog<ITaskPopulated[]>> {
-    const userId = user.id
-
     if (externalSession) {
-      return this._executeEditTransaction(data, criteria, userId, externalSession, user.timezone)
+      return this._executeEditTransaction(data, criteria, user, externalSession, user.timezone)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeEditTransaction(data, criteria, userId, session, user.timezone),
+        this._executeEditTransaction(data, criteria, user, session, user.timezone),
       )
     }
   }
 
   private async _executeEditManyTransaction(
     data: TaskEditDTO[],
-    userId: Types.ObjectId,
+    user: IUser,
     session: ClientSession,
     timezone: string,
     isDryRun: boolean = false,
@@ -357,7 +378,7 @@ export class TaskService extends BaseService<
       { ids: taskIds },
       session,
       undefined,
-      userId,
+      user.id,
     )
 
     if (existingTasks.length === 0) {
@@ -407,7 +428,7 @@ export class TaskService extends BaseService<
           dependencies: [],
           status: OperationLogStatusesEnum.PENDING,
         },
-        userId,
+        user.id,
         session,
       )
 
@@ -417,25 +438,25 @@ export class TaskService extends BaseService<
       }
     }
 
-    const updatedTasksResult = await this.repository.bulkUpdate(taskPayloads, userId, session)
+    const updatedTasksResult = await this.repository.bulkUpdate(taskPayloads, user.id, session)
 
     if (!updatedTasksResult || updatedTasksResult.modifiedCount === 0) {
       throw new AppError('Не удалось обновить задачи.', 500)
+    }
+
+    const sideEffects: Promise<any>[] = []
+
+    /** MOVE */
+    if (movedTaskIds.length > 0) {
+      await this.moveTasksByCategories(movedTaskIds, user, session, true)
     }
 
     const updatedTasks = await this.repository.findByCriteria(
       { ids: taskPayloads.map((p) => p.id.toString()) },
       session,
       undefined,
-      userId,
+      user.id,
     )
-
-    const sideEffects: Promise<any>[] = []
-
-    /** MOVE */
-    if (movedTaskIds.length > 0) {
-      await this.moveTasksByCategories(movedTaskIds, userId, session, true)
-    }
 
     const projectedUpdatedTasks = updatedTasks.map(
       (t) =>
@@ -454,7 +475,7 @@ export class TaskService extends BaseService<
         entitiesAfter: projectedUpdatedTasks,
         dependencies: [],
       },
-      userId,
+      user.id,
       session,
     )
     sideEffects.push(logPromise)
@@ -465,7 +486,7 @@ export class TaskService extends BaseService<
 
     const updatedTasksPopulated = await this.getByCriteria(
       { ids: taskPayloads.map((p) => p.id.toString()) },
-      userId,
+      user.id,
       session,
     )
 
@@ -481,26 +502,18 @@ export class TaskService extends BaseService<
     externalSession?: ClientSession,
     isDryRun: boolean = false,
   ): Promise<IResponseWithLog<ITaskPopulated[]>> {
-    const userId = user.id
-
     if (externalSession) {
-      return this._executeEditManyTransaction(
-        data,
-        userId,
-        externalSession,
-        user.timezone,
-        isDryRun,
-      )
+      return this._executeEditManyTransaction(data, user, externalSession, user.timezone, isDryRun)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeEditManyTransaction(data, userId, session, user.timezone, isDryRun),
+        this._executeEditManyTransaction(data, user, session, user.timezone, isDryRun),
       )
     }
   }
 
   public async moveTasksByCategories(
     taskIds: string[],
-    userId: Types.ObjectId,
+    user: IUser,
     session: ClientSession,
     isRerank = false,
   ) {
@@ -510,7 +523,7 @@ export class TaskService extends BaseService<
       {
         sort: { rank: 1 },
       },
-      userId,
+      user.id,
     )
     if (!tasks.length) return
 
@@ -519,21 +532,21 @@ export class TaskService extends BaseService<
     const [categories, lastRanksArray] = await Promise.all([
       this.categoryService.getByCriteria(
         { ids: categoryIds.map((id) => id.toString()) },
-        userId,
+        user.id,
         session,
       ),
-      this.repository.getLastRanksByParents(categoryIds, 'category', userId, session),
+      this.repository.getLastRanksByParents(categoryIds, 'category', user.id, session),
     ])
 
     const categoryMap = new Map(categories.map((c) => [c.id.toString(), c]))
 
-    // 3. Индексируем последние ранги для быстрого доступа O(1)
     const lastRankMap = new Map<string, string>()
     lastRanksArray.forEach((r) => {
       lastRankMap.set(r.parentId.toString(), r.rank)
     })
 
     const bulkUpdates: SingleUpdateDTO<SafeUpdateData<ITask>>[] = []
+    const tasksWithNewBoard: { boardId: string }[] = []
 
     for (const task of tasks) {
       const catIdStr = task.category.toString()
@@ -546,6 +559,10 @@ export class TaskService extends BaseService<
         category: category.id,
         board: category.board.id,
         workspace: category.workspace.id,
+      }
+
+      if (task.board.toString() !== category.board.id.toString()) {
+        tasksWithNewBoard.push({ boardId: category.board.id.toString() })
       }
 
       if (isRerank) {
@@ -567,18 +584,21 @@ export class TaskService extends BaseService<
     }
 
     if (bulkUpdates.length > 0) {
-      return await this.repository.bulkUpdate(bulkUpdates, userId, session)
+      await this._checkTasksLimitByBoards(tasksWithNewBoard, user, session)
+
+      return await this.repository.bulkUpdate(bulkUpdates, user.id, session)
     }
 
     return null
   }
 
-  public async moveTasksByBoards(
-    taskIds: string[],
-    userId: Types.ObjectId,
-    session: ClientSession,
-  ) {
-    const tasks = await this.repository.findByCriteria({ ids: taskIds }, session, undefined, userId)
+  public async moveTasksByBoards(taskIds: string[], user: IUser, session: ClientSession) {
+    const tasks = await this.repository.findByCriteria(
+      { ids: taskIds },
+      session,
+      undefined,
+      user.id,
+    )
     if (!tasks.length) return
 
     const boardIds = [...new Set(tasks.map((t) => t.board.toString()))]
@@ -606,7 +626,7 @@ export class TaskService extends BaseService<
     )
 
     if (bulkUpdates.length > 0) {
-      return await this.repository.bulkUpdate(bulkUpdates, userId, session)
+      return await this.repository.bulkUpdate(bulkUpdates, user.id, session)
     }
 
     return null
@@ -614,11 +634,16 @@ export class TaskService extends BaseService<
 
   private async _executeDeleteTransaction(
     criteria: ITaskCriteria,
-    userId: Types.ObjectId,
+    user: IUser,
     session: ClientSession,
     isDryRun: boolean = false,
   ): Promise<IResponseWithLog<null>> {
-    const tasksToDelete = await this.repository.findByCriteria(criteria, session, undefined, userId)
+    const tasksToDelete = await this.repository.findByCriteria(
+      criteria,
+      session,
+      undefined,
+      user.id,
+    )
 
     if (tasksToDelete.length === 0) {
       throw new NotFoundError('Задачи для удаления не найдены.')
@@ -634,7 +659,7 @@ export class TaskService extends BaseService<
         status,
         dependencies: [],
       },
-      userId,
+      user.id,
       session,
     )
 
@@ -645,7 +670,7 @@ export class TaskService extends BaseService<
       }
     }
 
-    await this.repository.deleteMany(criteria, userId, session)
+    await this.repository.deleteMany(criteria, user.id, session)
 
     return {
       data: null,
@@ -659,13 +684,11 @@ export class TaskService extends BaseService<
     externalSession?: ClientSession,
     isDryRun: boolean = false,
   ): Promise<IResponseWithLog<null>> {
-    const userId = user.id
-
     if (externalSession) {
-      return this._executeDeleteTransaction(criteria, userId, externalSession, isDryRun)
+      return this._executeDeleteTransaction(criteria, user, externalSession, isDryRun)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeDeleteTransaction(criteria, userId, session, isDryRun),
+        this._executeDeleteTransaction(criteria, user, session, isDryRun),
       )
     }
   }
@@ -673,7 +696,7 @@ export class TaskService extends BaseService<
   private async _executeLifecycleTransaction(
     criteria: ITaskCriteria,
     isRecover: boolean,
-    userId: Types.ObjectId,
+    user: IUser,
     session: ClientSession,
     isDryRun: boolean = false,
   ): Promise<IResponseWithLog<ITaskPopulated[]>> {
@@ -681,8 +704,16 @@ export class TaskService extends BaseService<
       criteria,
       session,
       undefined,
-      userId,
+      user.id,
     )
+
+    if (isRecover) {
+      await this._checkTasksLimitByBoards(
+        tasksToProcess.map((t) => ({ boardId: t.board.toString() })),
+        user,
+        session,
+      )
+    }
 
     const deleteData: LifecycleDTO = {
       isDeleted: true,
@@ -715,7 +746,7 @@ export class TaskService extends BaseService<
         status,
         dependencies: [],
       },
-      userId,
+      user.id,
       session,
     )
 
@@ -726,7 +757,12 @@ export class TaskService extends BaseService<
       }
     }
 
-    const updateResult = await this.repository.updateManyByCriteria(criteria, data, session, userId)
+    const updateResult = await this.repository.updateManyByCriteria(
+      criteria,
+      data,
+      session,
+      user.id,
+    )
 
     if (!updateResult || updateResult.modifiedCount === 0)
       throw new AppError('Не удалось обновить задачи.', 500)
@@ -737,7 +773,7 @@ export class TaskService extends BaseService<
 
     const updatedTasksPopulated = await this.getByCriteria(
       { ids: tasksToProcess.map((t) => t.id.toString()) },
-      userId,
+      user.id,
       session,
     )
 
@@ -753,13 +789,11 @@ export class TaskService extends BaseService<
     externalSession?: ClientSession,
     isDryRun: boolean = false,
   ): Promise<IResponseWithLog<ITaskPopulated[]>> {
-    const userId = user.id
-
     if (externalSession) {
-      return this._executeLifecycleTransaction(criteria, false, userId, externalSession, isDryRun)
+      return this._executeLifecycleTransaction(criteria, false, user, externalSession, isDryRun)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeLifecycleTransaction(criteria, false, userId, session, isDryRun),
+        this._executeLifecycleTransaction(criteria, false, user, session, isDryRun),
       )
     }
   }
@@ -770,20 +804,18 @@ export class TaskService extends BaseService<
     externalSession?: ClientSession,
     isDryRun: boolean = false,
   ): Promise<IResponseWithLog<ITaskPopulated[]>> {
-    const userId = user.id
-
     if (externalSession) {
-      return this._executeLifecycleTransaction(criteria, true, userId, externalSession, isDryRun)
+      return this._executeLifecycleTransaction(criteria, true, user, externalSession, isDryRun)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeLifecycleTransaction(criteria, true, userId, session, isDryRun),
+        this._executeLifecycleTransaction(criteria, true, user, session, isDryRun),
       )
     }
   }
 
   private async _executeCloneTransaction(
     criteria: ITaskCriteria,
-    userId: Types.ObjectId,
+    user: IUser,
     session: ClientSession,
     isDryRun: boolean = false,
     tempIds: string[] = [],
@@ -794,7 +826,14 @@ export class TaskService extends BaseService<
       {
         projection: isDryRun ? '-createdAt -updatedAt' : '+embeddings -createdAt -updatedAt',
       },
-      userId,
+      user.id,
+    )
+
+    /** LIMITS CHECK */
+    await this._checkTasksLimitByBoards(
+      tasksToClone.map((t) => ({ boardId: t.board.toString() })),
+      user,
+      session,
     )
 
     if (tasksToClone.length === 0) throw new NotFoundError('Задачи для клонирования не найдены.')
@@ -814,7 +853,7 @@ export class TaskService extends BaseService<
     const lastRanksArray = await this.repository.getLastRanksByParents(
       uniqueCategoryIds,
       'category',
-      userId,
+      user.id,
       session,
     )
     const lastRankMap = new Map<string, string>()
@@ -860,7 +899,7 @@ export class TaskService extends BaseService<
           dependencies: [],
           status: OperationLogStatusesEnum.PENDING,
         },
-        userId,
+        user.id,
         session,
       )
 
@@ -880,13 +919,13 @@ export class TaskService extends BaseService<
         entitiesAfter: newTasks,
         dependencies: [],
       },
-      userId,
+      user.id,
       session,
     )
 
     const clonedTasksPopulated = await this.getByCriteria(
       { ids: newTasks.map((t) => t.id.toString()) },
-      userId,
+      user.id,
       session,
     )
 
@@ -903,13 +942,11 @@ export class TaskService extends BaseService<
     isDryRun: boolean = false,
     tempIds: string[] = [],
   ): Promise<IResponseWithLog<ITaskPopulated[]>> {
-    const userId = user.id
-
     if (externalSession) {
-      return this._executeCloneTransaction(criteria, userId, externalSession, isDryRun, tempIds)
+      return this._executeCloneTransaction(criteria, user, externalSession, isDryRun, tempIds)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeCloneTransaction(criteria, userId, session, isDryRun, tempIds),
+        this._executeCloneTransaction(criteria, user, session, isDryRun, tempIds),
       )
     }
   }
@@ -1196,8 +1233,8 @@ export class TaskService extends BaseService<
     const taskPayload: ITaskCreatePayload = {
       id: data.id,
       name: taskName,
-      description: data.description || '',
-      dueDate: data.dueDate || '',
+      description: data.description,
+      dueDate: data.dueDate,
       dueHours: data.dueHours,
       dueMinutes: data.dueMinutes,
       color: data.color
@@ -1394,5 +1431,13 @@ export class TaskService extends BaseService<
     await this._prepareMainEditFields(rest, taskPayload, tasksToUpdate, timezone, isDryRun)
 
     return taskPayload
+  }
+
+  public async getTasksCountByBoards(
+    boardIds: Types.ObjectId[],
+    userId: Types.ObjectId,
+    session?: ClientSession,
+  ): Promise<{ parentId: string; count: number }[]> {
+    return this.repository.getCountGroupedByParents(boardIds, 'board', userId, session)
   }
 }

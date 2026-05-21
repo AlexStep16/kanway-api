@@ -4,6 +4,7 @@ import { ModelsEnum } from '@/domain/enums/ModelsEnum.js'
 
 export interface Configurable {
   thread_id: string
+  jobId?: string
   user: IUser
   chatId: string
   activeBoard: {

@@ -26,6 +26,8 @@ export const UpdateTaskDTOSchema = CreateTaskDTOSchema.partial()
       })
       .nullable()
       .optional(),
+    board: z.undefined(ErrorMessages.TASK_MOVE_NOT_ALLOWED),
+    workspace: z.undefined(ErrorMessages.TASK_MOVE_NOT_ALLOWED),
     color: z
       .object({
         value: z.enum(TASK_COLORS_TITLES, {

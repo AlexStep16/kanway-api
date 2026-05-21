@@ -1,8 +1,9 @@
+import { ThemesEnum } from '@/domain/enums/ThemesEnum.js'
 import { ErrorMessages } from '@/enums/ErrorMessages.js'
 import { z } from 'zod'
 
 export const SupportSchemaDTO = z.object({
-  theme: z.string(ErrorMessages.SUPPORT_THEME_INVALID).min(1, ErrorMessages.SUPPORT_THEME_REQUIRED),
+  theme: z.enum(ThemesEnum, ErrorMessages.SUPPORT_THEME_INVALID),
   details: z
     .string(ErrorMessages.SUPPORT_DETAILS_INVALID)
     .min(1, ErrorMessages.SUPPORT_DETAILS_REQUIRED),

@@ -109,7 +109,7 @@ export class WorkspaceService extends BaseService<
     session: ClientSession,
   ): Promise<IResponseWithLog<IWorkspace[]>> {
     /** LIMITS CHECK */
-    await this.limitService.checkWorkspacesLimit(user, session)
+    await this.limitService.checkWorkspacesLimit(user, 1, session)
 
     const workspacePayload = await this.prepareWorkspaceCreationPayload(data, user.id, session)
 
@@ -163,7 +163,7 @@ export class WorkspaceService extends BaseService<
     isDryRun: boolean = false,
   ): Promise<IResponseWithLog<IWorkspace[]>> {
     /** LIMITS CHECK */
-    await this.limitService.checkWorkspacesLimit(user, session)
+    await this.limitService.checkWorkspacesLimit(user, data.length, session)
 
     const workspacesPayload = await this.prepareWorkspacesCreationPayload(
       data,
@@ -536,7 +536,7 @@ export class WorkspaceService extends BaseService<
   private async _executeLifecycleTransaction(
     criteria: IWorkspaceCriteria,
     isRecover: boolean,
-    userId: Types.ObjectId,
+    user: IUser,
     session: ClientSession,
     isDryRun: boolean = false,
   ): Promise<IResponseWithLog<IWorkspace[]>> {
@@ -552,17 +552,22 @@ export class WorkspaceService extends BaseService<
     }
     const data = isRecover ? recoverData : deleteData
     const childrenData = { ...data, isDeletedExternal: isRecover ? false : true }
-    const workspaces = await this.getByCriteria({}, userId, session)
+    const workspaces = await this.getByCriteria({}, user.id, session)
     const workspacesToProcess = await this.repository.findByCriteria(
       criteria,
       session,
       undefined,
-      userId,
+      user.id,
     )
 
     const workspacesCriteria = { workspaceIds: workspacesToProcess.map((ws) => ws.id.toString()) }
 
     if (workspacesToProcess.length === 0) throw new NotFoundError('Пространства не найдены.')
+
+    if (isRecover) {
+      await this.limitService.checkWorkspacesLimit(user, workspacesToProcess.length, session)
+    }
+
     if (
       !isRecover &&
       workspaces.length === 1 &&
@@ -586,7 +591,7 @@ export class WorkspaceService extends BaseService<
         status,
         dependencies: [],
       },
-      userId,
+      user.id,
       session,
     )
 
@@ -602,24 +607,24 @@ export class WorkspaceService extends BaseService<
       this.taskService.updateLifecycleTasksByCriteria(
         workspacesCriteria,
         childrenData,
-        userId,
+        user.id,
         session,
       ),
       this.categoryService.updateLifecycleCategoriesByCriteria(
         workspacesCriteria,
         childrenData,
-        userId,
+        user.id,
         session,
       ),
       this.boardService.updateLifecycleBoardsByCriteria(
         workspacesCriteria,
         childrenData,
-        userId,
+        user.id,
         session,
       ),
 
       /* PROCESS WORKSPACES */
-      this.repository.updateManyByCriteria(criteria, data, session, userId),
+      this.repository.updateManyByCriteria(criteria, data, session, user.id),
     ])
 
     const sideEffects: Promise<any>[] = []
@@ -628,7 +633,7 @@ export class WorkspaceService extends BaseService<
 
     const updatedWorkspacesPopulated = await this.getByCriteria(
       { ids: entitiesAfter.map((w) => w.id.toString()) },
-      userId,
+      user.id,
       session,
     )
 
@@ -644,13 +649,11 @@ export class WorkspaceService extends BaseService<
     externalSession?: ClientSession,
     isDryRun: boolean = false,
   ): Promise<IResponseWithLog<IWorkspace[]>> {
-    const userId = user.id
-
     if (externalSession) {
-      return this._executeLifecycleTransaction(criteria, false, userId, externalSession, isDryRun)
+      return this._executeLifecycleTransaction(criteria, false, user, externalSession, isDryRun)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeLifecycleTransaction(criteria, false, userId, session, isDryRun),
+        this._executeLifecycleTransaction(criteria, false, user, session, isDryRun),
       )
     }
   }
@@ -677,13 +680,11 @@ export class WorkspaceService extends BaseService<
     externalSession?: ClientSession,
     isDryRun: boolean = false,
   ): Promise<IResponseWithLog<IWorkspace[]>> {
-    const userId = user.id
-
     if (externalSession) {
-      return this._executeLifecycleTransaction(criteria, true, userId, externalSession, isDryRun)
+      return this._executeLifecycleTransaction(criteria, true, user, externalSession, isDryRun)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeLifecycleTransaction(criteria, true, userId, session, isDryRun),
+        this._executeLifecycleTransaction(criteria, true, user, session, isDryRun),
       )
     }
   }
@@ -709,7 +710,7 @@ export class WorkspaceService extends BaseService<
 
   private async _executeCloneTransaction(
     criteria: IWorkspaceCriteria,
-    userId: Types.ObjectId,
+    user: IUser,
     session: ClientSession,
     isDryRun: boolean = false,
     tempIds: string[] = [],
@@ -722,13 +723,16 @@ export class WorkspaceService extends BaseService<
       {
         projection: isDryRun ? '-createdAt -updatedAt' : '+embeddings -createdAt -updatedAt',
       },
-      userId,
+      user.id,
     )
 
     if (workspacesToClone.length === 0)
       throw new NotFoundError('Пространства для клонирования не найдены.')
 
-    let lastRank = await this._getLastRank(userId, session)
+    /** LIMITS CHECK */
+    await this.limitService.checkWorkspacesLimit(user, workspacesToClone.length, session)
+
+    let lastRank = await this._getLastRank(user.id, session)
 
     const transformedWorkspaces: IWorkspaceCreatePayload[] = []
 
@@ -757,7 +761,7 @@ export class WorkspaceService extends BaseService<
           dependencies: [],
           status: OperationLogStatusesEnum.PENDING,
         },
-        userId,
+        user.id,
         session,
       )
 
@@ -786,7 +790,7 @@ export class WorkspaceService extends BaseService<
 
     const cloneBoardsResult = await this.boardService.cloneBoardsByWorkspaces(
       workspaceIdsMap,
-      userId,
+      user.id,
       session,
     )
 
@@ -800,7 +804,7 @@ export class WorkspaceService extends BaseService<
         entitiesAfter: newWorkspaces,
         dependencies,
       },
-      userId,
+      user.id,
       session,
     )
 
@@ -817,13 +821,11 @@ export class WorkspaceService extends BaseService<
     isDryRun: boolean = false,
     tempIds: string[] = [],
   ): Promise<IResponseWithLog<IWorkspace[]>> {
-    const userId = user.id
-
     if (externalSession) {
-      return this._executeCloneTransaction(criteria, userId, externalSession, isDryRun, tempIds)
+      return this._executeCloneTransaction(criteria, user, externalSession, isDryRun, tempIds)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeCloneTransaction(criteria, userId, session, isDryRun, tempIds),
+        this._executeCloneTransaction(criteria, user, session, isDryRun, tempIds),
       )
     }
   }

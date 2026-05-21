@@ -7,11 +7,12 @@ import { WorkspaceToolsExecutorService } from './WorkspaceToolsExecutorService.j
 import { BoardToolsExecutorService } from './BoardToolsExecutorService.js'
 import { ToolResult } from '../tools/helpers/ToolResult.js'
 import { FailedToolResult } from '../tools/helpers/FailedToolResult.js'
+import { RunnableConfig } from '@langchain/core/runnables'
 
 export interface DispatchPayload {
   toolCall: PendingToolCall
   userId: string
-  config: Record<string, any>
+  config: RunnableConfig
 }
 
 export class ToolDispatcherService {
@@ -51,6 +52,7 @@ export class ToolDispatcherService {
     try {
       return await executor.executeTool(payload)
     } catch (error) {
+      console.error(error)
       return new FailedToolResult(error instanceof Error ? error.message : String(error))
     }
   }

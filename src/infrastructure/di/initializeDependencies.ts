@@ -99,7 +99,12 @@ export function initializeDependencies() {
   )
   const vectorSearchService = new VectorSearchService(embeddingService, mongoClient)
 
-  const limitService = new LimitService(mockBoardService, mockWorkspaceService)
+  const limitService = new LimitService(
+    mockBoardService,
+    mockCategoryService,
+    mockTaskService,
+    mockWorkspaceService,
+  )
 
   /* SETTING SERVICES START */
   const settingService = new SettingService(settingRepository)
@@ -134,6 +139,7 @@ export function initializeDependencies() {
     mockCategoryService,
     mockBoardService,
     mockWorkspaceService,
+    limitService,
   )
   /* TASK SERVICES END */
 
@@ -145,6 +151,7 @@ export function initializeDependencies() {
     mockWorkspaceService,
     mockBoardService,
     taskService,
+    limitService,
   )
   /* CATEGORY SERVICES END */
 

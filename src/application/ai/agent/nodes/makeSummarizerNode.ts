@@ -6,7 +6,8 @@ import { dispatchCustomEvent } from '@langchain/core/callbacks/dispatch'
 import { CustomEvents } from '@/enums/CustomEvents.js'
 import { Types } from 'mongoose'
 import { SummarizerPrompt } from '../../prompts/SummarizerPrompt.js'
-import { AIMessage, AIMessageChunk, HumanMessage, RemoveMessage } from '@langchain/core/messages'
+import { HumanMessage, RemoveMessage } from '@langchain/core/messages'
+import { getTextHistory } from '../../helpers/getTextHistory.js'
 
 export const makeSummarizerNode = (deps: AgentDependencies): any => {
   return async (state: typeof AgentStateAnnotation.State, _: RunnableConfig) => {
@@ -33,19 +34,11 @@ export const makeSummarizerNode = (deps: AgentDependencies): any => {
 
     const prompt = ChatPromptTemplate.fromMessages([['system', SummarizerPrompt]])
 
-    const chatHistory = []
-
-    for (const msg of messagesToSummarize) {
-      if (msg instanceof HumanMessage) {
-        chatHistory.push(`User:\n${msg.text}\n----------------`)
-      } else if (msg instanceof AIMessage || msg instanceof AIMessageChunk) {
-        chatHistory.push(`AI:\n${msg.text}\n----------------`)
-      }
-    }
+    const chatHistory = getTextHistory(messagesToSummarize)
 
     const chain = prompt.pipe(SUMMARIZER)
 
-    const response = await chain.invoke({ chat_history: chatHistory.join('\n') })
+    const response = await chain.invoke({ chat_history: chatHistory })
 
     await dispatchCustomEvent(CustomEvents.TOKENS_ADDED, response.usage_metadata?.total_tokens || 0)
 

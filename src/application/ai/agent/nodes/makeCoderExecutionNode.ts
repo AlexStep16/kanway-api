@@ -24,7 +24,7 @@ export const makeCoderExecutionNode = () => {
         state.coder_code,
         state.resolved_ambiguities,
         user.id,
-        (config.callbacks as any)?.inheritableMetadata || {},
+        configurable.jobId!,
         state.current_payload,
       )
 
@@ -48,11 +48,12 @@ export const makeCoderExecutionNode = () => {
       outputs.pending_internal_tool_calls = pendingToolCalls
 
       if (executeResult.stdout) {
-        outputs.planner_messages!.push(
-          new HumanMessage(
-            `[SANDBOX OUTPUT]\nCode execution result (print):\n${executeResult.stdout}`,
-          ),
+        const stdoutMessage = new HumanMessage(
+          `[SANDBOX OUTPUT]\nCode execution result (print):\n${executeResult.stdout}`,
         )
+        outputs.coder_messages!.push(stdoutMessage)
+        outputs.final_messages!.push(stdoutMessage)
+        outputs.planner_messages!.push(stdoutMessage)
       }
 
       outputs.coder_errors = []

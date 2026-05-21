@@ -152,15 +152,15 @@ export class BoardService extends BaseService<
     }
   }
 
-  private async _executeCreateManyTransaction(
-    data: BoardDTO[],
+  private async _checkBoardsLimitByWorkspaces(
+    data: { workspaceId: string }[],
     user: IUser,
     session: ClientSession,
-    isDryRun: boolean = false,
-  ): Promise<IResponseWithLog<IBoardPopulated[]>> {
+  ) {
+    if (data.length === 0) return
+
     const uniqueWorkspaceIds = [...new Set(data.map((board) => board.workspaceId))]
 
-    /** LIMITS CHECK */
     const incomingCounts: Record<string, number> = {}
     for (const board of data) {
       incomingCounts[board.workspaceId] = (incomingCounts[board.workspaceId] || 0) + 1
@@ -172,6 +172,16 @@ export class BoardService extends BaseService<
       incomingCounts,
       session,
     )
+  }
+
+  private async _executeCreateManyTransaction(
+    data: BoardDTO[],
+    user: IUser,
+    session: ClientSession,
+    isDryRun: boolean = false,
+  ): Promise<IResponseWithLog<IBoardPopulated[]>> {
+    /** LIMITS CHECK */
+    await this._checkBoardsLimitByWorkspaces(data, user, session)
 
     const boardsPayload = await this.prepareBoardsCreationPayload(data, user.id, session, isDryRun)
 
@@ -239,14 +249,14 @@ export class BoardService extends BaseService<
   private async _executeEditTransaction(
     data: Omit<BoardEditDTO, 'id'>,
     criteria: IBoardCriteria,
-    userId: Types.ObjectId,
+    user: IUser,
     session: ClientSession,
   ): Promise<IResponseWithLog<IBoardPopulated[]>> {
     const boardsToUpdate: IBoard[] = await this.repository.findByCriteria(
       criteria,
       session,
       undefined,
-      userId,
+      user.id,
     )
 
     if (boardsToUpdate.length === 0) throw new NotFoundError('Доски для редактирования не найдены.')
@@ -259,17 +269,10 @@ export class BoardService extends BaseService<
       criteria,
       boardPayload,
       session,
-      userId,
+      user.id,
     )
 
     if (updateManyResult.modifiedCount === 0) throw new AppError('Не удалось обновить доски.', 500)
-
-    const updatedBoards = await this.repository.findByCriteria<IBoard>(
-      criteria,
-      session,
-      undefined,
-      userId,
-    )
 
     const sideEffects: Promise<any>[] = []
 
@@ -283,11 +286,11 @@ export class BoardService extends BaseService<
 
       const affectedCategoriesPromise = this.categoryService.getByCriteria(
         { boardIds },
-        userId,
+        user.id,
         session,
         { projection: { _id: 1 } },
       )
-      const affectedTasksPromise = this.taskService.getByCriteria({ boardIds }, userId, session, {
+      const affectedTasksPromise = this.taskService.getByCriteria({ boardIds }, user.id, session, {
         projection: { _id: 1 },
       })
 
@@ -300,7 +303,7 @@ export class BoardService extends BaseService<
         sideEffects.push(
           this.categoryService.moveCategoriesByBoards(
             affectedCategories.map((c) => c.id.toString()),
-            userId,
+            user,
             session,
           ),
         )
@@ -310,14 +313,21 @@ export class BoardService extends BaseService<
         sideEffects.push(
           this.taskService.moveTasksByBoards(
             affectedTasks.map((t) => t.id.toString()),
-            userId,
+            user,
             session,
           ),
         )
       }
 
-      await this.rerankBoards(boardIds, userId, session)
+      await this.rerankBoards(boardIds, user.id, session)
     }
+
+    const updatedBoards = await this.repository.findByCriteria<IBoard>(
+      criteria,
+      session,
+      undefined,
+      user.id,
+    )
 
     /* LOG */
     const logPromise = this.operationLogService.create(
@@ -328,7 +338,7 @@ export class BoardService extends BaseService<
         entitiesAfter: projectProperties<IBoard>(updatedBoards, boardPayload),
         dependencies: [],
       },
-      userId,
+      user.id,
       session,
     )
 
@@ -338,7 +348,7 @@ export class BoardService extends BaseService<
 
     const log = await logPromise
 
-    const updatedBoardsPopulated = await this.getByCriteria(criteria, userId, session)
+    const updatedBoardsPopulated = await this.getByCriteria(criteria, user.id, session)
 
     return {
       data: updatedBoardsPopulated,
@@ -352,20 +362,18 @@ export class BoardService extends BaseService<
     user: IUser,
     externalSession?: ClientSession,
   ): Promise<IResponseWithLog<IBoardPopulated[]>> {
-    const userId = user.id
-
     if (externalSession) {
-      return this._executeEditTransaction(data, criteria, userId, externalSession)
+      return this._executeEditTransaction(data, criteria, user, externalSession)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeEditTransaction(data, criteria, userId, session),
+        this._executeEditTransaction(data, criteria, user, session),
       )
     }
   }
 
   private async _executeEditManyTransaction(
     data: BoardEditDTO[],
-    userId: Types.ObjectId,
+    user: IUser,
     session: ClientSession,
     isDryRun: boolean = false,
   ): Promise<IResponseWithLog<IBoardPopulated[]>> {
@@ -375,7 +383,7 @@ export class BoardService extends BaseService<
       { ids: boardIds },
       session,
       undefined,
-      userId,
+      user.id,
     )
 
     if (existingBoards.length === 0) {
@@ -427,7 +435,7 @@ export class BoardService extends BaseService<
           dependencies: [],
           status: OperationLogStatusesEnum.PENDING,
         },
-        userId,
+        user.id,
         session,
       )
 
@@ -437,18 +445,11 @@ export class BoardService extends BaseService<
       }
     }
 
-    const updatedBoardsResult = await this.repository.bulkUpdate(boardPayloads, userId, session)
+    const updatedBoardsResult = await this.repository.bulkUpdate(boardPayloads, user.id, session)
 
     if (!updatedBoardsResult || updatedBoardsResult.modifiedCount === 0) {
       throw new AppError('Не удалось обновить доски.', 500)
     }
-
-    const updatedBoards = await this.repository.findByCriteria(
-      { ids: boardPayloads.map((p) => p.id.toString()) },
-      session,
-      undefined,
-      userId,
-    )
 
     const sideEffects: Promise<any>[] = []
 
@@ -456,13 +457,13 @@ export class BoardService extends BaseService<
     if (movedBoardIds.length > 0) {
       const affectedCategoriesPromise = this.categoryService.getByCriteria(
         { boardIds: movedBoardIds },
-        userId,
+        user.id,
         session,
         { projection: { _id: 1 } },
       )
       const affectedTasksPromise = this.taskService.getByCriteria(
         { boardIds: movedBoardIds },
-        userId,
+        user.id,
         session,
         { projection: { _id: 1 } },
       )
@@ -476,7 +477,7 @@ export class BoardService extends BaseService<
         sideEffects.push(
           this.categoryService.moveCategoriesByBoards(
             affectedCategories.map((c) => c.id.toString()),
-            userId,
+            user,
             session,
           ),
         )
@@ -486,14 +487,21 @@ export class BoardService extends BaseService<
         sideEffects.push(
           this.taskService.moveTasksByBoards(
             affectedTasks.map((t) => t.id.toString()),
-            userId,
+            user,
             session,
           ),
         )
       }
 
-      await this.rerankBoards(movedBoardIds, userId, session)
+      await this.rerankBoards(movedBoardIds, user.id, session)
     }
+
+    const updatedBoards = await this.repository.findByCriteria(
+      { ids: boardPayloads.map((p) => p.id.toString()) },
+      session,
+      undefined,
+      user.id,
+    )
 
     const projectedUpdatedBoards = updatedBoards.map(
       (b) =>
@@ -512,7 +520,7 @@ export class BoardService extends BaseService<
         entitiesAfter: projectedUpdatedBoards,
         dependencies: [],
       },
-      userId,
+      user.id,
       session,
     )
     sideEffects.push(logPromise)
@@ -521,7 +529,7 @@ export class BoardService extends BaseService<
     await Promise.all(sideEffects)
     const log = await logPromise
 
-    const updatedBoardsPopulated = await this.getByCriteria({ ids: boardIds }, userId, session)
+    const updatedBoardsPopulated = await this.getByCriteria({ ids: boardIds }, user.id, session)
 
     return {
       data: updatedBoardsPopulated,
@@ -535,13 +543,11 @@ export class BoardService extends BaseService<
     externalSession?: ClientSession,
     isDryRun: boolean = false,
   ): Promise<IResponseWithLog<IBoardPopulated[]>> {
-    const userId = user.id
-
     if (externalSession) {
-      return this._executeEditManyTransaction(data, userId, externalSession, isDryRun)
+      return this._executeEditManyTransaction(data, user, externalSession, isDryRun)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeEditManyTransaction(data, userId, session, isDryRun),
+        this._executeEditManyTransaction(data, user, session, isDryRun),
       )
     }
   }
@@ -625,7 +631,7 @@ export class BoardService extends BaseService<
   private async _executeLifecycleTransaction(
     criteria: IBoardCriteria,
     isRecover: boolean,
-    userId: Types.ObjectId,
+    user: IUser,
     session: ClientSession,
     isDryRun: boolean = false,
   ): Promise<IResponseWithLog<IBoardPopulated[]>> {
@@ -646,12 +652,20 @@ export class BoardService extends BaseService<
       criteria,
       session,
       undefined,
-      userId,
+      user.id,
     )
 
     const boardsCriteria = { boardIds: boardsToProcess.map((b) => b.id.toString()) }
 
     if (boardsToProcess.length === 0) throw new NotFoundError('Доски не найдены.')
+
+    if (isRecover) {
+      await this._checkBoardsLimitByWorkspaces(
+        boardsToProcess.map((b) => ({ workspaceId: b.workspace.toString() })),
+        user,
+        session,
+      )
+    }
 
     const status = isDryRun ? OperationLogStatusesEnum.PENDING : OperationLogStatusesEnum.SUCCESS
 
@@ -668,7 +682,7 @@ export class BoardService extends BaseService<
         status,
         dependencies: [],
       },
-      userId,
+      user.id,
       session,
     )
 
@@ -684,23 +698,23 @@ export class BoardService extends BaseService<
       this.taskService.updateLifecycleTasksByCriteria(
         boardsCriteria,
         childrenData,
-        userId,
+        user.id,
         session,
       ),
       this.categoryService.updateLifecycleCategoriesByCriteria(
         boardsCriteria,
         childrenData,
-        userId,
+        user.id,
         session,
       ),
 
       /* PROCESS BOARDS */
-      this.repository.updateManyByCriteria(criteria, data, session, userId),
+      this.repository.updateManyByCriteria(criteria, data, session, user.id),
     ])
 
     const updatedBoardsPopulated = await this.getByCriteria(
       { ids: entitiesAfter.map((b) => b.id.toString()) },
-      userId,
+      user.id,
       session,
     )
 
@@ -716,13 +730,11 @@ export class BoardService extends BaseService<
     externalSession?: ClientSession,
     isDryRun: boolean = false,
   ): Promise<IResponseWithLog<IBoardPopulated[]>> {
-    const userId = user.id
-
     if (externalSession) {
-      return this._executeLifecycleTransaction(criteria, false, userId, externalSession, isDryRun)
+      return this._executeLifecycleTransaction(criteria, false, user, externalSession, isDryRun)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeLifecycleTransaction(criteria, false, userId, session, isDryRun),
+        this._executeLifecycleTransaction(criteria, false, user, session, isDryRun),
       )
     }
   }
@@ -733,20 +745,18 @@ export class BoardService extends BaseService<
     externalSession?: ClientSession,
     isDryRun: boolean = false,
   ): Promise<IResponseWithLog<IBoardPopulated[]>> {
-    const userId = user.id
-
     if (externalSession) {
-      return this._executeLifecycleTransaction(criteria, true, userId, externalSession, isDryRun)
+      return this._executeLifecycleTransaction(criteria, true, user, externalSession, isDryRun)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeLifecycleTransaction(criteria, true, userId, session, isDryRun),
+        this._executeLifecycleTransaction(criteria, true, user, session, isDryRun),
       )
     }
   }
 
   private async _executeCloneTransaction(
     criteria: IBoardCriteria,
-    userId: Types.ObjectId,
+    user: IUser,
     session: ClientSession,
     isDryRun: boolean = false,
     tempIds: string[] = [],
@@ -759,10 +769,17 @@ export class BoardService extends BaseService<
       {
         projection: isDryRun ? '-createdAt -updatedAt' : '+embeddings -createdAt -updatedAt',
       },
-      userId,
+      user.id,
     )
 
     if (boardsToClone.length === 0) throw new NotFoundError('Доски для клонирования не найдены.')
+
+    /** LIMITS CHECK */
+    await this._checkBoardsLimitByWorkspaces(
+      boardsToClone.map((b) => ({ workspaceId: b.workspace.toString() })),
+      user,
+      session,
+    )
 
     const boardsGroupedByWorkspace: Map<string, IBoard[]> = new Map()
 
@@ -780,7 +797,7 @@ export class BoardService extends BaseService<
     const lastRanksArray = await this.repository.getLastRanksByParents(
       uniqueWorkspaceIds,
       'workspace',
-      userId,
+      user.id,
       session,
     )
     const lastRankMap = new Map<string, string>()
@@ -826,7 +843,7 @@ export class BoardService extends BaseService<
           dependencies: [],
           status: OperationLogStatusesEnum.PENDING,
         },
-        userId,
+        user.id,
         session,
       )
 
@@ -855,7 +872,7 @@ export class BoardService extends BaseService<
 
     const cloneCategoriesResult = await this.categoryService.cloneCategoriesByBoards(
       boardIdsMap,
-      userId,
+      user.id,
       session,
     )
 
@@ -869,13 +886,13 @@ export class BoardService extends BaseService<
         entitiesAfter: clonedBoards,
         dependencies,
       },
-      userId,
+      user.id,
       session,
     )
 
     const clonedBoardsPopulated = await this.getByCriteria(
       { ids: clonedBoards.map((b) => b.id.toString()) },
-      userId,
+      user.id,
       session,
     )
 
@@ -892,13 +909,11 @@ export class BoardService extends BaseService<
     isDryRun: boolean = false,
     tempIds: string[] = [],
   ): Promise<IResponseWithLog<IBoardPopulated[]>> {
-    const userId = user.id
-
     if (externalSession) {
-      return this._executeCloneTransaction(criteria, userId, externalSession, isDryRun, tempIds)
+      return this._executeCloneTransaction(criteria, user, externalSession, isDryRun, tempIds)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeCloneTransaction(criteria, userId, session, isDryRun, tempIds),
+        this._executeCloneTransaction(criteria, user, session, isDryRun, tempIds),
       )
     }
   }

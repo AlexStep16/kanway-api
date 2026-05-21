@@ -12,12 +12,11 @@ export default class SandboxController {
   public executeTool = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const userId = req.body.user_id as string
-      const config = req.body.config as Record<string, any>
 
       const result = await this.toolDispatcherService.dispatch({
         toolCall: req.body,
         userId,
-        config,
+        config: {},
       })
 
       return res.status(200).json(new SuccessResponse(result))
@@ -130,7 +129,7 @@ print({
         for t in remaining_completed
     ],
 })`,
-          config: {},
+          config: JSON.stringify({}),
           user_id: '69e735c8bea70b6721b5afe0',
           payload: {
             board_name: 'Контент‑план: Дизайн‑блог',

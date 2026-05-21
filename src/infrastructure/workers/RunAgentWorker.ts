@@ -95,6 +95,8 @@ export const RunAgentWorker = new Worker(
 
     const configurable = config.configurable as Configurable
 
+    configurable.jobId = job.id
+
     if (config.configurable && typeof config.configurable.user.id === 'string') {
       configurable.user.id = new Types.ObjectId(configurable.user.id)
     }
@@ -127,6 +129,8 @@ export const RunAgentWorker = new Worker(
     )
 
     try {
+      agentEventsHandler.initSubscriber()
+
       const agent = await getAgent(dependencies)
 
       const updateData: Partial<typeof AgentStateAnnotation.State> = {

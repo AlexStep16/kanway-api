@@ -14,6 +14,7 @@ import { getCreditsUsed } from '@/utils/getCreditsUsed.js'
 import { ChatService } from '@/application/services/ChatService.js'
 import { Redis } from 'ioredis'
 import { ModelsEnum } from '@/domain/enums/ModelsEnum.js'
+import * as Sentry from '@sentry/node'
 
 export class AgentEventsHandler extends BaseCallbackHandler {
   name = 'AgentEventsHandler'
@@ -33,9 +34,11 @@ export class AgentEventsHandler extends BaseCallbackHandler {
   public stepsMessage: IChatMessage
   public jobHistory: any[] = []
   public totalTokensUsed = 0
-  public redisClient = new Redis()
+  public redisPublisher: Redis
+  public redisSubscriber: Redis
   public modelType = ModelsEnum.KANWAY_LITE
   public chargedAudioTokens = 0
+  private progressChannel: string
 
   constructor(
     job: Job,
@@ -56,13 +59,42 @@ export class AgentEventsHandler extends BaseCallbackHandler {
     this.chargedAudioTokens = configurable.chargedAudioTokens || 0
 
     this.steps = Array.isArray(stepMessage.content) ? stepMessage.content : []
+
+    this.progressChannel = `sandbox-events:${this.job.id}`
+    this.redisPublisher = new Redis()
+    this.redisSubscriber = new Redis()
   }
 
-  public async pushProgress(newEvent: any) {
+  async pushProgress(newEvent: any) {
     this.jobHistory.push(newEvent)
     await this.job.updateProgress(this.jobHistory)
 
-    await this.redisClient.publish(`job-events:${this.job.id}`, JSON.stringify(newEvent))
+    await this.redisPublisher.publish(`job-events:${this.job.id}`, JSON.stringify(newEvent))
+  }
+
+  async initSubscriber() {
+    this.redisSubscriber.on('message', async (channel, message) => {
+      if (channel !== this.progressChannel) return
+
+      try {
+        const parsed = JSON.parse(message)
+
+        if (parsed.type === 'STEP_ADD') {
+          const stepData = {
+            id: new Types.ObjectId().toString(),
+            name: parsed.data,
+            state: 'in_progress' as const,
+          }
+          await this.addStep(stepData)
+        }
+      } catch (error) {
+        Sentry.captureException(error, {
+          extra: { jobId: this.job.id, rawMessage: message },
+        })
+      }
+    })
+
+    await this.redisSubscriber.subscribe(this.progressChannel)
   }
 
   async initAiMessage() {
@@ -186,18 +218,29 @@ export class AgentEventsHandler extends BaseCallbackHandler {
     )
   }
 
-  addStep(
-    id: string,
-    name: string,
-    state: 'in_progress' | 'completed' | 'failed' | 'cancelled' = 'in_progress',
-  ) {
+  async addStep(data: {
+    id: string
+    name: string
+    state?: 'in_progress' | 'completed' | 'failed' | 'cancelled'
+  }) {
+    this.completeSteps()
+
     const newStep = {
-      id: id,
-      name: name,
-      state: state,
+      id: data.id,
+      name: data.name,
+      state: data.state || 'in_progress',
     }
 
     this.steps.push(newStep)
+
+    await this.pushProgress({
+      id: crypto.randomUUID(),
+      role: CustomEvents.UPDATE_MESSAGE,
+      data: {
+        ...this.stepsMessage,
+        content: this.steps,
+      },
+    })
   }
 
   async handleCustomEvent(event: string, data: any) {
@@ -252,17 +295,7 @@ export class AgentEventsHandler extends BaseCallbackHandler {
     if (event === CustomEvents.STEP_ADD) {
       const stepData = data
 
-      this.completeSteps()
-      this.addStep(stepData.id, stepData.name, stepData.state)
-
-      await this.pushProgress({
-        id: crypto.randomUUID(),
-        role: CustomEvents.UPDATE_MESSAGE,
-        data: {
-          ...this.stepsMessage,
-          content: this.steps,
-        },
-      })
+      await this.addStep(stepData)
     }
 
     if (event === CustomEvents.OPERATION) {

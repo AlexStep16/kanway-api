@@ -27,6 +27,7 @@ import { SafeUpdateData } from '@/infrastructure/types/SafeUpdateData.js'
 import { OperationLogStatusesEnum } from '@/domain/enums/OperationLogStatusesEnum.js'
 import { LexoRank } from 'lexorank'
 import { CategoryMoveDTO } from '../dtos/CategoryMoveDTO.js'
+import { LimitService } from './LimitService.js'
 
 const MAX_RETRIES = 3
 
@@ -43,6 +44,7 @@ export class CategoryService extends BaseService<
   protected workspaceService: WorkspaceService
   protected boardService: BoardService
   protected taskService: TaskService
+  protected limitService: LimitService
 
   constructor(
     categoryRepository: CategoryRepository,
@@ -51,6 +53,7 @@ export class CategoryService extends BaseService<
     workspaceService: WorkspaceService,
     boardService: BoardService,
     taskService: TaskService,
+    limitService: LimitService,
   ) {
     super(categoryRepository)
 
@@ -60,6 +63,7 @@ export class CategoryService extends BaseService<
     this.workspaceService = workspaceService
     this.boardService = boardService
     this.taskService = taskService
+    this.limitService = limitService
   }
 
   protected getPopulateOptions() {
@@ -102,14 +106,17 @@ export class CategoryService extends BaseService<
 
   private async _executeCreateTransaction(
     data: CategoryDTO,
-    userId: Types.ObjectId,
+    user: IUser,
     session: ClientSession,
   ): Promise<IResponseWithLog<ICategoryPopulated[]>> {
+    /** LIMITS CHECK */
+    await this.limitService.checkCategoriesLimit(user, data.boardId, session)
+
     const tempClientId = data.id
 
     delete data.id // Remove temp client ID before creation
 
-    const categoryPayload = await this.prepareCategoryCreationPayload(data, userId, session)
+    const categoryPayload = await this.prepareCategoryCreationPayload(data, user.id, session)
 
     /* CREATE */
     const newCategory = await this.repository.create(categoryPayload, session)
@@ -122,13 +129,13 @@ export class CategoryService extends BaseService<
         entitiesAfter: [newCategory],
         dependencies: [],
       },
-      userId,
+      user.id,
       session,
     )
 
     const newCategoriesPopulated = await this.getByCriteria(
       { id: newCategory.id.toString() },
-      userId,
+      user.id,
       session,
     )
 
@@ -145,26 +152,26 @@ export class CategoryService extends BaseService<
     user: IUser,
     externalSession?: ClientSession,
   ): Promise<IResponseWithLog<ICategoryPopulated[]>> {
-    const userId = user.id
-
     if (externalSession) {
-      return this._executeCreateTransaction(data, userId, externalSession)
+      return this._executeCreateTransaction(data, user, externalSession)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeCreateTransaction(data, userId, session),
+        this._executeCreateTransaction(data, user, session),
       )
     }
   }
 
   private async _executeCreateManyTransaction(
     data: CategoryDTO[],
-    userId: Types.ObjectId,
+    user: IUser,
     session: ClientSession,
     isDryRun: boolean = false,
   ): Promise<IResponseWithLog<ICategoryPopulated[]>> {
+    await this._checkCategoriesLimitByBoards(data, user, session)
+
     const categoriesPayload = await this.prepareCategoriesCreationPayload(
       data,
-      userId,
+      user.id,
       session,
       isDryRun,
     )
@@ -178,7 +185,7 @@ export class CategoryService extends BaseService<
           dependencies: [],
           status: OperationLogStatusesEnum.PENDING,
         },
-        userId,
+        user.id,
         session,
       )
 
@@ -193,7 +200,7 @@ export class CategoryService extends BaseService<
 
     const newCategoriesPopulated = await this.getByCriteria(
       { ids: newCategories.map((t) => t.id.toString()) },
-      userId,
+      user.id,
       session,
     )
 
@@ -209,7 +216,7 @@ export class CategoryService extends BaseService<
         entitiesAfter: newCategories,
         dependencies: [],
       },
-      userId,
+      user.id,
       session,
     )
 
@@ -225,28 +232,48 @@ export class CategoryService extends BaseService<
     externalSession?: ClientSession,
     isDryRun: boolean = false,
   ): Promise<IResponseWithLog<ICategoryPopulated[]>> {
-    const userId = user.id
-
     if (externalSession) {
-      return this._executeCreateManyTransaction(data, userId, externalSession, isDryRun)
+      return this._executeCreateManyTransaction(data, user, externalSession, isDryRun)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeCreateManyTransaction(data, userId, session, isDryRun),
+        this._executeCreateManyTransaction(data, user, session, isDryRun),
       )
     }
+  }
+
+  private async _checkCategoriesLimitByBoards(
+    data: { boardId: string }[],
+    user: IUser,
+    session: ClientSession,
+  ) {
+    if (data.length === 0) return
+
+    const uniqueBoardIds = [...new Set(data.map((task) => task.boardId))]
+
+    const incomingCounts: Record<string, number> = {}
+    for (const board of data) {
+      incomingCounts[board.boardId] = (incomingCounts[board.boardId] || 0) + 1
+    }
+
+    await this.limitService.checkCategoriesLimitByBoards(
+      user,
+      uniqueBoardIds,
+      incomingCounts,
+      session,
+    )
   }
 
   private async _executeEditTransaction(
     data: Omit<CategoryEditDTO, 'id'>,
     criteria: ICategoryCriteria,
-    userId: Types.ObjectId,
+    user: IUser,
     session: ClientSession,
   ): Promise<IResponseWithLog<ICategoryPopulated[]>> {
     const categoriesToUpdate: ICategory[] = await this.repository.findByCriteria(
       criteria,
       session,
       undefined,
-      userId,
+      user.id,
     )
 
     if (categoriesToUpdate.length === 0)
@@ -260,18 +287,11 @@ export class CategoryService extends BaseService<
       criteria,
       categoryPayload,
       session,
-      userId,
+      user.id,
     )
 
     if (updateManyResult.modifiedCount === 0)
       throw new AppError('Не удалось обновить категории.', 500)
-
-    const updatedCategories = await this.repository.findByCriteria<ICategory>(
-      criteria,
-      session,
-      undefined,
-      userId,
-    )
 
     const sideEffects: Promise<any>[] = []
 
@@ -283,7 +303,7 @@ export class CategoryService extends BaseService<
     if (categoriesToMove.length > 0) {
       await this.moveCategoriesByBoards(
         categoriesToMove.map((category) => category.id.toString()),
-        userId,
+        user,
         session,
         true,
       )
@@ -292,7 +312,7 @@ export class CategoryService extends BaseService<
         {
           categoryIds: categoriesToMove.map((c) => c.id.toString()),
         },
-        userId,
+        user.id,
         session,
         { projection: { _id: 1 } },
       )
@@ -300,11 +320,18 @@ export class CategoryService extends BaseService<
       sideEffects.push(
         this.taskService.moveTasksByCategories(
           affectedTasks.map((t) => t.id.toString()),
-          userId,
+          user,
           session,
         ),
       )
     }
+
+    const updatedCategories = await this.repository.findByCriteria<ICategory>(
+      criteria,
+      session,
+      undefined,
+      user.id,
+    )
 
     /* LOG */
     const logPromise = this.operationLogService.create(
@@ -315,7 +342,7 @@ export class CategoryService extends BaseService<
         entitiesAfter: projectProperties(updatedCategories, categoryPayload),
         dependencies: [],
       },
-      userId,
+      user.id,
       session,
     )
 
@@ -325,7 +352,7 @@ export class CategoryService extends BaseService<
 
     const log = await logPromise
 
-    const updatedCategoriesPopulated = await this.getByCriteria(criteria, userId, session)
+    const updatedCategoriesPopulated = await this.getByCriteria(criteria, user.id, session)
 
     return {
       data: updatedCategoriesPopulated,
@@ -339,20 +366,18 @@ export class CategoryService extends BaseService<
     user: IUser,
     externalSession?: ClientSession,
   ): Promise<IResponseWithLog<ICategoryPopulated[]>> {
-    const userId = user.id
-
     if (externalSession) {
-      return this._executeEditTransaction(data, criteria, userId, externalSession)
+      return this._executeEditTransaction(data, criteria, user, externalSession)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeEditTransaction(data, criteria, userId, session),
+        this._executeEditTransaction(data, criteria, user, session),
       )
     }
   }
 
   private async _executeEditManyTransaction(
     data: CategoryEditDTO[],
-    userId: Types.ObjectId,
+    user: IUser,
     session: ClientSession,
     isDryRun: boolean = false,
   ): Promise<IResponseWithLog<ICategoryPopulated[]>> {
@@ -362,7 +387,7 @@ export class CategoryService extends BaseService<
       { ids: categoryIds },
       session,
       undefined,
-      userId,
+      user.id,
     )
 
     if (existingCategories.length === 0) {
@@ -413,7 +438,7 @@ export class CategoryService extends BaseService<
           dependencies: [],
           status: OperationLogStatusesEnum.PENDING,
         },
-        userId,
+        user.id,
         session,
       )
 
@@ -425,7 +450,7 @@ export class CategoryService extends BaseService<
 
     const updatedCategoriesResult = await this.repository.bulkUpdate(
       categoryPayloads,
-      userId,
+      user.id,
       session,
     )
 
@@ -433,22 +458,15 @@ export class CategoryService extends BaseService<
       throw new AppError('Не удалось обновить категории.', 500)
     }
 
-    const updatedCategories = await this.repository.findByCriteria(
-      { ids: categoryPayloads.map((p) => p.id.toString()) },
-      session,
-      undefined,
-      userId,
-    )
-
     const sideEffects: Promise<any>[] = []
 
     /** MOVE */
     if (movedCategoryIds.length > 0) {
-      await this.moveCategoriesByBoards(movedCategoryIds, userId, session, true)
+      await this.moveCategoriesByBoards(movedCategoryIds, user, session, true)
 
       const affectedTasks = await this.taskService.getByCriteria(
         { categoryIds: movedCategoryIds },
-        userId,
+        user.id,
         session,
         { projection: { _id: 1 } },
       )
@@ -457,12 +475,19 @@ export class CategoryService extends BaseService<
         sideEffects.push(
           this.taskService.moveTasksByCategories(
             affectedTasks.map((t) => t.id.toString()),
-            userId,
+            user,
             session,
           ),
         )
       }
     }
+
+    const updatedCategories = await this.repository.findByCriteria(
+      { ids: categoryPayloads.map((p) => p.id.toString()) },
+      session,
+      undefined,
+      user.id,
+    )
 
     const projectedUpdatedCategories = updatedCategories.map(
       (c) =>
@@ -481,7 +506,7 @@ export class CategoryService extends BaseService<
         entitiesAfter: projectedUpdatedCategories,
         dependencies: [],
       },
-      userId,
+      user.id,
       session,
     )
     sideEffects.push(logPromise)
@@ -492,7 +517,7 @@ export class CategoryService extends BaseService<
 
     const updatedCategoriesPopulated = await this.getByCriteria(
       { ids: categoryIds },
-      userId,
+      user.id,
       session,
     )
 
@@ -508,20 +533,18 @@ export class CategoryService extends BaseService<
     externalSession?: ClientSession,
     isDryRun: boolean = false,
   ): Promise<IResponseWithLog<ICategoryPopulated[]>> {
-    const userId = user.id
-
     if (externalSession) {
-      return this._executeEditManyTransaction(data, userId, externalSession, isDryRun)
+      return this._executeEditManyTransaction(data, user, externalSession, isDryRun)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeEditManyTransaction(data, userId, session, isDryRun),
+        this._executeEditManyTransaction(data, user, session, isDryRun),
       )
     }
   }
 
   public async moveCategoriesByBoards(
     categoryIds: string[],
-    userId: Types.ObjectId,
+    user: IUser,
     session: ClientSession,
     isRerank = false,
   ) {
@@ -531,7 +554,7 @@ export class CategoryService extends BaseService<
       {
         sort: { rank: 1 },
       },
-      userId,
+      user.id,
     )
     if (!categories.length) return
 
@@ -540,10 +563,10 @@ export class CategoryService extends BaseService<
     const [boards, lastRanksArray] = await Promise.all([
       this.boardService.getByCriteria(
         { ids: boardIds.map((id) => id.toString()) },
-        userId,
+        user.id,
         session,
       ),
-      this.repository.getLastRanksByParents(boardIds, 'board', userId, session),
+      this.repository.getLastRanksByParents(boardIds, 'board', user.id, session),
     ])
 
     const boardMap = new Map(boards.map((b) => [b.id.toString(), b]))
@@ -554,6 +577,7 @@ export class CategoryService extends BaseService<
     })
 
     const bulkUpdates: SingleUpdateDTO<SafeUpdateData<ICategory>>[] = []
+    const categoriesWithNewBoard: { boardId: string }[] = []
 
     for (const category of categories) {
       const boardIdStr = category.board.toString()
@@ -565,6 +589,10 @@ export class CategoryService extends BaseService<
         id: category.id,
         board: board.id,
         workspace: board.workspace.id,
+      }
+
+      if (category.board.toString() !== board.id.toString()) {
+        categoriesWithNewBoard.push({ boardId: board.id.toString() })
       }
 
       if (isRerank) {
@@ -586,7 +614,9 @@ export class CategoryService extends BaseService<
     }
 
     if (bulkUpdates.length > 0) {
-      return await this.repository.bulkUpdate(bulkUpdates, userId, session)
+      await this._checkCategoriesLimitByBoards(categoriesWithNewBoard, user, session)
+
+      return await this.repository.bulkUpdate(bulkUpdates, user.id, session)
     }
 
     return null
@@ -666,7 +696,7 @@ export class CategoryService extends BaseService<
   private async _executeLifecycleTransaction(
     criteria: ICategoryCriteria,
     isRecover: boolean,
-    userId: Types.ObjectId,
+    user: IUser,
     session: ClientSession,
     isDryRun: boolean = false,
   ): Promise<IResponseWithLog<ICategoryPopulated[]>> {
@@ -686,8 +716,16 @@ export class CategoryService extends BaseService<
       criteria,
       session,
       undefined,
-      userId,
+      user.id,
     )
+
+    if (isRecover) {
+      await this._checkCategoriesLimitByBoards(
+        categoriesToProcess.map((c) => ({ boardId: c.board.toString() })),
+        user,
+        session,
+      )
+    }
 
     const categoriesCriteria = { categoryIds: categoriesToProcess.map((b) => b.id.toString()) }
 
@@ -708,7 +746,7 @@ export class CategoryService extends BaseService<
         status,
         dependencies: [],
       },
-      userId,
+      user.id,
       session,
     )
 
@@ -724,12 +762,12 @@ export class CategoryService extends BaseService<
       this.taskService.updateLifecycleTasksByCriteria(
         categoriesCriteria,
         { ...data, isDeletedExternal: isRecover ? false : true },
-        userId,
+        user.id,
         session,
       ),
 
       /* PROCESS CATEGORIES */
-      this.repository.updateManyByCriteria(criteria, data, session, userId),
+      this.repository.updateManyByCriteria(criteria, data, session, user.id),
     ])
 
     const sideEffects: Promise<any>[] = []
@@ -738,7 +776,7 @@ export class CategoryService extends BaseService<
 
     const updatedCategoriesPopulated = await this.getByCriteria(
       { ids: entitiesAfter.map((c) => c.id.toString()) },
-      userId,
+      user.id,
       session,
     )
 
@@ -754,13 +792,11 @@ export class CategoryService extends BaseService<
     externalSession?: ClientSession,
     isDryRun: boolean = false,
   ): Promise<IResponseWithLog<ICategoryPopulated[]>> {
-    const userId = user.id
-
     if (externalSession) {
-      return this._executeLifecycleTransaction(criteria, false, userId, externalSession, isDryRun)
+      return this._executeLifecycleTransaction(criteria, false, user, externalSession, isDryRun)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeLifecycleTransaction(criteria, false, userId, session, isDryRun),
+        this._executeLifecycleTransaction(criteria, false, user, session, isDryRun),
       )
     }
   }
@@ -771,20 +807,18 @@ export class CategoryService extends BaseService<
     externalSession?: ClientSession,
     isDryRun: boolean = false,
   ): Promise<IResponseWithLog<ICategoryPopulated[]>> {
-    const userId = user.id
-
     if (externalSession) {
-      return this._executeLifecycleTransaction(criteria, true, userId, externalSession, isDryRun)
+      return this._executeLifecycleTransaction(criteria, true, user, externalSession, isDryRun)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeLifecycleTransaction(criteria, true, userId, session, isDryRun),
+        this._executeLifecycleTransaction(criteria, true, user, session, isDryRun),
       )
     }
   }
 
   private async _executeCloneTransaction(
     criteria: ICategoryCriteria,
-    userId: Types.ObjectId,
+    user: IUser,
     session: ClientSession,
     isDryRun: boolean = false,
     tempIds: string[] = [],
@@ -797,7 +831,14 @@ export class CategoryService extends BaseService<
       {
         projection: isDryRun ? '-createdAt -updatedAt' : '+embeddings -createdAt -updatedAt',
       },
-      userId,
+      user.id,
+    )
+
+    /** LIMITS CHECK */
+    await this._checkCategoriesLimitByBoards(
+      categoriesToClone.map((c) => ({ boardId: c.board.toString() })),
+      user,
+      session,
     )
 
     if (categoriesToClone.length === 0)
@@ -819,7 +860,7 @@ export class CategoryService extends BaseService<
     const lastRanksArray = await this.repository.getLastRanksByParents(
       uniqueBoardIds,
       'board',
-      userId,
+      user.id,
       session,
     )
     const lastRankMap = new Map<string, string>()
@@ -865,7 +906,7 @@ export class CategoryService extends BaseService<
           dependencies: [],
           status: OperationLogStatusesEnum.PENDING,
         },
-        userId,
+        user.id,
         session,
       )
 
@@ -896,7 +937,7 @@ export class CategoryService extends BaseService<
 
     const cloneTasksResult = await this.taskService.cloneTasksByCategories(
       categoryIdsMap,
-      userId,
+      user.id,
       session,
     )
 
@@ -910,13 +951,13 @@ export class CategoryService extends BaseService<
         entitiesAfter: clonedCategories,
         dependencies,
       },
-      userId,
+      user.id,
       session,
     )
 
     const clonedCategoriesPopulated = await this.getByCriteria(
       { ids: clonedCategories.map((c) => c.id.toString()) },
-      userId,
+      user.id,
       session,
     )
 
@@ -933,13 +974,11 @@ export class CategoryService extends BaseService<
     isDryRun: boolean = false,
     tempIds: string[] = [],
   ): Promise<IResponseWithLog<ICategoryPopulated[]>> {
-    const userId = user.id
-
     if (externalSession) {
-      return this._executeCloneTransaction(criteria, userId, externalSession, isDryRun, tempIds)
+      return this._executeCloneTransaction(criteria, user, externalSession, isDryRun, tempIds)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeCloneTransaction(criteria, userId, session, isDryRun, tempIds),
+        this._executeCloneTransaction(criteria, user, session, isDryRun, tempIds),
       )
     }
   }
@@ -1368,5 +1407,13 @@ export class CategoryService extends BaseService<
     await this._prepareMainEditFields(rest, categoryPayload, categoriesToUpdate, isDryRun)
 
     return categoryPayload
+  }
+
+  public async getCategoriesCountByBoards(
+    boardIds: Types.ObjectId[],
+    userId: Types.ObjectId,
+    session?: ClientSession,
+  ): Promise<{ parentId: string; count: number }[]> {
+    return this.repository.getCountGroupedByParents(boardIds, 'board', userId, session)
   }
 }

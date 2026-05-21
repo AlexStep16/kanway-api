@@ -8,6 +8,7 @@ import { CreateCategoryDTOSchema } from './CreateCategoriesDTO.js'
 export const UpdateCategoryDTOSchema = CreateCategoryDTOSchema.partial()
   .extend({
     _id: z.string(ErrorMessages.CATEGORY_ID_INVALID),
+    workspace: z.undefined(ErrorMessages.CATEGORY_MOVE_NOT_ALLOWED),
   })
   .strict()
 

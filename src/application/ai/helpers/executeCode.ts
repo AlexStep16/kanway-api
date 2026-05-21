@@ -4,7 +4,7 @@ export async function executeCode(
   code: string,
   resolvedAmbiguities: Record<string, any>,
   userId: Types.ObjectId,
-  inheritableMetadata: Record<string, any>,
+  jobId: string,
   payload: Record<string, any> = {},
 ) {
   const url = (process.env.PYTHON_SANDBOX_URL || 'http://localhost:8000') + '/execute'
@@ -14,12 +14,8 @@ export async function executeCode(
     body: JSON.stringify({
       code: code,
       resolved_ambiguities: resolvedAmbiguities,
+      job_id: jobId,
       user_id: userId,
-      config: {
-        callbacks: {
-          inheritableMetadata,
-        },
-      },
       payload: payload,
     }),
   })
