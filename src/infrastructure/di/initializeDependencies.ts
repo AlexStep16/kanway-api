@@ -47,15 +47,18 @@ import SupportController from '../api/controllers/SupportController.js'
 import SupportRepository from '@/application/repositories/SupportRepository.js'
 import { BaseService } from '@/application/services/BaseService.js'
 import { LimitService } from '@/application/services/LimitService.js'
-import SandboxController from '../api/controllers/SandboxController.js'
+/*import SandboxController from '../api/controllers/SandboxController.js'
 import { ToolDispatcherService } from '@/application/ai/services/ToolDispatcherService.js'
-import { CategoryToolsExecutorService } from '@/application/ai/services/CategoryToolsExecutorService.js'
-import { TaskToolsExecutorService } from '@/application/ai/services/TaskToolsExecutorService.js'
-import { BoardToolsExecutorService } from '@/application/ai/services/BoardToolsExecutorService.js'
+import { CategoryToolsExecutorService } from '@/application/ai/services/CategoryToolsExecutorService.js'*/
+import { TaskToolsExecutorService } from '@/application/ai/servicesNew/TaskToolsExecutorService.js'
+/*import { BoardToolsExecutorService } from '@/application/ai/services/BoardToolsExecutorService.js'
 import { WorkspaceToolsExecutorService } from '@/application/ai/services/WorkspaceToolsExecutorService.js'
-import { GeneralToolsExecutor } from '@/application/ai/services/GeneralToolsExecutor.js'
+import { GeneralToolsExecutor } from '@/application/ai/services/GeneralToolsExecutor.js'*/
 import CheckpointWriteRepository from '@/application/repositories/CheckpointWriteRepository.js'
 import CheckpointRepository from '@/application/repositories/CheckpointRepository.js'
+import { FilterToMongoQueryService } from '@/application/ai/servicesNew/FilterToMongoQueryService.js'
+import { SelectionService } from '@/application/ai/servicesNew/SelectionService.js'
+import { GeneralToolsExecutor } from '@/application/ai/servicesNew/GeneralToolsExecutor.js'
 
 export function initializeDependencies() {
   const mongoClient = new MongoClient(process.env.MONGO_URL || '')
@@ -264,16 +267,29 @@ export function initializeDependencies() {
   )
   /** AI SERVICES END */
 
-  const taskToolsExecutorService = new TaskToolsExecutorService(
-    taskRepository,
+  const filterToMongoQueryService = new FilterToMongoQueryService(
     taskService,
     categoryService,
-    operationLogService,
-    chatMessageService,
-    vectorSearchService,
+    boardService,
   )
 
-  const categoryToolsExecutorService = new CategoryToolsExecutorService(
+  const selectionService = new SelectionService()
+
+  const taskToolsExecutorService = new TaskToolsExecutorService(
+    taskRepository,
+    filterToMongoQueryService,
+    selectionService,
+  )
+
+  const generalToolsExecutor = new GeneralToolsExecutor(
+    selectionService,
+    taskService,
+    categoryService,
+    boardService,
+    workspaceService,
+  )
+
+  /*const categoryToolsExecutorService = new CategoryToolsExecutorService(
     categoryRepository,
     categoryService,
     boardService,
@@ -299,22 +315,13 @@ export function initializeDependencies() {
     vectorSearchService,
   )
 
-  const generalToolsExecutor = new GeneralToolsExecutor(
-    taskService,
-    categoryService,
-    boardService,
-    workspaceService,
-    chatMessageService,
-    operationLogService,
-  )
-
   const toolDispatcherService = new ToolDispatcherService(
     workspaceToolsExecutorService,
     boardToolsExecutorService,
     categoryToolsExecutorService,
     taskToolsExecutorService,
     generalToolsExecutor,
-  )
+  )*/
 
   const authController = new AuthController(authService, userService)
   const workspaceController = new WorkspaceController(workspaceService)
@@ -336,7 +343,7 @@ export function initializeDependencies() {
   const chatController = new ChatController(chatService)
   const chatMessageController = new ChatMessageController(chatMessageService)
   const supportController = new SupportController(supportRepository, emailService)
-  const sandboxController = new SandboxController(toolDispatcherService)
+  //const sandboxController = new SandboxController(toolDispatcherService)
 
   return {
     services: {
@@ -354,7 +361,8 @@ export function initializeDependencies() {
       paymentService,
       paymentMethodService,
       operationLogService,
-      toolDispatcherService,
+      taskToolsExecutorService,
+      generalToolsExecutor,
       chatMessageService,
       chatService,
     },
@@ -374,7 +382,7 @@ export function initializeDependencies() {
       chatController,
       chatMessageController,
       supportController,
-      sandboxController,
+      //sandboxController,
     },
   }
 }

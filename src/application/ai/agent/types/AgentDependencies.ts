@@ -1,11 +1,15 @@
 import { BaseChatModel } from '@langchain/core/language_models/chat_models'
-import { ToolDispatcherService } from '../../services/ToolDispatcherService.js'
+import { TaskToolsExecutorService } from '../../servicesNew/TaskToolsExecutorService.js'
+import { GeneralToolsExecutor } from '../../servicesNew/GeneralToolsExecutor.js'
 
 export interface AgentDependencies {
   services: {
-    toolDispatcherService: ToolDispatcherService
+    taskToolsExecutorService: TaskToolsExecutorService
+    generalToolsExecutor: GeneralToolsExecutor
   }
   models: {
+    ORCHESTRATOR: BaseChatModel
+    ORCHESTRATOR_PRO: BaseChatModel
     PLANNER: BaseChatModel
     CODER: BaseChatModel
     PLANNER_PRO: BaseChatModel

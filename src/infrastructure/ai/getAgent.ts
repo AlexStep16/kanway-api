@@ -1,8 +1,9 @@
 import { MongoDBSaver } from '@langchain/langgraph-checkpoint-mongodb'
-import { createReActAgent } from '@/application/ai/agent/createReActAgent.js'
 import { MongoClient } from 'mongodb'
 import { CompiledStateGraph } from '@langchain/langgraph' // Тип скомпилированного графа
 import { initAiModels } from './initAiModels.js'
+import { createReActAgentNew } from '@/application/ai/agent/createReActAgentNew.js'
+import { initializeDependencies } from '../di/initializeDependencies.js'
 
 // Переменная для хранения единственного экземпляра (Singleton)
 let agentInstance: CompiledStateGraph<any, any, any> | null = null
@@ -12,7 +13,7 @@ let mongoClient: MongoClient | null = null
  * Функция получения агента.
  * Инициализирует всё только при первом вызове.
  */
-export async function getAgent(dependencies: any) {
+export async function getAgent(dependencies: ReturnType<typeof initializeDependencies>) {
   // 1. Если агент уже создан — возвращаем его (кэширование)
   if (agentInstance) {
     return agentInstance
@@ -32,10 +33,12 @@ export async function getAgent(dependencies: any) {
   })
 
   // 6. Собираем агента через нашу фабрику
-  agentInstance = createReActAgent(
+  agentInstance = createReActAgentNew(
     {
       services: {
-        toolDispatcherService: dependencies.services.toolDispatcherService,
+        //toolDispatcherService: dependencies.services.toolDispatcherService,
+        taskToolsExecutorService: dependencies.services.taskToolsExecutorService,
+        generalToolsExecutor: dependencies.services.generalToolsExecutor,
         //contextExternalFetchService: dependencies.services.contextExternalFetchService,
         //vectorSearchService: dependencies.services.vectorSearchService,
         //userService: dependencies.services.userService,

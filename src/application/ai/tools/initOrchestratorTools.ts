@@ -1,0 +1,37 @@
+import { tool } from '@langchain/core/tools'
+import { SuccessToolResult } from './helpers/SuccessToolResult.js'
+import z from 'zod'
+import { AgentDependencies } from '../agent/types/AgentDependencies.js'
+import { CallTaskManagerScheme } from './schemes/callTaskManagerScheme.js'
+
+export function initOrchestratorTools(dependencies: AgentDependencies) {
+  const callTaskManagerAgent = tool(
+    (data) => {
+      return new SuccessToolResult(data)
+    },
+    {
+      name: 'call_task_manager_agent',
+      schema: CallTaskManagerScheme,
+    },
+  )
+
+  const getSelectionDetails = tool(
+    async (data) => {
+      return await dependencies.services.generalToolsExecutor.getSelectionDetails(data.selection_id)
+    },
+    {
+      name: 'get_selection_details',
+      schema: z
+        .object({
+          selection_id: z.string(),
+        })
+        .describe(
+          'Use this tool to retrieve the actual text content (titles, descriptions, names) of a previously searched dataset (selection_id). ' +
+            'Use it ONLY when the user asks you to read, analyze, summarize, or list the specific items in that selection. ' +
+            'NEVER use it if you are simply passing the selection to a Sub-Agent for bulk mutation.',
+        ),
+    },
+  )
+
+  return [callTaskManagerAgent, getSelectionDetails]
+}

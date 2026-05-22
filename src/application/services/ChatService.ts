@@ -26,7 +26,6 @@ import { BaseService } from '@application/services/BaseService.js'
 import { IChatRaw } from '@entities/IChatRaw.js'
 import { BoardService } from './BoardService.js'
 import { WorkspaceService } from './WorkspaceService.js'
-import { AgentStateAnnotation } from '../ai/agent/AgentStateAnnotation.js'
 import { ResolveAmbiguousDTO } from '../dtos/ResolveAmbiguousDTO.js'
 import { OperationLogStatusesEnum } from '@/domain/enums/OperationLogStatusesEnum.js'
 import { getDefaultState } from '../ai/helpers/getDefaultState.js'
@@ -39,6 +38,7 @@ import { ErrorMessages } from '@/enums/ErrorMessages.js'
 import { ModelsEnum } from '@/domain/enums/ModelsEnum.js'
 import { SubscriptionPlanEnum } from '@/domain/enums/SubscriptionPlanEnum.js'
 import { UserService } from './UserService.js'
+import { AgentStateAnnotationOrc } from '../ai/agent/AgentStateAnnotationOrc.js'
 
 const MAX_RETRIES = 3
 
@@ -367,7 +367,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     const payload = getDefaultState()
 
     const jobPayload: {
-      payload: Partial<typeof AgentStateAnnotation.State> | Command
+      payload: Partial<typeof AgentStateAnnotationOrc.State> | Command
       config: RunnableConfig<Configurable>
     } = {
       payload,

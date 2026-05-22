@@ -1,6 +1,5 @@
 import { RunnableConfig } from '@langchain/core/runnables'
 import { AgentDependencies } from '@/application/ai/agent/types/AgentDependencies.js'
-import { AgentStateAnnotation } from '@/application/ai/agent/AgentStateAnnotation.js'
 import { ChatPromptTemplate } from '@langchain/core/prompts'
 import { dispatchCustomEvent } from '@langchain/core/callbacks/dispatch'
 import { CustomEvents } from '@/enums/CustomEvents.js'
@@ -8,9 +7,10 @@ import { Types } from 'mongoose'
 import { Configurable } from '../../interfaces/Configurable.js'
 import getLastAiMessage from '../../helpers/getLastAiMessage.js'
 import { ChatNamePrompt } from '../../prompts/ChatNamePrompt.js'
+import { AgentStateAnnotationOrc } from '../AgentStateAnnotationOrc.js'
 
 export const makeChatNameNode = (deps: AgentDependencies): any => {
-  return async (state: typeof AgentStateAnnotation.State, config: RunnableConfig) => {
+  return async (state: typeof AgentStateAnnotationOrc.State, config: RunnableConfig) => {
     const configurable = config.configurable as Configurable
 
     if (!configurable.isChatNameNeeded) return {}
@@ -22,9 +22,9 @@ export const makeChatNameNode = (deps: AgentDependencies): any => {
 
     const { CHAT_NAME } = deps.models
 
-    const lastAIMessage = getLastAiMessage(state.final_messages)
+    const lastAIMessage = getLastAiMessage(state.messages)
 
-    const prompt = ChatPromptTemplate.fromMessages([['system', ChatNamePrompt]])
+    const prompt = ChatPromptTemplate.fromMessages([['system', ChatNamePrompt], ...state.messages])
 
     const chain = prompt.pipe(CHAT_NAME)
 

@@ -168,7 +168,7 @@ export const RunAgentWorker = new Worker(
           if (
             chunk.content &&
             typeof chunk.content === 'string' &&
-            event.metadata?.langgraph_node === 'Planner'
+            event.metadata?.langgraph_node === 'Orchestrator'
           ) {
             accumulatedContent += chunk.content
 

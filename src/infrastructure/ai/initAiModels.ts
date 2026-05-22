@@ -17,12 +17,22 @@ export function initAiModels() {
     temperature: 0,
   })
 
+  const ORCHESTRATOR = new ChatOpenAI({
+    model: 'gpt-5.4-mini-2026-03-17',
+    temperature: 0,
+  })
+
   const CODER = new ChatOpenAI({
     model: 'gpt-5.4-mini-2026-03-17',
     temperature: 0,
   })
 
   const PLANNER_PRO = new ChatOpenAI({
+    model: 'gpt-5.4',
+    temperature: 0,
+  })
+
+  const ORCHESTRATOR_PRO = new ChatOpenAI({
     model: 'gpt-5.4',
     temperature: 0,
   })
@@ -42,6 +52,8 @@ export function initAiModels() {
   })
 
   return {
+    ORCHESTRATOR,
+    ORCHESTRATOR_PRO,
     PLANNER,
     CODER,
     PLANNER_PRO,
