@@ -1,12 +1,7 @@
 import { BaseMessage, ToolCall, ToolMessage } from '@langchain/core/messages'
 import { Annotation, messagesStateReducer } from '@langchain/langgraph'
 import { ISelection } from '../interfaces/ISelection.js'
-
-export interface PendingToolCall {
-  id: string
-  name: string
-  args: Record<string, any>
-}
+import { IToolReview } from '../interfaces/IToolReview.js'
 
 export const AgentStateAnnotationOrc = Annotation.Root({
   messages: Annotation<BaseMessage[]>({
@@ -17,13 +12,13 @@ export const AgentStateAnnotationOrc = Annotation.Root({
     reducer: (_, y) => y,
     default: () => [],
   }),
+  is_orchestrator_initiated: Annotation<boolean>({
+    reducer: (_, y) => y,
+    default: () => false,
+  }),
 
   /** TOOLS */
   orchestrator_tool_calls: Annotation<ToolCall[]>({
-    reducer: (_, y) => y,
-    default: () => [],
-  }),
-  task_manager_tool_calls: Annotation<ToolCall[]>({
     reducer: (_, y) => y,
     default: () => [],
   }),
@@ -31,9 +26,25 @@ export const AgentStateAnnotationOrc = Annotation.Root({
     reducer: (_, y) => y,
     default: () => [],
   }),
+  task_manager_tool_calls: Annotation<ToolCall[]>({
+    reducer: (_, y) => y,
+    default: () => [],
+  }),
   task_manager_tool_results: Annotation<ToolMessage[]>({
     reducer: (_, y) => y,
     default: () => [],
+  }),
+  task_manager_tool_calls_completed: Annotation<ToolCall[]>({
+    reducer: (_, y) => y,
+    default: () => [],
+  }),
+  tool_waiting_for_review: Annotation<IToolReview | null>({
+    reducer: (_, y) => y,
+    default: () => null,
+  }),
+  tools_reviewed_map: Annotation<Map<string, boolean>>({
+    reducer: (_, y) => y,
+    default: () => new Map(),
   }),
 
   /** ERRORS */

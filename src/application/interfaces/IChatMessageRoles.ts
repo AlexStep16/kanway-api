@@ -3,6 +3,6 @@ export type IChatMessageRoles =
   | 'assistant'
   | 'error'
   | 'operation'
-  | 'steps'
+  | 'status'
   | 'ambiguous'
   | 'display'

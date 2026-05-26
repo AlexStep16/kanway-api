@@ -12,12 +12,14 @@ import { routeOrchestratorToolOutput } from './edges/routeOrchestratorToolOutput
 import { routeTaskManagerAgentOutput } from './edges/routeTaskManagerAgentOutput.js'
 import { routeTaskManagerAgentToolOutput } from './edges/routeTaskManagerAgentToolOutput.js'
 import { AgentStateAnnotationOrc } from './AgentStateAnnotationOrc.js'
+import { makeTaskManagerAgentHumanReviewNode } from './nodes/makeTaskManagerAgentHumanReviewNode.js'
 
 export function createReActAgentNew(dependencies: AgentDependencies, checkpointer: MongoDBSaver) {
   const orchestratorNode = makeOrchestratorNode(dependencies)
   const orchestratorToolNode = makeOrchestratorToolNode(dependencies)
   const taskManagerAgentNode = makeTaskManagerAgentNode(dependencies)
   const taskManagerAgentToolNode = makeTaskManagerAgentToolNode(dependencies)
+  const taskManagerAgentHumanReviewNode = makeTaskManagerAgentHumanReviewNode()
   const chatNameNode = makeChatNameNode(dependencies)
 
   const summarizerNode = makeSummarizerNode(dependencies)
@@ -28,6 +30,7 @@ export function createReActAgentNew(dependencies: AgentDependencies, checkpointe
 
     .addNode('TaskManagerAgent', taskManagerAgentNode)
     .addNode('TaskManagerAgentTool', taskManagerAgentToolNode)
+    .addNode('TaskManagerAgentHumanReview', taskManagerAgentHumanReviewNode)
 
     .addNode('Summarizer', summarizerNode)
 
@@ -51,6 +54,7 @@ export function createReActAgentNew(dependencies: AgentDependencies, checkpointe
     .addConditionalEdges('TaskManagerAgentTool', routeTaskManagerAgentToolOutput, {
       Orchestrator: 'Orchestrator',
       TaskManagerAgent: 'TaskManagerAgent',
+      TaskManagerAgentHumanReview: 'TaskManagerAgentHumanReview',
     })
     .addEdge('ChatName', END)
 

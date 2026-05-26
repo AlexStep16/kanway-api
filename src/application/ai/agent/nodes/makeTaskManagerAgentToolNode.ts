@@ -3,12 +3,16 @@ import { AgentStateAnnotationOrc } from '../AgentStateAnnotationOrc.js'
 import { DynamicStructuredTool } from '@langchain/core/tools'
 import { ToolCall, ToolMessage } from '@langchain/core/messages'
 import z, { ZodAny } from 'zod'
-import { ToolResult } from '../../tools/helpers/ToolResult.js'
+import { ToolResult } from '../../tools/helpers/ToolResult/ToolResult.js'
 import { initTaskManagerTools } from '../../tools/initTaskManagerTools.js'
 import { AgentDependencies } from '../types/AgentDependencies.js'
-import { IToolResultMeta } from '../../interfaces/IToolResultMeta.js'
+import { ConfirmationToolResult } from '../../tools/helpers/ToolResult/ConfirmationToolResult.js'
 
-async function executeToolCall(toolCall: ToolCall, orchestratorTools: DynamicStructuredTool[]) {
+async function executeToolCall(
+  toolCall: ToolCall,
+  orchestratorTools: DynamicStructuredTool[],
+  reviewedMap?: Map<string, boolean>,
+) {
   const toolByToolCalls: DynamicStructuredTool | undefined = orchestratorTools.find(
     (tool) => tool.name === toolCall.name,
   )
@@ -29,7 +33,12 @@ async function executeToolCall(toolCall: ToolCall, orchestratorTools: DynamicStr
   }
 
   try {
-    const observation: ToolResult = await toolByToolCalls.invoke(toolCall.args as any)
+    const observation: ToolResult = await toolByToolCalls.invoke(toolCall.args as any, {
+      context: {
+        isApproved: reviewedMap?.get(toolCall.id!),
+        toolCall,
+      },
+    })
 
     if (!observation.success) {
       throw new ToolMessage(
@@ -39,7 +48,7 @@ async function executeToolCall(toolCall: ToolCall, orchestratorTools: DynamicStr
     }
 
     return {
-      message: new ToolMessage(JSON.stringify(observation.content), toolCall.id!),
+      message: new ToolMessage(observation.content, toolCall.id!),
       meta: observation.meta,
     }
   } catch (error) {
@@ -53,49 +62,70 @@ async function executeToolCall(toolCall: ToolCall, orchestratorTools: DynamicStr
 export const makeTaskManagerAgentToolNode = (dependencies: AgentDependencies) => {
   return async (state: typeof AgentStateAnnotationOrc.State, config: RunnableConfig) => {
     const toolCalls = state.task_manager_tool_calls || []
+    const reviewedMap = state.tools_reviewed_map || new Map()
 
     const outputs: Partial<typeof AgentStateAnnotationOrc.State> = {
       messages: [],
       task_manager_messages: state.task_manager_messages,
+      tool_waiting_for_review: null,
       task_manager_tool_results: [],
+      task_manager_tool_calls_completed: state.task_manager_tool_calls_completed,
       task_manager_has_error: false,
       active_selections: state.active_selections,
     }
 
     const taskManagerTools = initTaskManagerTools(dependencies, config)
-    const lastCallManagerTool = state.orchestrator_tool_calls
-      .reverse()
-      .find((call) => call.name === 'call_task_manager_agent')
-
-    const toolExecutions: Promise<{
-      message: ToolMessage
-      meta: IToolResultMeta | null
-    }>[] = []
 
     for (const toolCall of toolCalls) {
-      if (toolCall.name === 'return_from_task_manager_agent') {
-        outputs.messages!.push(new ToolMessage(toolCall.args.reason, lastCallManagerTool!.id!))
+      if (
+        state.task_manager_tool_calls_completed.some(
+          (completedCall) => completedCall.id === toolCall.id,
+        )
+      ) {
+        continue
       }
 
-      toolExecutions.push(executeToolCall(toolCall, taskManagerTools))
-    }
+      try {
+        const result = await executeToolCall(toolCall, taskManagerTools, reviewedMap)
 
-    const results = await Promise.allSettled(toolExecutions)
+        if (result.message instanceof ConfirmationToolResult) {
+          if (!result.meta || !result.meta.logId) {
+            throw new ToolMessage(
+              `Tool ${toolCall.name} is missing meta information for human review. Developer should check.`,
+              toolCall.id!,
+            )
+          }
 
-    results.forEach((result) => {
-      if (result.status === 'fulfilled') {
-        outputs.task_manager_tool_results!.push(result.value.message)
-        outputs.task_manager_messages!.push(result.value.message)
-
-        if (result.value.meta?.selections) {
-          outputs.active_selections!.push(...result.value.meta.selections)
+          state.tool_waiting_for_review = {
+            toolCallId: toolCall.id!,
+            logId: result.meta.logId,
+          }
+          break
         }
-      } else {
-        outputs.task_manager_has_error = true
-        outputs.task_manager_tool_results!.push(result.reason)
-        outputs.task_manager_messages!.push(result.reason)
+
+        outputs.task_manager_tool_results!.push(result.message)
+        outputs.task_manager_messages!.push(result.message)
+        outputs.task_manager_tool_calls_completed!.push(toolCall)
+
+        if (result.meta?.selections) {
+          outputs.active_selections!.push(...result.meta.selections)
+        }
+      } catch (error: unknown) {
+        if (error instanceof ToolMessage) {
+          outputs.task_manager_has_error = true
+          outputs.task_manager_tool_results!.push(error)
+          outputs.task_manager_messages!.push(error)
+        } else {
+          outputs.task_manager_has_error = true
+          outputs.task_manager_tool_results!.push(
+            new ToolMessage(`Unexpected error: ${(error as Error).message}`, toolCall.id!),
+          )
+          outputs.task_manager_messages!.push(
+            new ToolMessage(`Unexpected error: ${(error as Error).message}`, toolCall.id!),
+          )
+        }
       }
-    })
+    }
 
     return outputs
   }

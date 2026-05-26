@@ -4,23 +4,30 @@ import { ChatPromptTemplate } from '@langchain/core/prompts'
 import { Configurable } from '@/application/ai/interfaces/Configurable.js'
 import { dispatchCustomEvent } from '@langchain/core/callbacks/dispatch'
 import { CustomEvents } from '@/enums/CustomEvents.js'
-import { Types } from 'mongoose'
 import { ModelsEnum } from '@/domain/enums/ModelsEnum.js'
 import { AgentStateAnnotationOrc } from '../AgentStateAnnotationOrc.js'
 import { initOrchestratorTools } from '../../tools/initOrchestratorTools.js'
 import { OrchestratorPrompt } from '../../prompts/OrchestratorPrompt.js'
+import { IStatus } from '@/application/interfaces/Statuses/IStatus.js'
+import { AgentsEnum } from '@/enums/AgentsEnum.js'
 
 export const makeOrchestratorNode = (deps: AgentDependencies) => {
   return async (state: typeof AgentStateAnnotationOrc.State, config: RunnableConfig) => {
-    await dispatchCustomEvent(CustomEvents.STEP_ADD, {
-      id: new Types.ObjectId().toString(),
-      name: 'Думаю',
-    })
+    const statusText = state.is_orchestrator_initiated
+      ? 'Обрабатываю информацию'
+      : 'Анализирую запрос'
+
+    const statusUpdate: Partial<IStatus> = {
+      statusText,
+      currentAgent: AgentsEnum.ORCHESTRATOR,
+    }
+    await dispatchCustomEvent(CustomEvents.STATUS_UPDATE, statusUpdate)
 
     const configurable = config.configurable as Configurable
 
     const outputs: Partial<typeof AgentStateAnnotationOrc.State> = {
       messages: [],
+      is_orchestrator_initiated: true,
       orchestrator_tool_calls: [],
       orchestrator_tool_results: [],
     }
@@ -46,7 +53,7 @@ export const makeOrchestratorNode = (deps: AgentDependencies) => {
       state.active_selections
         ?.map(
           (selection) =>
-            `- (ID: ${selection.id}) ${selection.entityType.toUpperCase()} selection with ${selection.count} items (Sample: ${JSON.stringify(selection.sample)}). Mongo Query used: ${JSON.stringify(selection.query)}`,
+            `- (ID: ${selection.id}) ${selection.entityType.toUpperCase()} selection with ${selection.count} items (Sample: ${JSON.stringify(selection.sample)}))`,
         )
         .join('\n') || 'No active selections'
 

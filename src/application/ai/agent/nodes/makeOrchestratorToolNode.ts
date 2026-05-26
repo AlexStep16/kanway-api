@@ -4,7 +4,7 @@ import { initOrchestratorTools } from '../../tools/initOrchestratorTools.js'
 import { DynamicStructuredTool } from '@langchain/core/tools'
 import { ToolCall, ToolMessage } from '@langchain/core/messages'
 import z, { ZodAny } from 'zod'
-import { ToolResult } from '../../tools/helpers/ToolResult.js'
+import { ToolResult } from '../../tools/helpers/ToolResult/ToolResult.js'
 import { AgentDependencies } from '../types/AgentDependencies.js'
 
 async function executeToolCall(toolCall: ToolCall, orchestratorTools: DynamicStructuredTool[]) {
@@ -36,7 +36,7 @@ async function executeToolCall(toolCall: ToolCall, orchestratorTools: DynamicStr
         toolCall.id!,
       )
     }
-    return new ToolMessage(JSON.stringify(observation.content), toolCall.id!)
+    return new ToolMessage(observation.content, toolCall.id!)
   } catch (error) {
     throw new ToolMessage(
       `Tool ${toolCall.name} execution error: ${(error as Error).message}`,
@@ -57,28 +57,30 @@ export const makeOrchestratorToolNode = (deps: AgentDependencies) => {
 
     const orchestratorTools = initOrchestratorTools(deps)
 
-    const toolExecutions: Promise<ToolMessage>[] = []
-
     for (const toolCall of toolCalls) {
-      if (toolCall.name === 'call_task_manager_agent') {
-        continue
-      }
+      try {
+        if (toolCall.name === 'call_task_manager_agent') continue
 
-      toolExecutions.push(executeToolCall(toolCall, orchestratorTools))
+        const result = await executeToolCall(toolCall, orchestratorTools)
+
+        outputs.orchestrator_tool_results!.push(result)
+        outputs.messages!.push(result)
+      } catch (error: unknown) {
+        if (error instanceof ToolMessage) {
+          outputs.orchestrator_has_error = true
+          outputs.orchestrator_tool_results!.push(error)
+          outputs.messages!.push(error)
+        } else {
+          outputs.orchestrator_has_error = true
+          outputs.orchestrator_tool_results!.push(
+            new ToolMessage(`Unexpected error: ${(error as Error).message}`, toolCall.id!),
+          )
+          outputs.messages!.push(
+            new ToolMessage(`Unexpected error: ${(error as Error).message}`, toolCall.id!),
+          )
+        }
+      }
     }
-
-    const results = await Promise.allSettled(toolExecutions)
-
-    results.forEach((result) => {
-      if (result.status === 'fulfilled') {
-        outputs.orchestrator_tool_results!.push(result.value)
-        outputs.messages!.push(result.value)
-      } else {
-        outputs.orchestrator_has_error = true
-        outputs.orchestrator_tool_results!.push(result.reason)
-        outputs.messages!.push(result.reason)
-      }
-    })
 
     return outputs
   }

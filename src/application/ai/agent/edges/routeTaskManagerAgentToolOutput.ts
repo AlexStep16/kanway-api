@@ -11,5 +11,7 @@ export const routeTaskManagerAgentToolOutput = (state: typeof AgentStateAnnotati
     return 'Orchestrator'
   }
 
+  if (state.tool_waiting_for_review) return 'TaskManagerAgentHumanReview'
+
   return 'TaskManagerAgent'
 }

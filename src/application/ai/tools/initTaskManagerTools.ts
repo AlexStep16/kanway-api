@@ -1,14 +1,20 @@
 import { tool } from '@langchain/core/tools'
 import { AgentDependencies } from '../agent/types/AgentDependencies.js'
 import { RunnableConfig } from '@langchain/core/runnables'
-import { SuccessToolResult } from './helpers/SuccessToolResult.js'
-import z from 'zod'
-import { SearchTasksScheme } from './schemes/searchTasksScheme.js'
+import { SearchTasksScheme } from './schemes/SearchTasksScheme.js'
+import { UpdateTasksScheme } from './schemes/UpdateTasksScheme.js'
 
-export function initTaskManagerTools(dependencies: AgentDependencies, config: RunnableConfig) {
+export function initTaskManagerTools(
+  dependencies: AgentDependencies,
+  runnableConfig: RunnableConfig,
+) {
   const searchTasks = tool(
-    async (data) => {
-      return await dependencies.services.taskToolsExecutorService.searchTasks(data, config)
+    async (data, config) => {
+      return await dependencies.services.taskToolsExecutorService.searchTasks(
+        data,
+        runnableConfig,
+        config.context,
+      )
     },
     {
       name: 'search_tasks',
@@ -16,21 +22,19 @@ export function initTaskManagerTools(dependencies: AgentDependencies, config: Ru
     },
   )
 
-  const returnFromTaskManagerAgent = tool(
-    (data) => {
-      return new SuccessToolResult(data)
+  const updateTasks = tool(
+    async (data, config) => {
+      return await dependencies.services.taskToolsExecutorService.updateTasks(
+        data,
+        runnableConfig,
+        config.context,
+      )
     },
     {
-      name: 'return_from_task_manager_agent',
-      schema: z.object({
-        reason: z
-          .string()
-          .describe(
-            'The reason for returning from the Task Manager Agent. This can be used to indicate the completion of a task or to provide an explanation for returning.',
-          ),
-      }),
+      name: 'update_tasks',
+      schema: UpdateTasksScheme,
     },
   )
 
-  return [searchTasks, returnFromTaskManagerAgent]
+  return [searchTasks, updateTasks]
 }

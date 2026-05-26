@@ -266,17 +266,18 @@ export function initializeDependencies() {
     checkpointRepository,
   )
   /** AI SERVICES END */
+  const selectionService = new SelectionService()
 
   const filterToMongoQueryService = new FilterToMongoQueryService(
     taskService,
     categoryService,
     boardService,
+    selectionService,
   )
-
-  const selectionService = new SelectionService()
 
   const taskToolsExecutorService = new TaskToolsExecutorService(
     taskRepository,
+    taskService,
     filterToMongoQueryService,
     selectionService,
   )

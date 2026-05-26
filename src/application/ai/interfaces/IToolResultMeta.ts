@@ -1,5 +1,6 @@
 import { ISelection } from './ISelection.js'
 
 export interface IToolResultMeta {
-  selections: ISelection[]
+  selections?: ISelection[]
+  logId?: string
 }

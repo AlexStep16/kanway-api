@@ -14,7 +14,9 @@ import { getCreditsUsed } from '@/utils/getCreditsUsed.js'
 import { ChatService } from '@/application/services/ChatService.js'
 import { Redis } from 'ioredis'
 import { ModelsEnum } from '@/domain/enums/ModelsEnum.js'
-import * as Sentry from '@sentry/node'
+import { StatusStatesEnum } from '@/enums/StatusStatesEnum.js'
+import { IStatus } from '@/application/interfaces/Statuses/IStatus.js'
+import { IStatusLog } from '@/application/interfaces/Statuses/IStatusLog.js'
 
 export class AgentEventsHandler extends BaseCallbackHandler {
   name = 'AgentEventsHandler'
@@ -26,19 +28,13 @@ export class AgentEventsHandler extends BaseCallbackHandler {
   private configurable: Configurable
 
   public aiMessage: IChatMessage | null = null
-  public steps: {
-    id: string
-    name: string
-    state: 'in_progress' | 'completed' | 'failed' | 'cancelled'
-  }[] = []
-  public stepsMessage: IChatMessage
+  public status: IStatus
+  public statusMessage: IChatMessage
   public jobHistory: any[] = []
   public totalTokensUsed = 0
   public redisPublisher: Redis
-  public redisSubscriber: Redis
   public modelType = ModelsEnum.KANWAY_LITE
   public chargedAudioTokens = 0
-  private progressChannel: string
 
   constructor(
     job: Job,
@@ -46,7 +42,7 @@ export class AgentEventsHandler extends BaseCallbackHandler {
     chatMessageService: ChatMessageService,
     operationLogService: OperationLogService,
     configurable: Configurable,
-    stepMessage: IChatMessage,
+    statusMessage: IChatMessage,
   ) {
     super()
     this.job = job
@@ -54,15 +50,13 @@ export class AgentEventsHandler extends BaseCallbackHandler {
     this.chatMessageService = chatMessageService
     this.operationLogService = operationLogService
     this.configurable = configurable
-    this.stepsMessage = stepMessage
+    this.statusMessage = statusMessage
     this.modelType = configurable.modelType
     this.chargedAudioTokens = configurable.chargedAudioTokens || 0
 
-    this.steps = Array.isArray(stepMessage.content) ? stepMessage.content : []
+    this.status = statusMessage.content
 
-    this.progressChannel = `sandbox-events:${this.job.id}`
     this.redisPublisher = new Redis()
-    this.redisSubscriber = new Redis()
   }
 
   async pushProgress(newEvent: any) {
@@ -70,31 +64,6 @@ export class AgentEventsHandler extends BaseCallbackHandler {
     await this.job.updateProgress(this.jobHistory)
 
     await this.redisPublisher.publish(`job-events:${this.job.id}`, JSON.stringify(newEvent))
-  }
-
-  async initSubscriber() {
-    this.redisSubscriber.on('message', async (channel, message) => {
-      if (channel !== this.progressChannel) return
-
-      try {
-        const parsed = JSON.parse(message)
-
-        if (parsed.type === 'STEP_ADD') {
-          const stepData = {
-            id: new Types.ObjectId().toString(),
-            name: parsed.data,
-            state: 'in_progress' as const,
-          }
-          await this.addStep(stepData)
-        }
-      } catch (error) {
-        Sentry.captureException(error, {
-          extra: { jobId: this.job.id, rawMessage: message },
-        })
-      }
-    })
-
-    await this.redisSubscriber.subscribe(this.progressChannel)
   }
 
   async initAiMessage() {
@@ -153,39 +122,41 @@ export class AgentEventsHandler extends BaseCallbackHandler {
     })
   }
 
-  completeSteps() {
-    this.steps.forEach((step) => {
-      if (step.state === 'in_progress') {
-        step.state = 'completed'
-      }
+  completeStatus() {
+    this.status.state = StatusStatesEnum.COMPLETED
+    this.status.statusText = 'Выполнение завершено'
+
+    this.status.logs.forEach((log) => {
+      log.state = StatusStatesEnum.COMPLETED
     })
   }
 
-  async updateStepsMessage() {
-    if (this.stepsMessage) {
-      const creditsUsed = getCreditsUsed(this.totalTokensUsed, this.modelType)
+  async updateStatusMessage() {
+    const creditsUsed = getCreditsUsed(this.totalTokensUsed, this.modelType)
 
-      const dto: Partial<ChatMessageDTO> = {
-        content: this.steps,
-        creditsUsed: creditsUsed + this.chargedAudioTokens,
-      }
-
-      await this.editChatMessage(
-        dto,
-        {
-          id: this.stepsMessage.id.toString(),
-        },
-        this.configurable.user,
-      )
+    const dto: Partial<ChatMessageDTO> = {
+      content: this.status,
+      creditsUsed: creditsUsed + this.chargedAudioTokens,
     }
+
+    await this.editChatMessage(
+      dto,
+      {
+        id: this.statusMessage.id.toString(),
+      },
+      this.configurable.user,
+    )
   }
 
-  failSteps(isCancelled = false) {
-    for (const step of this.steps) {
-      if (step.state === 'in_progress') {
-        step.state = isCancelled ? 'cancelled' : 'failed'
-      }
+  failStatus(isCancelled = false) {
+    if (this.status.state === StatusStatesEnum.IN_PROGRESS) {
+      this.status.state = isCancelled ? StatusStatesEnum.CANCELLED : StatusStatesEnum.FAILED
     }
+    this.status.logs.forEach((log) => {
+      if (log.state === StatusStatesEnum.IN_PROGRESS) {
+        log.state = isCancelled ? StatusStatesEnum.CANCELLED : StatusStatesEnum.FAILED
+      }
+    })
   }
 
   async updateAssistantMessage(dto: Partial<ChatMessageDTO>) {
@@ -218,29 +189,43 @@ export class AgentEventsHandler extends BaseCallbackHandler {
     )
   }
 
-  async addStep(data: {
-    id: string
-    name: string
-    state?: 'in_progress' | 'completed' | 'failed' | 'cancelled'
-  }) {
-    this.completeSteps()
-
-    const newStep = {
-      id: data.id,
-      name: data.name,
-      state: data.state || 'in_progress',
-    }
-
-    this.steps.push(newStep)
+  async updateStatus(data: IStatus) {
+    Object.assign(this.status, data)
 
     await this.pushProgress({
       id: crypto.randomUUID(),
       role: CustomEvents.UPDATE_MESSAGE,
       data: {
-        ...this.stepsMessage,
-        content: this.steps,
+        ...this.statusMessage,
+        content: this.status,
       },
     })
+  }
+
+  async updateProgressStatus() {
+    await this.pushProgress({
+      id: crypto.randomUUID(),
+      role: CustomEvents.UPDATE_MESSAGE,
+      data: {
+        ...this.statusMessage,
+        content: this.status,
+      },
+    })
+  }
+
+  async addLog(log: IStatusLog) {
+    this.status.logs.push(log)
+
+    await this.updateProgressStatus()
+  }
+
+  async updateLog(log: IStatusLog) {
+    const logIndex = this.status.logs.findIndex((l) => l.id === log.id)
+    if (logIndex !== -1) {
+      this.status.logs[logIndex] = log
+
+      await this.updateProgressStatus()
+    }
   }
 
   async handleCustomEvent(event: string, data: any) {
@@ -292,10 +277,24 @@ export class AgentEventsHandler extends BaseCallbackHandler {
       )
     }
 
-    if (event === CustomEvents.STEP_ADD) {
-      const stepData = data
+    if (event === CustomEvents.STATUS_ADD_LOG) {
+      const logData = data
 
-      await this.addStep(stepData)
+      await this.addLog(logData)
+    }
+
+    if (event === CustomEvents.STATUS_UPDATE_LOG) {
+      const logData = data
+
+      const logIndex = this.status.logs.findIndex((log) => log.id === logData.id)
+      if (logIndex !== -1) {
+        this.status.logs[logIndex] = logData
+        await this.updateStatusMessage()
+      }
+    }
+
+    if (event === CustomEvents.STATUS_UPDATE) {
+      await this.updateStatus(data)
     }
 
     if (event === CustomEvents.OPERATION) {

@@ -8,7 +8,7 @@ export class SelectionService {
   public async addSelection(
     entityType: 'task' | 'category' | 'board' | 'workspace',
     entityIds: string[],
-    query: Record<string, any>,
+    humanReadableFilter: string,
     sample: any[],
     userId: string,
   ) {
@@ -17,8 +17,8 @@ export class SelectionService {
       id,
       entityType,
       entityIds,
+      humanReadableFilter,
       sample,
-      query,
       count: entityIds.length,
       userId,
     }

@@ -114,8 +114,8 @@ export const RunAgentWorker = new Worker(
       }
     }, 100)
 
-    const stepsMessage = await dependencies.services.chatMessageService.getByCriteria(
-      { id: configurable.stepMessageId },
+    const statusMessage = await dependencies.services.chatMessageService.getByCriteria(
+      { id: configurable.statusMessageId },
       configurable.user.id,
     )
 
@@ -125,12 +125,10 @@ export const RunAgentWorker = new Worker(
       dependencies.services.chatMessageService,
       dependencies.services.operationLogService,
       configurable,
-      stepsMessage[0],
+      statusMessage[0],
     )
 
     try {
-      agentEventsHandler.initSubscriber()
-
       const agent = await getAgent(dependencies)
 
       const updateData: Partial<typeof AgentStateAnnotation.State> = {
@@ -192,7 +190,7 @@ export const RunAgentWorker = new Worker(
     } catch (error: any) {
       console.error('Error in RunAgentWorker:', error)
 
-      agentEventsHandler.failSteps(controller.signal.aborted)
+      agentEventsHandler.failStatus(controller.signal.aborted)
 
       //Sentry.captureException(error, { extra: { jobId: job.id, chatId: configurable?.chatId } })
 
@@ -232,8 +230,8 @@ export const RunAgentWorker = new Worker(
       }
       await agent.updateState(config, updateData)
 
-      agentEventsHandler.completeSteps()
-      await agentEventsHandler.updateStepsMessage()
+      agentEventsHandler.completeStatus()
+      await agentEventsHandler.updateStatusMessage()
 
       await agentEventsHandler.pushProgress({
         id: crypto.randomUUID(),

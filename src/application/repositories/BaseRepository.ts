@@ -122,6 +122,14 @@ export abstract class BaseRepository<
     return this.updateMany(filter, data, session)
   }
 
+  public async updateManyByFilterPipeline(
+    filter: FilterQuery<TRawEntity>,
+    pipeline: Record<string, any>[],
+    session?: ClientSession,
+  ): Promise<UpdateWriteOpResult> {
+    return this.model.updateMany(filter, pipeline as any, { session })
+  }
+
   public async bulkUpdate(
     updates: SingleUpdateDTO<SafeUpdateData<TEntity>>[],
     userId: Types.ObjectId,

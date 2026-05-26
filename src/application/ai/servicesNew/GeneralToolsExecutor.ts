@@ -3,9 +3,9 @@ import { SelectionService } from './SelectionService.js'
 import { WorkspaceService } from '@/application/services/WorkspaceService.js'
 import { BoardService } from '@/application/services/BoardService.js'
 import { TaskService } from '@/application/services/TaskService.js'
-import { ToolResult } from '../tools/helpers/ToolResult.js'
-import { FailedToolResult } from '../tools/helpers/FailedToolResult.js'
-import { SuccessToolResult } from '../tools/helpers/SuccessToolResult.js'
+import { ToolResult } from '../tools/helpers/ToolResult/ToolResult.js'
+import { FailedToolResult } from '../tools/helpers/ToolResult/FailedToolResult.js'
+import { SuccessToolResult } from '../tools/helpers/ToolResult/SuccessToolResult.js'
 
 export class GeneralToolsExecutor {
   constructor(
@@ -43,6 +43,6 @@ export class GeneralToolsExecutor {
         return new FailedToolResult(`Unsupported entity type: ${entityType}`)
     }
 
-    return new SuccessToolResult(details)
+    return new SuccessToolResult(JSON.stringify(details))
   }
 }

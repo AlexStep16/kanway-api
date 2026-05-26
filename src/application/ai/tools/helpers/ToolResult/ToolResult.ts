@@ -1,5 +1,5 @@
 import { ToolResultTypesEnum } from '@/domain/enums/ToolResultTypesEnum.js'
-import { IToolResultMeta } from '../../interfaces/IToolResultMeta.js'
+import { IToolResultMeta } from '../../../interfaces/IToolResultMeta.js'
 
 export class ToolResult {
   public success: boolean

@@ -39,6 +39,9 @@ import { ModelsEnum } from '@/domain/enums/ModelsEnum.js'
 import { SubscriptionPlanEnum } from '@/domain/enums/SubscriptionPlanEnum.js'
 import { UserService } from './UserService.js'
 import { AgentStateAnnotationOrc } from '../ai/agent/AgentStateAnnotationOrc.js'
+import { IStatus } from '../interfaces/Statuses/IStatus.js'
+import { AgentsEnum } from '@/enums/AgentsEnum.js'
+import { StatusStatesEnum } from '@/enums/StatusStatesEnum.js'
 
 const MAX_RETRIES = 3
 
@@ -123,7 +126,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       isChatNameNeeded?: boolean
       userMessage: string
       chargedAudioTokens?: number
-      stepMessageId: string
+      statusMessageId: string
       activeBoard: { id: string; name: string } | null
       activeWorkspace: { id: string; name: string }
     },
@@ -175,7 +178,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
         aiConfirmationType: userSetting.aiConfirmationType,
         defaultCategoryName: userSetting.aiDefaultCategory,
         defaultBoardName: userSetting.aiDefaultBoard,
-        stepMessageId: data.stepMessageId,
+        statusMessageId: data.statusMessageId,
       },
     }
 
@@ -328,16 +331,17 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
 
     messages.push(new HumanMessage(data.message!))
 
-    const stepMessages = await this.chatMessageService.create(
+    const statusContent: IStatus = {
+      statusText: 'Инициализация...',
+      currentAgent: AgentsEnum.ORCHESTRATOR,
+      state: StatusStatesEnum.IN_PROGRESS,
+      logs: [],
+    }
+
+    const statusMessages = await this.chatMessageService.create(
       {
-        role: 'steps',
-        content: [
-          {
-            id: new Types.ObjectId().toHexString(),
-            name: 'Устанавливаю соединение с AI',
-            state: 'in_progress',
-          },
-        ],
+        role: 'status',
+        content: statusContent,
         threadId: threadId,
         chatId: chat.id,
       },
@@ -345,7 +349,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       externalSession,
     )
 
-    const stepMessage = stepMessages.data[0]
+    const statusMessage = statusMessages.data[0]
 
     const config = await this._getConfigurableFromUserSetting(
       user,
@@ -354,7 +358,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
         chatId: chat.id.toString(),
         modelType: data.modelType || ModelsEnum.KANWAY_LITE,
         timezone: data.timezone,
-        stepMessageId: stepMessage.id.toHexString(),
+        statusMessageId: statusMessage.id.toHexString(),
         isChatNameNeeded,
         activeBoard: board,
         chargedAudioTokens,
@@ -377,7 +381,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     return {
       jobPayload,
       userMessage,
-      stepMessage,
+      statusMessage,
       chat,
       threadId: threadId,
     }
@@ -447,16 +451,16 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       throw new AppError('Не найдено сообщение пользователя для повторной попытки.', 400)
     }
 
-    const lastStepperMessage = chatMessages.find((msg) => msg.role === 'steps')
+    const lastStatusMessage = chatMessages.find((msg) => msg.role === 'status')
 
-    if (!lastStepperMessage) {
-      throw new AppError('Не найдено сообщение шагов для повторной попытки.', 400)
+    if (!lastStatusMessage) {
+      throw new AppError('Не найдено сообщение статуса для повторной попытки.', 400)
     }
 
-    const lastStepperMessageId = lastStepperMessage ? lastStepperMessage.id.toHexString() : null
+    const lastStatusMessageId = lastStatusMessage ? lastStatusMessage.id.toHexString() : null
 
-    if (lastStepperMessageId) {
-      await this._deleteLastIteration(lastStepperMessageId, data, user, externalSession)
+    if (lastStatusMessageId) {
+      await this._deleteLastIteration(lastStatusMessageId, data, user, externalSession)
     }
 
     const config = await this._getConfigurableFromUserSetting(
@@ -467,7 +471,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
         timezone: data.timezone,
         activeBoard: board,
         activeWorkspace: workspace,
-        stepMessageId: lastStepperMessageId || '',
+        statusMessageId: lastStatusMessageId || '',
         userMessage: lastUserMessage ? lastUserMessage.content : '',
         modelType: data.modelType || ModelsEnum.KANWAY_LITE,
       },
@@ -658,10 +662,10 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       throw new AppError('Не найдено сообщение пользователя для повторной попытки.', 400)
     }
 
-    const lastStepperMessage = chatMessages.find((msg) => msg.role === 'steps')
+    const lastStatusMessage = chatMessages.find((msg) => msg.role === 'status')
 
-    if (!lastStepperMessage) {
-      throw new AppError('Не найдено сообщение шагов для повторной попытки.', 400)
+    if (!lastStatusMessage) {
+      throw new AppError('Не найдено сообщение статуса для повторной попытки.', 400)
     }
 
     const config = await this._getConfigurableFromUserSetting(
@@ -672,7 +676,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
         activeBoard: board,
         activeWorkspace: workspace,
         timezone: data.timezone || 'UTC',
-        stepMessageId: lastStepperMessage ? lastStepperMessage.id.toHexString() : '',
+        statusMessageId: lastStatusMessage ? lastStatusMessage.id.toHexString() : '',
         userMessage: lastUserMessage ? lastUserMessage.content : '',
         modelType: data.modelType || ModelsEnum.KANWAY_LITE,
       },
@@ -790,10 +794,10 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       throw new AppError('Не найдено сообщение пользователя для повторной попытки.', 400)
     }
 
-    const lastStepperMessage = chatMessages.find((msg) => msg.role === 'steps')
+    const lastStatusMessage = chatMessages.find((msg) => msg.role === 'status')
 
-    if (!lastStepperMessage) {
-      throw new AppError('Не найдено сообщение шагов для повторной попытки.', 400)
+    if (!lastStatusMessage) {
+      throw new AppError('Не найдено сообщение статуса для повторной попытки.', 400)
     }
 
     const config = await this._getConfigurableFromUserSetting(
@@ -804,7 +808,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
         activeBoard: board,
         activeWorkspace: workspace,
         timezone: data.timezone || 'UTC',
-        stepMessageId: lastStepperMessage ? lastStepperMessage.id.toHexString() : '',
+        statusMessageId: lastStatusMessage ? lastStatusMessage.id.toHexString() : '',
         userMessage: lastUserMessage ? lastUserMessage.content : '',
         modelType: data.modelType || ModelsEnum.KANWAY_LITE,
       },

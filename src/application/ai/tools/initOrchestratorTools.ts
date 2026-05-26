@@ -1,13 +1,13 @@
 import { tool } from '@langchain/core/tools'
-import { SuccessToolResult } from './helpers/SuccessToolResult.js'
+import { SuccessToolResult } from './helpers/ToolResult/SuccessToolResult.js'
 import z from 'zod'
 import { AgentDependencies } from '../agent/types/AgentDependencies.js'
-import { CallTaskManagerScheme } from './schemes/callTaskManagerScheme.js'
+import { CallTaskManagerScheme } from './schemes/CallTaskManagerScheme.js'
 
 export function initOrchestratorTools(dependencies: AgentDependencies) {
   const callTaskManagerAgent = tool(
-    (data) => {
-      return new SuccessToolResult(data)
+    () => {
+      return new SuccessToolResult('')
     },
     {
       name: 'call_task_manager_agent',

@@ -28,5 +28,5 @@ export interface Configurable {
   aiConfirmationType: AiConfirmationTypeEnum
   defaultCategoryName: string
   defaultBoardName: string
-  stepMessageId: string
+  statusMessageId: string
 }
