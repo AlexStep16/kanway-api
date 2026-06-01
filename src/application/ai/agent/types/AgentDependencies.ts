@@ -1,6 +1,6 @@
 import { BaseChatModel } from '@langchain/core/language_models/chat_models'
-import { TaskToolsExecutorService } from '../../servicesNew/TaskToolsExecutorService.js'
-import { GeneralToolsExecutor } from '../../servicesNew/GeneralToolsExecutor.js'
+import { TaskToolsExecutorService } from '../../services/TaskToolsExecutorService.js'
+import { GeneralToolsExecutor } from '../../services/GeneralToolsExecutor.js'
 
 export interface AgentDependencies {
   services: {

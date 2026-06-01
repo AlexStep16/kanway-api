@@ -5,7 +5,7 @@ import { Configurable } from '@/application/ai/interfaces/Configurable.js'
 import { dispatchCustomEvent } from '@langchain/core/callbacks/dispatch'
 import { CustomEvents } from '@/enums/CustomEvents.js'
 import { ModelsEnum } from '@/domain/enums/ModelsEnum.js'
-import { AgentStateAnnotationOrc } from '../AgentStateAnnotationOrc.js'
+import { AgentStateAnnotation } from '../AgentStateAnnotation.js'
 import { TaskManagerAgentPrompt } from '../../prompts/TaskManagerAgentPrompt.js'
 import { initTaskManagerTools } from '../../tools/initTaskManagerTools.js'
 import { ToolMessage } from '@langchain/core/messages'
@@ -13,7 +13,7 @@ import { IStatus } from '@/application/interfaces/Statuses/IStatus.js'
 import { AgentsEnum } from '@/enums/AgentsEnum.js'
 
 export const makeTaskManagerAgentNode = (deps: AgentDependencies) => {
-  return async (state: typeof AgentStateAnnotationOrc.State, config: RunnableConfig) => {
+  return async (state: typeof AgentStateAnnotation.State, config: RunnableConfig) => {
     const statusUpdate: Partial<IStatus> = {
       statusText: 'Думаю над задачей',
       currentAgent: AgentsEnum.TASK_MANAGER,
@@ -22,7 +22,7 @@ export const makeTaskManagerAgentNode = (deps: AgentDependencies) => {
 
     const configurable = config.configurable as Configurable
 
-    const outputs: Partial<typeof AgentStateAnnotationOrc.State> = {
+    const outputs: Partial<typeof AgentStateAnnotation.State> = {
       messages: [],
       task_manager_messages: state.task_manager_messages,
       task_manager_tool_calls: [],

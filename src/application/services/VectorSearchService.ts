@@ -79,7 +79,7 @@ export class VectorSearchService {
   ): Promise<ITask[]> {
     const filter: any = { user_id: { $eq: userId } }
     if (ids?.length) filter._id = { $in: ids }
-    console.log(count)
+
     // Вызываем универсальный метод
     return this._executeSearch<ITask>({
       collectionName: 'tasks',

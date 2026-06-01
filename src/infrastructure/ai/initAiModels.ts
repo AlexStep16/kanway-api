@@ -17,8 +17,8 @@ export function initAiModels() {
     temperature: 0,
   })
 
-  const ORCHESTRATOR = new ChatFireworks({
-    model: 'accounts/fireworks/models/gpt-oss-120b',
+  const ORCHESTRATOR = new ChatOpenAI({
+    model: 'gpt-5.4-mini-2026-03-17',
     temperature: 0,
   })
 

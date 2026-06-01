@@ -2,7 +2,7 @@ import { MongoDBSaver } from '@langchain/langgraph-checkpoint-mongodb'
 import { MongoClient } from 'mongodb'
 import { CompiledStateGraph } from '@langchain/langgraph' // Тип скомпилированного графа
 import { initAiModels } from './initAiModels.js'
-import { createReActAgentNew } from '@/application/ai/agent/createReActAgentNew.js'
+import { createReActAgent } from '@/application/ai/agent/createReActAgent.js'
 import { initializeDependencies } from '../di/initializeDependencies.js'
 
 // Переменная для хранения единственного экземпляра (Singleton)
@@ -33,7 +33,7 @@ export async function getAgent(dependencies: ReturnType<typeof initializeDepende
   })
 
   // 6. Собираем агента через нашу фабрику
-  agentInstance = createReActAgentNew(
+  agentInstance = createReActAgent(
     {
       services: {
         //toolDispatcherService: dependencies.services.toolDispatcherService,

@@ -5,7 +5,11 @@ import { BaseRepository } from './BaseRepository.js'
 import { IPaymentCriteria } from '../interfaces/criterias/IPaymentCriteria.js'
 import { FilterQuery, Types } from 'mongoose'
 
-export default class PaymentRepository extends BaseRepository<IPaymentRaw, IPayment> {
+export default class PaymentRepository extends BaseRepository<
+  IPaymentRaw,
+  IPayment,
+  IPaymentCriteria
+> {
   constructor() {
     super(PaymentModel)
   }

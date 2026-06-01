@@ -10,7 +10,13 @@ const ColorFilterValueSchema = z
     message: 'At least one of color value or tone must be provided.',
   })
 
-const FilterValueSchema = z.union([z.string(), ColorFilterValueSchema])
+const FilterValueSchema = z.union([
+  z.string(),
+  ColorFilterValueSchema,
+  z.number(),
+  z.boolean(),
+  z.array(z.any()),
+])
 
 export const SearchTasksScheme = z.object({
   filters: z
@@ -49,8 +55,14 @@ export const SearchTasksScheme = z.object({
           'Not Equals: Exclude this value. For color use { value?: colorName, tone?: light|medium|dark }.',
         ),
 
-        in: z.array(FilterValueSchema).optional().describe('In: Array of allowed exact values.'),
-        nin: z.array(FilterValueSchema).optional().describe('Not In: Array of excluded values.'),
+        in: z
+          .array(z.union([z.string(), z.number(), z.boolean()]))
+          .optional()
+          .describe('In: Array of allowed exact values.'),
+        nin: z
+          .array(z.union([z.string(), z.number(), z.boolean()]))
+          .optional()
+          .describe('Not In: Array of excluded values.'),
 
         cont: z.string().optional().describe('Contains: Substring match (useful for text/names).'),
         ncont: z.string().optional().describe('Not Contains: Exclude substring.'),

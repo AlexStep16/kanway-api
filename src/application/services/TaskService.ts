@@ -637,7 +637,7 @@ export class TaskService extends BaseService<
     user: IUser,
     session: ClientSession,
     isDryRun: boolean = false,
-  ): Promise<IResponseWithLog<null>> {
+  ): Promise<IResponseWithLog<DeleteResult | null>> {
     const tasksToDelete = await this.repository.findByCriteria(
       criteria,
       session,
@@ -655,7 +655,7 @@ export class TaskService extends BaseService<
       {
         operationType: OperationTypesEnum.DELETE,
         collectionName: CollectionsEnum.TASKS,
-        entitiesBefore: tasksToDelete,
+        entitiesBefore: [],
         status,
         dependencies: [],
       },
@@ -670,10 +670,10 @@ export class TaskService extends BaseService<
       }
     }
 
-    await this.repository.deleteMany(criteria, user.id, session)
+    const result = await this.repository.deleteMany(criteria, user.id, session)
 
     return {
-      data: null,
+      data: result,
       logId: log.id,
     }
   }
@@ -683,7 +683,7 @@ export class TaskService extends BaseService<
     user: IUser,
     externalSession?: ClientSession,
     isDryRun: boolean = false,
-  ): Promise<IResponseWithLog<null>> {
+  ): Promise<IResponseWithLog<DeleteResult | null>> {
     if (externalSession) {
       return this._executeDeleteTransaction(criteria, user, externalSession, isDryRun)
     } else {

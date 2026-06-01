@@ -30,8 +30,7 @@ export default (controller: ChatController): Router => {
     controller.update,
   )
   router.get('/stream/:jobId/status', controller.streamStatus.bind(controller))
-  router.post('/log/approve', aiLimiter, controller.approveLog.bind(controller))
-  router.post('/tools/resolve-ambiguous', aiLimiter, controller.resolveAmbiguous.bind(controller))
+  router.post('/tool/approve', aiLimiter, controller.approveTool.bind(controller))
   router.post('/:jobId/stop', controller.stopAgent.bind(controller))
 
   return router

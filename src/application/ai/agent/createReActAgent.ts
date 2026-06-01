@@ -1,72 +1,65 @@
 import { MongoDBSaver } from '@langchain/langgraph-checkpoint-mongodb'
 import { AgentDependencies } from './types/AgentDependencies.js'
-import { AgentStateAnnotation } from './AgentStateAnnotation.js'
-import { makeCoderNode } from './nodes/makeCoderNode.js'
-import { makePlannerNode } from './nodes/makePlannerNode.js'
-import { makePlannerToolNode } from './nodes/makePlannerToolNode.js'
-import { makeCoderExecutionNode } from './nodes/makeCoderExecutionNode.js'
-import { routePlannerToolOutput } from './edges/routePlannerToolOutput.js'
-import { makeCoderHumanReviewNode } from './nodes/makeCoderHumanReviewNode.js'
-import { routeCoderHumanReviewOutput } from './edges/routeCoderHumanReviewOutput.js'
-import { makeCoderInternalToolNode } from './nodes/makeCoderInternalToolNode.js'
-import { routeCoderExecutionOutput } from './edges/routeCoderExecutionOutput.js'
-import { routePlannerOutput } from './edges/routePlannerOutput.js'
 import { makeSummarizerNode } from './nodes/makeSummarizerNode.js'
 import { END, START, StateGraph } from '@langchain/langgraph'
 import { makeChatNameNode } from './nodes/makeChatNameNode.js'
-import { routeCoderInternalToolOutput } from './edges/routeCoderInternalToolOutput.js'
+import { makeTaskManagerAgentNode } from './nodes/makeTaskManagerAgentNode.js'
+import { makeOrchestratorNode } from './nodes/makeOrchestratorNode.js'
+import { makeOrchestratorToolNode } from './nodes/makeOrchestratorToolNode.js'
+import { makeTaskManagerAgentToolNode } from './nodes/makeTaskManagerAgentToolNode.js'
+import { routeOrchestratorOutput } from './edges/routeOrchestratorOutput.js'
+import { routeOrchestratorToolOutput } from './edges/routeOrchestratorToolOutput.js'
+import { routeTaskManagerAgentOutput } from './edges/routeTaskManagerAgentOutput.js'
+import { routeTaskManagerAgentToolOutput } from './edges/routeTaskManagerAgentToolOutput.js'
+import { AgentStateAnnotation } from './AgentStateAnnotation.js'
+import { makeTaskManagerAgentHumanReviewNode } from './nodes/makeTaskManagerAgentHumanReviewNode.js'
+import { routeTaskManagerAgentHumanReviewOutput } from './edges/routeTaskManagerAgentHumanReviewOutput.js'
 
 export function createReActAgent(dependencies: AgentDependencies, checkpointer: MongoDBSaver) {
-  const plannerNode = makePlannerNode(dependencies)
-  const coderNode = makeCoderNode(dependencies)
+  const orchestratorNode = makeOrchestratorNode(dependencies)
+  const orchestratorToolNode = makeOrchestratorToolNode(dependencies)
+  const taskManagerAgentNode = makeTaskManagerAgentNode(dependencies)
+  const taskManagerAgentToolNode = makeTaskManagerAgentToolNode(dependencies)
+  const taskManagerAgentHumanReviewNode = makeTaskManagerAgentHumanReviewNode()
   const chatNameNode = makeChatNameNode(dependencies)
-
-  const plannerToolNode = makePlannerToolNode()
-
-  const coderExecutionNode = makeCoderExecutionNode()
-  const coderInternalToolNode = makeCoderInternalToolNode(dependencies)
-  const coderHumanReviewNode = makeCoderHumanReviewNode()
 
   const summarizerNode = makeSummarizerNode(dependencies)
 
   const graphBuilder = new StateGraph(AgentStateAnnotation)
-    .addNode('Planner', plannerNode)
-    .addNode('PlannerTool', plannerToolNode)
+    .addNode('Orchestrator', orchestratorNode)
+    .addNode('OrchestratorTool', orchestratorToolNode)
 
-    .addNode('Coder', coderNode)
-    .addNode('CoderExecution', coderExecutionNode)
-    .addNode('CoderInternalTool', coderInternalToolNode)
-    .addNode('CoderHumanReview', coderHumanReviewNode)
+    .addNode('TaskManagerAgent', taskManagerAgentNode)
+    .addNode('TaskManagerAgentTool', taskManagerAgentToolNode)
+    .addNode('TaskManagerAgentHumanReview', taskManagerAgentHumanReviewNode)
 
     .addNode('Summarizer', summarizerNode)
 
     .addNode('ChatName', chatNameNode)
 
     .addEdge(START, 'Summarizer')
-    .addEdge('Summarizer', 'Planner')
-    .addConditionalEdges('Planner', routePlannerOutput, {
-      PlannerTool: 'PlannerTool',
+    .addEdge('Summarizer', 'Orchestrator')
+    .addConditionalEdges('Orchestrator', routeOrchestratorOutput, {
+      OrchestratorTool: 'OrchestratorTool',
       ChatName: 'ChatName',
     })
-    .addConditionalEdges('PlannerTool', routePlannerToolOutput, {
-      Planner: 'Planner',
-      Coder: 'Coder',
+    .addConditionalEdges('OrchestratorTool', routeOrchestratorToolOutput, {
+      Orchestrator: 'Orchestrator',
+      TaskManagerAgent: 'TaskManagerAgent',
       ChatName: 'ChatName',
     })
-    .addEdge('Coder', 'CoderExecution')
-    .addConditionalEdges('CoderExecution', routeCoderExecutionOutput, {
-      Planner: 'Planner',
-      Coder: 'Coder',
-      CoderInternalTool: 'CoderInternalTool',
+    .addConditionalEdges('TaskManagerAgent', routeTaskManagerAgentOutput, {
+      TaskManagerAgentTool: 'TaskManagerAgentTool',
+      Orchestrator: 'Orchestrator',
     })
-    .addConditionalEdges('CoderInternalTool', routeCoderInternalToolOutput, {
-      CoderHumanReview: 'CoderHumanReview',
-      Coder: 'Coder',
+    .addConditionalEdges('TaskManagerAgentTool', routeTaskManagerAgentToolOutput, {
+      Orchestrator: 'Orchestrator',
+      TaskManagerAgent: 'TaskManagerAgent',
+      TaskManagerAgentHumanReview: 'TaskManagerAgentHumanReview',
     })
-    .addConditionalEdges('CoderHumanReview', routeCoderHumanReviewOutput, {
-      CoderExecution: 'CoderExecution',
-      CoderInternalTool: 'CoderInternalTool',
-      Planner: 'Planner',
+    .addConditionalEdges('TaskManagerAgentHumanReview', routeTaskManagerAgentHumanReviewOutput, {
+      TaskManagerAgent: 'TaskManagerAgent',
+      TaskManagerAgentTool: 'TaskManagerAgentTool',
     })
     .addEdge('ChatName', END)
 

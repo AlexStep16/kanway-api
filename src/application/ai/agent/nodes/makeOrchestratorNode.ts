@@ -5,14 +5,14 @@ import { Configurable } from '@/application/ai/interfaces/Configurable.js'
 import { dispatchCustomEvent } from '@langchain/core/callbacks/dispatch'
 import { CustomEvents } from '@/enums/CustomEvents.js'
 import { ModelsEnum } from '@/domain/enums/ModelsEnum.js'
-import { AgentStateAnnotationOrc } from '../AgentStateAnnotationOrc.js'
+import { AgentStateAnnotation } from '../AgentStateAnnotation.js'
 import { initOrchestratorTools } from '../../tools/initOrchestratorTools.js'
 import { OrchestratorPrompt } from '../../prompts/OrchestratorPrompt.js'
 import { IStatus } from '@/application/interfaces/Statuses/IStatus.js'
 import { AgentsEnum } from '@/enums/AgentsEnum.js'
 
 export const makeOrchestratorNode = (deps: AgentDependencies) => {
-  return async (state: typeof AgentStateAnnotationOrc.State, config: RunnableConfig) => {
+  return async (state: typeof AgentStateAnnotation.State, config: RunnableConfig<Configurable>) => {
     const statusText = state.is_orchestrator_initiated
       ? 'Обрабатываю информацию'
       : 'Анализирую запрос'
@@ -25,7 +25,7 @@ export const makeOrchestratorNode = (deps: AgentDependencies) => {
 
     const configurable = config.configurable as Configurable
 
-    const outputs: Partial<typeof AgentStateAnnotationOrc.State> = {
+    const outputs: Partial<typeof AgentStateAnnotation.State> = {
       messages: [],
       is_orchestrator_initiated: true,
       orchestrator_tool_calls: [],
@@ -39,7 +39,7 @@ export const makeOrchestratorNode = (deps: AgentDependencies) => {
 
     const history = state.messages.slice(-50)
 
-    const orchestratorTools = initOrchestratorTools(deps)
+    const orchestratorTools = initOrchestratorTools(deps, config)
 
     const prompt = ChatPromptTemplate.fromMessages([['system', OrchestratorPrompt], ...history])
 

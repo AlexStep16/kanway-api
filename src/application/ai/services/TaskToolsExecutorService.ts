@@ -1,966 +1,588 @@
 import { Configurable } from '@/application/ai/interfaces/Configurable.js'
-import { TaskDTO } from '@/application/dtos/TaskDTO.js'
 import TaskRepository from '@/application/repositories/TaskRepository.js'
-import { CategoryService } from '@/application/services/CategoryService.js'
 import { TaskService } from '@/application/services/TaskService.js'
-import { ITaskRawString } from '@/domain/entities/ITaskRawString.js'
-import { AiConfirmationTypeEnum } from '@/domain/enums/AiConfirmationTypeEnum.js'
+import { ITask } from '@/domain/entities/ITask.js'
 import { CustomEvents } from '@/enums/CustomEvents.js'
 import { dispatchCustomEvent } from '@langchain/core/callbacks/dispatch'
-import Fuse from 'fuse.js'
-import { ClientSession, FilterQuery, Types } from 'mongoose'
-import { ConfirmationEntityToolResult } from '../tools/helpers/ConfirmationEntityToolResult.js'
-import { ITaskPopulated } from '@/application/interfaces/ITaskPopulated.js'
-import { SuccessToolResult } from '../tools/helpers/SuccessToolResult.js'
-import { toServerCaseKeys } from '@/utils/objectTransformers.js'
-import { CreateTasksDTO, CreateTasksDTOSchema } from '../dtos/CreateTasksDTO.js'
-import { FailedToolResult } from '../tools/helpers/FailedToolResult.js'
-import z from 'zod'
-import { OperationLogService } from '@/application/services/OperationLogService.js'
-import { UpdateTasksDTO, UpdateTasksDTOSchema } from '../dtos/UpdateTasksDTO.js'
-import { TaskEditDTO } from '@/application/dtos/TaskEditDTO.js'
-import { OperationLogStatusesEnum } from '@/domain/enums/OperationLogStatusesEnum.js'
-import { IResponseWithLog } from '@/application/interfaces/IResponseWithLog.js'
-import { ChatMessageService } from '@/application/services/ChatMessageService.js'
-import { TaskEditManyDTO } from '@/application/dtos/TaskEditManyDTO.js'
-import { AbstractToolExecutor } from './AbstractToolExecutor.js'
-import { MoveTaskDTO, MoveTaskDTOSchema } from '../dtos/MoveTaskDTO.js'
-import { TaskMoveDTO } from '@/application/dtos/TaskMoveDTO.js'
-import { DispatchPayload } from './ToolDispatcherService.js'
-import { VectorSearchService } from '@/application/services/VectorSearchService.js'
-import { findProperty } from '@/utils/findProperty.js'
-import dayjs from 'dayjs'
+import { RunnableConfig } from '@langchain/core/runnables'
+import { ClientSession, Types } from 'mongoose'
+import { ConfirmationToolResult } from '../tools/helpers/ToolResult/ConfirmationToolResult.js'
+import { FailedToolResult } from '../tools/helpers/ToolResult/FailedToolResult.js'
+import { SuccessToolResult } from '../tools/helpers/ToolResult/SuccessToolResult.js'
+import { SearchTasksDTO } from '../tools/schemes/SearchTasksScheme.js'
+import { UpdateTasksDTO } from '../tools/schemes/UpdateTasksScheme.js'
+import { FilterToMongoQueryService } from './FilterToMongoQueryService.js'
+import { SelectionService } from './SelectionService.js'
+import {
+  transformRawUpdateToDTO,
+  transformRawUpdateToHumanReadableFilters,
+} from '../tools/helpers/UpdateTasksHelpers.js'
+import { IConfigContext } from '../interfaces/IConfigContext.js'
+import { AiConfirmationTypeEnum } from '@/domain/enums/AiConfirmationTypeEnum.js'
+import { StatusStatesEnum } from '@/enums/StatusStatesEnum.js'
+import { StatusTypesEnum } from '@/enums/StatusTypesEnum.js'
+import { ISearchEntitiesContent } from '@/application/interfaces/Statuses/Content/ISearchEntitiesContent.js'
+import { StatusLog } from '@/application/types/StatusLog.js'
+import { transformSearchTaskToHumanReadableFilters } from '../tools/helpers/SearchTasksHumanReadableFilters.js'
+import { EntityTypesEnum } from '@/domain/enums/EntityTypesEnum.js'
+import { ToolStatusLogLifecycleService } from './ToolStatusLogLifecycleService.js'
+import { DeleteArchiveTasksDTO } from '../tools/schemes/DeleteArchiveTasksScheme.js'
+import { ITextValue } from '@/application/interfaces/Statuses/Content/ITextValue.js'
+import { CloneTasksDTO } from '../tools/schemes/CloneTasksScheme.js'
+import { RecoverTasksDTO } from '../tools/schemes/RecoverTasksScheme.js'
 
-type ITaskCreatePopulated = Omit<ITaskPopulated, 'id' | 'createdAt' | 'updatedAt'> & {
-  id: string
-}
-
-export class TaskToolsExecutorService extends AbstractToolExecutor {
+export class TaskToolsExecutorService {
   constructor(
     private taskRepository: TaskRepository,
 
     private taskService: TaskService,
-    private categoryService: CategoryService,
-    private operationLogService: OperationLogService,
-    private chatMessageService: ChatMessageService,
-    private vectorSearchService: VectorSearchService,
-  ) {
-    super()
+    private filterToMongoQueryService: FilterToMongoQueryService,
+    private selectionService: SelectionService,
+    private toolStatusLogLifecycleService = new ToolStatusLogLifecycleService(),
+  ) {}
 
-    this.toolRegistry = {
-      search_tasks: this.searchTasks.bind(this),
-      create_tasks: this.createTasks.bind(this),
-      update_tasks: this.updateTasks.bind(this),
-      move_task: this.moveTask.bind(this),
-      delete_tasks: this.deleteTasks.bind(this),
-      archive_tasks: this.archiveTasks.bind(this),
-      recover_tasks: this.recoverTasks.bind(this),
-      clone_tasks: this.cloneTasks.bind(this),
-    }
-  }
-
-  public async searchTasks(payload: DispatchPayload, session?: ClientSession) {
-    await dispatchCustomEvent(
-      CustomEvents.STEP_ADD,
-      {
-        id: new Types.ObjectId().toString(),
-        name: 'Ищу задачи',
-      },
-      payload.config,
-    )
-
-    const HARD_SEARCH_LIMIT = 2000
-
-    const { toolCall, userId } = payload
-
-    const args = toolCall.args as {
-      mongo_filter?: FilterQuery<ITaskRawString>
-      search_query?: string
-      search_mode?: 'fuzzy' | 'semantic'
-      limit?: number
-    }
-
-    const { mongo_filter = {}, search_query = '', search_mode = 'fuzzy', limit = 50 } = args
-
-    const scaledLimit = search_query ? HARD_SEARCH_LIMIT : limit
-
-    const isMongoFilterHasDeletedCondition =
-      findProperty(mongo_filter, 'is_deleted') !== undefined ||
-      findProperty(mongo_filter, 'is_deleted_external') !== undefined
-
-    const baseFilter: FilterQuery<ITaskRawString> = isMongoFilterHasDeletedCondition
-      ? {}
-      : {
-          is_deleted: { $ne: true },
-          is_deleted_external: { $ne: true },
-        }
-
-    const unionFilter = { ...baseFilter, ...mongo_filter, user_id: new Types.ObjectId(userId) }
-
-    const filteredCount = await this.taskRepository.getCountByFilter(unionFilter, session)
-
-    const tasks = await this.taskRepository.findByFilter<ITaskRawString>(unionFilter, session, {
-      isMongoCase: true,
-      limit: scaledLimit,
-      sort: { rank: 1 },
-    })
-
-    if (search_query) {
-      if (tasks.length === 0) {
-        return {
-          items: [],
-          count: 0,
-          hasMore: false,
-        }
-      }
-
-      let pagedResults: ITaskRawString[] = []
-      let searchedCount = 0
-
-      if (search_mode === 'fuzzy') {
-        const fuse = new Fuse(tasks, {
-          keys: ['name'],
-          threshold: 0.3,
-          includeScore: true,
-        })
-
-        const searchResults = fuse.search(search_query)
-
-        pagedResults = searchResults
-          .sort((a, b) => (a.score || 0) - (b.score || 0))
-          .slice(0, scaledLimit)
-          .map((result) => result.item)
-        searchedCount = searchResults.length
-      } else if (search_mode === 'semantic') {
-        const filteredIds = tasks.map((task) => new Types.ObjectId(task._id))
-
-        const semanticTasks = await this.vectorSearchService.similaritySearchTasks(
-          [search_query],
-          new Types.ObjectId(userId),
-          20,
-          filteredIds,
-        )
-        const semanticTaskIds = semanticTasks.map((task) => task.id.toString())
-
-        pagedResults = tasks.filter((task) => semanticTaskIds.includes(task._id.toString()))
-        searchedCount = semanticTasks.length
-      }
-
-      return {
-        items: pagedResults,
-        count: searchedCount,
-        hasMore: searchedCount > scaledLimit,
-      }
-    }
-
-    const hasMore = filteredCount > tasks.length
-
-    return {
-      items: tasks,
-      count: filteredCount,
-      hasMore,
-    }
-  }
-
-  private async _populateTasksParentData(
-    tasks: CreateTasksDTO['tasks'],
-    userId: string,
+  public async searchTasks(
+    payload: SearchTasksDTO,
+    config: RunnableConfig,
+    context: IConfigContext,
     session?: ClientSession,
-  ): Promise<ITaskCreatePopulated[]> {
-    const uniqueCategoryIds = Array.from(
-      new Set(tasks.filter((task) => task.category).map((task) => task.category)),
+  ) {
+    const toolCall = context.toolCall!
+
+    const configurable = config.configurable as Configurable
+
+    const mongoQuery = await this.filterToMongoQueryService.prepare(
+      payload,
+      configurable.timezone,
+      configurable.user.id,
     )
+    const humanReadableFilters = transformSearchTaskToHumanReadableFilters(payload.filters)
 
-    const categories = await this.categoryService.getByCriteria(
-      { ids: uniqueCategoryIds },
-      new Types.ObjectId(userId),
-      session,
-    )
+    const toolContent: ISearchEntitiesContent = {
+      filters: humanReadableFilters,
+    }
+    const statusLog: StatusLog = {
+      id: new Types.ObjectId().toString(),
+      type: StatusTypesEnum.TOOL,
+      state: StatusStatesEnum.IN_PROGRESS,
+      content: {
+        id: toolCall.id!,
+        name: 'search_tasks',
+        content: toolContent,
+      },
+    }
+    await dispatchCustomEvent(CustomEvents.STATUS_ADD_LOG, statusLog)
 
-    return tasks.map((task) => {
-      const category = categories.find((c) => c.id.toString() === task.category)
-
-      if (!category) {
-        throw new Error(`Category with ID ${task.category} not found for task ${task.name}`)
-      }
-
-      return {
-        ...toServerCaseKeys(task),
-        id: task._id,
-        workspace: {
-          id: category.workspace.id,
-          name: category.workspace.name,
-        },
-        board: {
-          id: category.board.id,
-          name: category.board.name,
-        },
-        category: {
-          id: category.id,
-          name: category.name,
-        },
-      }
-    })
-  }
-
-  private _transformRawCreateToDTO(tasksRaw: ITaskCreatePopulated[]): (TaskDTO & { id: string })[] {
-    return tasksRaw.map((task) => {
-      const dto: TaskDTO & { id: string } = {
+    try {
+      const tasks = await this.taskRepository.findByFilter(mongoQuery, session)
+      const tasksSample = tasks.slice(0, 5).map((task) => ({
         id: task.id,
         name: task.name,
-        workspaceId: task.workspace.id.toString(),
-        boardId: task.board.id.toString(),
-        categoryId: task.category.id.toString(),
-      }
-
-      if (typeof task.isCompleted !== 'undefined') dto.isCompleted = task.isCompleted
-      if (typeof task.tags !== 'undefined') dto.tags = task.tags
-      if (typeof task.description !== 'undefined') dto.description = task.description
-      if (typeof task.dueDate !== 'undefined') dto.dueDate = task.dueDate
-      if (typeof task.dueHours !== 'undefined') dto.dueHours = task.dueHours
-      if (typeof task.dueMinutes !== 'undefined') dto.dueMinutes = task.dueMinutes
-      if (typeof task.color !== 'undefined') dto.color = task.color
-
-      return dto
-    })
-  }
-
-  private _transformRawUpdateToDTO(tasksRaw: UpdateTasksDTO['updates']): TaskEditManyDTO {
-    return tasksRaw.map((task) => {
-      const update: TaskEditDTO = {
-        id: task._id,
-      }
-
-      if (typeof task.name !== 'undefined') update.name = task.name
-      if (typeof task.is_completed !== 'undefined') update.isCompleted = task.is_completed
-      if (typeof task.tags !== 'undefined') update.tags = task.tags
-      if (typeof task.description !== 'undefined') update.description = task.description
-      if (typeof task.due_date !== 'undefined') update.dueDate = task.due_date
-      if (typeof task.due_hours !== 'undefined') update.dueHours = task.due_hours
-      if (typeof task.due_minutes !== 'undefined') update.dueMinutes = task.due_minutes
-      if (typeof task.color !== 'undefined') update.color = task.color
-      if (typeof task.workspace !== 'undefined') update.workspaceId = task.workspace
-      if (typeof task.board !== 'undefined') update.boardId = task.board
-      if (typeof task.category !== 'undefined') update.categoryId = task.category
-
-      return update
-    })
-  }
-
-  public async createTasks(payload: DispatchPayload, session?: ClientSession) {
-    const { toolCall, config } = payload
-
-    const args = toolCall.args as CreateTasksDTO
-    const toolCallId = toolCall.id
-
-    const configurable = config.configurable as Configurable
-    const user = configurable.user
-
-    const validationResult = CreateTasksDTOSchema.safeParse(args)
-
-    if (!validationResult.success) {
-      return new FailedToolResult(
-        `Validation Error: Invalid arguments. \n${z.prettifyError(
-          validationResult.error,
-        )}. \nPlease fix the arguments and try again.`,
-      )
-    }
-
-    const populatedTasks = await this._populateTasksParentData(
-      args.tasks,
-      user.id.toString(),
-      session,
-    )
-
-    let dtoTasks = this._transformRawCreateToDTO(populatedTasks)
-
-    if (configurable.aiConfirmationType === AiConfirmationTypeEnum.ALWAYS) {
-      const messages = await this.chatMessageService.getByCriteria(
-        { pendingToolCallId: toolCallId, role: 'operation' },
-        user.id,
+        dueDate: task.dueDate,
+      }))
+      const selection = await this.selectionService.create(
+        {
+          entityType: EntityTypesEnum.TASK,
+          entityIds: tasks.map((t) => t.id),
+          humanReadableFilters,
+          sample: tasksSample,
+          count: tasks.length,
+        },
+        configurable.user.id,
         session,
       )
 
-      if (messages.length > 0) {
-        const logs = await this.operationLogService.getByCriteria(
-          { id: messages[0].content },
-          user.id,
+      statusLog.state = StatusStatesEnum.COMPLETED
+      toolContent.ids = tasks.map((t) => t.id.toString())
+
+      await dispatchCustomEvent(CustomEvents.STATUS_UPDATE_LOG, statusLog)
+
+      return new SuccessToolResult(
+        JSON.stringify({
+          selection_id: selection.id.toString(),
+          sample: tasksSample,
+          count: tasks.length,
+          human_readable_filters: humanReadableFilters,
+        }),
+        {
+          selections: [selection],
+        },
+      )
+    } catch (error) {
+      statusLog.state = StatusStatesEnum.FAILED
+      await dispatchCustomEvent(CustomEvents.STATUS_UPDATE_LOG, statusLog)
+
+      throw error
+    }
+  }
+
+  public async updateTasks(
+    payload: UpdateTasksDTO,
+    config: RunnableConfig,
+    context: IConfigContext,
+    session?: ClientSession,
+  ) {
+    const configurable = config.configurable as Configurable
+    const taskIds = await this._resolveTaskIds(payload, configurable.user.id, session)
+    const toolCall = context.toolCall!
+
+    const humanReadableUpdates = transformRawUpdateToHumanReadableFilters(payload.updates)
+
+    const statusLog = await this.toolStatusLogLifecycleService.getOrCreateInProgressLog({
+      existingLog: context.statusLog,
+      toolCallId: toolCall.id!,
+      toolName: 'update_tasks',
+      toolContent: {
+        ids: Array.from(new Set(taskIds)),
+        filters: humanReadableUpdates,
+      },
+    })
+
+    try {
+      const tasks = await this.taskRepository.findByFilter<ITask>(
+        {
+          _id: { $in: taskIds },
+          user_id: configurable.user.id,
+          is_deleted: false,
+        },
+        session,
+        {
+          limit: taskIds.length,
+        },
+      )
+
+      const dtoTasks = transformRawUpdateToDTO(tasks, payload.updates)
+
+      if (dtoTasks.length === 0) {
+        throw new Error('No tasks to update')
+      }
+
+      let isDryRun = false
+
+      if (configurable.aiConfirmationType === AiConfirmationTypeEnum.ALWAYS) {
+        if (context.isApproved === undefined) {
+          isDryRun = true
+        } else if (context.isApproved === false) {
+          await this.toolStatusLogLifecycleService.setCancelled(statusLog)
+
+          return new SuccessToolResult('Task update operation was rejected by the user.')
+        }
+      }
+
+      const updateTasksResult = await this.taskService.editMany(
+        dtoTasks,
+        configurable.user,
+        session,
+        isDryRun,
+      )
+
+      if (updateTasksResult.logId) {
+        const operationLogId = updateTasksResult.logId.toString()
+
+        if (isDryRun) {
+          await this.toolStatusLogLifecycleService.setAwaitingConfirmation(statusLog, (content) => {
+            content.logId = operationLogId
+          })
+
+          return new ConfirmationToolResult({
+            logId: operationLogId,
+          })
+        }
+
+        await dispatchCustomEvent(CustomEvents.OPERATION, {
+          logId: operationLogId,
           session,
+        })
+
+        await this.toolStatusLogLifecycleService.setCompleted(statusLog, (content) => {
+          content.logId = operationLogId
+        })
+
+        return new SuccessToolResult(
+          `Successfully updated ${updateTasksResult.data.length} tasks. Operation Log ID: ${operationLogId}`,
+          {
+            logId: operationLogId,
+          },
         )
+      }
 
-        const log = logs[0]
+      return new FailedToolResult('Failed to create operation log for tasks update.')
+    } catch (error) {
+      statusLog.state = StatusStatesEnum.FAILED
+      await dispatchCustomEvent(CustomEvents.STATUS_UPDATE_LOG, statusLog)
 
-        if (log.status === OperationLogStatusesEnum.CANCELLED) {
-          return new SuccessToolResult('Task creation cancelled by user.')
-        } else if (log.status === OperationLogStatusesEnum.APPROVED) {
-          const selectedIds = log.selectedIds || []
+      throw error
+    }
+  }
 
-          dtoTasks = dtoTasks.filter((task) => selectedIds.includes(task.id))
+  private async _resolveTaskIds(
+    payload: {
+      selection_id?: string
+      task_ids?: string[]
+    },
+    userId: Types.ObjectId,
+    session?: ClientSession,
+  ): Promise<string[]> {
+    let taskIds: string[] = []
+
+    if (!payload.task_ids && !payload.selection_id) {
+      throw new Error('Either task_ids or selection_id must be provided')
+    }
+
+    if (payload.selection_id) {
+      const selections = await this.selectionService.getByCriteria(
+        {
+          id: payload.selection_id,
+        },
+        userId,
+        session,
+      )
+
+      if (selections.length === 0) {
+        throw new Error('Selection not found')
+      }
+
+      const selection = selections[0]
+
+      taskIds = selection.entityIds.map((id) => id.toString())
+    }
+
+    if (payload.task_ids) {
+      payload.task_ids.forEach((id) => {
+        if (!Types.ObjectId.isValid(id)) {
+          throw new Error(`Invalid task id: ${id}`)
+        }
+      })
+
+      taskIds = Array.from(new Set(payload.task_ids))
+    }
+
+    if (taskIds.length === 0) {
+      throw new Error('No tasks to update')
+    }
+
+    return taskIds
+  }
+
+  private async _resolveHumanReadableFilters(
+    payload: {
+      selection_id?: string
+      task_ids?: string[]
+    },
+    userId: Types.ObjectId,
+    session?: ClientSession,
+  ): Promise<ITextValue[]> {
+    if (payload.selection_id) {
+      const selections = await this.selectionService.getByCriteria(
+        {
+          id: payload.selection_id,
+        },
+        userId,
+        session,
+      )
+
+      if (selections.length === 0) {
+        throw new Error('Selection not found')
+      }
+
+      const selection = selections[0]
+
+      return selection.humanReadableFilters
+    }
+
+    if (payload.task_ids) {
+      payload.task_ids.forEach((id) => {
+        if (!Types.ObjectId.isValid(id)) {
+          throw new Error(`Invalid task id: ${id}`)
+        }
+      })
+
+      const tasks = await this.taskService.getByCriteria({ ids: payload.task_ids }, userId, session)
+
+      return tasks.map((task) => ({
+        text: 'Название',
+        value: task.name,
+      }))
+    }
+
+    return []
+  }
+
+  public async deleteArchiveTasks(
+    payload: DeleteArchiveTasksDTO,
+    config: RunnableConfig,
+    context: IConfigContext,
+    session?: ClientSession,
+  ) {
+    const configurable = config.configurable as Configurable
+    const taskIds = await this._resolveTaskIds(payload, configurable.user.id, session)
+    const humanReadableFilters = await this._resolveHumanReadableFilters(
+      payload,
+      configurable.user.id,
+      session,
+    )
+    const toolCall = context.toolCall!
+
+    const mainFunction = payload.soft_delete
+      ? this.taskService.archive.bind(this.taskService)
+      : this.taskService.delete.bind(this.taskService)
+
+    const statusLog = await this.toolStatusLogLifecycleService.getOrCreateInProgressLog({
+      existingLog: context.statusLog,
+      toolCallId: toolCall.id!,
+      toolName: 'delete_archive_tasks',
+      toolContent: {
+        ids: Array.from(new Set(taskIds)),
+        filters: humanReadableFilters,
+        isSoftDelete: payload.soft_delete,
+      },
+    })
+
+    let isDryRun = false
+    try {
+      if (
+        [AiConfirmationTypeEnum.ALWAYS, AiConfirmationTypeEnum.ONLY_FOR_SENSITIVE].includes(
+          configurable.aiConfirmationType,
+        )
+      ) {
+        if (context.isApproved === undefined) {
+          isDryRun = true
+        } else if (context.isApproved === false) {
+          await this.toolStatusLogLifecycleService.setCancelled(statusLog)
+
+          return new SuccessToolResult('Task update operation was rejected by the user.')
+        }
+      }
+
+      const result = await mainFunction(
+        {
+          ids: taskIds,
+        },
+        configurable.user,
+        session,
+        isDryRun,
+      )
+
+      const actionString = payload.soft_delete ? 'archived' : 'deleted'
+
+      if (result.logId) {
+        const operationLogId = result.logId.toString()
+
+        if (isDryRun) {
+          await this.toolStatusLogLifecycleService.setAwaitingConfirmation(statusLog, (content) => {
+            content.logId = operationLogId
+          })
+
+          return new ConfirmationToolResult({
+            logId: operationLogId,
+          })
+        }
+
+        await dispatchCustomEvent(CustomEvents.OPERATION, {
+          logId: operationLogId,
+          session,
+        })
+
+        await this.toolStatusLogLifecycleService.setCompleted(statusLog, (content) => {
+          content.logId = operationLogId
+        })
+
+        let tasksProcessedCount = 0
+
+        if (result.data && 'deletedCount' in result.data) {
+          tasksProcessedCount = result.data.deletedCount
+        } else if (result.data && Array.isArray(result.data)) {
+          tasksProcessedCount = result.data.length
         } else {
-          return new FailedToolResult('Task creation pending user confirmation.')
+          return new FailedToolResult('No tasks were affected by the operation.')
         }
-      } else {
-        const mockCreateTasks = await this.taskService.createMany(dtoTasks, user, session, true)
 
-        if (mockCreateTasks.logId) {
-          return new ConfirmationEntityToolResult({
-            toolCallId: toolCallId,
-            logId: mockCreateTasks.logId.toString(),
-          })
-        } else return new FailedToolResult('Failed to create operation log for task creation.')
+        return new SuccessToolResult(
+          `Successfully ${actionString} ${tasksProcessedCount} tasks. Operation Log ID: ${operationLogId}`,
+          {
+            logId: operationLogId,
+          },
+        )
       }
+
+      return new FailedToolResult(`Failed to create operation log for tasks ${actionString}.`)
+    } catch (error) {
+      statusLog.state = StatusStatesEnum.FAILED
+      await dispatchCustomEvent(CustomEvents.STATUS_UPDATE_LOG, statusLog)
+
+      throw error
     }
-
-    await dispatchCustomEvent(
-      CustomEvents.STEP_ADD,
-      {
-        id: new Types.ObjectId().toString(),
-        name: 'Создаю задачи',
-      },
-      config,
-    )
-
-    const createdTasks = await this.taskService.createMany(dtoTasks, user, session)
-
-    const logs = await this.operationLogService.getByCriteria(
-      { id: createdTasks.logId!.toString() },
-      user.id,
-      session,
-    )
-
-    await dispatchCustomEvent(
-      CustomEvents.OPERATION,
-      {
-        logId: logs[0].id,
-        toolCallId: toolCallId,
-      },
-      config,
-    )
-
-    const resultInfo = createdTasks.data.map((task) => ({
-      id: task.id,
-      name: task.name,
-    }))
-
-    const resultMessage = `
-      Successfully created ${createdTasks.data.length} tasks: ${JSON.stringify(resultInfo)}
-      Log ID: ${createdTasks.logId}
-    `
-
-    return new SuccessToolResult(resultMessage)
   }
 
-  public async updateTasks(payload: DispatchPayload, session?: ClientSession) {
-    const { toolCall, config } = payload
-
-    const args = toolCall.args as UpdateTasksDTO
-    const toolCallId = toolCall.id
-
+  public async cloneTasks(
+    payload: CloneTasksDTO,
+    config: RunnableConfig,
+    context: IConfigContext,
+    session?: ClientSession,
+  ) {
     const configurable = config.configurable as Configurable
-    const user = configurable.user
-
-    const validationResult = UpdateTasksDTOSchema.safeParse(args)
-
-    if (!validationResult.success) {
-      return new FailedToolResult(
-        `Validation Error: Invalid arguments. \n${z.prettifyError(
-          validationResult.error,
-        )}. \nPlease fix the arguments and try again.`,
-      )
-    }
-
-    let dtoTasks = this._transformRawUpdateToDTO(args.updates)
-
-    if (configurable.aiConfirmationType === AiConfirmationTypeEnum.ALWAYS) {
-      const messages = await this.chatMessageService.getByCriteria(
-        { pendingToolCallId: toolCallId, role: 'operation' },
-        user.id,
-        session,
-      )
-
-      if (messages.length > 0) {
-        const logs = await this.operationLogService.getByCriteria(
-          { id: messages[0].content },
-          user.id,
-          session,
-        )
-
-        const log = logs[0]
-
-        if (log.status === OperationLogStatusesEnum.CANCELLED) {
-          return new SuccessToolResult('Task update cancelled by user.')
-        } else if (log.status === OperationLogStatusesEnum.APPROVED) {
-          const selectedIds = log.selectedIds || []
-
-          dtoTasks = dtoTasks.filter((task) => selectedIds.includes(task.id))
-        }
-      } else {
-        const mockUpdateTasks = await this.taskService.editMany(dtoTasks, user, session, true)
-
-        if (mockUpdateTasks.logId) {
-          return new ConfirmationEntityToolResult({
-            toolCallId: toolCallId,
-            logId: mockUpdateTasks.logId.toString(),
-          })
-        } else return new FailedToolResult('Failed to create operation log for task update.')
-      }
-    }
-
-    await dispatchCustomEvent(
-      CustomEvents.STEP_ADD,
-      {
-        id: new Types.ObjectId().toString(),
-        name: 'Обновляю задачи',
-      },
-      config,
-    )
-
-    const updatedTasks = (await this.taskService.editMany(
-      dtoTasks,
-      user,
-      session,
-    )) as IResponseWithLog<ITaskPopulated[]>
-    const logs = await this.operationLogService.getByCriteria(
-      { id: updatedTasks.logId!.toString() },
-      user.id,
+    const taskIds = await this._resolveTaskIds(payload, configurable.user.id, session)
+    const humanReadableFilters = await this._resolveHumanReadableFilters(
+      payload,
+      configurable.user.id,
       session,
     )
+    const toolCall = context.toolCall!
 
-    await dispatchCustomEvent(
-      CustomEvents.OPERATION,
-      {
-        logId: logs[0].id,
-        toolCallId: toolCallId,
+    const statusLog = await this.toolStatusLogLifecycleService.getOrCreateInProgressLog({
+      existingLog: context.statusLog,
+      toolCallId: toolCall.id!,
+      toolName: 'clone_tasks',
+      toolContent: {
+        ids: Array.from(new Set(taskIds)),
+        filters: humanReadableFilters,
       },
-      config,
-    )
-
-    const entitiesAfterTransformed = (logs[0].entitiesAfter || []).map((task) => {
-      if (!task) return null
-      if (task.due_date && task.due_hours != null && task.due_minutes != null) {
-        const collectedDateTime = `${task.due_date}T${task.due_hours}:${task.due_minutes}`
-        const utcDueDate = dayjs.utc(collectedDateTime).tz(configurable.timezone)
-
-        return {
-          ...task,
-          due_date: utcDueDate.format('YYYY-MM-DD'),
-          due_hours: utcDueDate.hour(),
-          due_minutes: utcDueDate.minute(),
-        }
-      }
-
-      return task
     })
 
-    const resultMessage = `
-      Successfully updated ${updatedTasks.data.length} tasks: ${JSON.stringify(entitiesAfterTransformed)}
-      Log ID: ${updatedTasks.logId}
-    `
+    try {
+      let isDryRun = false
 
-    return new SuccessToolResult(resultMessage)
-  }
+      if (configurable.aiConfirmationType === AiConfirmationTypeEnum.ALWAYS) {
+        if (context.isApproved === undefined) {
+          isDryRun = true
+        } else if (context.isApproved === false) {
+          await this.toolStatusLogLifecycleService.setCancelled(statusLog)
 
-  public async moveTask(payload: DispatchPayload, session?: ClientSession) {
-    const { toolCall, config } = payload
-
-    const args = toolCall.args as MoveTaskDTO
-    const toolCallId = toolCall.id
-
-    const configurable = config.configurable as Configurable
-    const user = configurable.user
-
-    const validationResult = MoveTaskDTOSchema.safeParse(args)
-
-    if (!validationResult.success) {
-      return new FailedToolResult(
-        `Validation Error: Invalid arguments. \n${z.prettifyError(
-          validationResult.error,
-        )}. \nPlease fix the arguments and try again.`,
-      )
-    }
-
-    const dto: TaskMoveDTO = {
-      id: args.id,
-      beforeId: args.before_id ? args.before_id : undefined,
-      afterId: args.after_id ? args.after_id : undefined,
-      newCategoryId: args.new_category_id ? args.new_category_id : undefined,
-    }
-
-    if (configurable.aiConfirmationType === AiConfirmationTypeEnum.ALWAYS) {
-      const messages = await this.chatMessageService.getByCriteria(
-        { pendingToolCallId: toolCallId, role: 'operation' },
-        user.id,
-        session,
-      )
-
-      if (messages.length > 0) {
-        const logs = await this.operationLogService.getByCriteria(
-          { id: messages[0].content },
-          user.id,
-          session,
-        )
-
-        const log = logs[0]
-
-        if (log.status === OperationLogStatusesEnum.CANCELLED) {
-          return new SuccessToolResult('Task move cancelled by user.')
+          return new SuccessToolResult('Task clone operation was rejected by the user.')
         }
-      } else {
-        const mockMoveTask = await this.taskService.move(dto, user, session, true)
-
-        if (mockMoveTask.logId) {
-          return new ConfirmationEntityToolResult({
-            toolCallId: toolCallId,
-            logId: mockMoveTask.logId.toString(),
-          })
-        } else return new FailedToolResult('Failed to create operation log for task move.')
       }
-    }
 
-    await dispatchCustomEvent(
-      CustomEvents.STEP_ADD,
-      {
-        id: new Types.ObjectId().toString(),
-        name: 'Перемещаю задачи',
-      },
-      config,
-    )
-
-    const result = await this.taskService.move(dto, user, session)
-
-    const logs = await this.operationLogService.getByCriteria(
-      { id: result.logId!.toString() },
-      user.id,
-      session,
-    )
-
-    await dispatchCustomEvent(
-      CustomEvents.OPERATION,
-      {
-        logId: logs[0].id,
-        toolCallId: toolCallId,
-      },
-      config,
-    )
-
-    const resultInfo = logs[0].entitiesAfter || []
-
-    const resultMessage = `
-      Successfully moved ${result.data.length} tasks: ${JSON.stringify(resultInfo)}
-      Log ID: ${result.logId}
-    `
-
-    return new SuccessToolResult(resultMessage)
-  }
-
-  public async deleteTasks(payload: DispatchPayload, session?: ClientSession) {
-    const { toolCall, config } = payload
-
-    const args = toolCall.args as { ids: string[] }
-    const toolCallId = toolCall.id
-
-    const configurable = config.configurable as Configurable
-    const user = configurable.user
-
-    if (!args.ids || !Array.isArray(args.ids) || args.ids.some((id) => typeof id !== 'string')) {
-      return new FailedToolResult(
-        'Validation Error: Invalid arguments. Please provide an object with an ids property which is array of string IDs.',
-      )
-    }
-
-    if (configurable.aiConfirmationType === AiConfirmationTypeEnum.ALWAYS) {
-      const messages = await this.chatMessageService.getByCriteria(
-        { pendingToolCallId: toolCallId, role: 'operation' },
-        user.id,
+      const cloneTasksResult = await this.taskService.clone(
+        {
+          ids: taskIds,
+        },
+        configurable.user,
         session,
+        isDryRun,
       )
 
-      if (messages.length > 0) {
-        const logs = await this.operationLogService.getByCriteria(
-          { id: messages[0].content },
-          user.id,
-          session,
-        )
+      if (cloneTasksResult.logId) {
+        const operationLogId = cloneTasksResult.logId.toString()
 
-        const log = logs[0]
+        if (isDryRun) {
+          await this.toolStatusLogLifecycleService.setAwaitingConfirmation(statusLog, (content) => {
+            content.logId = operationLogId
+          })
 
-        if (log.status === OperationLogStatusesEnum.CANCELLED) {
-          return new SuccessToolResult('Task move cancelled by user.')
-        } else if (log.status === OperationLogStatusesEnum.APPROVED) {
-          const selectedIds = log.selectedIds || []
-
-          args.ids = args.ids.filter((id) => selectedIds.includes(id))
+          return new ConfirmationToolResult({
+            logId: operationLogId,
+          })
         }
-      } else {
-        const mockDeleteTask = await this.taskService.delete(
+
+        await dispatchCustomEvent(CustomEvents.OPERATION, {
+          logId: operationLogId,
+          session,
+        })
+
+        await this.toolStatusLogLifecycleService.setCompleted(statusLog, (content) => {
+          content.logId = operationLogId
+        })
+
+        return new SuccessToolResult(
+          `Successfully cloned ${cloneTasksResult.data.length} tasks. Operation Log ID: ${operationLogId}`,
           {
-            ids: args.ids,
+            logId: operationLogId,
           },
-          user,
-          session,
-          true,
         )
-
-        if (mockDeleteTask.logId) {
-          return new ConfirmationEntityToolResult({
-            toolCallId: toolCallId,
-            logId: mockDeleteTask.logId.toString(),
-          })
-        } else return new FailedToolResult('Failed to create operation log for task delete.')
       }
+
+      return new FailedToolResult('Failed to create operation log for tasks clone.')
+    } catch (error) {
+      statusLog.state = StatusStatesEnum.FAILED
+      await dispatchCustomEvent(CustomEvents.STATUS_UPDATE_LOG, statusLog)
+
+      throw error
     }
-
-    await dispatchCustomEvent(
-      CustomEvents.STEP_ADD,
-      {
-        id: new Types.ObjectId().toString(),
-        name: 'Удаляю задачи',
-      },
-      config,
-    )
-
-    const result = await this.taskService.delete(
-      {
-        ids: args.ids,
-      },
-      user,
-      session,
-    )
-
-    const logs = await this.operationLogService.getByCriteria(
-      { id: result.logId!.toString() },
-      user.id,
-      session,
-    )
-
-    await dispatchCustomEvent(
-      CustomEvents.OPERATION,
-      {
-        logId: logs[0].id,
-        toolCallId: toolCallId,
-      },
-      config,
-    )
-
-    const resultInfo = (logs[0].entitiesBefore || []).map((task) => ({
-      id: task.id,
-      name: task.name,
-    }))
-
-    const resultMessage = `
-      Successfully deleted ${resultInfo.length} tasks: ${JSON.stringify(resultInfo)}
-      Log ID: ${result.logId}
-    `
-
-    return new SuccessToolResult(resultMessage)
   }
 
-  public async archiveTasks(payload: DispatchPayload, session?: ClientSession) {
-    const { toolCall, config } = payload
-
-    const args = toolCall.args as { ids: string[] }
-    const toolCallId = toolCall.id
-
+  public async recoverTasks(
+    payload: RecoverTasksDTO,
+    config: RunnableConfig,
+    context: IConfigContext,
+    session?: ClientSession,
+  ) {
     const configurable = config.configurable as Configurable
-    const user = configurable.user
+    const taskIds = await this._resolveTaskIds(payload, configurable.user.id, session)
+    const humanReadableFilters = await this._resolveHumanReadableFilters(
+      payload,
+      configurable.user.id,
+      session,
+    )
+    const toolCall = context.toolCall!
 
-    if (!args.ids || !Array.isArray(args.ids) || args.ids.some((id) => typeof id !== 'string')) {
-      return new FailedToolResult(
-        'Validation Error: Invalid arguments. Please provide an object with an ids property which is array of string IDs.',
-      )
-    }
+    const statusLog = await this.toolStatusLogLifecycleService.getOrCreateInProgressLog({
+      existingLog: context.statusLog,
+      toolCallId: toolCall.id!,
+      toolName: 'recover_tasks',
+      toolContent: {
+        ids: Array.from(new Set(taskIds)),
+        filters: humanReadableFilters,
+      },
+    })
 
-    if (configurable.aiConfirmationType === AiConfirmationTypeEnum.ALWAYS) {
-      const messages = await this.chatMessageService.getByCriteria(
-        { pendingToolCallId: toolCallId, role: 'operation' },
-        user.id,
-        session,
-      )
+    let isDryRun = false
 
-      if (messages.length > 0) {
-        const logs = await this.operationLogService.getByCriteria(
-          { id: messages[0].content },
-          user.id,
-          session,
-        )
+    try {
+      if (configurable.aiConfirmationType === AiConfirmationTypeEnum.ALWAYS) {
+        if (context.isApproved === undefined) {
+          isDryRun = true
+        } else if (context.isApproved === false) {
+          await this.toolStatusLogLifecycleService.setCancelled(statusLog)
 
-        const log = logs[0]
-
-        if (log.status === OperationLogStatusesEnum.CANCELLED) {
-          return new SuccessToolResult('Tasks archive cancelled by user.')
-        } else if (log.status === OperationLogStatusesEnum.APPROVED) {
-          const selectedIds = log.selectedIds || []
-
-          args.ids = args.ids.filter((id) => selectedIds.includes(id))
+          return new SuccessToolResult('Task recover operation was rejected by the user.')
         }
-      } else {
-        const mockArchiveTask = await this.taskService.archive(
-          {
-            ids: args.ids,
-          },
-          user,
-          session,
-          true,
-        )
-
-        if (mockArchiveTask.logId) {
-          return new ConfirmationEntityToolResult({
-            toolCallId: toolCallId,
-            logId: mockArchiveTask.logId.toString(),
-          })
-        } else return new FailedToolResult('Failed to create operation log for task archive.')
       }
-    }
 
-    await dispatchCustomEvent(
-      CustomEvents.STEP_ADD,
-      {
-        id: new Types.ObjectId().toString(),
-        name: 'Архивирую задачи',
-      },
-      config,
-    )
-
-    const result = await this.taskService.archive(
-      {
-        ids: args.ids,
-      },
-      user,
-      session,
-    )
-
-    const logs = await this.operationLogService.getByCriteria(
-      { id: result.logId!.toString() },
-      user.id,
-      session,
-    )
-
-    await dispatchCustomEvent(
-      CustomEvents.OPERATION,
-      {
-        logId: logs[0].id,
-        toolCallId: toolCallId,
-      },
-      config,
-    )
-
-    const resultInfo = (logs[0].entitiesAfter || []).map((task) => ({
-      id: task.id,
-      name: task.name,
-    }))
-
-    const resultMessage = `
-      Successfully archived ${result.data.length} tasks: ${JSON.stringify(resultInfo)}
-      Log ID: ${result.logId}
-    `
-
-    return new SuccessToolResult(resultMessage)
-  }
-
-  public async recoverTasks(payload: DispatchPayload, session?: ClientSession) {
-    const { toolCall, config } = payload
-
-    const args = toolCall.args as { ids: string[] }
-    const toolCallId = toolCall.id
-
-    const configurable = config.configurable as Configurable
-    const user = configurable.user
-
-    if (!args.ids || !Array.isArray(args.ids) || args.ids.some((id) => typeof id !== 'string')) {
-      return new FailedToolResult(
-        'Validation Error: Invalid arguments. Please provide an object with an ids property which is array of string IDs.',
-      )
-    }
-
-    if (configurable.aiConfirmationType === AiConfirmationTypeEnum.ALWAYS) {
-      const messages = await this.chatMessageService.getByCriteria(
-        { pendingToolCallId: toolCallId, role: 'operation' },
-        user.id,
+      const recoverTasksResult = await this.taskService.recover(
+        {
+          ids: taskIds,
+        },
+        configurable.user,
         session,
+        isDryRun,
       )
 
-      if (messages.length > 0) {
-        const logs = await this.operationLogService.getByCriteria(
-          { id: messages[0].content },
-          user.id,
-          session,
-        )
+      if (recoverTasksResult.logId) {
+        const operationLogId = recoverTasksResult.logId.toString()
 
-        const log = logs[0]
-
-        if (log.status === OperationLogStatusesEnum.CANCELLED) {
-          return new SuccessToolResult('Tasks recovery cancelled by user.')
-        } else if (log.status === OperationLogStatusesEnum.APPROVED) {
-          const selectedIds = log.selectedIds || []
-
-          args.ids = args.ids.filter((id) => selectedIds.includes(id))
-        }
-      } else {
-        const mockRecoverTask = await this.taskService.recover(
-          {
-            ids: args.ids,
-          },
-          user,
-          session,
-          true,
-        )
-
-        if (mockRecoverTask.logId) {
-          return new ConfirmationEntityToolResult({
-            toolCallId: toolCallId,
-            logId: mockRecoverTask.logId.toString(),
+        if (isDryRun) {
+          await this.toolStatusLogLifecycleService.setAwaitingConfirmation(statusLog, (content) => {
+            content.logId = operationLogId
           })
-        } else return new FailedToolResult('Failed to create operation log for task recovery.')
-      }
-    }
 
-    await dispatchCustomEvent(
-      CustomEvents.STEP_ADD,
-      {
-        id: new Types.ObjectId().toString(),
-        name: 'Восстанавливаю задачи',
-      },
-      config,
-    )
-
-    const result = await this.taskService.recover(
-      {
-        ids: args.ids,
-      },
-      user,
-      session,
-    )
-
-    const logs = await this.operationLogService.getByCriteria(
-      { id: result.logId!.toString() },
-      user.id,
-      session,
-    )
-
-    await dispatchCustomEvent(
-      CustomEvents.OPERATION,
-      {
-        logId: logs[0].id,
-        toolCallId: toolCallId,
-      },
-      config,
-    )
-
-    const resultInfo = (logs[0].entitiesAfter || []).map((task) => ({
-      id: task.id,
-      name: task.name,
-    }))
-
-    const resultMessage = `
-      Successfully recovered ${result.data.length} tasks: ${JSON.stringify(resultInfo)}
-      Log ID: ${result.logId}
-    `
-
-    return new SuccessToolResult(resultMessage)
-  }
-
-  public async cloneTasks(payload: DispatchPayload, session?: ClientSession) {
-    const { toolCall, config } = payload
-
-    const args = toolCall.args as { ids: string[]; tempIds: string[] }
-    const toolCallId = toolCall.id
-
-    const configurable = config.configurable as Configurable
-    const user = configurable.user
-
-    if (!args.ids || !Array.isArray(args.ids) || args.ids.some((id) => typeof id !== 'string')) {
-      return new FailedToolResult(
-        'Validation Error: Invalid arguments. Please provide an object with an ids property which is array of string IDs.',
-      )
-    }
-
-    if (configurable.aiConfirmationType === AiConfirmationTypeEnum.ALWAYS) {
-      const messages = await this.chatMessageService.getByCriteria(
-        { pendingToolCallId: toolCallId, role: 'operation' },
-        user.id,
-        session,
-      )
-
-      if (messages.length > 0) {
-        const logs = await this.operationLogService.getByCriteria(
-          { id: messages[0].content },
-          user.id,
-          session,
-        )
-
-        const log = logs[0]
-
-        if (log.status === OperationLogStatusesEnum.CANCELLED) {
-          return new SuccessToolResult('Tasks clone cancelled by user.')
-        } else if (log.status === OperationLogStatusesEnum.APPROVED) {
-          const selectedIds = log.selectedIds || []
-
-          args.ids = args.ids.filter((id) => selectedIds.includes(id))
-        }
-      } else {
-        const mockCloneTask = await this.taskService.clone(
-          {
-            ids: args.ids,
-          },
-          user,
-          session,
-          true,
-          args.tempIds,
-        )
-
-        if (mockCloneTask.logId) {
-          return new ConfirmationEntityToolResult({
-            toolCallId: toolCallId,
-            logId: mockCloneTask.logId.toString(),
+          return new ConfirmationToolResult({
+            logId: operationLogId,
           })
-        } else return new FailedToolResult('Failed to create operation log for task clone.')
+        }
+
+        await dispatchCustomEvent(CustomEvents.OPERATION, {
+          logId: operationLogId,
+          session,
+        })
+
+        await this.toolStatusLogLifecycleService.setCompleted(statusLog, (content) => {
+          content.logId = operationLogId
+        })
+
+        return new SuccessToolResult(
+          `Successfully recovered ${recoverTasksResult.data.length} tasks. Operation Log ID: ${operationLogId}`,
+          {
+            logId: operationLogId,
+          },
+        )
       }
+
+      return new FailedToolResult('Failed to create operation log for tasks recover.')
+    } catch (error) {
+      statusLog.state = StatusStatesEnum.FAILED
+      await dispatchCustomEvent(CustomEvents.STATUS_UPDATE_LOG, statusLog)
+
+      throw error
     }
-
-    await dispatchCustomEvent(
-      CustomEvents.STEP_ADD,
-      {
-        id: new Types.ObjectId().toString(),
-        name: 'Копирую задачи',
-      },
-      config,
-    )
-
-    const result = await this.taskService.clone(
-      {
-        ids: args.ids,
-      },
-      user,
-      session,
-      false,
-      args.tempIds,
-    )
-
-    const logs = await this.operationLogService.getByCriteria(
-      { id: result.logId!.toString() },
-      user.id,
-      session,
-    )
-
-    await dispatchCustomEvent(
-      CustomEvents.OPERATION,
-      {
-        logId: logs[0].id,
-        toolCallId: toolCallId,
-      },
-      config,
-    )
-
-    const resultInfo = (logs[0].entitiesAfter || []).map((task) => ({
-      id: task.id,
-      name: task.name,
-    }))
-
-    const resultMessage = `
-      Successfully cloned ${result.data.length} tasks: ${JSON.stringify(resultInfo)}
-      Log ID: ${result.logId}
-    `
-
-    return new SuccessToolResult(resultMessage)
   }
 }

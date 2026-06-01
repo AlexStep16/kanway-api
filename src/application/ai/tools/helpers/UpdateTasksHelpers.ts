@@ -2,6 +2,13 @@ import { ITask } from '@/domain/entities/ITask.js'
 import { UpdateTasksDTO } from '../schemes/UpdateTasksScheme.js'
 import { TaskEditManyDTO } from '@/application/dtos/TaskEditManyDTO.js'
 import { TaskEditDTO } from '@/application/dtos/TaskEditDTO.js'
+import { getRuColorName } from '@/utils/getColorName.js'
+import { getColorByNameAndTone } from '@/utils/getColorByNameAndTone.js'
+
+export type UpdateTasksHumanReadableFilter = {
+  text: string
+  value?: string
+}
 
 export function transformRawUpdateToDTO(
   tasks: ITask[],
@@ -44,6 +51,66 @@ export function transformRawUpdateToDTO(
   })
 }
 
+export function transformRawUpdateToHumanReadableFilters(
+  updates: UpdateTasksDTO['updates'],
+): UpdateTasksHumanReadableFilter[] {
+  if (Object.values(updates).every((value) => typeof value === 'undefined')) {
+    throw new Error('No task fields to update')
+  }
+
+  const filters: UpdateTasksHumanReadableFilter[] = []
+
+  if (typeof updates.name !== 'undefined') {
+    filters.push(getStringUpdateHumanReadableFilter('название', updates.name))
+  }
+  if (typeof updates.description !== 'undefined') {
+    filters.push(getStringUpdateHumanReadableFilter('описание', updates.description))
+  }
+  if (typeof updates.is_completed !== 'undefined') {
+    filters.push({
+      text: updates.is_completed ? 'Отметить выполненной' : 'Отметить невыполненной',
+    })
+  }
+  if (typeof updates.tags !== 'undefined') {
+    filters.push(getTagsUpdateHumanReadableFilter(updates.tags))
+  }
+  if (typeof updates.priority !== 'undefined') {
+    filters.push({
+      text: 'Установить приоритет',
+      value: getPriorityHumanReadableValue(updates.priority),
+    })
+  }
+  if (typeof updates.color !== 'undefined') {
+    const colorObj = resolveColorUpdate(updates.color)
+
+    if (colorObj === null) {
+      filters.push({
+        text: 'Убрать цвет',
+      })
+
+      return filters
+    }
+
+    const color = getColorByNameAndTone(colorObj.value, colorObj.tone)
+
+    filters.push({
+      text: 'Установить цвет',
+      value: getRuColorName(color),
+    })
+  }
+  if (typeof updates.due_date !== 'undefined') {
+    filters.push(getDueDateUpdateHumanReadableFilter(updates.due_date))
+  }
+  if (typeof updates.due_hours !== 'undefined') {
+    filters.push(getDueHoursUpdateHumanReadableFilter(updates.due_hours))
+  }
+  if (typeof updates.due_minutes !== 'undefined') {
+    filters.push(getDueMinutesUpdateHumanReadableFilter(updates.due_minutes))
+  }
+
+  return filters
+}
+
 export function resolveStringUpdate(
   currentValue: string,
   update: Exclude<UpdateTasksDTO['updates']['name'], undefined>,
@@ -69,7 +136,7 @@ export function resolveArrayUpdate(
 
 export function resolveColorUpdate(
   update: Exclude<UpdateTasksDTO['updates']['color'], undefined>,
-): TaskEditDTO['color'] {
+): NonNullable<TaskEditDTO['color']> | null {
   if (update === null) return null
 
   if (!update.value || !update.tone) {
@@ -187,4 +254,128 @@ export function formatDate(date: Date): string {
 
 export function padDatePart(value: number): string {
   return value.toString().padStart(2, '0')
+}
+
+function getStringUpdateHumanReadableFilter(
+  fieldName: string,
+  update: Exclude<UpdateTasksDTO['updates']['name'], undefined>,
+): UpdateTasksHumanReadableFilter {
+  if (update === null) {
+    return {
+      text: `Убрать ${fieldName}`,
+    }
+  }
+
+  if (typeof update === 'string') {
+    return {
+      text: `Установить ${fieldName}`,
+      value: update,
+    }
+  }
+
+  return {
+    text:
+      update.op === 'append'
+        ? `Добавить текст в конец поля "${fieldName}"`
+        : `Добавить текст в начало поля "${fieldName}"`,
+    value: update.value,
+  }
+}
+
+function getTagsUpdateHumanReadableFilter(
+  update: NonNullable<UpdateTasksDTO['updates']['tags']>,
+): UpdateTasksHumanReadableFilter {
+  if (Array.isArray(update)) {
+    return {
+      text: 'Установить теги',
+      value: formatArrayUpdateValue(update),
+    }
+  }
+
+  return {
+    text: update.op === 'add' ? 'Добавить тег' : 'Удалить тег',
+    value: formatArrayUpdateValue(update.value),
+  }
+}
+
+function getDueDateUpdateHumanReadableFilter(
+  update: Exclude<UpdateTasksDTO['updates']['due_date'], undefined>,
+): UpdateTasksHumanReadableFilter {
+  if (update === null) {
+    return {
+      text: 'Убрать срок',
+    }
+  }
+
+  if (typeof update === 'string') {
+    return {
+      text: 'Установить срок',
+      value: update,
+    }
+  }
+
+  return {
+    text: 'Сдвинуть срок на дней',
+    value: update.value.toString(),
+  }
+}
+
+function getDueHoursUpdateHumanReadableFilter(
+  update: Exclude<UpdateTasksDTO['updates']['due_hours'], undefined>,
+): UpdateTasksHumanReadableFilter {
+  if (update === null) {
+    return {
+      text: 'Убрать время',
+    }
+  }
+
+  if (typeof update === 'number') {
+    return {
+      text: 'Установить час',
+      value: update.toString(),
+    }
+  }
+
+  return {
+    text: 'Сдвинуть время на часов',
+    value: update.value.toString(),
+  }
+}
+
+function getDueMinutesUpdateHumanReadableFilter(
+  update: Exclude<UpdateTasksDTO['updates']['due_minutes'], undefined>,
+): UpdateTasksHumanReadableFilter {
+  if (update === null) {
+    return {
+      text: 'Убрать минуты',
+    }
+  }
+
+  if (typeof update === 'number') {
+    return {
+      text: 'Установить минуты',
+      value: update.toString(),
+    }
+  }
+
+  return {
+    text: 'Сдвинуть время на минут',
+    value: update.value.toString(),
+  }
+}
+
+function formatArrayUpdateValue(value: string[]): string {
+  return value.length === 1 ? value[0] : value.map((v) => `#${v}, `).join(', ')
+}
+
+function getPriorityHumanReadableValue(
+  priority: NonNullable<UpdateTasksDTO['updates']['priority']>,
+): string {
+  const titles = {
+    low: 'Низкий',
+    medium: 'Средний',
+    high: 'Высокий',
+  }
+
+  return titles[priority]
 }

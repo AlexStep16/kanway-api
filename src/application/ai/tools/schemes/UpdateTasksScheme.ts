@@ -57,7 +57,7 @@ const ColorUpdateSchema = z
 
 export const UpdateTasksScheme = z.object({
   selection_id: z.string().optional().describe('Apply updates to this selection of tasks.'),
-  task_id: z.string().optional().describe('Apply updates to this specific task only.'),
+  task_ids: z.array(z.string()).optional().describe('Apply updates to these specific tasks only.'),
 
   updates: z.object({
     name: StringUpdateSchema.optional(),
@@ -73,7 +73,7 @@ export const UpdateTasksScheme = z.object({
     priority: z.enum(['low', 'medium', 'high']).optional().describe('Directly overwrite priority.'),
   }),
 }).describe(`
-  Tool to update tasks. You can specify a selection_id or a single task_id.
+  Tool to update tasks. You can specify a selection_id or multiple task_ids.
   For fields like 'name' and 'due_date', you can either overwrite them with a flat value,
   or perform operations like appending text or adding/subtracting days.
 `)

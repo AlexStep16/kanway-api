@@ -3,4 +3,5 @@ export enum StatusStatesEnum {
   CANCELLED = 'cancelled',
   FAILED = 'failed',
   COMPLETED = 'completed',
+  AWAITING_CONFIRMATION = 'awaiting_confirmation',
 }

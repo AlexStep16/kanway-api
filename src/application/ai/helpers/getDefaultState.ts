@@ -1,6 +1,6 @@
-import { AgentStateAnnotationOrc } from '../agent/AgentStateAnnotationOrc.js'
+import { AgentStateAnnotation } from '../agent/AgentStateAnnotation.js'
 
-export function getDefaultState(): typeof AgentStateAnnotationOrc.State {
+export function getDefaultState(): typeof AgentStateAnnotation.State {
   return {
     messages: [],
     active_selections: [],

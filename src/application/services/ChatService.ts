@@ -9,13 +9,11 @@ import { IResponseWithLog } from '@interfaces/IResponseWithLog.js'
 import { IChat } from '@domain/entities/IChat.js'
 import { IChatCriteria } from '@interfaces/criterias/IChatCriteria.js'
 import { ChatSendDTO } from '@dtos/ChatSendDTO.js'
-import { BaseMessage, HumanMessage } from '@langchain/core/messages'
 import { ChatMessageService } from '@application/services/ChatMessageService.js'
 import { RunnableConfig } from '@langchain/core/runnables'
 import dayjs from 'dayjs'
 import { langgraphQueue } from '@/infrastructure/queues/index.js'
-import { ApproveLogDTO } from '@dtos/ApproveLogDTO.js'
-import { Command } from '@langchain/langgraph'
+import { ApproveToolDTO } from '@dtos/ApproveToolDTO.js'
 import { SettingService } from '@application/services/SettingService.js'
 import { Configurable } from '@/application/ai/interfaces/Configurable.js'
 import { RetryAgentDTO } from '@dtos/RetryAgentDTO.js'
@@ -26,8 +24,6 @@ import { BaseService } from '@application/services/BaseService.js'
 import { IChatRaw } from '@entities/IChatRaw.js'
 import { BoardService } from './BoardService.js'
 import { WorkspaceService } from './WorkspaceService.js'
-import { ResolveAmbiguousDTO } from '../dtos/ResolveAmbiguousDTO.js'
-import { OperationLogStatusesEnum } from '@/domain/enums/OperationLogStatusesEnum.js'
 import { getDefaultState } from '../ai/helpers/getDefaultState.js'
 import { TaskService } from './TaskService.js'
 import { CategoryService } from './CategoryService.js'
@@ -38,12 +34,29 @@ import { ErrorMessages } from '@/enums/ErrorMessages.js'
 import { ModelsEnum } from '@/domain/enums/ModelsEnum.js'
 import { SubscriptionPlanEnum } from '@/domain/enums/SubscriptionPlanEnum.js'
 import { UserService } from './UserService.js'
-import { AgentStateAnnotationOrc } from '../ai/agent/AgentStateAnnotationOrc.js'
 import { IStatus } from '../interfaces/Statuses/IStatus.js'
 import { AgentsEnum } from '@/enums/AgentsEnum.js'
 import { StatusStatesEnum } from '@/enums/StatusStatesEnum.js'
+import { IChatMessage } from '@/domain/entities/IChatMessage.js'
+import { AgentWorkerDTO } from '../dtos/AgentWorkerDTO.js'
+import { ToolReviewResumePayload } from '../ai/agent/types/ToolReviewResumePayload.js'
 
 const MAX_RETRIES = 3
+
+type ActiveEntity = {
+  id: string
+  name: string
+}
+
+type SendThreadContext = {
+  chat: IChat
+  threadId: string
+  board: ActiveEntity | null
+  workspace: ActiveEntity
+  isChatNameNeeded: boolean
+  chargedAudioTokens: number
+  chatMessages: IChatMessage[]
+}
 
 export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
   protected repository: ChatRepository
@@ -216,13 +229,157 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     )
   }
 
+  private async _createThreadJobPayload(
+    user: IUser,
+    data: {
+      threadId: string
+      chatId: string
+      modelType: ModelsEnum
+      timezone: string
+      isChatNameNeeded?: boolean
+      userMessage: string
+      chargedAudioTokens?: number
+      activeBoard: { id: string; name: string } | null
+      activeWorkspace: { id: string; name: string }
+    },
+    externalSession: ClientSession,
+  ) {
+    const statusContent: IStatus = {
+      statusText: '',
+      currentAgent: AgentsEnum.ORCHESTRATOR,
+      state: StatusStatesEnum.IN_PROGRESS,
+      logs: [],
+    }
+
+    const statusMessages = await this.chatMessageService.create(
+      {
+        role: 'status',
+        content: statusContent,
+        threadId: data.threadId,
+        chatId: new Types.ObjectId(data.chatId),
+      },
+      user,
+      externalSession,
+    )
+
+    const statusMessage = statusMessages.data[0]
+
+    const config = await this._getConfigurableFromUserSetting(
+      user,
+      {
+        threadId: data.threadId,
+        chatId: data.chatId,
+        modelType: data.modelType,
+        timezone: data.timezone,
+        statusMessageId: statusMessage.id.toHexString(),
+        isChatNameNeeded: data.isChatNameNeeded,
+        activeBoard: data.activeBoard,
+        chargedAudioTokens: data.chargedAudioTokens,
+        activeWorkspace: data.activeWorkspace,
+        userMessage: data.userMessage,
+      },
+      externalSession,
+    )
+
+    const payload = getDefaultState()
+
+    const jobPayload: AgentWorkerDTO = {
+      payload,
+      config,
+    }
+
+    return { jobPayload, statusMessage }
+  }
+
+  private async _continueThread(
+    data: ChatSendDTO,
+    user: IUser,
+    externalSession: ClientSession,
+    context: SendThreadContext,
+  ) {
+    const lastConversationMessage = [...context.chatMessages]
+      .reverse()
+      .find((message) => message.role !== 'status')
+
+    if (!lastConversationMessage || lastConversationMessage.role !== 'user') {
+      throw new AppError('Нельзя продолжить без последнего сообщения пользователя.', 400)
+    }
+
+    const { jobPayload, statusMessage } = await this._createThreadJobPayload(
+      user,
+      {
+        threadId: context.threadId,
+        chatId: context.chat.id.toString(),
+        modelType: data.modelType || ModelsEnum.KANWAY_LITE,
+        timezone: data.timezone,
+        isChatNameNeeded: context.isChatNameNeeded,
+        userMessage: lastConversationMessage.content as string,
+        chargedAudioTokens: context.chargedAudioTokens,
+        activeBoard: context.board,
+        activeWorkspace: context.workspace,
+      },
+      externalSession,
+    )
+
+    return {
+      jobPayload,
+      userMessage: lastConversationMessage,
+      statusMessage,
+      chat: context.chat,
+      threadId: context.threadId,
+    }
+  }
+
+  private async _sendWithMessage(
+    data: ChatSendDTO,
+    user: IUser,
+    externalSession: ClientSession,
+    context: SendThreadContext,
+  ) {
+    const createUserMessageResult = await this.chatMessageService.create(
+      {
+        role: 'user',
+        content: data.message,
+        chatId: context.chat.id,
+        threadId: context.threadId,
+      },
+      user,
+      externalSession,
+    )
+
+    const userMessage = createUserMessageResult.data[0]
+
+    const { jobPayload, statusMessage } = await this._createThreadJobPayload(
+      user,
+      {
+        threadId: context.threadId,
+        chatId: context.chat.id.toString(),
+        modelType: data.modelType || ModelsEnum.KANWAY_LITE,
+        timezone: data.timezone,
+        isChatNameNeeded: context.isChatNameNeeded,
+        userMessage: data.message!,
+        chargedAudioTokens: context.chargedAudioTokens,
+        activeBoard: context.board,
+        activeWorkspace: context.workspace,
+      },
+      externalSession,
+    )
+
+    return {
+      jobPayload,
+      userMessage,
+      statusMessage,
+      chat: context.chat,
+      threadId: context.threadId,
+    }
+  }
+
   public async send(data: ChatSendDTO, user: IUser, externalSession: ClientSession) {
     let chat: IChat | null = null
     let toolsWithNoDecision = 0
     let isChatNameNeeded = false
     let chargedAudioTokens = 0
 
-    const messages: BaseMessage[] = []
     const threadId = data.threadId || new Types.ObjectId().toString()
 
     if (user.credits <= 0 && user.paidCredits <= 0) {
@@ -280,26 +437,13 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       externalSession,
     )
 
-    for (const chatMessage of chatMessages) {
-      if (chatMessage.role === 'operation') {
-        const logId: string = chatMessage.content
+    const lastStatusMessage = [...chatMessages].reverse().find((msg) => msg.role === 'status')
 
-        if (!logId) continue
-
-        const logs = await this.operationLogService.getByCriteria(
-          {
-            id: logId,
-          },
-          user.id,
-          externalSession,
-        )
-
-        if (logs && logs.length > 0) {
-          const log = logs[0]
-
-          if (log.status === OperationLogStatusesEnum.PENDING) {
-            toolsWithNoDecision += 1
-          }
+    if (lastStatusMessage) {
+      const logs = (lastStatusMessage.content as IStatus).logs
+      for (const log of logs) {
+        if (log.state === StatusStatesEnum.AWAITING_CONFIRMATION) {
+          toolsWithNoDecision++
         }
       }
     }
@@ -308,83 +452,25 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       throw new AppError('Не все действия подтверждены или отменены.', 400)
     }
 
-    if (
-      !data.message &&
-      chatMessages.length > 0 &&
-      chatMessages[chatMessages.length - 1].role !== 'user'
-    ) {
-      throw new AppError('Последнее сообщение в чате не является сообщением от пользователя.', 400)
-    }
-
-    const createUserMessageResult = await this.chatMessageService.create(
-      {
-        role: 'user',
-        content: data.message,
-        chatId: chat.id,
-        threadId,
-      },
-      user,
-      externalSession,
-    )
-
-    const userMessage = createUserMessageResult.data[0]
-
-    messages.push(new HumanMessage(data.message!))
-
-    const statusContent: IStatus = {
-      statusText: 'Инициализация...',
-      currentAgent: AgentsEnum.ORCHESTRATOR,
-      state: StatusStatesEnum.IN_PROGRESS,
-      logs: [],
-    }
-
-    const statusMessages = await this.chatMessageService.create(
-      {
-        role: 'status',
-        content: statusContent,
-        threadId: threadId,
-        chatId: chat.id,
-      },
-      user,
-      externalSession,
-    )
-
-    const statusMessage = statusMessages.data[0]
-
-    const config = await this._getConfigurableFromUserSetting(
-      user,
-      {
-        threadId: threadId,
-        chatId: chat.id.toString(),
-        modelType: data.modelType || ModelsEnum.KANWAY_LITE,
-        timezone: data.timezone,
-        statusMessageId: statusMessage.id.toHexString(),
-        isChatNameNeeded,
-        activeBoard: board,
-        chargedAudioTokens,
-        activeWorkspace: workspace,
-        userMessage: data.message || '',
-      },
-      externalSession,
-    )
-
-    const payload = getDefaultState()
-
-    const jobPayload: {
-      payload: Partial<typeof AgentStateAnnotationOrc.State> | Command
-      config: RunnableConfig<Configurable>
-    } = {
-      payload,
-      config,
-    }
-
-    return {
-      jobPayload,
-      userMessage,
-      statusMessage,
+    const context: SendThreadContext = {
       chat,
-      threadId: threadId,
+      threadId,
+      board,
+      workspace,
+      isChatNameNeeded,
+      chargedAudioTokens,
+      chatMessages,
     }
+
+    if (data.message) {
+      return await this._sendWithMessage(data, user, externalSession, context)
+    }
+
+    if (!data.threadId) {
+      throw new AppError('Для нового чата требуется сообщение пользователя.', 400)
+    }
+
+    return await this._continueThread(data, user, externalSession, context)
   }
 
   public async edit(data: ChatEditDTO, criteria: IChatCriteria, user: IUser): Promise<IChat[]> {
@@ -480,7 +566,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
 
     const payload = getDefaultState()
 
-    const jobPayload = {
+    const jobPayload: AgentWorkerDTO = {
       payload,
       config,
       isRetry: true,
@@ -618,136 +704,15 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     }
   }
 
-  private async _executeResolveAmbiguousTransaction(
-    data: ResolveAmbiguousDTO,
+  private async _executeApproveToolTransaction(
+    data: ApproveToolDTO,
     user: IUser,
     externalSession: ClientSession,
   ) {
-    const chatMessages = await this.chatMessageService.getByCriteria(
-      { id: data.chatMessageId },
-      user.id,
-      externalSession,
-      undefined,
-      {
-        sort: { createdAt: -1 },
-      },
-    )
-
     const { board, workspace } = await this._getActiveEntities(
       data.boardId,
       data.workspaceId,
       user,
-      externalSession,
-    )
-
-    if (!chatMessages || chatMessages.length === 0) {
-      throw new AppError('Сообщение чата не найдено.', 400)
-    }
-
-    const chatMessage = chatMessages[0]
-
-    await this.chatMessageService.delete(
-      {
-        id: data.chatMessageId,
-      },
-      user,
-      externalSession,
-    )
-
-    const chatId = chatMessage.chatId.toString()
-
-    const lastUserMessage = chatMessages.find((msg) => msg.role === 'user')
-
-    if (!lastUserMessage) {
-      throw new AppError('Не найдено сообщение пользователя для повторной попытки.', 400)
-    }
-
-    const lastStatusMessage = chatMessages.find((msg) => msg.role === 'status')
-
-    if (!lastStatusMessage) {
-      throw new AppError('Не найдено сообщение статуса для повторной попытки.', 400)
-    }
-
-    const config = await this._getConfigurableFromUserSetting(
-      user,
-      {
-        threadId: chatMessage.threadId,
-        chatId: chatId,
-        activeBoard: board,
-        activeWorkspace: workspace,
-        timezone: data.timezone || 'UTC',
-        statusMessageId: lastStatusMessage ? lastStatusMessage.id.toHexString() : '',
-        userMessage: lastUserMessage ? lastUserMessage.content : '',
-        modelType: data.modelType || ModelsEnum.KANWAY_LITE,
-      },
-      externalSession,
-    )
-
-    await this.chatMessageService.delete(
-      {
-        id: data.chatMessageId,
-      },
-      user,
-      externalSession,
-    )
-
-    const job = await langgraphQueue.add(
-      'resolve_ambiguous',
-      {
-        payload: new Command({
-          resume: {
-            ids: data.ids,
-            callId: data.callId,
-          },
-        }),
-        config,
-      },
-      {
-        jobId: data.jobId,
-      },
-    )
-
-    return {
-      jobId: job.id,
-      chatMessage,
-    }
-  }
-
-  private async _executeApproveLogTransaction(
-    data: ApproveLogDTO,
-    user: IUser,
-    externalSession: ClientSession,
-  ) {
-    const logs = await this.operationLogService.getByCriteria(
-      { id: data.id },
-      user.id,
-      externalSession,
-    )
-
-    if (!logs || logs.length === 0) {
-      throw new AppError('Лог не найден.', 400)
-    }
-
-    const { board, workspace } = await this._getActiveEntities(
-      data.boardId,
-      data.workspaceId,
-      user,
-      externalSession,
-    )
-
-    const log = logs[0]
-
-    await this.operationLogService.edit(
-      {
-        status: data.isConfirmed
-          ? OperationLogStatusesEnum.APPROVED
-          : OperationLogStatusesEnum.CANCELLED,
-        selectedIds: data.selectedIds,
-      },
-      {
-        id: log.id.toString(),
-      },
-      user.id,
       externalSession,
     )
 
@@ -761,33 +726,6 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       },
     )
 
-    let toolsWithNoDecision = 0
-
-    for (const chatMessage of chatMessages) {
-      if (chatMessage.role === 'operation') {
-        const logId: string = chatMessage.content
-
-        if (!logId) continue
-
-        const logs = await this.operationLogService.getByCriteria(
-          {
-            id: logId,
-          },
-          user.id,
-        )
-
-        if (logs && logs.length > 0) {
-          const log = logs[0]
-
-          if (log.status === OperationLogStatusesEnum.PENDING) {
-            toolsWithNoDecision += 1
-          }
-        }
-      }
-    }
-
-    if (toolsWithNoDecision > 0) return
-
     const lastUserMessage = chatMessages.find((msg) => msg.role === 'user')
 
     if (!lastUserMessage) {
@@ -799,6 +737,10 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     if (!lastStatusMessage) {
       throw new AppError('Не найдено сообщение статуса для повторной попытки.', 400)
     }
+
+    const statusLog = (lastStatusMessage.content as IStatus).logs.find(
+      (log) => log.id === data.statusLogId,
+    )
 
     const config = await this._getConfigurableFromUserSetting(
       user,
@@ -815,39 +757,32 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       externalSession,
     )
 
-    const job = await langgraphQueue.add('review', {
-      payload: new Command({
-        resume: {},
-      }),
+    const payload: ToolReviewResumePayload = {
+      toolId: data.toolId,
+      isConfirmed: data.isConfirmed,
+      isRejected: data.isRejected,
+      statusLog,
+    }
 
+    const jobPayload: AgentWorkerDTO = {
+      payload,
       config,
-    })
+      isResume: true,
+    }
+
+    const job = await langgraphQueue.add('process_query', jobPayload, { jobId: data.jobId })
 
     return {
       jobId: job.id,
     }
   }
 
-  public async approveLog(data: ApproveLogDTO, user: IUser, externalSession?: ClientSession) {
+  public async approveTool(data: ApproveToolDTO, user: IUser, externalSession?: ClientSession) {
     if (externalSession) {
-      return this._executeApproveLogTransaction(data, user, externalSession)
+      return this._executeApproveToolTransaction(data, user, externalSession)
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeApproveLogTransaction(data, user, session),
-      )
-    }
-  }
-
-  public async resolveAmbiguous(
-    data: ResolveAmbiguousDTO,
-    user: IUser,
-    externalSession?: ClientSession,
-  ) {
-    if (externalSession) {
-      return this._executeResolveAmbiguousTransaction(data, user, externalSession)
-    } else {
-      return await this._retryExecutor((session: ClientSession) =>
-        this._executeResolveAmbiguousTransaction(data, user, session),
+        this._executeApproveToolTransaction(data, user, session),
       )
     }
   }

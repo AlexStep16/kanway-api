@@ -7,10 +7,10 @@ import { Types } from 'mongoose'
 import { Configurable } from '../../interfaces/Configurable.js'
 import getLastAiMessage from '../../helpers/getLastAiMessage.js'
 import { ChatNamePrompt } from '../../prompts/ChatNamePrompt.js'
-import { AgentStateAnnotationOrc } from '../AgentStateAnnotationOrc.js'
+import { AgentStateAnnotation } from '../AgentStateAnnotation.js'
 
 export const makeChatNameNode = (deps: AgentDependencies): any => {
-  return async (state: typeof AgentStateAnnotationOrc.State, config: RunnableConfig) => {
+  return async (state: typeof AgentStateAnnotation.State, config: RunnableConfig) => {
     const configurable = config.configurable as Configurable
 
     if (!configurable.isChatNameNeeded) return {}

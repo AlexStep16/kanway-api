@@ -1,4 +1,7 @@
-import { IStatusLogReasoning } from '../interfaces/Statuses/IStatusLogReasoning.js'
-import { IStatusLogTool } from '../interfaces/Statuses/IStatusLogTool.js'
+import { StatusTypesEnum } from '@/enums/StatusTypesEnum.js'
+import { IStatusLogBase } from '../interfaces/Statuses/IStatusLogBase.js'
+import { StatusTools } from './StatusTools.js'
 
-export type StatusLog = IStatusLogReasoning | IStatusLogTool
+export type StatusLog =
+  | IStatusLogBase<StatusTypesEnum.REASONING, { reasoning: string }>
+  | IStatusLogBase<StatusTypesEnum.TOOL, StatusTools>

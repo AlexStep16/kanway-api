@@ -7,7 +7,8 @@ import { FilterQuery, Types } from 'mongoose'
 
 export default class PaymentMethodRepository extends BaseRepository<
   IPaymentMethodRaw,
-  IPaymentMethod
+  IPaymentMethod,
+  IPaymentMethodCriteria
 > {
   constructor() {
     super(PaymentMethodModel)

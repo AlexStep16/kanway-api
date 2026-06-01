@@ -3,8 +3,13 @@ import { SuccessToolResult } from './helpers/ToolResult/SuccessToolResult.js'
 import z from 'zod'
 import { AgentDependencies } from '../agent/types/AgentDependencies.js'
 import { CallTaskManagerScheme } from './schemes/CallTaskManagerScheme.js'
+import { Configurable } from '../interfaces/Configurable.js'
+import { RunnableConfig } from '@langchain/core/runnables'
 
-export function initOrchestratorTools(dependencies: AgentDependencies) {
+export function initOrchestratorTools(
+  dependencies: AgentDependencies,
+  config: RunnableConfig<Configurable>,
+) {
   const callTaskManagerAgent = tool(
     () => {
       return new SuccessToolResult('')
@@ -17,7 +22,12 @@ export function initOrchestratorTools(dependencies: AgentDependencies) {
 
   const getSelectionDetails = tool(
     async (data) => {
-      return await dependencies.services.generalToolsExecutor.getSelectionDetails(data.selection_id)
+      const configurable = config.configurable as Configurable
+
+      return await dependencies.services.generalToolsExecutor.getSelectionDetails(
+        data.selection_id,
+        configurable.user.id,
+      )
     },
     {
       name: 'get_selection_details',

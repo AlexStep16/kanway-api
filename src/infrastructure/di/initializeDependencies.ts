@@ -50,15 +50,16 @@ import { LimitService } from '@/application/services/LimitService.js'
 /*import SandboxController from '../api/controllers/SandboxController.js'
 import { ToolDispatcherService } from '@/application/ai/services/ToolDispatcherService.js'
 import { CategoryToolsExecutorService } from '@/application/ai/services/CategoryToolsExecutorService.js'*/
-import { TaskToolsExecutorService } from '@/application/ai/servicesNew/TaskToolsExecutorService.js'
+import { TaskToolsExecutorService } from '@/application/ai/services/TaskToolsExecutorService.js'
 /*import { BoardToolsExecutorService } from '@/application/ai/services/BoardToolsExecutorService.js'
 import { WorkspaceToolsExecutorService } from '@/application/ai/services/WorkspaceToolsExecutorService.js'
 import { GeneralToolsExecutor } from '@/application/ai/services/GeneralToolsExecutor.js'*/
 import CheckpointWriteRepository from '@/application/repositories/CheckpointWriteRepository.js'
 import CheckpointRepository from '@/application/repositories/CheckpointRepository.js'
-import { FilterToMongoQueryService } from '@/application/ai/servicesNew/FilterToMongoQueryService.js'
-import { SelectionService } from '@/application/ai/servicesNew/SelectionService.js'
-import { GeneralToolsExecutor } from '@/application/ai/servicesNew/GeneralToolsExecutor.js'
+import { FilterToMongoQueryService } from '@/application/ai/services/FilterToMongoQueryService.js'
+import { SelectionService } from '@/application/ai/services/SelectionService.js'
+import { GeneralToolsExecutor } from '@/application/ai/services/GeneralToolsExecutor.js'
+import SelectionRepository from '@/application/repositories/SelectionRepository.js'
 
 export function initializeDependencies() {
   const mongoClient = new MongoClient(process.env.MONGO_URL || '')
@@ -78,6 +79,7 @@ export function initializeDependencies() {
   const supportRepository = new SupportRepository()
   const checkpointRepository = new CheckpointRepository()
   const checkpointWriteRepository = new CheckpointWriteRepository()
+  const selectionRepository = new SelectionRepository()
 
   /* MOCK SERVICES START */
   const mockCategoryService = {} as CategoryService
@@ -266,7 +268,7 @@ export function initializeDependencies() {
     checkpointRepository,
   )
   /** AI SERVICES END */
-  const selectionService = new SelectionService()
+  const selectionService = new SelectionService(selectionRepository)
 
   const filterToMongoQueryService = new FilterToMongoQueryService(
     taskService,

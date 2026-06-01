@@ -1,6 +1,6 @@
-import { AgentStateAnnotationOrc } from '../AgentStateAnnotationOrc.js'
+import { AgentStateAnnotation } from '../AgentStateAnnotation.js'
 
-export const routeTaskManagerAgentToolOutput = (state: typeof AgentStateAnnotationOrc.State) => {
+export const routeTaskManagerAgentToolOutput = (state: typeof AgentStateAnnotation.State) => {
   if (state.task_manager_has_error) {
     return 'TaskManagerAgent'
   }

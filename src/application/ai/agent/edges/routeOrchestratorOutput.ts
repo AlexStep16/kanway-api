@@ -1,6 +1,6 @@
-import { AgentStateAnnotationOrc } from '../AgentStateAnnotationOrc.js'
+import { AgentStateAnnotation } from '../AgentStateAnnotation.js'
 
-export const routeOrchestratorOutput = (state: typeof AgentStateAnnotationOrc.State) => {
+export const routeOrchestratorOutput = (state: typeof AgentStateAnnotation.State) => {
   if (state.orchestrator_tool_calls.length > 0) {
     return 'OrchestratorTool'
   }

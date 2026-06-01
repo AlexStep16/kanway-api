@@ -170,19 +170,9 @@ export default class ChatController {
     }
   }
 
-  public async approveLog(req: Request, res: Response, next: NextFunction) {
+  public async approveTool(req: Request, res: Response, next: NextFunction) {
     try {
-      const result = await this.service.approveLog(req.body, req.user!)
-
-      return res.status(200).json(new SuccessResponse(result))
-    } catch (error) {
-      next(error)
-    }
-  }
-
-  public async resolveAmbiguous(req: Request, res: Response, next: NextFunction) {
-    try {
-      const result = await this.service.resolveAmbiguous(req.body, req.user!)
+      const result = await this.service.approveTool(req.body, req.user!)
 
       return res.status(200).json(new SuccessResponse(result))
     } catch (error) {

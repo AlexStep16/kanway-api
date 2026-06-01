@@ -1,4 +1,4 @@
-import { ISelection } from './ISelection.js'
+import { ISelection } from '@/domain/entities/ISelection.js'
 
 export interface IToolResultMeta {
   selections?: ISelection[]

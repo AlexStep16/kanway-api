@@ -16,7 +16,7 @@ import { Redis } from 'ioredis'
 import { ModelsEnum } from '@/domain/enums/ModelsEnum.js'
 import { StatusStatesEnum } from '@/enums/StatusStatesEnum.js'
 import { IStatus } from '@/application/interfaces/Statuses/IStatus.js'
-import { IStatusLog } from '@/application/interfaces/Statuses/IStatusLog.js'
+import { StatusLog } from '@/application/types/StatusLog.js'
 
 export class AgentEventsHandler extends BaseCallbackHandler {
   name = 'AgentEventsHandler'
@@ -35,6 +35,7 @@ export class AgentEventsHandler extends BaseCallbackHandler {
   public redisPublisher: Redis
   public modelType = ModelsEnum.KANWAY_LITE
   public chargedAudioTokens = 0
+  public isInterrupted = false
 
   constructor(
     job: Job,
@@ -122,13 +123,15 @@ export class AgentEventsHandler extends BaseCallbackHandler {
     })
   }
 
-  completeStatus() {
+  async completeStatus() {
     this.status.state = StatusStatesEnum.COMPLETED
     this.status.statusText = 'Выполнение завершено'
 
     this.status.logs.forEach((log) => {
       log.state = StatusStatesEnum.COMPLETED
     })
+
+    await this.updateStatusMessage()
   }
 
   async updateStatusMessage() {
@@ -148,7 +151,7 @@ export class AgentEventsHandler extends BaseCallbackHandler {
     )
   }
 
-  failStatus(isCancelled = false) {
+  async failStatus(isCancelled = false) {
     if (this.status.state === StatusStatesEnum.IN_PROGRESS) {
       this.status.state = isCancelled ? StatusStatesEnum.CANCELLED : StatusStatesEnum.FAILED
     }
@@ -157,6 +160,8 @@ export class AgentEventsHandler extends BaseCallbackHandler {
         log.state = isCancelled ? StatusStatesEnum.CANCELLED : StatusStatesEnum.FAILED
       }
     })
+
+    await this.updateStatusMessage()
   }
 
   async updateAssistantMessage(dto: Partial<ChatMessageDTO>) {
@@ -171,35 +176,10 @@ export class AgentEventsHandler extends BaseCallbackHandler {
     )
   }
 
-  async createResolveAmbiguousMessage(ambiguities: {
-    call_id: string
-    entity_type: 'task' | 'category' | 'board' | 'workspace'
-    min_select: number
-    max_select: number
-    ids: string[]
-  }) {
-    await this.createChatMessage(
-      {
-        role: 'ambiguous',
-        content: ambiguities,
-        threadId: this.configurable?.thread_id,
-        chatId: new Types.ObjectId(this.configurable?.chatId),
-      },
-      this.configurable.user,
-    )
-  }
-
-  async updateStatus(data: IStatus) {
+  async updateStatus(data: Partial<IStatus>) {
     Object.assign(this.status, data)
 
-    await this.pushProgress({
-      id: crypto.randomUUID(),
-      role: CustomEvents.UPDATE_MESSAGE,
-      data: {
-        ...this.statusMessage,
-        content: this.status,
-      },
-    })
+    await this.updateProgressStatus()
   }
 
   async updateProgressStatus() {
@@ -213,13 +193,13 @@ export class AgentEventsHandler extends BaseCallbackHandler {
     })
   }
 
-  async addLog(log: IStatusLog) {
+  async addLog(log: StatusLog) {
     this.status.logs.push(log)
 
     await this.updateProgressStatus()
   }
 
-  async updateLog(log: IStatusLog) {
+  async updateLog(log: StatusLog) {
     const logIndex = this.status.logs.findIndex((l) => l.id === log.id)
     if (logIndex !== -1) {
       this.status.logs[logIndex] = log
@@ -229,97 +209,73 @@ export class AgentEventsHandler extends BaseCallbackHandler {
   }
 
   async handleCustomEvent(event: string, data: any) {
-    if (event === CustomEvents.TOKENS_ADDED) {
-      this.totalTokensUsed += data || 0
-    }
+    switch (event) {
+      case CustomEvents.TOKENS_ADDED:
+        this.totalTokensUsed += data || 0
+        return
 
-    if (event === CustomEvents.CHAT_UPDATED) {
-      const chatEditResult = await this.chatService.edit(
-        {
-          name: data.name,
-        },
-        {
-          id: this.configurable.chatId,
-        },
-        this.configurable.user,
-      )
+      case CustomEvents.CHAT_UPDATED: {
+        const chatEditResult = await this.chatService.edit(
+          {
+            name: data.name,
+          },
+          {
+            id: this.configurable.chatId,
+          },
+          this.configurable.user,
+        )
 
-      await this.pushProgress({
-        id: crypto.randomUUID(),
-        role: CustomEvents.CHAT_UPDATED,
-        data: chatEditResult[0],
-      })
-    }
-
-    if (event === CustomEvents.FINAL_RESPONSE) {
-      await this.updateAssistantMessage({
-        content: data.text,
-      })
-    }
-
-    if (event === CustomEvents.INTEGRATION) {
-      await this.pushProgress({
-        id: crypto.randomUUID(),
-        role: CustomEvents.INTEGRATION,
-        data: data.integration,
-      })
-    }
-
-    if (event === CustomEvents.DISPLAY) {
-      await this.createChatMessage(
-        {
-          role: 'display',
-          content: data,
-          threadId: this.configurable.thread_id,
-          chatId: new Types.ObjectId(this.configurable.chatId),
-        },
-        this.configurable.user,
-      )
-    }
-
-    if (event === CustomEvents.STATUS_ADD_LOG) {
-      const logData = data
-
-      await this.addLog(logData)
-    }
-
-    if (event === CustomEvents.STATUS_UPDATE_LOG) {
-      const logData = data
-
-      const logIndex = this.status.logs.findIndex((log) => log.id === logData.id)
-      if (logIndex !== -1) {
-        this.status.logs[logIndex] = logData
-        await this.updateStatusMessage()
+        await this.pushProgress({
+          id: crypto.randomUUID(),
+          role: CustomEvents.CHAT_UPDATED,
+          data: chatEditResult[0],
+        })
+        return
       }
-    }
 
-    if (event === CustomEvents.STATUS_UPDATE) {
-      await this.updateStatus(data)
-    }
+      case CustomEvents.FINAL_RESPONSE:
+        await this.updateAssistantMessage({
+          content: data.text,
+        })
+        return
 
-    if (event === CustomEvents.OPERATION) {
-      const operationLogs = await this.operationLogService.getByCriteria(
-        { id: data.logId },
-        this.configurable.user.id,
-        data.session,
-      )
+      case CustomEvents.STATUS_ADD_LOG:
+        await this.addLog(data)
+        return
 
-      await this.createChatMessage(
-        {
+      case CustomEvents.INTERRUPTED:
+        this.isInterrupted = true
+        await this.updateStatus({
+          state: StatusStatesEnum.AWAITING_CONFIRMATION,
+        })
+        return
+
+      case CustomEvents.STATUS_UPDATE_LOG:
+        await this.updateLog(data)
+        await this.updateStatusMessage()
+        return
+
+      case CustomEvents.STATUS_UPDATE:
+        await this.updateStatus(data)
+        return
+
+      case CustomEvents.OPERATION: {
+        const operationLogs = await this.operationLogService.getByCriteria(
+          { id: data.logId },
+          this.configurable.user.id,
+          data.session,
+        )
+
+        await this.pushProgress({
+          id: crypto.randomUUID(),
           role: CustomEvents.OPERATION,
-          content: data.logId,
-          pendingToolCallId: data.toolCallId,
-          threadId: this.configurable.thread_id,
-          chatId: new Types.ObjectId(this.configurable.chatId),
-        },
-        this.configurable.user,
-      )
+          data: operationLogs[0],
+        })
+        return
+      }
 
-      await this.pushProgress({
-        id: crypto.randomUUID(),
-        role: CustomEvents.OPERATION,
-        data: operationLogs[0],
-      })
+      default:
+        return
     }
   }
 }

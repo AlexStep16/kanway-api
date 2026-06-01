@@ -1,11 +1,5 @@
-import { ModelsEnum } from '@/domain/enums/ModelsEnum.js'
+import { BaseAgentDTO } from './BaseAgentDTO.js'
 
-export interface RetryAgentDTO {
-  chatId: string
+export interface RetryAgentDTO extends BaseAgentDTO {
   threadId: string
-  jobId: string
-  boardId: string
-  workspaceId: string
-  modelType: ModelsEnum
-  timezone: string
 }

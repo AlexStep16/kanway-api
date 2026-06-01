@@ -1,11 +1,12 @@
 import { RunnableConfig } from '@langchain/core/runnables'
-import { AgentStateAnnotationOrc } from '../AgentStateAnnotationOrc.js'
+import { AgentStateAnnotation } from '../AgentStateAnnotation.js'
 import { initOrchestratorTools } from '../../tools/initOrchestratorTools.js'
 import { DynamicStructuredTool } from '@langchain/core/tools'
 import { ToolCall, ToolMessage } from '@langchain/core/messages'
 import z, { ZodAny } from 'zod'
 import { ToolResult } from '../../tools/helpers/ToolResult/ToolResult.js'
 import { AgentDependencies } from '../types/AgentDependencies.js'
+import { Configurable } from '../../interfaces/Configurable.js'
 
 async function executeToolCall(toolCall: ToolCall, orchestratorTools: DynamicStructuredTool[]) {
   const toolByToolCalls: DynamicStructuredTool | undefined = orchestratorTools.find(
@@ -46,16 +47,16 @@ async function executeToolCall(toolCall: ToolCall, orchestratorTools: DynamicStr
 }
 
 export const makeOrchestratorToolNode = (deps: AgentDependencies) => {
-  return async (state: typeof AgentStateAnnotationOrc.State, _config: RunnableConfig) => {
+  return async (state: typeof AgentStateAnnotation.State, config: RunnableConfig<Configurable>) => {
     const toolCalls = state.orchestrator_tool_calls || []
 
-    const outputs: Partial<typeof AgentStateAnnotationOrc.State> = {
+    const outputs: Partial<typeof AgentStateAnnotation.State> = {
       messages: [],
       orchestrator_tool_results: [],
       orchestrator_has_error: false,
     }
 
-    const orchestratorTools = initOrchestratorTools(deps)
+    const orchestratorTools = initOrchestratorTools(deps, config)
 
     for (const toolCall of toolCalls) {
       try {
