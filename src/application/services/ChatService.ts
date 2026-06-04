@@ -24,7 +24,6 @@ import { BaseService } from '@application/services/BaseService.js'
 import { IChatRaw } from '@entities/IChatRaw.js'
 import { BoardService } from './BoardService.js'
 import { WorkspaceService } from './WorkspaceService.js'
-import { getDefaultState } from '../ai/helpers/getDefaultState.js'
 import { TaskService } from './TaskService.js'
 import { CategoryService } from './CategoryService.js'
 import CheckpointWriteRepository from '../repositories/CheckpointWriteRepository.js'
@@ -34,7 +33,7 @@ import { ErrorMessages } from '@/enums/ErrorMessages.js'
 import { ModelsEnum } from '@/domain/enums/ModelsEnum.js'
 import { SubscriptionPlanEnum } from '@/domain/enums/SubscriptionPlanEnum.js'
 import { UserService } from './UserService.js'
-import { IStatus } from '../interfaces/Statuses/IStatus.js'
+import { IStatus } from '../interfaces/statuses/IStatus.js'
 import { AgentsEnum } from '@/enums/AgentsEnum.js'
 import { StatusStatesEnum } from '@/enums/StatusStatesEnum.js'
 import { IChatMessage } from '@/domain/entities/IChatMessage.js'
@@ -281,10 +280,8 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       externalSession,
     )
 
-    const payload = getDefaultState()
-
     const jobPayload: AgentWorkerDTO = {
-      payload,
+      payload: {},
       config,
     }
 
@@ -564,10 +561,8 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       externalSession,
     )
 
-    const payload = getDefaultState()
-
     const jobPayload: AgentWorkerDTO = {
-      payload,
+      payload: {},
       config,
       isRetry: true,
     }

@@ -36,12 +36,11 @@ export async function getAgent(dependencies: ReturnType<typeof initializeDepende
   agentInstance = createReActAgent(
     {
       services: {
-        //toolDispatcherService: dependencies.services.toolDispatcherService,
         taskToolsExecutorService: dependencies.services.taskToolsExecutorService,
+        categoryToolsExecutorService: dependencies.services.categoryToolsExecutorService,
+        boardToolsExecutorService: dependencies.services.boardToolsExecutorService,
+        workspaceToolsExecutorService: dependencies.services.workspaceToolsExecutorService,
         generalToolsExecutor: dependencies.services.generalToolsExecutor,
-        //contextExternalFetchService: dependencies.services.contextExternalFetchService,
-        //vectorSearchService: dependencies.services.vectorSearchService,
-        //userService: dependencies.services.userService,
       },
       models: {
         ...initAiModels(),

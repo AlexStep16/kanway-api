@@ -1,24 +1,8 @@
-import { TASK_COLORS_TITLES } from '@/constants/TASK_COLORS.js'
 import z from 'zod'
 
-const ColorFilterValueSchema = z
-  .object({
-    value: z.enum(TASK_COLORS_TITLES).optional().describe('The task color name.'),
-    tone: z.enum(['light', 'medium', 'dark']).optional().describe('The task color tone.'),
-  })
-  .refine((color) => color.value || color.tone, {
-    message: 'At least one of color value or tone must be provided.',
-  })
+const FilterValueSchema = z.union([z.string(), z.number(), z.boolean(), z.array(z.any())])
 
-const FilterValueSchema = z.union([
-  z.string(),
-  ColorFilterValueSchema,
-  z.number(),
-  z.boolean(),
-  z.array(z.any()),
-])
-
-export const SearchTasksScheme = z.object({
+export const SearchBoardsScheme = z.object({
   filters: z
     .array(
       z.object({
@@ -26,34 +10,21 @@ export const SearchTasksScheme = z.object({
           .enum([
             'id',
             'name',
-            'description',
-            'is_completed',
-            'due_date',
-            'due_time',
-            'tags',
-            'order',
-            'color',
             'is_deleted',
             'is_favorite',
-            'category_id',
-            'category_selection_id',
-            'board_id',
-            'board_selection_id',
             'workspace_id',
             'workspace_selection_id',
+            'categories_count',
+            'tasks_count',
             'created_at',
             'updated_at',
           ])
           .describe(
-            'The task field to search (e.g. "is_completed", "due_date", "category_id", "color"). due_date is YYYY-MM-DD, due_time is HH:mm, created_at and updated_at are ISO 8601 datetime strings.',
+            'The category field to search (e.g. "name", "is_deleted", "board_id"). created_at and updated_at are ISO 8601 datetime strings.',
           ),
 
-        eq: FilterValueSchema.optional().describe(
-          'Equals: Exact match. For color use { value?: colorName, tone?: light|medium|dark }.',
-        ),
-        neq: FilterValueSchema.optional().describe(
-          'Not Equals: Exclude this value. For color use { value?: colorName, tone?: light|medium|dark }.',
-        ),
+        eq: FilterValueSchema.optional().describe('Equals: Exact match.'),
+        neq: FilterValueSchema.optional().describe('Not Equals: Exclude this value.'),
 
         in: z
           .array(z.union([z.string(), z.number(), z.boolean()]))
@@ -87,11 +58,17 @@ export const SearchTasksScheme = z.object({
     .describe(
       'One filter criterion. Combine multiple criteria with AND logic in the filters array.',
     ),
+  fields_to_include: z
+    .array(z.enum(['is_favorite', 'createdAt', 'updatedAt']))
+    .optional()
+    .describe(
+      'Additional fields to include in the output samples. Base fields - id, name - are always included if available.',
+    ),
 }).describe(`
-  Tool for searching tasks. 
+  Tool for searching boards. 
   Construct an array of criteria objects. 
   Multiple objects in the array are combined with AND logic. 
   Provide ONLY ONE operator (eq, in, gt, etc.) per object.
 `)
 
-export type SearchTasksDTO = z.infer<typeof SearchTasksScheme>
+export type SearchBoardsDTO = z.infer<typeof SearchBoardsScheme>

@@ -5,10 +5,10 @@ export const routeOrchestratorToolOutput = (state: typeof AgentStateAnnotation.S
     return 'Orchestrator'
   }
 
-  const lastToolCall = state.orchestrator_tool_calls.at(-1)
+  if (state.tool_waiting_for_review) return 'ToolHumanReview'
 
-  if (lastToolCall && lastToolCall.name === 'call_task_manager_agent') {
-    return 'TaskManagerAgent'
+  if (state.is_manager_called) {
+    return 'EntityManagerAgent'
   }
 
   return 'Orchestrator'

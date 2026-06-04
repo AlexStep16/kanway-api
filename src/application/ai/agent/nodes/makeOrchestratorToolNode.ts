@@ -7,9 +7,121 @@ import z, { ZodAny } from 'zod'
 import { ToolResult } from '../../tools/helpers/ToolResult/ToolResult.js'
 import { AgentDependencies } from '../types/AgentDependencies.js'
 import { Configurable } from '../../interfaces/Configurable.js'
+import { AgentsEnum } from '@/enums/AgentsEnum.js'
+import { IConfigContext } from '../../interfaces/IConfigContext.js'
+import { StatusLog } from '@/application/types/StatusLog.js'
+import { dispatchCustomEvent } from '@langchain/core/callbacks/dispatch'
+import { ConfirmationToolResult } from '../../tools/helpers/ToolResult/ConfirmationToolResult.js'
+import { CustomEvents } from '@/enums/CustomEvents.js'
 
-async function executeToolCall(toolCall: ToolCall, orchestratorTools: DynamicStructuredTool[]) {
-  const toolByToolCalls: DynamicStructuredTool | undefined = orchestratorTools.find(
+export const makeOrchestratorToolNode = (deps: AgentDependencies) => {
+  return async (state: typeof AgentStateAnnotation.State, config: RunnableConfig) => {
+    const toolCalls = state.orchestrator_tool_calls || []
+
+    const reviewedByToolCallId = state.tools_reviewed_map || new Map()
+    const statusLogByToolCallId = state.tools_log_map || new Map()
+
+    const outputs: Partial<typeof AgentStateAnnotation.State> = {
+      messages: [],
+
+      tool_waiting_for_review: null,
+
+      orchestrator_tool_results: [],
+      orchestrator_tool_calls_completed: state.orchestrator_tool_calls_completed,
+      orchestrator_tool_calls: [],
+      orchestrator_has_error: false,
+      is_manager_called: false,
+    }
+
+    const orchestratorTools = initOrchestratorTools(deps, config as RunnableConfig<Configurable>)
+
+    for (const toolCall of toolCalls) {
+      if (
+        state.orchestrator_tool_calls_completed!.some(
+          (completedCall) => completedCall.id === toolCall.id,
+        )
+      ) {
+        continue
+      }
+
+      try {
+        outputs.orchestrator_tool_calls!.push(toolCall)
+
+        if (toolCall.name === 'call_task_manager_agent') {
+          outputs.active_manager = AgentsEnum.TASK_MANAGER
+          outputs.is_manager_called = true
+          continue
+        }
+        if (toolCall.name === 'call_category_manager_agent') {
+          outputs.active_manager = AgentsEnum.CATEGORY_MANAGER
+          outputs.is_manager_called = true
+          continue
+        }
+        if (toolCall.name === 'call_board_manager_agent') {
+          outputs.active_manager = AgentsEnum.BOARD_MANAGER
+          outputs.is_manager_called = true
+          continue
+        }
+        if (toolCall.name === 'call_workspace_manager_agent') {
+          outputs.active_manager = AgentsEnum.WORKSPACE_MANAGER
+          outputs.is_manager_called = true
+          continue
+        }
+
+        const result = await executeToolCall(
+          toolCall,
+          orchestratorTools,
+          reviewedByToolCallId,
+          statusLogByToolCallId,
+        )
+
+        if (result.observation instanceof ConfirmationToolResult) {
+          await dispatchCustomEvent(CustomEvents.INTERRUPTED, {})
+
+          outputs.tool_waiting_for_review = {
+            toolCallId: toolCall.id!,
+            logId: result.meta?.logId,
+          }
+          break
+        }
+
+        const toolMessage = new ToolMessage(result.observation.content, toolCall.id!)
+
+        outputs.orchestrator_tool_results!.push(toolMessage)
+        outputs.messages!.push(toolMessage)
+        outputs.orchestrator_tool_calls_completed!.push(toolCall)
+
+        if (result.meta?.selections) {
+          outputs.active_selections!.push(...result.meta.selections)
+        }
+      } catch (error: unknown) {
+        if (error instanceof ToolMessage) {
+          outputs.orchestrator_has_error = true
+          outputs.orchestrator_tool_results!.push(error)
+          outputs.messages!.push(error)
+        } else {
+          outputs.orchestrator_has_error = true
+          outputs.orchestrator_tool_results!.push(
+            new ToolMessage(`Unexpected error: ${(error as Error).message}`, toolCall.id!),
+          )
+          outputs.messages!.push(
+            new ToolMessage(`Unexpected error: ${(error as Error).message}`, toolCall.id!),
+          )
+        }
+      }
+    }
+
+    return outputs
+  }
+}
+
+async function executeToolCall(
+  toolCall: ToolCall,
+  managerTools: DynamicStructuredTool[],
+  reviewedByToolCallId?: Map<string, boolean>,
+  statusLogByToolCallId?: Map<string, StatusLog>,
+) {
+  const toolByToolCalls: DynamicStructuredTool | undefined = managerTools.find(
     (tool) => tool.name === toolCall.name,
   )
 
@@ -29,7 +141,16 @@ async function executeToolCall(toolCall: ToolCall, orchestratorTools: DynamicStr
   }
 
   try {
-    const observation: ToolResult = await toolByToolCalls.invoke(toolCall.args as any)
+    const toolCallId = toolCall.id!
+
+    const context: IConfigContext = {
+      isApproved: reviewedByToolCallId?.get(toolCallId),
+      statusLog: statusLogByToolCallId?.get(toolCallId),
+      toolCall,
+    }
+    const observation: ToolResult = await toolByToolCalls.invoke(toolCall.args as any, {
+      context,
+    })
 
     if (!observation.success) {
       throw new ToolMessage(
@@ -37,52 +158,19 @@ async function executeToolCall(toolCall: ToolCall, orchestratorTools: DynamicStr
         toolCall.id!,
       )
     }
-    return new ToolMessage(observation.content, toolCall.id!)
+
+    return {
+      observation,
+      meta: observation.meta,
+    }
   } catch (error) {
+    if (error instanceof ToolMessage) {
+      throw error
+    }
+
     throw new ToolMessage(
       `Tool ${toolCall.name} execution error: ${(error as Error).message}`,
       toolCall.id!,
     )
-  }
-}
-
-export const makeOrchestratorToolNode = (deps: AgentDependencies) => {
-  return async (state: typeof AgentStateAnnotation.State, config: RunnableConfig<Configurable>) => {
-    const toolCalls = state.orchestrator_tool_calls || []
-
-    const outputs: Partial<typeof AgentStateAnnotation.State> = {
-      messages: [],
-      orchestrator_tool_results: [],
-      orchestrator_has_error: false,
-    }
-
-    const orchestratorTools = initOrchestratorTools(deps, config)
-
-    for (const toolCall of toolCalls) {
-      try {
-        if (toolCall.name === 'call_task_manager_agent') continue
-
-        const result = await executeToolCall(toolCall, orchestratorTools)
-
-        outputs.orchestrator_tool_results!.push(result)
-        outputs.messages!.push(result)
-      } catch (error: unknown) {
-        if (error instanceof ToolMessage) {
-          outputs.orchestrator_has_error = true
-          outputs.orchestrator_tool_results!.push(error)
-          outputs.messages!.push(error)
-        } else {
-          outputs.orchestrator_has_error = true
-          outputs.orchestrator_tool_results!.push(
-            new ToolMessage(`Unexpected error: ${(error as Error).message}`, toolCall.id!),
-          )
-          outputs.messages!.push(
-            new ToolMessage(`Unexpected error: ${(error as Error).message}`, toolCall.id!),
-          )
-        }
-      }
-    }
-
-    return outputs
   }
 }

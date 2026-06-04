@@ -15,7 +15,7 @@ import { ChatService } from '@/application/services/ChatService.js'
 import { Redis } from 'ioredis'
 import { ModelsEnum } from '@/domain/enums/ModelsEnum.js'
 import { StatusStatesEnum } from '@/enums/StatusStatesEnum.js'
-import { IStatus } from '@/application/interfaces/Statuses/IStatus.js'
+import { IStatus } from '@/application/interfaces/statuses/IStatus.js'
 import { StatusLog } from '@/application/types/StatusLog.js'
 
 export class AgentEventsHandler extends BaseCallbackHandler {
@@ -139,7 +139,7 @@ export class AgentEventsHandler extends BaseCallbackHandler {
 
     const dto: Partial<ChatMessageDTO> = {
       content: this.status,
-      creditsUsed: creditsUsed + this.chargedAudioTokens,
+      creditsUsed: creditsUsed + this.chargedAudioTokens + (this.statusMessage.creditsUsed || 0),
     }
 
     await this.editChatMessage(

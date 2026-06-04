@@ -1,11 +1,12 @@
 import { tool } from '@langchain/core/tools'
 import { AgentDependencies } from '../agent/types/AgentDependencies.js'
 import { RunnableConfig } from '@langchain/core/runnables'
-import { SearchTasksScheme } from './schemes/SearchTasksScheme.js'
-import { UpdateTasksScheme } from './schemes/UpdateTasksScheme.js'
-import { DeleteArchiveTasksScheme } from './schemes/DeleteArchiveTasksScheme.js'
-import { CloneTasksScheme } from './schemes/CloneTasksScheme.js'
-import { RecoverTasksScheme } from './schemes/RecoverTasksScheme.js'
+import { SearchTasksScheme } from './schemes/TaskManager/SearchTasksScheme.js'
+import { UpdateTasksScheme } from './schemes/TaskManager/UpdateTasksScheme.js'
+import { DeleteArchiveTasksScheme } from './schemes/TaskManager/DeleteArchiveTasksScheme.js'
+import { CloneTasksScheme } from './schemes/TaskManager/CloneTasksScheme.js'
+import { RecoverTasksScheme } from './schemes/TaskManager/RecoverTasksScheme.js'
+import { MoveTasksScheme } from './schemes/TaskManager/MoveTasksScheme.js'
 
 export function initTaskManagerTools(
   dependencies: AgentDependencies,
@@ -81,5 +82,19 @@ export function initTaskManagerTools(
     },
   )
 
-  return [searchTasks, updateTasks, deleteArchiveTasks, cloneTasks, recoverTasks]
+  const moveTasks = tool(
+    async (data, config) => {
+      return await dependencies.services.taskToolsExecutorService.moveTasks(
+        data,
+        runnableConfig,
+        config.context,
+      )
+    },
+    {
+      name: 'move_tasks',
+      schema: MoveTasksScheme,
+    },
+  )
+
+  return [searchTasks, updateTasks, deleteArchiveTasks, cloneTasks, recoverTasks, moveTasks]
 }

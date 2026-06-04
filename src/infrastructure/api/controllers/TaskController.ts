@@ -8,6 +8,8 @@ import SuccessResponse from '@application/services/SuccessResponse.js'
 import { TaskEditDTO } from '@dtos/TaskEditDTO.js'
 import { ITaskPopulated } from '@/application/interfaces/ITaskPopulated.js'
 import { TaskMoveDTO } from '@/application/dtos/TaskMoveDTO.js'
+import { TaskMoveManyDTO } from '@/application/dtos/TaskMoveManyDTO.js'
+import { IUser } from '@/domain/entities/IUser.js'
 
 export default class TaskController extends BaseController<
   ITask,
@@ -28,6 +30,17 @@ export default class TaskController extends BaseController<
       const entities = await this.service.getByCriteria(criteria, req.user!.id)
 
       res.status(200).json(new SuccessResponse(entities))
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  public moveMany = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const payload = req.body as TaskMoveManyDTO
+      const result = await this.service.moveMany(payload, req.user as IUser)
+
+      res.status(200).json(new SuccessResponse(result))
     } catch (error) {
       next(error)
     }

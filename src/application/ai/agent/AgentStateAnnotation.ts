@@ -3,6 +3,7 @@ import { Annotation, messagesStateReducer } from '@langchain/langgraph'
 import { IToolReview } from '../interfaces/IToolReview.js'
 import { ISelection } from '@/domain/entities/ISelection.js'
 import { StatusLog } from '@/application/types/StatusLog.js'
+import { AgentsEnum } from '@/enums/AgentsEnum.js'
 
 export const AgentStateAnnotation = Annotation.Root({
   messages: Annotation<BaseMessage[]>({
@@ -10,6 +11,18 @@ export const AgentStateAnnotation = Annotation.Root({
     default: () => [],
   }),
   task_manager_messages: Annotation<BaseMessage[]>({
+    reducer: (_, y) => y,
+    default: () => [],
+  }),
+  category_manager_messages: Annotation<BaseMessage[]>({
+    reducer: (_, y) => y,
+    default: () => [],
+  }),
+  board_manager_messages: Annotation<BaseMessage[]>({
+    reducer: (_, y) => y,
+    default: () => [],
+  }),
+  workspace_manager_messages: Annotation<BaseMessage[]>({
     reducer: (_, y) => y,
     default: () => [],
   }),
@@ -23,6 +36,11 @@ export const AgentStateAnnotation = Annotation.Root({
     reducer: (_, y) => y,
     default: () => [],
   }),
+  orchestrator_tool_calls_completed: Annotation<ToolCall[]>({
+    reducer: (_, y) => y,
+    default: () => [],
+  }),
+
   task_manager_tool_calls: Annotation<ToolCall[]>({
     reducer: (_, y) => y,
     default: () => [],
@@ -35,6 +53,46 @@ export const AgentStateAnnotation = Annotation.Root({
     reducer: (_, y) => y,
     default: () => [],
   }),
+
+  category_manager_tool_calls: Annotation<ToolCall[]>({
+    reducer: (_, y) => y,
+    default: () => [],
+  }),
+  category_manager_tool_results: Annotation<ToolMessage[]>({
+    reducer: (_, y) => y,
+    default: () => [],
+  }),
+  category_manager_tool_calls_completed: Annotation<ToolCall[]>({
+    reducer: (_, y) => y,
+    default: () => [],
+  }),
+
+  board_manager_tool_calls: Annotation<ToolCall[]>({
+    reducer: (_, y) => y,
+    default: () => [],
+  }),
+  board_manager_tool_results: Annotation<ToolMessage[]>({
+    reducer: (_, y) => y,
+    default: () => [],
+  }),
+  board_manager_tool_calls_completed: Annotation<ToolCall[]>({
+    reducer: (_, y) => y,
+    default: () => [],
+  }),
+
+  workspace_manager_tool_calls: Annotation<ToolCall[]>({
+    reducer: (_, y) => y,
+    default: () => [],
+  }),
+  workspace_manager_tool_results: Annotation<ToolMessage[]>({
+    reducer: (_, y) => y,
+    default: () => [],
+  }),
+  workspace_manager_tool_calls_completed: Annotation<ToolCall[]>({
+    reducer: (_, y) => y,
+    default: () => [],
+  }),
+
   tool_waiting_for_review: Annotation<IToolReview | null>({
     reducer: (_, y) => y,
     default: () => null,
@@ -53,7 +111,7 @@ export const AgentStateAnnotation = Annotation.Root({
     reducer: (_, y) => y,
     default: () => false,
   }),
-  task_manager_has_error: Annotation<boolean>({
+  manager_tools_has_error: Annotation<boolean>({
     reducer: (_, y) => y,
     default: () => false,
   }),
@@ -63,6 +121,18 @@ export const AgentStateAnnotation = Annotation.Root({
     default: () => [],
   }),
   is_orchestrator_initiated: Annotation<boolean>({
+    reducer: (_, y) => y,
+    default: () => false,
+  }),
+  active_manager: Annotation<AgentsEnum>({
+    reducer: (_, y) => y,
+    default: () => AgentsEnum.ORCHESTRATOR,
+  }),
+  current_agent: Annotation<AgentsEnum>({
+    reducer: (_, y) => y,
+    default: () => AgentsEnum.ORCHESTRATOR,
+  }),
+  is_manager_called: Annotation<boolean>({
     reducer: (_, y) => y,
     default: () => false,
   }),

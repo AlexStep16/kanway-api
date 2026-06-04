@@ -29,6 +29,7 @@ import { SafeUpdateData } from '@/infrastructure/types/SafeUpdateData.js'
 import { ITaskCreatePayload } from '../interfaces/ITaskCreatePayload.js'
 import { OperationLogStatusesEnum } from '@/domain/enums/OperationLogStatusesEnum.js'
 import { TaskMoveDTO } from '../dtos/TaskMoveDTO.js'
+import { TaskMoveManyDTO } from '@dtos/TaskMoveManyDTO.js'
 import { LimitService } from './LimitService.js'
 
 const MAX_RETRIES = 3
@@ -966,6 +967,439 @@ export class TaskService extends BaseService<
     }
   }
 
+  public async moveMany(
+    dto: TaskMoveManyDTO,
+    user: IUser,
+    externalSession?: ClientSession,
+    isDryRun: boolean = false,
+  ): Promise<IResponseWithLog<ITaskPopulated[]>> {
+    if (externalSession) {
+      return this._executeMoveManyTransaction(dto, user, externalSession, isDryRun)
+    } else {
+      return await this._retryExecutor((session: ClientSession) =>
+        this._executeMoveManyTransaction(dto, user, session, isDryRun),
+      )
+    }
+  }
+
+  private async _executeMoveManyTransaction(
+    dto: TaskMoveManyDTO,
+    user: IUser,
+    session: ClientSession,
+    isDryRun: boolean = false,
+  ): Promise<IResponseWithLog<ITaskPopulated[]>> {
+    const { ids, beforeTaskId, afterTaskId, newCategoryId, toStart, toEnd } = dto
+
+    const uniqueTaskIds = [...new Set(ids)]
+    if (uniqueTaskIds.length === 0) {
+      throw new NotFoundError('Задачи не найдены.')
+    }
+
+    if (toStart && toEnd) {
+      throw new AppError('Нельзя переместить задачи одновременно в начало и в конец.', 400)
+    }
+
+    if ((toStart || toEnd) && (beforeTaskId || afterTaskId)) {
+      throw new AppError(
+        'Нельзя одновременно использовать beforeTaskId/afterTaskId и toStart/toEnd.',
+        400,
+      )
+    }
+
+    if (beforeTaskId && uniqueTaskIds.includes(beforeTaskId)) {
+      throw new AppError('beforeTaskId не может быть среди перемещаемых задач.', 400)
+    }
+
+    if (afterTaskId && uniqueTaskIds.includes(afterTaskId)) {
+      throw new AppError('afterTaskId не может быть среди перемещаемых задач.', 400)
+    }
+
+    const relatedTaskIds = [
+      ...new Set([...uniqueTaskIds, beforeTaskId, afterTaskId].filter(Boolean)),
+    ]
+    const tasks = await this.repository.findByCriteria(
+      { ids: relatedTaskIds as string[] },
+      session,
+      undefined,
+      user.id,
+    )
+
+    const tasksToMove = tasks
+      .filter((task) => uniqueTaskIds.includes(task.id.toString()))
+      .sort((a, b) => a.rank.localeCompare(b.rank))
+
+    if (tasksToMove.length !== uniqueTaskIds.length) {
+      throw new NotFoundError('Задачи не найдены.')
+    }
+
+    const beforeTask = beforeTaskId ? tasks.find((t) => t.id.toString() === beforeTaskId) : null
+    const afterTask = afterTaskId ? tasks.find((t) => t.id.toString() === afterTaskId) : null
+
+    if (beforeTaskId && !beforeTask) {
+      throw new NotFoundError('Опорная задача beforeTaskId не найдена.')
+    }
+
+    if (afterTaskId && !afterTask) {
+      throw new NotFoundError('Опорная задача afterTaskId не найдена.')
+    }
+
+    const moveWithinEachCurrentCategory =
+      !newCategoryId && !beforeTask && !afterTask && (toStart || toEnd)
+
+    let targetCategory: Awaited<ReturnType<CategoryService['getByCriteria']>>[number] | null = null
+    let targetCategoryId: string | null = null
+
+    if (newCategoryId) {
+      const [category] = await this.categoryService.getByCriteria(
+        { id: newCategoryId },
+        user.id,
+        session,
+      )
+      if (!category) throw new NotFoundError('Категория не найдена.')
+
+      targetCategory = category
+      targetCategoryId = category.id.toString()
+    } else if (beforeTask || afterTask) {
+      const anchorTask = beforeTask ?? afterTask
+
+      if (!anchorTask) {
+        throw new AppError('Не удалось определить целевую категорию для перемещения.', 400)
+      }
+
+      const [category] = await this.categoryService.getByCriteria(
+        { id: anchorTask.category.toString() },
+        user.id,
+        session,
+      )
+
+      if (!category) throw new NotFoundError('Категория не найдена.')
+
+      targetCategory = category
+      targetCategoryId = category.id.toString()
+    } else if (!moveWithinEachCurrentCategory) {
+      targetCategoryId = tasksToMove[0].category.toString()
+
+      const hasDifferentCategory = tasksToMove.some(
+        (task) => task.category.toString() !== targetCategoryId,
+      )
+
+      if (hasDifferentCategory) {
+        throw new AppError(
+          'Для массового перемещения без newCategoryId все задачи должны быть из одной категории.',
+          400,
+        )
+      }
+    } else {
+      targetCategoryId = null
+    }
+
+    if (beforeTask && beforeTask.category.toString() !== targetCategoryId) {
+      throw new AppError('beforeTaskId должен принадлежать целевой категории.', 400)
+    }
+
+    if (afterTask && afterTask.category.toString() !== targetCategoryId) {
+      throw new AppError('afterTaskId должен принадлежать целевой категории.', 400)
+    }
+
+    let newRanks: string[] = []
+
+    if (moveWithinEachCurrentCategory) {
+      const updatesWithMetadata: Array<{
+        task: ITask
+        updateData: SingleUpdateDTO<SafeUpdateData<ITask>>
+      }> = []
+
+      const tasksByCategory = new Map<string, ITask[]>()
+      for (const task of tasksToMove) {
+        const categoryId = task.category.toString()
+        const currentGroup = tasksByCategory.get(categoryId) || []
+        currentGroup.push(task)
+        tasksByCategory.set(categoryId, currentGroup)
+      }
+
+      for (const [categoryId, categoryTasks] of tasksByCategory.entries()) {
+        if (toStart) {
+          const firstTasksInCategory = await this.repository.findByCriteria(
+            { categoryId },
+            session,
+            { sort: { rank: 1 }, limit: 1 },
+            user.id,
+          )
+
+          let rankCursor =
+            firstTasksInCategory.length > 0
+              ? LexoRank.parse(firstTasksInCategory[0].rank)
+              : LexoRank.middle()
+
+          const categoryRanks: string[] = []
+          for (let i = 0; i < categoryTasks.length; i++) {
+            rankCursor =
+              firstTasksInCategory.length > 0 ? rankCursor.genPrev() : rankCursor.genNext()
+            categoryRanks.push(rankCursor.toString())
+          }
+
+          if (firstTasksInCategory.length > 0) {
+            categoryRanks.reverse()
+          }
+
+          categoryTasks.forEach((task, index) => {
+            updatesWithMetadata.push({
+              task,
+              updateData: {
+                id: task.id,
+                rank: categoryRanks[index],
+              },
+            })
+          })
+        } else {
+          const lastRankData = await this.repository.getLastRanksByParents(
+            [new Types.ObjectId(categoryId)],
+            'category',
+            user.id,
+            session,
+          )
+
+          let rankCursor = lastRankData.length
+            ? LexoRank.parse(lastRankData[0].rank)
+            : LexoRank.middle()
+
+          categoryTasks.forEach((task) => {
+            rankCursor = rankCursor.genNext()
+            updatesWithMetadata.push({
+              task,
+              updateData: {
+                id: task.id,
+                rank: rankCursor.toString(),
+              },
+            })
+          })
+        }
+      }
+
+      const entitiesBefore = updatesWithMetadata.map(
+        ({ task, updateData }) => projectProperties<ITask>([task], updateData)[0],
+      )
+      const entitiesAfter = entitiesBefore.map((beforeEntity, index) => ({
+        ...beforeEntity,
+        ...updatesWithMetadata[index].updateData,
+      }))
+
+      if (isDryRun) {
+        const log = await this.operationLogService.create(
+          {
+            operationType: OperationTypesEnum.UPDATE,
+            collectionName: CollectionsEnum.TASKS,
+            entitiesBefore,
+            entitiesAfter,
+            dependencies: [],
+            status: OperationLogStatusesEnum.PENDING,
+          },
+          user.id,
+          session,
+        )
+
+        return {
+          data: [],
+          logId: log.id,
+        }
+      }
+
+      const updateResult = await this.repository.bulkUpdate(
+        updatesWithMetadata.map(({ updateData }) => updateData),
+        user.id,
+        session,
+      )
+
+      if (!updateResult || updateResult.modifiedCount === 0) {
+        throw new AppError('Не удалось переместить задачи.', 500)
+      }
+
+      const log = await this.operationLogService.create(
+        {
+          operationType: OperationTypesEnum.UPDATE,
+          collectionName: CollectionsEnum.TASKS,
+          entitiesBefore,
+          entitiesAfter,
+          dependencies: [],
+          status: OperationLogStatusesEnum.SUCCESS,
+        },
+        user.id,
+        session,
+      )
+
+      const updatedTasks = await this.getByCriteria(
+        { ids: tasksToMove.map((task) => task.id.toString()) },
+        user.id,
+        session,
+      )
+
+      return {
+        data: updatedTasks,
+        logId: log.id,
+      }
+    }
+
+    if (targetCategoryId === null) {
+      throw new AppError('Не удалось определить целевую категорию для перемещения.', 400)
+    }
+
+    if (toStart) {
+      const firstTasksInCategory = await this.repository.findByCriteria(
+        { categoryId: targetCategoryId },
+        session,
+        { sort: { rank: 1 }, limit: 1 },
+        user.id,
+      )
+
+      if (firstTasksInCategory.length > 0) {
+        const generatedRanks: string[] = []
+        let rankCursor = LexoRank.parse(firstTasksInCategory[0].rank)
+
+        for (let i = 0; i < tasksToMove.length; i++) {
+          rankCursor = rankCursor.genPrev()
+          generatedRanks.push(rankCursor.toString())
+        }
+
+        newRanks = generatedRanks.reverse()
+      } else {
+        let rankCursor = LexoRank.middle()
+        for (let i = 0; i < tasksToMove.length; i++) {
+          rankCursor = rankCursor.genNext()
+          newRanks.push(rankCursor.toString())
+        }
+      }
+    } else if (beforeTask && afterTask) {
+      let left = LexoRank.parse(beforeTask.rank)
+      const right = LexoRank.parse(afterTask.rank)
+
+      for (let i = 0; i < tasksToMove.length; i++) {
+        left = left.between(right)
+        newRanks.push(left.toString())
+      }
+    } else if (beforeTask) {
+      const generatedRanks: string[] = []
+      let rankCursor = LexoRank.parse(beforeTask.rank)
+
+      for (let i = 0; i < tasksToMove.length; i++) {
+        rankCursor = rankCursor.genPrev()
+        generatedRanks.push(rankCursor.toString())
+      }
+
+      newRanks = generatedRanks.reverse()
+    } else if (afterTask) {
+      let rankCursor = LexoRank.parse(afterTask.rank)
+
+      for (let i = 0; i < tasksToMove.length; i++) {
+        rankCursor = rankCursor.genNext()
+        newRanks.push(rankCursor.toString())
+      }
+    } else {
+      const lastRankData = await this.repository.getLastRanksByParents(
+        [new Types.ObjectId(targetCategoryId)],
+        'category',
+        user.id,
+        session,
+      )
+
+      let rankCursor = lastRankData.length
+        ? LexoRank.parse(lastRankData[0].rank)
+        : LexoRank.middle()
+
+      for (let i = 0; i < tasksToMove.length; i++) {
+        rankCursor = rankCursor.genNext()
+        newRanks.push(rankCursor.toString())
+      }
+    }
+
+    const updatesWithMetadata = tasksToMove.map((task, index) => {
+      const updateData: SingleUpdateDTO<SafeUpdateData<ITask>> = {
+        id: task.id,
+        rank: newRanks[index],
+      }
+
+      if (targetCategory) {
+        updateData.category = targetCategory.id
+        updateData.board = targetCategory.board.id
+        updateData.workspace = targetCategory.workspace.id
+      }
+
+      return {
+        task,
+        updateData,
+      }
+    })
+
+    if (targetCategory) {
+      const tasksWithNewBoard = updatesWithMetadata
+        .filter(({ task }) => task.board.toString() !== targetCategory.board.id.toString())
+        .map(() => ({ boardId: targetCategory.board.id.toString() }))
+
+      await this._checkTasksLimitByBoards(tasksWithNewBoard, user, session)
+    }
+
+    const entitiesBefore = updatesWithMetadata.map(
+      ({ task, updateData }) => projectProperties<ITask>([task], updateData)[0],
+    )
+    const entitiesAfter = entitiesBefore.map((beforeEntity, index) => ({
+      ...beforeEntity,
+      ...updatesWithMetadata[index].updateData,
+    }))
+
+    if (isDryRun) {
+      const log = await this.operationLogService.create(
+        {
+          operationType: OperationTypesEnum.UPDATE,
+          collectionName: CollectionsEnum.TASKS,
+          entitiesBefore,
+          entitiesAfter,
+          dependencies: [],
+          status: OperationLogStatusesEnum.PENDING,
+        },
+        user.id,
+        session,
+      )
+
+      return {
+        data: [],
+        logId: log.id,
+      }
+    }
+
+    const updateResult = await this.repository.bulkUpdate(
+      updatesWithMetadata.map(({ updateData }) => updateData),
+      user.id,
+      session,
+    )
+
+    if (!updateResult || updateResult.modifiedCount === 0) {
+      throw new AppError('Не удалось переместить задачи.', 500)
+    }
+
+    const log = await this.operationLogService.create(
+      {
+        operationType: OperationTypesEnum.UPDATE,
+        collectionName: CollectionsEnum.TASKS,
+        entitiesBefore,
+        entitiesAfter,
+        dependencies: [],
+        status: OperationLogStatusesEnum.SUCCESS,
+      },
+      user.id,
+      session,
+    )
+
+    const updatedTasks = await this.getByCriteria(
+      { ids: tasksToMove.map((task) => task.id.toString()) },
+      user.id,
+      session,
+    )
+
+    return {
+      data: updatedTasks,
+      logId: log.id,
+    }
+  }
+
   private async _executeMoveTransaction(
     dto: TaskMoveDTO,
     user: IUser,
@@ -1439,5 +1873,21 @@ export class TaskService extends BaseService<
     session?: ClientSession,
   ): Promise<{ parentId: string; count: number }[]> {
     return this.repository.getCountGroupedByParents(boardIds, 'board', userId, session)
+  }
+
+  public async getTasksCountByCategories(
+    categoryIds: Types.ObjectId[],
+    userId: Types.ObjectId,
+    session?: ClientSession,
+  ): Promise<{ parentId: string; count: number }[]> {
+    return this.repository.getCountGroupedByParents(categoryIds, 'category', userId, session)
+  }
+
+  public async getTasksCountByWorkspaces(
+    workspaceIds: Types.ObjectId[],
+    userId: Types.ObjectId,
+    session?: ClientSession,
+  ): Promise<{ parentId: string; count: number }[]> {
+    return this.repository.getCountGroupedByParents(workspaceIds, 'workspace', userId, session)
   }
 }

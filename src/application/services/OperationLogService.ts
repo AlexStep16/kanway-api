@@ -152,7 +152,7 @@ export class OperationLogService extends BaseService<
     const logs = await this.repository.findByCriteria({ ids: logIds }, session, undefined, user.id)
     const results: IResponseWithLog<any>[] = []
 
-    if (!logs) {
+    if (logs.length === 0) {
       throw new AppError(ErrorMessages.OPERATION_LOGS_NOT_FOUND, 404)
     }
 

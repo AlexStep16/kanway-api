@@ -5,7 +5,7 @@ import { CustomEvents } from '@/enums/CustomEvents.js'
 import { IToolReview } from '../../interfaces/IToolReview.js'
 import { ToolReviewResumePayload } from '../types/ToolReviewResumePayload.js'
 
-export const makeTaskManagerAgentHumanReviewNode = () => {
+export const makeToolHumanReviewNode = () => {
   return (state: typeof AgentStateAnnotation.State, _config: RunnableConfig) => {
     const toolWaitingForReview = state.tool_waiting_for_review
     const toolsReviewedMap = state.tools_reviewed_map || new Map()

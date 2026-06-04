@@ -1,4 +1,4 @@
 export interface IToolReview {
   toolCallId: string
-  logId: string
+  logId?: string
 }

@@ -16,8 +16,7 @@ import { IUser } from '@entities/IUser.js'
 import { projectProperties } from '@/utils/projectProperties.js'
 import { IResponseWithLog } from '@interfaces/IResponseWithLog.js'
 import { IOperationLog } from '@/domain/entities/IOperationLog.js'
-import { BASE_COLORS, BASE_COLORS_MAP } from '@/constants/BASE_COLORS.js'
-import chroma from 'chroma-js'
+import { BASE_COLORS_MAP } from '@/constants/BASE_COLORS.js'
 import { CategoryService } from '@application/services/CategoryService.js'
 import { TaskService } from '@application/services/TaskService.js'
 import { AppError } from '@/domain/errors/AppError.js'
@@ -658,22 +657,6 @@ export class WorkspaceService extends BaseService<
     }
   }
 
-  public getNearestColor(hexColor: string) {
-    let closestColor: (typeof BASE_COLORS)[number] | (typeof BASE_COLORS)[number] = BASE_COLORS[3]
-    let minDistance = Infinity
-
-    for (const colorValue in BASE_COLORS_MAP) {
-      const distance = chroma.distance(hexColor, colorValue)
-
-      if (distance < minDistance) {
-        minDistance = distance
-        closestColor = colorValue as (typeof BASE_COLORS)[number]
-      }
-    }
-
-    return closestColor
-  }
-
   public async recover(
     criteria: IWorkspaceCriteria,
     user: IUser,
@@ -993,7 +976,7 @@ export class WorkspaceService extends BaseService<
     }
 
     if (data.color && BASE_COLORS_MAP[data.color]) {
-      workspacePayload.colorName = BASE_COLORS_MAP[data.color]
+      workspacePayload.colorName = BASE_COLORS_MAP[data.color].name
     }
 
     return workspacePayload
@@ -1034,7 +1017,7 @@ export class WorkspaceService extends BaseService<
       lastRank = newRank
 
       if (dto.color && BASE_COLORS_MAP[dto.color]) {
-        payload.colorName = BASE_COLORS_MAP[dto.color]
+        payload.colorName = BASE_COLORS_MAP[dto.color].name
       }
 
       return payload

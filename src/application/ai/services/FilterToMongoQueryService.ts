@@ -1,32 +1,42 @@
 import { BoardService } from '@/application/services/BoardService.js'
 import { CategoryService } from '@/application/services/CategoryService.js'
 import { TaskService } from '@/application/services/TaskService.js'
+import { WorkspaceService } from '@/application/services/WorkspaceService.js'
 import { FilterQuery, Types } from 'mongoose'
-import { SearchTasksDTO } from '../tools/schemes/SearchTasksScheme.js'
+import { SearchTasksDTO } from '../tools/schemes/TaskManager/SearchTasksScheme.js'
 import dayjs from 'dayjs'
 import { SelectionService } from './SelectionService.js'
+import { SearchFilter, SearchFilterOperator } from '@/application/types/SearchFilter.js'
 
-type SearchFilterOperator = Omit<SearchTasksDTO['filters'][number], 'field'>
 type ColorFilterValue = {
   value?: string
   tone?: 'light' | 'medium' | 'dark'
+}
+
+type SearchEntityType = 'task' | 'category' | 'board' | 'workspace'
+
+type PrepareOptions = {
+  entityType?: SearchEntityType
 }
 
 export class FilterToMongoQueryService {
   protected taskService: TaskService
   protected categoryService: CategoryService
   protected boardService: BoardService
+  protected workspaceService: WorkspaceService
   protected selectionService: SelectionService
 
   constructor(
     taskService: TaskService,
     categoryService: CategoryService,
     boardService: BoardService,
+    workspaceService: WorkspaceService,
     selectionService: SelectionService,
   ) {
     this.taskService = taskService
     this.categoryService = categoryService
     this.boardService = boardService
+    this.workspaceService = workspaceService
     this.selectionService = selectionService
   }
 
@@ -38,6 +48,8 @@ export class FilterToMongoQueryService {
       return { $eq: this._ensureStringFilterValue(field, 'eq', operator.eq) }
     } else if (operator.cont) {
       return { $regex: new RegExp(operator.cont, 'i') }
+    } else if (operator.contany) {
+      return { $in: this._ensureStringFilterValues(field, 'in', operator.contany) }
     } else if (operator.ncont) {
       return { $not: new RegExp(operator.ncont, 'i') }
     } else if (operator.neq) {
@@ -47,7 +59,7 @@ export class FilterToMongoQueryService {
     } else if (operator.nin) {
       return { $nin: this._ensureStringFilterValues(field, 'nin', operator.nin) }
     } else {
-      throw new Error(`Unsupported operator for '${field}' field: ${operator}`)
+      throw new Error(`Unsupported operator for '${field}' field: ${JSON.stringify(operator)}`)
     }
   }
 
@@ -93,11 +105,7 @@ export class FilterToMongoQueryService {
     return typeof value === 'object' && value !== null && ('value' in value || 'tone' in value)
   }
 
-  private _getSingleColorQuery(value: string | ColorFilterValue): FilterQuery<any> {
-    if (typeof value === 'string') {
-      return { 'color.value': value }
-    }
-
+  private _getSingleTaskColorQuery(value: ColorFilterValue): FilterQuery<any> {
     const query: FilterQuery<any> = {}
 
     if (value.value) query['color.value'] = value.value
@@ -110,27 +118,331 @@ export class FilterToMongoQueryService {
     return query
   }
 
-  private _getColorFilterValue(
+  private _getSingleWorkspaceColorQuery(value: string): FilterQuery<any> {
+    return { color: value }
+  }
+
+  private _getTaskColorFilterValue(
     operatorName: string,
     value: NonNullable<SearchFilterOperator['eq']>,
-  ): string | ColorFilterValue {
-    if (typeof value === 'string' || this._isColorFilterValue(value)) return value
+  ): ColorFilterValue {
+    if (typeof value === 'string') return { value }
+    if (this._isColorFilterValue(value)) return value
 
     throw new Error(
-      `Operator '${operatorName}' for 'color' field expects a string or color object, got ${JSON.stringify(value)}`,
+      `Operator '${operatorName}' for task 'color' field expects a string or color object, got ${JSON.stringify(value)}`,
     )
   }
 
-  private _getColorQuery(operator: SearchFilterOperator): FilterQuery<any> {
+  private _getWorkspaceColorFilterValue(
+    operatorName: string,
+    value: NonNullable<SearchFilterOperator['eq']>,
+  ): string {
+    if (typeof value === 'string') return value
+
+    throw new Error(
+      `Operator '${operatorName}' for workspace 'color' field expects a string value, got ${JSON.stringify(value)}`,
+    )
+  }
+
+  private _getTaskColorQuery(operator: SearchFilterOperator): FilterQuery<any> {
     if (operator.eq) {
-      return this._getSingleColorQuery(this._getColorFilterValue('eq', operator.eq))
+      return this._getSingleTaskColorQuery(this._getTaskColorFilterValue('eq', operator.eq))
     } else if (operator.neq) {
       return {
-        $nor: [this._getSingleColorQuery(this._getColorFilterValue('neq', operator.neq))],
+        $nor: [this._getSingleTaskColorQuery(this._getTaskColorFilterValue('neq', operator.neq))],
       }
     }
 
-    throw new Error(`Unsupported operator for 'color' field: ${JSON.stringify(operator)}`)
+    throw new Error(`Unsupported operator for task 'color' field: ${JSON.stringify(operator)}`)
+  }
+
+  private _getWorkspaceColorQuery(operator: SearchFilterOperator): FilterQuery<any> {
+    if (operator.eq) {
+      return this._getSingleWorkspaceColorQuery(
+        this._getWorkspaceColorFilterValue('eq', operator.eq),
+      )
+    } else if (operator.neq) {
+      return {
+        $nor: [
+          this._getSingleWorkspaceColorQuery(
+            this._getWorkspaceColorFilterValue('neq', operator.neq),
+          ),
+        ],
+      }
+    }
+
+    throw new Error(`Unsupported operator for workspace 'color' field: ${JSON.stringify(operator)}`)
+  }
+
+  private _getColorQuery(
+    operator: SearchFilterOperator,
+    entityType: SearchEntityType,
+  ): FilterQuery<any> {
+    if (entityType === 'workspace') {
+      return this._getWorkspaceColorQuery(operator)
+    }
+
+    return this._getTaskColorQuery(operator)
+  }
+
+  private _ensureNumberFilterValue(field: string, operatorName: string, value: unknown): number {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value
+    }
+
+    if (typeof value === 'string') {
+      const parsedValue = Number(value)
+
+      if (Number.isFinite(parsedValue)) {
+        return parsedValue
+      }
+    }
+
+    throw new Error(
+      `Operator '${operatorName}' for '${field}' field expects a numeric value, got ${JSON.stringify(value)}`,
+    )
+  }
+
+  private _ensureNumberFilterValues(
+    field: string,
+    operatorName: string,
+    values: unknown[],
+  ): number[] {
+    return values.map((value) => this._ensureNumberFilterValue(field, operatorName, value))
+  }
+
+  private _isTasksCountMatch(count: number, operator: SearchFilterOperator): boolean {
+    if (operator.eq !== undefined) {
+      return count === this._ensureNumberFilterValue('tasks_count', 'eq', operator.eq)
+    }
+
+    if (operator.neq !== undefined) {
+      return count !== this._ensureNumberFilterValue('tasks_count', 'neq', operator.neq)
+    }
+
+    if (operator.in !== undefined) {
+      const values = this._ensureNumberFilterValues('tasks_count', 'in', operator.in)
+
+      return values.includes(count)
+    }
+
+    if (operator.nin !== undefined) {
+      const values = this._ensureNumberFilterValues('tasks_count', 'nin', operator.nin)
+
+      return !values.includes(count)
+    }
+
+    if (operator.gt !== undefined) {
+      return count > this._ensureNumberFilterValue('tasks_count', 'gt', operator.gt)
+    }
+
+    if (operator.gte !== undefined) {
+      return count >= this._ensureNumberFilterValue('tasks_count', 'gte', operator.gte)
+    }
+
+    if (operator.lt !== undefined) {
+      return count < this._ensureNumberFilterValue('tasks_count', 'lt', operator.lt)
+    }
+
+    if (operator.lte !== undefined) {
+      return count <= this._ensureNumberFilterValue('tasks_count', 'lte', operator.lte)
+    }
+
+    throw new Error(
+      `Unsupported operator for 'tasks_count' field: ${JSON.stringify(operator)}. Supported operators: eq, neq, in, nin, gt, gte, lt, lte.`,
+    )
+  }
+
+  private _isEntityCountMatch(
+    field: 'tasks_count' | 'categories_count' | 'boards_count',
+    count: number,
+    operator: SearchFilterOperator,
+  ): boolean {
+    if (field === 'tasks_count') {
+      return this._isTasksCountMatch(count, operator)
+    }
+
+    if (operator.eq !== undefined) {
+      return count === this._ensureNumberFilterValue(field, 'eq', operator.eq)
+    }
+
+    if (operator.neq !== undefined) {
+      return count !== this._ensureNumberFilterValue(field, 'neq', operator.neq)
+    }
+
+    if (operator.in !== undefined) {
+      const values = this._ensureNumberFilterValues(field, 'in', operator.in)
+
+      return values.includes(count)
+    }
+
+    if (operator.nin !== undefined) {
+      const values = this._ensureNumberFilterValues(field, 'nin', operator.nin)
+
+      return !values.includes(count)
+    }
+
+    if (operator.gt !== undefined) {
+      return count > this._ensureNumberFilterValue(field, 'gt', operator.gt)
+    }
+
+    if (operator.gte !== undefined) {
+      return count >= this._ensureNumberFilterValue(field, 'gte', operator.gte)
+    }
+
+    if (operator.lt !== undefined) {
+      return count < this._ensureNumberFilterValue(field, 'lt', operator.lt)
+    }
+
+    if (operator.lte !== undefined) {
+      return count <= this._ensureNumberFilterValue(field, 'lte', operator.lte)
+    }
+
+    throw new Error(
+      `Unsupported operator for '${field}' field: ${JSON.stringify(operator)}. Supported operators: eq, neq, in, nin, gt, gte, lt, lte.`,
+    )
+  }
+
+  private async _getCategoryIdsByTasksCount(
+    tasksCountOperator: SearchFilterOperator,
+    categoryFilter: FilterQuery<any>,
+    userId: Types.ObjectId,
+  ): Promise<Types.ObjectId[]> {
+    const categories = await this.categoryService.getByFilter(categoryFilter)
+
+    if (categories.length === 0) return []
+
+    const categoryIds = categories.map((category) => category.id)
+    const groupedTaskCounts = await this.taskService.getTasksCountByCategories(categoryIds, userId)
+    const taskCountByCategoryId = new Map(
+      groupedTaskCounts.map((entry) => [entry.parentId, entry.count]),
+    )
+
+    return categoryIds.filter((categoryId) => {
+      const count = taskCountByCategoryId.get(categoryId.toString()) ?? 0
+
+      return this._isTasksCountMatch(count, tasksCountOperator)
+    })
+  }
+
+  private async _getBoardIdsByTasksCount(
+    tasksCountOperator: SearchFilterOperator,
+    boardFilter: FilterQuery<any>,
+    userId: Types.ObjectId,
+  ): Promise<Types.ObjectId[]> {
+    const boards = await this.boardService.getByFilter(boardFilter)
+
+    if (boards.length === 0) return []
+
+    const boardIds = boards.map((board) => board.id)
+    const groupedTaskCounts = await this.taskService.getTasksCountByBoards(boardIds, userId)
+    const taskCountByBoardId = new Map(
+      groupedTaskCounts.map((entry) => [entry.parentId, entry.count]),
+    )
+
+    return boardIds.filter((boardId) => {
+      const count = taskCountByBoardId.get(boardId.toString()) ?? 0
+
+      return this._isEntityCountMatch('tasks_count', count, tasksCountOperator)
+    })
+  }
+
+  private async _getBoardIdsByCategoriesCount(
+    categoriesCountOperator: SearchFilterOperator,
+    boardFilter: FilterQuery<any>,
+    userId: Types.ObjectId,
+  ): Promise<Types.ObjectId[]> {
+    const boards = await this.boardService.getByFilter(boardFilter)
+
+    if (boards.length === 0) return []
+
+    const boardIds = boards.map((board) => board.id)
+    const groupedCategoryCounts = await this.categoryService.getCategoriesCountByBoards(
+      boardIds,
+      userId,
+    )
+    const categoryCountByBoardId = new Map(
+      groupedCategoryCounts.map((entry) => [entry.parentId, entry.count]),
+    )
+
+    return boardIds.filter((boardId) => {
+      const count = categoryCountByBoardId.get(boardId.toString()) ?? 0
+
+      return this._isEntityCountMatch('categories_count', count, categoriesCountOperator)
+    })
+  }
+
+  private async _getWorkspaceIdsByBoardsCount(
+    boardsCountOperator: SearchFilterOperator,
+    workspaceFilter: FilterQuery<any>,
+    userId: Types.ObjectId,
+  ): Promise<Types.ObjectId[]> {
+    const workspaces = await this.workspaceService.getByFilter(workspaceFilter)
+
+    if (workspaces.length === 0) return []
+
+    const workspaceIds = workspaces.map((workspace) => workspace.id)
+    const groupedBoardCounts = await this.boardService.getBoardsCountByWorkspaces(
+      workspaceIds,
+      userId,
+    )
+    const boardCountByWorkspaceId = new Map(
+      groupedBoardCounts.map((entry) => [entry.parentId, entry.count]),
+    )
+
+    return workspaceIds.filter((workspaceId) => {
+      const count = boardCountByWorkspaceId.get(workspaceId.toString()) ?? 0
+
+      return this._isEntityCountMatch('boards_count', count, boardsCountOperator)
+    })
+  }
+
+  private async _getWorkspaceIdsByCategoriesCount(
+    categoriesCountOperator: SearchFilterOperator,
+    workspaceFilter: FilterQuery<any>,
+    userId: Types.ObjectId,
+  ): Promise<Types.ObjectId[]> {
+    const workspaces = await this.workspaceService.getByFilter(workspaceFilter)
+
+    if (workspaces.length === 0) return []
+
+    const workspaceIds = workspaces.map((workspace) => workspace.id)
+    const groupedCategoryCounts = await this.categoryService.getCategoriesCountByWorkspaces(
+      workspaceIds,
+      userId,
+    )
+    const categoryCountByWorkspaceId = new Map(
+      groupedCategoryCounts.map((entry) => [entry.parentId, entry.count]),
+    )
+
+    return workspaceIds.filter((workspaceId) => {
+      const count = categoryCountByWorkspaceId.get(workspaceId.toString()) ?? 0
+
+      return this._isEntityCountMatch('categories_count', count, categoriesCountOperator)
+    })
+  }
+
+  private async _getWorkspaceIdsByTasksCount(
+    tasksCountOperator: SearchFilterOperator,
+    workspaceFilter: FilterQuery<any>,
+    userId: Types.ObjectId,
+  ): Promise<Types.ObjectId[]> {
+    const workspaces = await this.workspaceService.getByFilter(workspaceFilter)
+
+    if (workspaces.length === 0) return []
+
+    const workspaceIds = workspaces.map((workspace) => workspace.id)
+    const groupedTaskCounts = await this.taskService.getTasksCountByWorkspaces(workspaceIds, userId)
+    const taskCountByWorkspaceId = new Map(
+      groupedTaskCounts.map((entry) => [entry.parentId, entry.count]),
+    )
+
+    return workspaceIds.filter((workspaceId) => {
+      const count = taskCountByWorkspaceId.get(workspaceId.toString()) ?? 0
+
+      return this._isEntityCountMatch('tasks_count', count, tasksCountOperator)
+    })
   }
 
   /**
@@ -139,15 +451,23 @@ export class FilterToMongoQueryService {
    * @returns - Объект, готовый для передачи в Mongoose `find()`.
    */
   public async prepare(
-    payload: SearchTasksDTO,
+    filters: SearchFilter[],
     timezone: string,
     userId: Types.ObjectId,
+    options?: PrepareOptions,
   ): Promise<FilterQuery<any>> {
     const currentAndConditions: any[] = []
+    const tasksCountFilters: SearchFilterOperator[] = []
+    const boardTasksCountFilters: SearchFilterOperator[] = []
+    const workspaceTasksCountFilters: SearchFilterOperator[] = []
+    const categoriesCountFilters: SearchFilterOperator[] = []
+    const workspaceCategoriesCountFilters: SearchFilterOperator[] = []
+    const boardsCountFilters: SearchFilterOperator[] = []
     let isArchviedFilterPresent = false
+    const entityType = options?.entityType ?? 'task'
 
     try {
-      for (const filter of payload.filters) {
+      for (const filter of filters) {
         const { field, ...rest } = filter
 
         if (field === 'id') {
@@ -198,6 +518,40 @@ export class FilterToMongoQueryService {
           })
         }
 
+        if (field === 'tasks_count') {
+          if (entityType === 'category') {
+            tasksCountFilters.push(rest)
+          } else if (entityType === 'board') {
+            boardTasksCountFilters.push(rest)
+          } else if (entityType === 'workspace') {
+            workspaceTasksCountFilters.push(rest)
+          } else {
+            throw new Error(
+              `Field 'tasks_count' is supported only for category, board and workspace search`,
+            )
+          }
+        }
+
+        if (field === 'categories_count') {
+          if (entityType === 'board') {
+            categoriesCountFilters.push(rest)
+          } else if (entityType === 'workspace') {
+            workspaceCategoriesCountFilters.push(rest)
+          } else {
+            throw new Error(
+              `Field 'categories_count' is supported only for board and workspace search`,
+            )
+          }
+        }
+
+        if (field === 'boards_count') {
+          if (entityType !== 'workspace') {
+            throw new Error(`Field 'boards_count' is supported only for workspace search`)
+          }
+
+          boardsCountFilters.push(rest)
+        }
+
         if (field === 'created_at') {
           currentAndConditions.push(this._getSimpleDateQuery('createdAt', rest, timezone))
         }
@@ -218,18 +572,14 @@ export class FilterToMongoQueryService {
           currentAndConditions.push(this._getArrayQuery('tags', rest))
         }
 
-        if (field === 'order') {
-          currentAndConditions.push(this._getNumberQuery('order', rest))
-        }
-
         if (field === 'color') {
-          currentAndConditions.push(this._getColorQuery(rest))
+          currentAndConditions.push(this._getColorQuery(rest, entityType))
         }
 
         if (field === 'is_completed') {
-          if (rest.eq) {
+          if (typeof rest.eq === 'boolean') {
             currentAndConditions.push({ is_completed: !!rest.eq })
-          } else if (rest.neq) {
+          } else if (typeof rest.neq === 'boolean') {
             currentAndConditions.push({ is_completed: { $ne: !!rest.neq } })
           } else {
             throw new Error(
@@ -239,11 +589,11 @@ export class FilterToMongoQueryService {
         }
 
         if (field === 'is_deleted') {
-          if (rest.eq) {
+          if (typeof rest.eq === 'boolean') {
             currentAndConditions.push({ is_deleted: !!rest.eq })
 
             isArchviedFilterPresent = true
-          } else if (rest.neq) {
+          } else if (typeof rest.neq === 'boolean') {
             currentAndConditions.push({ is_deleted: { $ne: !!rest.neq } })
 
             isArchviedFilterPresent = true
@@ -255,9 +605,9 @@ export class FilterToMongoQueryService {
         }
 
         if (field === 'is_favorite') {
-          if (rest.eq) {
+          if (typeof rest.eq === 'boolean') {
             currentAndConditions.push({ is_favorite: !!rest.eq })
-          } else if (rest.neq) {
+          } else if (typeof rest.neq === 'boolean') {
             currentAndConditions.push({ is_favorite: { $ne: !!rest.neq } })
           } else {
             throw new Error(
@@ -273,16 +623,20 @@ export class FilterToMongoQueryService {
         }
 
         if (field === 'category_selection_id') {
-          if (rest.eq) {
-            const selection = await this.selectionService.getSelection(rest.eq as string)
+          if (typeof rest.eq === 'string') {
+            const selections = await this.selectionService.getByCriteria({
+              id: rest.eq,
+            })
 
-            if (!selection) {
+            if (selections.length === 0) {
               throw new Error(`Selection with id ${rest.eq} not found`)
             }
 
+            const selection = selections[0]
+
             currentAndConditions.push({
               category: {
-                $in: selection.entityIds.map((id) => Types.ObjectId.createFromHexString(id)),
+                $in: selection.entityIds,
               },
             })
           } else {
@@ -299,16 +653,20 @@ export class FilterToMongoQueryService {
         }
 
         if (field === 'board_selection_id') {
-          if (rest.eq) {
-            const selection = await this.selectionService.getSelection(rest.eq as string)
+          if (typeof rest.eq === 'string') {
+            const selections = await this.selectionService.getByCriteria({
+              id: rest.eq,
+            })
 
-            if (!selection) {
+            if (selections.length === 0) {
               throw new Error(`Selection with id ${rest.eq} not found`)
             }
 
+            const selection = selections[0]
+
             currentAndConditions.push({
               board: {
-                $in: selection.entityIds.map((id) => Types.ObjectId.createFromHexString(id)),
+                $in: selection.entityIds,
               },
             })
           } else {
@@ -325,16 +683,20 @@ export class FilterToMongoQueryService {
         }
 
         if (field === 'workspace_selection_id') {
-          if (rest.eq) {
-            const selection = await this.selectionService.getSelection(rest.eq as string)
+          if (typeof rest.eq === 'string') {
+            const selections = await this.selectionService.getByCriteria({
+              id: rest.eq,
+            })
 
-            if (!selection) {
+            if (selections.length === 0) {
               throw new Error(`Selection with id ${rest.eq} not found`)
             }
 
+            const selection = selections[0]
+
             currentAndConditions.push({
               workspace: {
-                $in: selection.entityIds.map((id) => Types.ObjectId.createFromHexString(id)),
+                $in: selection.entityIds,
               },
             })
           } else {
@@ -351,6 +713,114 @@ export class FilterToMongoQueryService {
         currentAndConditions.push({ is_deleted: false })
       }
 
+      if (tasksCountFilters.length > 0) {
+        let categoryFilter: FilterQuery<any> =
+          currentAndConditions.length > 1
+            ? { $and: [...currentAndConditions] }
+            : currentAndConditions[0]
+
+        for (const tasksCountFilter of tasksCountFilters) {
+          const matchedCategoryIds = await this._getCategoryIdsByTasksCount(
+            tasksCountFilter,
+            categoryFilter,
+            userId,
+          )
+
+          currentAndConditions.push({ _id: { $in: matchedCategoryIds } })
+          categoryFilter = { $and: [...currentAndConditions] }
+        }
+      }
+
+      if (categoriesCountFilters.length > 0) {
+        let boardFilter: FilterQuery<any> =
+          currentAndConditions.length > 1
+            ? { $and: [...currentAndConditions] }
+            : currentAndConditions[0]
+
+        for (const categoriesCountFilter of categoriesCountFilters) {
+          const matchedBoardIds = await this._getBoardIdsByCategoriesCount(
+            categoriesCountFilter,
+            boardFilter,
+            userId,
+          )
+
+          currentAndConditions.push({ _id: { $in: matchedBoardIds } })
+          boardFilter = { $and: [...currentAndConditions] }
+        }
+      }
+
+      if (boardTasksCountFilters.length > 0) {
+        let boardFilter: FilterQuery<any> =
+          currentAndConditions.length > 1
+            ? { $and: [...currentAndConditions] }
+            : currentAndConditions[0]
+
+        for (const boardTasksCountFilter of boardTasksCountFilters) {
+          const matchedBoardIds = await this._getBoardIdsByTasksCount(
+            boardTasksCountFilter,
+            boardFilter,
+            userId,
+          )
+
+          currentAndConditions.push({ _id: { $in: matchedBoardIds } })
+          boardFilter = { $and: [...currentAndConditions] }
+        }
+      }
+
+      if (boardsCountFilters.length > 0) {
+        let workspaceFilter: FilterQuery<any> =
+          currentAndConditions.length > 1
+            ? { $and: [...currentAndConditions] }
+            : currentAndConditions[0]
+
+        for (const boardsCountFilter of boardsCountFilters) {
+          const matchedWorkspaceIds = await this._getWorkspaceIdsByBoardsCount(
+            boardsCountFilter,
+            workspaceFilter,
+            userId,
+          )
+
+          currentAndConditions.push({ _id: { $in: matchedWorkspaceIds } })
+          workspaceFilter = { $and: [...currentAndConditions] }
+        }
+      }
+
+      if (workspaceCategoriesCountFilters.length > 0) {
+        let workspaceFilter: FilterQuery<any> =
+          currentAndConditions.length > 1
+            ? { $and: [...currentAndConditions] }
+            : currentAndConditions[0]
+
+        for (const workspaceCategoriesCountFilter of workspaceCategoriesCountFilters) {
+          const matchedWorkspaceIds = await this._getWorkspaceIdsByCategoriesCount(
+            workspaceCategoriesCountFilter,
+            workspaceFilter,
+            userId,
+          )
+
+          currentAndConditions.push({ _id: { $in: matchedWorkspaceIds } })
+          workspaceFilter = { $and: [...currentAndConditions] }
+        }
+      }
+
+      if (workspaceTasksCountFilters.length > 0) {
+        let workspaceFilter: FilterQuery<any> =
+          currentAndConditions.length > 1
+            ? { $and: [...currentAndConditions] }
+            : currentAndConditions[0]
+
+        for (const workspaceTasksCountFilter of workspaceTasksCountFilters) {
+          const matchedWorkspaceIds = await this._getWorkspaceIdsByTasksCount(
+            workspaceTasksCountFilter,
+            workspaceFilter,
+            userId,
+          )
+
+          currentAndConditions.push({ _id: { $in: matchedWorkspaceIds } })
+          workspaceFilter = { $and: [...currentAndConditions] }
+        }
+      }
+
       if (currentAndConditions.length === 1) {
         return currentAndConditions[0]
       } else if (currentAndConditions.length > 1) {
@@ -360,47 +830,6 @@ export class FilterToMongoQueryService {
       }
     } catch (e) {
       throw new Error(`Error converting filter to MongoDB query: ${(e as Error).message}`)
-    }
-  }
-
-  private _getNumberQuery(
-    field: string,
-    operator: Omit<SearchTasksDTO['filters'][number], 'field'>,
-  ): FilterQuery<any> {
-    if (operator.eq) {
-      return {
-        [field]: { $eq: operator.eq },
-      }
-    } else if (operator.neq) {
-      return {
-        [field]: { $ne: operator.neq },
-      }
-    } else if (operator.in) {
-      return {
-        [field]: { $in: operator.in },
-      }
-    } else if (operator.nin) {
-      return {
-        [field]: { $nin: operator.nin },
-      }
-    } else if (operator.gt) {
-      return {
-        [field]: { $gt: operator.gt },
-      }
-    } else if (operator.gte) {
-      return {
-        [field]: { $gte: operator.gte },
-      }
-    } else if (operator.lt) {
-      return {
-        [field]: { $lt: operator.lt },
-      }
-    } else if (operator.lte) {
-      return {
-        [field]: { $lte: operator.lte },
-      }
-    } else {
-      throw new Error(`Unsupported operator for '${field}' field: ${JSON.stringify(operator)}`)
     }
   }
 

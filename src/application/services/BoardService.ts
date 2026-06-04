@@ -28,6 +28,7 @@ import { LimitService } from './LimitService.js'
 import { OperationLogStatusesEnum } from '@/domain/enums/OperationLogStatusesEnum.js'
 import { LexoRank } from 'lexorank'
 import { BoardMoveDTO } from '../dtos/BoardMoveDTO.js'
+import { BoardMoveManyDTO } from '../dtos/BoardMoveManyDTO.js'
 
 const MAX_RETRIES = 3
 
@@ -751,6 +752,442 @@ export class BoardService extends BaseService<
       return await this._retryExecutor((session: ClientSession) =>
         this._executeLifecycleTransaction(criteria, true, user, session, isDryRun),
       )
+    }
+  }
+
+  public async moveMany(
+    dto: BoardMoveManyDTO,
+    user: IUser,
+    externalSession?: ClientSession,
+    isDryRun: boolean = false,
+  ): Promise<IResponseWithLog<IBoardPopulated[]>> {
+    if (externalSession) {
+      return this._executeMoveManyTransaction(dto, user, externalSession, isDryRun)
+    } else {
+      return await this._retryExecutor((session: ClientSession) =>
+        this._executeMoveManyTransaction(dto, user, session, isDryRun),
+      )
+    }
+  }
+
+  private async _executeMoveManyTransaction(
+    dto: BoardMoveManyDTO,
+    user: IUser,
+    session: ClientSession,
+    isDryRun: boolean = false,
+  ): Promise<IResponseWithLog<IBoardPopulated[]>> {
+    const { ids, beforeBoardId, afterBoardId, newWorkspaceId, toStart, toEnd } = dto
+
+    const uniqueBoardIds = [...new Set(ids)]
+    if (uniqueBoardIds.length === 0) {
+      throw new NotFoundError('Доски не найдены.')
+    }
+
+    if (toStart && toEnd) {
+      throw new AppError('Нельзя переместить доски одновременно в начало и в конец.', 400)
+    }
+
+    if ((toStart || toEnd) && (beforeBoardId || afterBoardId)) {
+      throw new AppError(
+        'Нельзя одновременно использовать beforeBoardId/afterBoardId и toStart/toEnd.',
+        400,
+      )
+    }
+
+    if (beforeBoardId && uniqueBoardIds.includes(beforeBoardId)) {
+      throw new AppError('beforeBoardId не может быть среди перемещаемых досок.', 400)
+    }
+
+    if (afterBoardId && uniqueBoardIds.includes(afterBoardId)) {
+      throw new AppError('afterBoardId не может быть среди перемещаемых досок.', 400)
+    }
+
+    const relatedBoardIds = [
+      ...new Set([...uniqueBoardIds, beforeBoardId, afterBoardId].filter(Boolean)),
+    ]
+    const boards = await this.repository.findByCriteria(
+      { ids: relatedBoardIds as string[] },
+      session,
+      undefined,
+      user.id,
+    )
+
+    const boardsToMove = boards
+      .filter((board) => uniqueBoardIds.includes(board.id.toString()))
+      .sort((a, b) => a.rank.localeCompare(b.rank))
+
+    if (boardsToMove.length !== uniqueBoardIds.length) {
+      throw new NotFoundError('Доски не найдены.')
+    }
+
+    const beforeBoard = beforeBoardId ? boards.find((b) => b.id.toString() === beforeBoardId) : null
+    const afterBoard = afterBoardId ? boards.find((b) => b.id.toString() === afterBoardId) : null
+
+    if (beforeBoardId && !beforeBoard) {
+      throw new NotFoundError('Опорная доска beforeBoardId не найдена.')
+    }
+
+    if (afterBoardId && !afterBoard) {
+      throw new NotFoundError('Опорная доска afterBoardId не найдена.')
+    }
+
+    const moveWithinEachCurrentWorkspace =
+      !newWorkspaceId && !beforeBoard && !afterBoard && (toStart || toEnd)
+
+    // Типизация приведена к эталону (использует динамический тип из WorkspaceService)
+    let targetWorkspace: Awaited<ReturnType<WorkspaceService['getByCriteria']>>[number] | null =
+      null
+    let targetWorkspaceId: string | null = null
+
+    if (newWorkspaceId) {
+      const [workspace] = await this.workspaceService.getByCriteria(
+        { id: newWorkspaceId },
+        user.id,
+        session,
+      )
+      if (!workspace) throw new NotFoundError('Рабочее пространство не найдено.')
+
+      targetWorkspace = workspace
+      targetWorkspaceId = workspace.id.toString()
+    } else if (beforeBoard || afterBoard) {
+      const anchorBoard = beforeBoard ?? afterBoard
+
+      if (!anchorBoard) {
+        throw new AppError(
+          'Не удалось определить целевое рабочее пространство для перемещения.',
+          400,
+        )
+      }
+
+      const [workspace] = await this.workspaceService.getByCriteria(
+        { id: anchorBoard.workspace.toString() },
+        user.id,
+        session,
+      )
+
+      if (!workspace) throw new NotFoundError('Рабочее пространство не найдено.')
+
+      targetWorkspace = workspace
+      targetWorkspaceId = workspace.id.toString()
+    } else if (!moveWithinEachCurrentWorkspace) {
+      targetWorkspaceId = boardsToMove[0].workspace.toString()
+
+      const hasDifferentWorkspace = boardsToMove.some(
+        (board) => board.workspace.toString() !== targetWorkspaceId,
+      )
+
+      if (hasDifferentWorkspace) {
+        throw new AppError(
+          'Для массового перемещения без newWorkspaceId все доски должны быть из одного рабочего пространства.',
+          400,
+        )
+      }
+    } else {
+      targetWorkspaceId = null
+    }
+
+    if (beforeBoard && beforeBoard.workspace.toString() !== targetWorkspaceId) {
+      throw new AppError('beforeBoardId должен принадлежать целевому рабочему пространству.', 400)
+    }
+
+    if (afterBoard && afterBoard.workspace.toString() !== targetWorkspaceId) {
+      throw new AppError('afterBoardId должен принадлежать целевому рабочему пространству.', 400)
+    }
+
+    let newRanks: string[] = []
+
+    if (moveWithinEachCurrentWorkspace) {
+      const updatesWithMetadata: Array<{
+        board: IBoard
+        updateData: SingleUpdateDTO<SafeUpdateData<IBoard>>
+      }> = []
+
+      const boardsByWorkspace = new Map<string, IBoard[]>()
+      for (const board of boardsToMove) {
+        const workspaceId = board.workspace.toString()
+        const currentGroup = boardsByWorkspace.get(workspaceId) || []
+        currentGroup.push(board)
+        boardsByWorkspace.set(workspaceId, currentGroup)
+      }
+
+      for (const [workspaceId, workspaceBoards] of boardsByWorkspace.entries()) {
+        if (toStart) {
+          const firstBoardsInWorkspace = await this.repository.findByCriteria(
+            { workspaceId },
+            session,
+            { sort: { rank: 1 }, limit: 1 },
+            user.id,
+          )
+
+          let rankCursor =
+            firstBoardsInWorkspace.length > 0
+              ? LexoRank.parse(firstBoardsInWorkspace[0].rank)
+              : LexoRank.middle()
+
+          const boardRanks: string[] = []
+          for (let i = 0; i < workspaceBoards.length; i++) {
+            rankCursor =
+              firstBoardsInWorkspace.length > 0 ? rankCursor.genPrev() : rankCursor.genNext()
+            boardRanks.push(rankCursor.toString())
+          }
+
+          if (firstBoardsInWorkspace.length > 0) {
+            boardRanks.reverse()
+          }
+
+          workspaceBoards.forEach((board, index) => {
+            updatesWithMetadata.push({
+              board,
+              updateData: {
+                id: board.id,
+                rank: boardRanks[index],
+              },
+            })
+          })
+        } else {
+          const lastRankData = await this.repository.getLastRanksByParents(
+            [new Types.ObjectId(workspaceId)],
+            'workspace',
+            user.id,
+            session,
+          )
+
+          let rankCursor = lastRankData.length
+            ? LexoRank.parse(lastRankData[0].rank)
+            : LexoRank.middle()
+
+          workspaceBoards.forEach((board) => {
+            rankCursor = rankCursor.genNext()
+            updatesWithMetadata.push({
+              board,
+              updateData: {
+                id: board.id,
+                rank: rankCursor.toString(),
+              },
+            })
+          })
+        }
+      }
+
+      const entitiesBefore = updatesWithMetadata.map(
+        ({ board, updateData }) => projectProperties<IBoard>([board], updateData)[0],
+      )
+      const entitiesAfter = entitiesBefore.map((beforeEntity, index) => ({
+        ...beforeEntity,
+        ...updatesWithMetadata[index].updateData,
+      }))
+
+      if (isDryRun) {
+        const log = await this.operationLogService.create(
+          {
+            operationType: OperationTypesEnum.UPDATE,
+            collectionName: CollectionsEnum.BOARDS,
+            entitiesBefore,
+            entitiesAfter,
+            dependencies: [],
+            status: OperationLogStatusesEnum.PENDING,
+          },
+          user.id,
+          session,
+        )
+
+        return {
+          data: [],
+          logId: log.id,
+        }
+      }
+
+      const updateResult = await this.repository.bulkUpdate(
+        updatesWithMetadata.map(({ updateData }) => updateData),
+        user.id,
+        session,
+      )
+
+      if (!updateResult || updateResult.modifiedCount === 0) {
+        throw new AppError('Не удалось переместить доски.', 500)
+      }
+
+      const log = await this.operationLogService.create(
+        {
+          operationType: OperationTypesEnum.UPDATE,
+          collectionName: CollectionsEnum.BOARDS,
+          entitiesBefore,
+          entitiesAfter,
+          dependencies: [],
+          status: OperationLogStatusesEnum.SUCCESS,
+        },
+        user.id,
+        session,
+      )
+
+      const updatedBoards = await this.getByCriteria(
+        { ids: boardsToMove.map((board) => board.id.toString()) },
+        user.id,
+        session,
+      )
+
+      return {
+        data: updatedBoards,
+        logId: log.id,
+      }
+    }
+
+    if (targetWorkspaceId === null) {
+      throw new AppError('Не удалось определить целевую рабочую область для перемещения.', 400)
+    }
+
+    if (toStart) {
+      const firstBoardsInWorkspace = await this.repository.findByCriteria(
+        { workspaceId: targetWorkspaceId },
+        session,
+        { sort: { rank: 1 }, limit: 1 },
+        user.id,
+      )
+
+      if (firstBoardsInWorkspace.length > 0) {
+        const generatedRanks: string[] = []
+        let rankCursor = LexoRank.parse(firstBoardsInWorkspace[0].rank)
+
+        for (let i = 0; i < boardsToMove.length; i++) {
+          rankCursor = rankCursor.genPrev()
+          generatedRanks.push(rankCursor.toString())
+        }
+
+        newRanks = generatedRanks.reverse()
+      } else {
+        let rankCursor = LexoRank.middle()
+        for (let i = 0; i < boardsToMove.length; i++) {
+          rankCursor = rankCursor.genNext()
+          newRanks.push(rankCursor.toString())
+        }
+      }
+    } else if (beforeBoard && afterBoard) {
+      let left = LexoRank.parse(beforeBoard.rank)
+      const right = LexoRank.parse(afterBoard.rank)
+
+      for (let i = 0; i < boardsToMove.length; i++) {
+        left = left.between(right)
+        newRanks.push(left.toString())
+      }
+    } else if (beforeBoard) {
+      const generatedRanks: string[] = []
+      let rankCursor = LexoRank.parse(beforeBoard.rank)
+
+      for (let i = 0; i < boardsToMove.length; i++) {
+        rankCursor = rankCursor.genPrev()
+        generatedRanks.push(rankCursor.toString())
+      }
+
+      newRanks = generatedRanks.reverse()
+    } else if (afterBoard) {
+      let rankCursor = LexoRank.parse(afterBoard.rank)
+
+      for (let i = 0; i < boardsToMove.length; i++) {
+        rankCursor = rankCursor.genNext()
+        newRanks.push(rankCursor.toString())
+      }
+    } else {
+      const lastRankData = await this.repository.getLastRanksByParents(
+        [new Types.ObjectId(targetWorkspaceId)],
+        'workspace',
+        user.id,
+        session,
+      )
+
+      let rankCursor = lastRankData.length
+        ? LexoRank.parse(lastRankData[0].rank)
+        : LexoRank.middle()
+
+      for (let i = 0; i < boardsToMove.length; i++) {
+        rankCursor = rankCursor.genNext()
+        newRanks.push(rankCursor.toString())
+      }
+    }
+
+    const updatesWithMetadata = boardsToMove.map((board, index) => {
+      const updateData: SingleUpdateDTO<SafeUpdateData<IBoard>> = {
+        id: board.id,
+        rank: newRanks[index],
+      }
+
+      if (targetWorkspace) {
+        updateData.workspace = targetWorkspace.id
+      }
+
+      return {
+        board,
+        updateData,
+      }
+    })
+
+    if (targetWorkspace) {
+      const boardsWithNewWorkspace = updatesWithMetadata
+        .filter(({ board }) => board.workspace.toString() !== targetWorkspace!.id.toString())
+        .map(() => ({ workspaceId: targetWorkspace!.id.toString() }))
+
+      await this._checkBoardsLimitByWorkspaces(boardsWithNewWorkspace, user, session)
+    }
+
+    const entitiesBefore = updatesWithMetadata.map(
+      ({ board, updateData }) => projectProperties<IBoard>([board], updateData)[0],
+    )
+    const entitiesAfter = entitiesBefore.map((beforeEntity, index) => ({
+      ...beforeEntity,
+      ...updatesWithMetadata[index].updateData,
+    }))
+
+    if (isDryRun) {
+      const log = await this.operationLogService.create(
+        {
+          operationType: OperationTypesEnum.UPDATE,
+          collectionName: CollectionsEnum.BOARDS,
+          entitiesBefore,
+          entitiesAfter,
+          dependencies: [],
+          status: OperationLogStatusesEnum.PENDING,
+        },
+        user.id,
+        session,
+      )
+
+      return {
+        data: [],
+        logId: log.id,
+      }
+    }
+
+    const updateResult = await this.repository.bulkUpdate(
+      updatesWithMetadata.map(({ updateData }) => updateData),
+      user.id,
+      session,
+    )
+
+    if (!updateResult || updateResult.modifiedCount === 0) {
+      throw new AppError('Не удалось переместить доски.', 500)
+    }
+
+    const log = await this.operationLogService.create(
+      {
+        operationType: OperationTypesEnum.UPDATE,
+        collectionName: CollectionsEnum.BOARDS,
+        entitiesBefore,
+        entitiesAfter,
+        dependencies: [],
+        status: OperationLogStatusesEnum.SUCCESS,
+      },
+      user.id,
+      session,
+    )
+
+    const updatedBoards = await this.getByCriteria(
+      { ids: boardsToMove.map((board) => board.id.toString()) },
+      user.id,
+      session,
+    )
+
+    return {
+      data: updatedBoards,
+      logId: log.id,
     }
   }
 

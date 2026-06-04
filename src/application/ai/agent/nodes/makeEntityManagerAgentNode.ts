@@ -1,0 +1,154 @@
+import { RunnableConfig } from '@langchain/core/runnables'
+import { AgentDependencies } from '@/application/ai/agent/types/AgentDependencies.js'
+import { ChatPromptTemplate } from '@langchain/core/prompts'
+import { Configurable } from '@/application/ai/interfaces/Configurable.js'
+import { dispatchCustomEvent } from '@langchain/core/callbacks/dispatch'
+import { CustomEvents } from '@/enums/CustomEvents.js'
+import { ModelsEnum } from '@/domain/enums/ModelsEnum.js'
+import { AgentStateAnnotation } from '../AgentStateAnnotation.js'
+import {
+  AIMessageChunk,
+  MessageStructure,
+  MessageToolSet,
+  ToolMessage,
+} from '@langchain/core/messages'
+import { IStatus } from '@/application/interfaces/statuses/IStatus.js'
+import { getAgentStatusText } from '@/utils/getAgentStatusText.js'
+import { AgentsEnum } from '@/enums/AgentsEnum.js'
+import {
+  getAgentManagerHistory,
+  getAgentManagerSystemPrompt,
+  getAgentManagerTools,
+} from '../../helpers/managerHelpers.js'
+import { getCurrentAgentOutputs } from '../../helpers/getCurrentAgentOutput.js'
+
+export const makeEntityManagerAgentNode = (deps: AgentDependencies) => {
+  return async (state: typeof AgentStateAnnotation.State, config: RunnableConfig) => {
+    const activeManager = state.active_manager
+
+    const statusText = getAgentStatusText(activeManager)
+    const statusUpdate: Partial<IStatus> = {
+      statusText,
+      currentAgent: activeManager,
+    }
+
+    await dispatchCustomEvent(CustomEvents.STATUS_UPDATE, statusUpdate)
+
+    const configurable = config.configurable as Configurable
+
+    const outputs: Partial<typeof AgentStateAnnotation.State> = {
+      messages: [],
+
+      task_manager_messages: state.task_manager_messages,
+      task_manager_tool_calls: [],
+      task_manager_tool_results: [],
+      task_manager_tool_calls_completed: [],
+
+      category_manager_messages: state.category_manager_messages,
+      category_manager_tool_calls: [],
+      category_manager_tool_results: [],
+      category_manager_tool_calls_completed: [],
+
+      board_manager_messages: state.board_manager_messages,
+      board_manager_tool_calls: [],
+      board_manager_tool_results: [],
+      board_manager_tool_calls_completed: [],
+
+      workspace_manager_messages: state.workspace_manager_messages,
+      workspace_manager_tool_calls: [],
+      workspace_manager_tool_results: [],
+      workspace_manager_tool_calls_completed: [],
+
+      tools_reviewed_map: new Map(),
+      current_agent: activeManager,
+    }
+
+    const lastCallManagerTool = getOrchestratorManagerToolCall(activeManager, state)
+
+    const history = getAgentManagerHistory(activeManager, state)
+
+    const { ORCHESTRATOR, ORCHESTRATOR_PRO } = deps.models
+
+    const modelToUse =
+      configurable.modelType === ModelsEnum.KANWAY_PRO ? ORCHESTRATOR_PRO : ORCHESTRATOR
+
+    const managerTools = getAgentManagerTools(activeManager, deps, config)
+
+    const prompt = ChatPromptTemplate.fromMessages([
+      ['system', getAgentManagerSystemPrompt(activeManager)],
+      ...history,
+    ])
+
+    if (!modelToUse.bindTools) {
+      throw new Error('Manager agent model does not support tool binding.')
+    }
+
+    const chain = prompt.pipe(modelToUse.bindTools(managerTools))
+
+    const response = await chain.invoke({
+      board: configurable.activeBoard || 'Нет активной доски',
+      workspace: configurable.activeWorkspace,
+      current_date: configurable.currentDate,
+      tags_list: configurable.tagsList,
+      aiName: configurable.aiName,
+      orchestrator_intent: JSON.stringify(lastCallManagerTool?.args || {}),
+    })
+
+    await dispatchCustomEvent(CustomEvents.TOKENS_ADDED, response.usage_metadata?.total_tokens || 0)
+
+    fillOutputsBasedOnAgent(activeManager, response, outputs)
+
+    if (response.tool_calls?.length === 0) {
+      const toolResults = getCurrentAgentOutputs(activeManager, state).toolResults
+      const toolResultContents = toolResults.map((result) => result.content).join('\n')
+
+      const finalResponse = `Tool Results:\n${toolResultContents}\n\n Final Response:\n${response.content}`
+
+      outputs.messages!.push(new ToolMessage(finalResponse, lastCallManagerTool!.id!))
+    }
+
+    return outputs
+  }
+}
+
+function getOrchestratorManagerToolCall(
+  agent: AgentsEnum,
+  state: typeof AgentStateAnnotation.State,
+) {
+  const orchestratorToolCalls = state.orchestrator_tool_calls || []
+  const reversedToolCalls = [...orchestratorToolCalls].reverse()
+
+  switch (agent) {
+    case AgentsEnum.TASK_MANAGER:
+      return reversedToolCalls.find((call) => call.name === 'call_task_manager_agent')
+    case AgentsEnum.CATEGORY_MANAGER:
+      return reversedToolCalls.find((call) => call.name === 'call_category_manager_agent')
+    case AgentsEnum.BOARD_MANAGER:
+      return reversedToolCalls.find((call) => call.name === 'call_board_manager_agent')
+    default:
+      return null
+  }
+}
+
+function fillOutputsBasedOnAgent(
+  agent: AgentsEnum,
+  response: AIMessageChunk<MessageStructure<MessageToolSet>>,
+  outputs: Partial<typeof AgentStateAnnotation.State>,
+) {
+  switch (agent) {
+    case AgentsEnum.TASK_MANAGER:
+      outputs.task_manager_messages!.push(response)
+      outputs.task_manager_tool_calls = response.tool_calls || []
+      break
+    case AgentsEnum.CATEGORY_MANAGER:
+      outputs.category_manager_messages!.push(response)
+      outputs.category_manager_tool_calls = response.tool_calls || []
+      break
+    case AgentsEnum.BOARD_MANAGER:
+      outputs.board_manager_messages!.push(response)
+      outputs.board_manager_tool_calls = response.tool_calls || []
+      break
+    default:
+      break
+  }
+}

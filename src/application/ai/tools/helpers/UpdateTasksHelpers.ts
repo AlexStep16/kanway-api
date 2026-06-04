@@ -1,18 +1,17 @@
 import { ITask } from '@/domain/entities/ITask.js'
-import { UpdateTasksDTO } from '../schemes/UpdateTasksScheme.js'
 import { TaskEditManyDTO } from '@/application/dtos/TaskEditManyDTO.js'
 import { TaskEditDTO } from '@/application/dtos/TaskEditDTO.js'
-import { getRuColorName } from '@/utils/getColorName.js'
+import { getTaskRuColorName } from '@/utils/getTaskRuColorName.js'
 import { getColorByNameAndTone } from '@/utils/getColorByNameAndTone.js'
-
-export type UpdateTasksHumanReadableFilter = {
-  text: string
-  value?: string
-}
+import { UpdateTasksDTO } from '../schemes/TaskManager/UpdateTasksScheme.js'
+import { getStringUpdateHumanReadableFilter, resolveStringUpdate } from './UpdateHelpers.js'
+import { ITextValue } from '@/application/interfaces/statuses/content/ITextValue.js'
+import dayjs from 'dayjs'
 
 export function transformRawUpdateToDTO(
   tasks: ITask[],
   updates: UpdateTasksDTO['updates'],
+  timezone: string,
 ): TaskEditManyDTO {
   if (Object.values(updates).every((value) => typeof value === 'undefined')) {
     throw new Error('No task fields to update')
@@ -45,7 +44,7 @@ export function transformRawUpdateToDTO(
     if (typeof updates.priority !== 'undefined') update.priority = updates.priority
     if (typeof updates.color !== 'undefined') update.color = resolveColorUpdate(updates.color)
 
-    addDueDateTimeUpdates(update, task, updates)
+    addDueDateTimeUpdates(update, task, updates, timezone)
 
     return update
   })
@@ -53,12 +52,12 @@ export function transformRawUpdateToDTO(
 
 export function transformRawUpdateToHumanReadableFilters(
   updates: UpdateTasksDTO['updates'],
-): UpdateTasksHumanReadableFilter[] {
+): ITextValue[] {
   if (Object.values(updates).every((value) => typeof value === 'undefined')) {
     throw new Error('No task fields to update')
   }
 
-  const filters: UpdateTasksHumanReadableFilter[] = []
+  const filters: ITextValue[] = []
 
   if (typeof updates.name !== 'undefined') {
     filters.push(getStringUpdateHumanReadableFilter('название', updates.name))
@@ -95,32 +94,45 @@ export function transformRawUpdateToHumanReadableFilters(
 
     filters.push({
       text: 'Установить цвет',
-      value: getRuColorName(color),
+      value: getTaskRuColorName(color),
     })
   }
-  if (typeof updates.due_date !== 'undefined') {
-    filters.push(getDueDateUpdateHumanReadableFilter(updates.due_date))
-  }
-  if (typeof updates.due_hours !== 'undefined') {
-    filters.push(getDueHoursUpdateHumanReadableFilter(updates.due_hours))
-  }
-  if (typeof updates.due_minutes !== 'undefined') {
-    filters.push(getDueMinutesUpdateHumanReadableFilter(updates.due_minutes))
+
+  const canCombineDueDateTimeUpdates =
+    typeof updates.due_date === 'string' &&
+    typeof updates.due_hours === 'number' &&
+    typeof updates.due_minutes === 'number'
+
+  const canCombineDueTimeUpdates =
+    typeof updates.due_hours === 'number' && typeof updates.due_minutes === 'number'
+
+  if (canCombineDueDateTimeUpdates) {
+    const dueDate = updates.due_date as string
+    const dueHours = updates.due_hours as number
+    const dueMinutes = updates.due_minutes as number
+
+    filters.push(getDueDateTimeUpdateHumanReadableFilter(dueDate, dueHours, dueMinutes))
+  } else {
+    if (typeof updates.due_date !== 'undefined') {
+      filters.push(getDueDateUpdateHumanReadableFilter(updates.due_date))
+    }
+
+    if (canCombineDueTimeUpdates) {
+      const dueHours = updates.due_hours as number
+      const dueMinutes = updates.due_minutes as number
+
+      filters.push(getDueTimeUpdateHumanReadableFilter(dueHours, dueMinutes))
+    } else {
+      if (typeof updates.due_hours !== 'undefined') {
+        filters.push(getDueHoursUpdateHumanReadableFilter(updates.due_hours))
+      }
+      if (typeof updates.due_minutes !== 'undefined') {
+        filters.push(getDueMinutesUpdateHumanReadableFilter(updates.due_minutes))
+      }
+    }
   }
 
   return filters
-}
-
-export function resolveStringUpdate(
-  currentValue: string,
-  update: Exclude<UpdateTasksDTO['updates']['name'], undefined>,
-): string | null {
-  if (update === null) return null
-  if (typeof update === 'string') return update
-
-  return update.op === 'append'
-    ? `${currentValue}${update.value}`
-    : `${update.value}${currentValue}`
 }
 
 export function resolveArrayUpdate(
@@ -153,16 +165,31 @@ export function addDueDateTimeUpdates(
   update: TaskEditDTO,
   task: ITask,
   updates: UpdateTasksDTO['updates'],
+  timezone: string,
 ) {
   const dueDateUpdate = updates.due_date
   const dueHoursUpdate = updates.due_hours
   const dueMinutesUpdate = updates.due_minutes
 
-  let dueDate = task.dueDate || formatDate(new Date())
-  let dueHours = task.dueHours ?? 0
-  let dueMinutes = task.dueMinutes ?? 0
+  let dueDate = dayjs().tz(timezone).format('YYYY-MM-DD')
+  let dueHours = 0
+  let dueMinutes = 0
   let requiresFullDateTimeRecalculation = false
   const fieldsToUnset = new Set<string>()
+
+  if (task.dueDate && typeof task.dueHours === 'number' && typeof task.dueMinutes === 'number') {
+    const timezonedTaskDueDate = dayjs
+      .utc(task.dueDate)
+      .hour(task.dueHours)
+      .minute(task.dueMinutes)
+      .tz(timezone)
+
+    if (timezonedTaskDueDate.isValid()) {
+      dueDate = timezonedTaskDueDate.format('YYYY-MM-DD')
+      dueHours = timezonedTaskDueDate.hour()
+      dueMinutes = timezonedTaskDueDate.minute()
+    }
+  }
 
   if (typeof dueDateUpdate !== 'undefined') {
     if (dueDateUpdate === null) {
@@ -172,7 +199,14 @@ export function addDueDateTimeUpdates(
       dueDate = dueDateUpdate
       update.dueDate = dueDate
     } else {
-      const shiftedDate = shiftDateTime(dueDate, dueHours, dueMinutes, 'day', dueDateUpdate.value)
+      const shiftedDate = shiftDateTime(
+        dueDate,
+        dueHours,
+        dueMinutes,
+        'day',
+        dueDateUpdate.value,
+        timezone,
+      )
 
       dueDate = formatDate(shiftedDate)
       dueHours = shiftedDate.getHours()
@@ -189,7 +223,14 @@ export function addDueDateTimeUpdates(
       dueHours = dueHoursUpdate
       update.dueHours = dueHours
     } else {
-      const shiftedDate = shiftDateTime(dueDate, dueHours, dueMinutes, 'hour', dueHoursUpdate.value)
+      const shiftedDate = shiftDateTime(
+        dueDate,
+        dueHours,
+        dueMinutes,
+        'hour',
+        dueHoursUpdate.value,
+        timezone,
+      )
 
       dueDate = formatDate(shiftedDate)
       dueHours = shiftedDate.getHours()
@@ -212,6 +253,7 @@ export function addDueDateTimeUpdates(
         dueMinutes,
         'minute',
         dueMinutesUpdate.value,
+        timezone,
       )
 
       dueDate = formatDate(shiftedDate)
@@ -234,18 +276,17 @@ export function shiftDateTime(
   dueMinutes: number,
   unit: 'day' | 'hour' | 'minute',
   amount: number,
+  timezone: string,
 ): Date {
-  const date = new Date(`${dueDate}T${padDatePart(dueHours)}:${padDatePart(dueMinutes)}:00`)
+  const date = dayjs
+    .tz(`${dueDate}T${padDatePart(dueHours)}:${padDatePart(dueMinutes)}`, timezone)
+    .add(amount, unit)
 
-  if (Number.isNaN(date.getTime())) {
+  if (!date.isValid()) {
     return new Date()
   }
 
-  if (unit === 'day') date.setDate(date.getDate() + amount)
-  if (unit === 'hour') date.setHours(date.getHours() + amount)
-  if (unit === 'minute') date.setMinutes(date.getMinutes() + amount)
-
-  return date
+  return date.toDate()
 }
 
 export function formatDate(date: Date): string {
@@ -256,35 +297,9 @@ export function padDatePart(value: number): string {
   return value.toString().padStart(2, '0')
 }
 
-function getStringUpdateHumanReadableFilter(
-  fieldName: string,
-  update: Exclude<UpdateTasksDTO['updates']['name'], undefined>,
-): UpdateTasksHumanReadableFilter {
-  if (update === null) {
-    return {
-      text: `Убрать ${fieldName}`,
-    }
-  }
-
-  if (typeof update === 'string') {
-    return {
-      text: `Установить ${fieldName}`,
-      value: update,
-    }
-  }
-
-  return {
-    text:
-      update.op === 'append'
-        ? `Добавить текст в конец поля "${fieldName}"`
-        : `Добавить текст в начало поля "${fieldName}"`,
-    value: update.value,
-  }
-}
-
 function getTagsUpdateHumanReadableFilter(
   update: NonNullable<UpdateTasksDTO['updates']['tags']>,
-): UpdateTasksHumanReadableFilter {
+): ITextValue {
   if (Array.isArray(update)) {
     return {
       text: 'Установить теги',
@@ -300,7 +315,7 @@ function getTagsUpdateHumanReadableFilter(
 
 function getDueDateUpdateHumanReadableFilter(
   update: Exclude<UpdateTasksDTO['updates']['due_date'], undefined>,
-): UpdateTasksHumanReadableFilter {
+): ITextValue {
   if (update === null) {
     return {
       text: 'Убрать срок',
@@ -322,7 +337,7 @@ function getDueDateUpdateHumanReadableFilter(
 
 function getDueHoursUpdateHumanReadableFilter(
   update: Exclude<UpdateTasksDTO['updates']['due_hours'], undefined>,
-): UpdateTasksHumanReadableFilter {
+): ITextValue {
   if (update === null) {
     return {
       text: 'Убрать время',
@@ -344,7 +359,7 @@ function getDueHoursUpdateHumanReadableFilter(
 
 function getDueMinutesUpdateHumanReadableFilter(
   update: Exclude<UpdateTasksDTO['updates']['due_minutes'], undefined>,
-): UpdateTasksHumanReadableFilter {
+): ITextValue {
   if (update === null) {
     return {
       text: 'Убрать минуты',
@@ -361,6 +376,33 @@ function getDueMinutesUpdateHumanReadableFilter(
   return {
     text: 'Сдвинуть время на минут',
     value: update.value.toString(),
+  }
+}
+
+function getDueDateTimeUpdateHumanReadableFilter(
+  dueDate: string,
+  dueHours: number,
+  dueMinutes: number,
+): ITextValue {
+  const formattedDate = dayjs(dueDate)
+
+  if (!formattedDate.isValid()) {
+    return {
+      text: 'Установить срок и время',
+      value: `${dueDate} ${padDatePart(dueHours)}:${padDatePart(dueMinutes)}`,
+    }
+  }
+
+  return {
+    text: 'Установить срок и время',
+    value: `${formattedDate.format('YYYY.MM.DD')} ${padDatePart(dueHours)}:${padDatePart(dueMinutes)}`,
+  }
+}
+
+function getDueTimeUpdateHumanReadableFilter(dueHours: number, dueMinutes: number): ITextValue {
+  return {
+    text: 'Установить время',
+    value: `${padDatePart(dueHours)}:${padDatePart(dueMinutes)}`,
   }
 }
 

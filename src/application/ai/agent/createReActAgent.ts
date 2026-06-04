@@ -3,24 +3,24 @@ import { AgentDependencies } from './types/AgentDependencies.js'
 import { makeSummarizerNode } from './nodes/makeSummarizerNode.js'
 import { END, START, StateGraph } from '@langchain/langgraph'
 import { makeChatNameNode } from './nodes/makeChatNameNode.js'
-import { makeTaskManagerAgentNode } from './nodes/makeTaskManagerAgentNode.js'
+import { makeEntityManagerAgentNode } from './nodes/makeEntityManagerAgentNode.js'
 import { makeOrchestratorNode } from './nodes/makeOrchestratorNode.js'
 import { makeOrchestratorToolNode } from './nodes/makeOrchestratorToolNode.js'
-import { makeTaskManagerAgentToolNode } from './nodes/makeTaskManagerAgentToolNode.js'
+import { makeEntityManagerAgentToolNode } from './nodes/makeEntityManagerAgentToolNode.js'
 import { routeOrchestratorOutput } from './edges/routeOrchestratorOutput.js'
 import { routeOrchestratorToolOutput } from './edges/routeOrchestratorToolOutput.js'
-import { routeTaskManagerAgentOutput } from './edges/routeTaskManagerAgentOutput.js'
-import { routeTaskManagerAgentToolOutput } from './edges/routeTaskManagerAgentToolOutput.js'
+import { routeEntityManagerAgentOutput } from './edges/routeEntityManagerAgentOutput.js'
+import { routeEntityManagerAgentToolOutput } from './edges/routeEntityManagerAgentToolOutput.js'
 import { AgentStateAnnotation } from './AgentStateAnnotation.js'
-import { makeTaskManagerAgentHumanReviewNode } from './nodes/makeTaskManagerAgentHumanReviewNode.js'
-import { routeTaskManagerAgentHumanReviewOutput } from './edges/routeTaskManagerAgentHumanReviewOutput.js'
+import { makeToolHumanReviewNode } from './nodes/makeToolHumanReviewNode.js'
+import { routeToolHumanReviewOutput } from './edges/routeToolHumanReviewOutput.js'
 
 export function createReActAgent(dependencies: AgentDependencies, checkpointer: MongoDBSaver) {
   const orchestratorNode = makeOrchestratorNode(dependencies)
   const orchestratorToolNode = makeOrchestratorToolNode(dependencies)
-  const taskManagerAgentNode = makeTaskManagerAgentNode(dependencies)
-  const taskManagerAgentToolNode = makeTaskManagerAgentToolNode(dependencies)
-  const taskManagerAgentHumanReviewNode = makeTaskManagerAgentHumanReviewNode()
+  const entityManagerAgentNode = makeEntityManagerAgentNode(dependencies)
+  const entityManagerAgentToolNode = makeEntityManagerAgentToolNode(dependencies)
+  const toolHumanReviewNode = makeToolHumanReviewNode()
   const chatNameNode = makeChatNameNode(dependencies)
 
   const summarizerNode = makeSummarizerNode(dependencies)
@@ -29,9 +29,9 @@ export function createReActAgent(dependencies: AgentDependencies, checkpointer: 
     .addNode('Orchestrator', orchestratorNode)
     .addNode('OrchestratorTool', orchestratorToolNode)
 
-    .addNode('TaskManagerAgent', taskManagerAgentNode)
-    .addNode('TaskManagerAgentTool', taskManagerAgentToolNode)
-    .addNode('TaskManagerAgentHumanReview', taskManagerAgentHumanReviewNode)
+    .addNode('EntityManagerAgent', entityManagerAgentNode)
+    .addNode('EntityManagerAgentTool', entityManagerAgentToolNode)
+    .addNode('ToolHumanReview', toolHumanReviewNode)
 
     .addNode('Summarizer', summarizerNode)
 
@@ -45,21 +45,22 @@ export function createReActAgent(dependencies: AgentDependencies, checkpointer: 
     })
     .addConditionalEdges('OrchestratorTool', routeOrchestratorToolOutput, {
       Orchestrator: 'Orchestrator',
-      TaskManagerAgent: 'TaskManagerAgent',
-      ChatName: 'ChatName',
+      ToolHumanReview: 'ToolHumanReview',
+      EntityManagerAgent: 'EntityManagerAgent',
     })
-    .addConditionalEdges('TaskManagerAgent', routeTaskManagerAgentOutput, {
-      TaskManagerAgentTool: 'TaskManagerAgentTool',
+    .addConditionalEdges('EntityManagerAgent', routeEntityManagerAgentOutput, {
+      EntityManagerAgentTool: 'EntityManagerAgentTool',
       Orchestrator: 'Orchestrator',
     })
-    .addConditionalEdges('TaskManagerAgentTool', routeTaskManagerAgentToolOutput, {
-      Orchestrator: 'Orchestrator',
-      TaskManagerAgent: 'TaskManagerAgent',
-      TaskManagerAgentHumanReview: 'TaskManagerAgentHumanReview',
+    .addConditionalEdges('EntityManagerAgentTool', routeEntityManagerAgentToolOutput, {
+      EntityManagerAgent: 'EntityManagerAgent',
+      ToolHumanReview: 'ToolHumanReview',
     })
-    .addConditionalEdges('TaskManagerAgentHumanReview', routeTaskManagerAgentHumanReviewOutput, {
-      TaskManagerAgent: 'TaskManagerAgent',
-      TaskManagerAgentTool: 'TaskManagerAgentTool',
+    .addConditionalEdges('ToolHumanReview', routeToolHumanReviewOutput, {
+      Orchestrator: 'Orchestrator',
+      OrchestratorTool: 'OrchestratorTool',
+      EntityManagerAgent: 'EntityManagerAgent',
+      EntityManagerAgentTool: 'EntityManagerAgentTool',
     })
     .addEdge('ChatName', END)
 

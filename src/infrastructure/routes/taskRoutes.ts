@@ -7,6 +7,7 @@ import { TaskEditDTOSchema } from '@dtos/TaskEditDTO.js'
 import { TaskEditManyDTOSchema } from '@dtos/TaskEditManyDTO.js'
 import { patchTasksLimiter, postTasksLimiter } from '@/limiters.js'
 import { TaskMoveDTOSchema } from '@/application/dtos/TaskMoveDTO.js'
+import { TaskMoveManyDTOSchema } from '@/application/dtos/TaskMoveManyDTO.js'
 import { confirmationMiddleware } from '../auth/confirmationMiddleware.js'
 
 interface ITaskRawController extends TaskController {}
@@ -21,6 +22,12 @@ export default (controller: ITaskRawController): Router => {
   router.get('/:id', controller.getById)
 
   router.post('/', postTasksLimiter, validationMiddleware(TaskDTOSchema), controller.create)
+  router.patch(
+    '/move/bulk',
+    patchTasksLimiter,
+    validationMiddleware(TaskMoveManyDTOSchema),
+    controller.moveMany,
+  )
   router.patch('/move', patchTasksLimiter, validationMiddleware(TaskMoveDTOSchema), controller.move)
   router.patch(
     '/bulk',

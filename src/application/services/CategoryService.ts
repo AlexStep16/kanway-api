@@ -28,6 +28,7 @@ import { OperationLogStatusesEnum } from '@/domain/enums/OperationLogStatusesEnu
 import { LexoRank } from 'lexorank'
 import { CategoryMoveDTO } from '../dtos/CategoryMoveDTO.js'
 import { LimitService } from './LimitService.js'
+import { CategoryMoveManyDTO } from '../dtos/CategoryMoveManyDTO.js'
 
 const MAX_RETRIES = 3
 
@@ -627,7 +628,7 @@ export class CategoryService extends BaseService<
     userId: Types.ObjectId,
     session: ClientSession,
     isDryRun: boolean = false,
-  ): Promise<IResponseWithLog<null>> {
+  ): Promise<IResponseWithLog<DeleteResult | null>> {
     const categoriesToDelete = await this.repository.findByCriteria(
       criteria,
       session,
@@ -660,7 +661,7 @@ export class CategoryService extends BaseService<
       }
     }
 
-    await this.repository.deleteMany(criteria, userId, session)
+    const deleteResult = await this.repository.deleteMany(criteria, userId, session)
 
     await Promise.all([
       this.taskService.deleteTasksByCriteria(
@@ -671,7 +672,7 @@ export class CategoryService extends BaseService<
     ])
 
     return {
-      data: null,
+      data: deleteResult,
       logId: log.id,
     }
   }
@@ -681,7 +682,7 @@ export class CategoryService extends BaseService<
     user: IUser,
     externalSession?: ClientSession,
     isDryRun: boolean = false,
-  ): Promise<IResponseWithLog<null>> {
+  ): Promise<IResponseWithLog<DeleteResult | null>> {
     const userId = user.id
 
     if (externalSession) {
@@ -1105,6 +1106,438 @@ export class CategoryService extends BaseService<
     }
   }
 
+  public async moveMany(
+    dto: CategoryMoveManyDTO,
+    user: IUser,
+    externalSession?: ClientSession,
+    isDryRun: boolean = false,
+  ): Promise<IResponseWithLog<ICategoryPopulated[]>> {
+    if (externalSession) {
+      return this._executeMoveManyTransaction(dto, user, externalSession, isDryRun)
+    } else {
+      return await this._retryExecutor((session: ClientSession) =>
+        this._executeMoveManyTransaction(dto, user, session, isDryRun),
+      )
+    }
+  }
+
+  private async _executeMoveManyTransaction(
+    dto: CategoryMoveManyDTO,
+    user: IUser,
+    session: ClientSession,
+    isDryRun: boolean = false,
+  ): Promise<IResponseWithLog<ICategoryPopulated[]>> {
+    const { ids, beforeCategoryId, afterCategoryId, newBoardId, toStart, toEnd } = dto
+
+    const uniqueCategoryIds = [...new Set(ids)]
+    if (uniqueCategoryIds.length === 0) {
+      throw new NotFoundError('Категории не найдены.')
+    }
+
+    if (toStart && toEnd) {
+      throw new AppError('Нельзя переместить категории одновременно в начало и в конец.', 400)
+    }
+
+    if ((toStart || toEnd) && (beforeCategoryId || afterCategoryId)) {
+      throw new AppError(
+        'Нельзя одновременно использовать beforeCategoryId/afterCategoryId и toStart/toEnd.',
+        400,
+      )
+    }
+
+    if (beforeCategoryId && uniqueCategoryIds.includes(beforeCategoryId)) {
+      throw new AppError('beforeCategoryId не может быть среди перемещаемых категорий.', 400)
+    }
+
+    if (afterCategoryId && uniqueCategoryIds.includes(afterCategoryId)) {
+      throw new AppError('afterCategoryId не может быть среди перемещаемых категорий.', 400)
+    }
+
+    const relatedCategoryIds = [
+      ...new Set([...uniqueCategoryIds, beforeCategoryId, afterCategoryId].filter(Boolean)),
+    ]
+    const categories = await this.repository.findByCriteria(
+      { ids: relatedCategoryIds as string[] },
+      session,
+      undefined,
+      user.id,
+    )
+
+    const categoriesToMove = categories
+      .filter((category) => uniqueCategoryIds.includes(category.id.toString()))
+      .sort((a, b) => a.rank.localeCompare(b.rank))
+
+    if (categoriesToMove.length !== uniqueCategoryIds.length) {
+      throw new NotFoundError('Категории не найдены.')
+    }
+
+    const beforeCategory = beforeCategoryId
+      ? categories.find((c) => c.id.toString() === beforeCategoryId)
+      : null
+    const afterCategory = afterCategoryId
+      ? categories.find((c) => c.id.toString() === afterCategoryId)
+      : null
+
+    if (beforeCategoryId && !beforeCategory) {
+      throw new NotFoundError('Опорная категория beforeCategoryId не найдена.')
+    }
+
+    if (afterCategoryId && !afterCategory) {
+      throw new NotFoundError('Опорная категория afterCategoryId не найдена.')
+    }
+
+    const moveWithinEachCurrentBoard =
+      !newBoardId && !beforeCategory && !afterCategory && (toStart || toEnd)
+
+    let targetBoard: Awaited<ReturnType<BoardService['getByCriteria']>>[number] | null = null
+    let targetBoardId: string | null = null
+
+    if (newBoardId) {
+      const [board] = await this.boardService.getByCriteria({ id: newBoardId }, user.id, session)
+      if (!board) throw new NotFoundError('Доска не найдена.')
+
+      targetBoard = board
+      targetBoardId = board.id.toString()
+    } else if (beforeCategory || afterCategory) {
+      const anchorCategory = beforeCategory ?? afterCategory
+
+      if (!anchorCategory) {
+        throw new AppError('Не удалось определить целевую доску для перемещения.', 400)
+      }
+
+      const [board] = await this.boardService.getByCriteria(
+        { id: anchorCategory.board.toString() },
+        user.id,
+        session,
+      )
+
+      if (!board) throw new NotFoundError('Доска не найдена.')
+
+      targetBoard = board
+      targetBoardId = board.id.toString()
+    } else if (!moveWithinEachCurrentBoard) {
+      targetBoardId = categoriesToMove[0].board.toString()
+
+      const hasDifferentBoard = categoriesToMove.some(
+        (category) => category.board.toString() !== targetBoardId,
+      )
+
+      if (hasDifferentBoard) {
+        throw new AppError(
+          'Для массового перемещения без newBoardId все категории должны быть из одной доски.',
+          400,
+        )
+      }
+    } else {
+      targetBoardId = null
+    }
+
+    if (beforeCategory && beforeCategory.board.toString() !== targetBoardId) {
+      throw new AppError('beforeCategoryId должен принадлежать целевой доске.', 400)
+    }
+
+    if (afterCategory && afterCategory.board.toString() !== targetBoardId) {
+      throw new AppError('afterCategoryId должен принадлежать целевой доске.', 400)
+    }
+
+    let newRanks: string[] = []
+
+    if (moveWithinEachCurrentBoard) {
+      const updatesWithMetadata: Array<{
+        category: ICategory
+        updateData: SingleUpdateDTO<SafeUpdateData<ICategory>>
+      }> = []
+
+      const categoriesByBoard = new Map<string, ICategory[]>()
+      for (const category of categoriesToMove) {
+        const boardId = category.board.toString()
+        const currentGroup = categoriesByBoard.get(boardId) || []
+        currentGroup.push(category)
+        categoriesByBoard.set(boardId, currentGroup)
+      }
+
+      for (const [boardId, boardCategories] of categoriesByBoard.entries()) {
+        if (toStart) {
+          const firstCategoriesInBoard = await this.repository.findByCriteria(
+            { boardId },
+            session,
+            { sort: { rank: 1 }, limit: 1 },
+            user.id,
+          )
+
+          let rankCursor =
+            firstCategoriesInBoard.length > 0
+              ? LexoRank.parse(firstCategoriesInBoard[0].rank)
+              : LexoRank.middle()
+
+          const boardRanks: string[] = []
+          for (let i = 0; i < boardCategories.length; i++) {
+            rankCursor =
+              firstCategoriesInBoard.length > 0 ? rankCursor.genPrev() : rankCursor.genNext()
+            boardRanks.push(rankCursor.toString())
+          }
+
+          if (firstCategoriesInBoard.length > 0) {
+            boardRanks.reverse()
+          }
+
+          boardCategories.forEach((category, index) => {
+            updatesWithMetadata.push({
+              category,
+              updateData: {
+                id: category.id,
+                rank: boardRanks[index],
+              },
+            })
+          })
+        } else {
+          const lastRankData = await this.repository.getLastRanksByParents(
+            [new Types.ObjectId(boardId)],
+            'board',
+            user.id,
+            session,
+          )
+
+          let rankCursor = lastRankData.length
+            ? LexoRank.parse(lastRankData[0].rank)
+            : LexoRank.middle()
+
+          boardCategories.forEach((category) => {
+            rankCursor = rankCursor.genNext()
+            updatesWithMetadata.push({
+              category,
+              updateData: {
+                id: category.id,
+                rank: rankCursor.toString(),
+              },
+            })
+          })
+        }
+      }
+
+      const entitiesBefore = updatesWithMetadata.map(
+        ({ category, updateData }) => projectProperties<ICategory>([category], updateData)[0],
+      )
+      const entitiesAfter = entitiesBefore.map((beforeEntity, index) => ({
+        ...beforeEntity,
+        ...updatesWithMetadata[index].updateData,
+      }))
+
+      if (isDryRun) {
+        const log = await this.operationLogService.create(
+          {
+            operationType: OperationTypesEnum.UPDATE,
+            collectionName: CollectionsEnum.CATEGORIES,
+            entitiesBefore,
+            entitiesAfter,
+            dependencies: [],
+            status: OperationLogStatusesEnum.PENDING,
+          },
+          user.id,
+          session,
+        )
+
+        return {
+          data: [],
+          logId: log.id,
+        }
+      }
+
+      const updateResult = await this.repository.bulkUpdate(
+        updatesWithMetadata.map(({ updateData }) => updateData),
+        user.id,
+        session,
+      )
+
+      if (!updateResult || updateResult.modifiedCount === 0) {
+        throw new AppError('Не удалось переместить категории.', 500)
+      }
+
+      const log = await this.operationLogService.create(
+        {
+          operationType: OperationTypesEnum.UPDATE,
+          collectionName: CollectionsEnum.CATEGORIES,
+          entitiesBefore,
+          entitiesAfter,
+          dependencies: [],
+          status: OperationLogStatusesEnum.SUCCESS,
+        },
+        user.id,
+        session,
+      )
+
+      const updatedCategories = await this.getByCriteria(
+        { ids: categoriesToMove.map((category) => category.id.toString()) },
+        user.id,
+        session,
+      )
+
+      return {
+        data: updatedCategories,
+        logId: log.id,
+      }
+    }
+
+    if (targetBoardId === null) {
+      throw new AppError('Не удалось определить целевую доску для перемещения.', 400)
+    }
+
+    if (toStart) {
+      const firstCategoriesInBoard = await this.repository.findByCriteria(
+        { boardId: targetBoardId },
+        session,
+        { sort: { rank: 1 }, limit: 1 },
+        user.id,
+      )
+
+      if (firstCategoriesInBoard.length > 0) {
+        const generatedRanks: string[] = []
+        let rankCursor = LexoRank.parse(firstCategoriesInBoard[0].rank)
+
+        for (let i = 0; i < categoriesToMove.length; i++) {
+          rankCursor = rankCursor.genPrev()
+          generatedRanks.push(rankCursor.toString())
+        }
+
+        newRanks = generatedRanks.reverse()
+      } else {
+        let rankCursor = LexoRank.middle()
+        for (let i = 0; i < categoriesToMove.length; i++) {
+          rankCursor = rankCursor.genNext()
+          newRanks.push(rankCursor.toString())
+        }
+      }
+    } else if (beforeCategory && afterCategory) {
+      let left = LexoRank.parse(beforeCategory.rank)
+      const right = LexoRank.parse(afterCategory.rank)
+
+      for (let i = 0; i < categoriesToMove.length; i++) {
+        left = left.between(right)
+        newRanks.push(left.toString())
+      }
+    } else if (beforeCategory) {
+      const generatedRanks: string[] = []
+      let rankCursor = LexoRank.parse(beforeCategory.rank)
+
+      for (let i = 0; i < categoriesToMove.length; i++) {
+        rankCursor = rankCursor.genPrev()
+        generatedRanks.push(rankCursor.toString())
+      }
+
+      newRanks = generatedRanks.reverse()
+    } else if (afterCategory) {
+      let rankCursor = LexoRank.parse(afterCategory.rank)
+
+      for (let i = 0; i < categoriesToMove.length; i++) {
+        rankCursor = rankCursor.genNext()
+        newRanks.push(rankCursor.toString())
+      }
+    } else {
+      const lastRankData = await this.repository.getLastRanksByParents(
+        [new Types.ObjectId(targetBoardId)],
+        'board',
+        user.id,
+        session,
+      )
+
+      let rankCursor = lastRankData.length
+        ? LexoRank.parse(lastRankData[0].rank)
+        : LexoRank.middle()
+
+      for (let i = 0; i < categoriesToMove.length; i++) {
+        rankCursor = rankCursor.genNext()
+        newRanks.push(rankCursor.toString())
+      }
+    }
+
+    const updatesWithMetadata = categoriesToMove.map((category, index) => {
+      const updateData: SingleUpdateDTO<SafeUpdateData<ICategory>> = {
+        id: category.id,
+        rank: newRanks[index],
+      }
+
+      if (targetBoard) {
+        updateData.board = targetBoard.id
+        updateData.workspace = targetBoard.workspace.id
+      }
+
+      return {
+        category,
+        updateData,
+      }
+    })
+
+    if (targetBoard) {
+      const categoriesWithNewBoard = updatesWithMetadata
+        .filter(({ category }) => category.board.toString() !== targetBoard.id.toString())
+        .map(() => ({ boardId: targetBoard.id.toString() }))
+
+      await this._checkCategoriesLimitByBoards(categoriesWithNewBoard, user, session)
+    }
+
+    const entitiesBefore = updatesWithMetadata.map(
+      ({ category, updateData }) => projectProperties<ICategory>([category], updateData)[0],
+    )
+    const entitiesAfter = entitiesBefore.map((beforeEntity, index) => ({
+      ...beforeEntity,
+      ...updatesWithMetadata[index].updateData,
+    }))
+
+    if (isDryRun) {
+      const log = await this.operationLogService.create(
+        {
+          operationType: OperationTypesEnum.UPDATE,
+          collectionName: CollectionsEnum.CATEGORIES,
+          entitiesBefore,
+          entitiesAfter,
+          dependencies: [],
+          status: OperationLogStatusesEnum.PENDING,
+        },
+        user.id,
+        session,
+      )
+
+      return {
+        data: [],
+        logId: log.id,
+      }
+    }
+
+    const updateResult = await this.repository.bulkUpdate(
+      updatesWithMetadata.map(({ updateData }) => updateData),
+      user.id,
+      session,
+    )
+
+    if (!updateResult || updateResult.modifiedCount === 0) {
+      throw new AppError('Не удалось переместить категории.', 500)
+    }
+
+    const log = await this.operationLogService.create(
+      {
+        operationType: OperationTypesEnum.UPDATE,
+        collectionName: CollectionsEnum.CATEGORIES,
+        entitiesBefore,
+        entitiesAfter,
+        dependencies: [],
+        status: OperationLogStatusesEnum.SUCCESS,
+      },
+      user.id,
+      session,
+    )
+
+    const updatedCategories = await this.getByCriteria(
+      { ids: categoriesToMove.map((category) => category.id.toString()) },
+      user.id,
+      session,
+    )
+
+    return {
+      data: updatedCategories,
+      logId: log.id,
+    }
+  }
+
   public async revert(
     log: IOperationLog,
     user: IUser,
@@ -1415,5 +1848,13 @@ export class CategoryService extends BaseService<
     session?: ClientSession,
   ): Promise<{ parentId: string; count: number }[]> {
     return this.repository.getCountGroupedByParents(boardIds, 'board', userId, session)
+  }
+
+  public async getCategoriesCountByWorkspaces(
+    workspaceIds: Types.ObjectId[],
+    userId: Types.ObjectId,
+    session?: ClientSession,
+  ): Promise<{ parentId: string; count: number }[]> {
+    return this.repository.getCountGroupedByParents(workspaceIds, 'workspace', userId, session)
   }
 }

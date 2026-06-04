@@ -8,11 +8,11 @@ import { ModelsEnum } from '@/domain/enums/ModelsEnum.js'
 import { AgentStateAnnotation } from '../AgentStateAnnotation.js'
 import { initOrchestratorTools } from '../../tools/initOrchestratorTools.js'
 import { OrchestratorPrompt } from '../../prompts/OrchestratorPrompt.js'
-import { IStatus } from '@/application/interfaces/Statuses/IStatus.js'
+import { IStatus } from '@/application/interfaces/statuses/IStatus.js'
 import { AgentsEnum } from '@/enums/AgentsEnum.js'
 
 export const makeOrchestratorNode = (deps: AgentDependencies) => {
-  return async (state: typeof AgentStateAnnotation.State, config: RunnableConfig<Configurable>) => {
+  return async (state: typeof AgentStateAnnotation.State, config: RunnableConfig) => {
     const statusText = state.is_orchestrator_initiated
       ? 'Обрабатываю информацию'
       : 'Анализирую запрос'
@@ -30,6 +30,7 @@ export const makeOrchestratorNode = (deps: AgentDependencies) => {
       is_orchestrator_initiated: true,
       orchestrator_tool_calls: [],
       orchestrator_tool_results: [],
+      current_agent: AgentsEnum.ORCHESTRATOR,
     }
 
     const { ORCHESTRATOR, ORCHESTRATOR_PRO } = deps.models
@@ -39,7 +40,7 @@ export const makeOrchestratorNode = (deps: AgentDependencies) => {
 
     const history = state.messages.slice(-50)
 
-    const orchestratorTools = initOrchestratorTools(deps, config)
+    const orchestratorTools = initOrchestratorTools(deps, config as RunnableConfig<Configurable>)
 
     const prompt = ChatPromptTemplate.fromMessages([['system', OrchestratorPrompt], ...history])
 
@@ -70,6 +71,10 @@ export const makeOrchestratorNode = (deps: AgentDependencies) => {
 
     outputs.messages!.push(response)
     outputs.orchestrator_tool_calls = response.tool_calls || []
+
+    if (outputs.orchestrator_tool_calls.length === 0) {
+      await dispatchCustomEvent(CustomEvents.FINAL_RESPONSE, response)
+    }
 
     return outputs
   }

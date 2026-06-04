@@ -9,8 +9,8 @@ import { ClientSession, Types } from 'mongoose'
 import { ConfirmationToolResult } from '../tools/helpers/ToolResult/ConfirmationToolResult.js'
 import { FailedToolResult } from '../tools/helpers/ToolResult/FailedToolResult.js'
 import { SuccessToolResult } from '../tools/helpers/ToolResult/SuccessToolResult.js'
-import { SearchTasksDTO } from '../tools/schemes/SearchTasksScheme.js'
-import { UpdateTasksDTO } from '../tools/schemes/UpdateTasksScheme.js'
+import { SearchTasksDTO } from '../tools/schemes/TaskManager/SearchTasksScheme.js'
+import { UpdateTasksDTO } from '../tools/schemes/TaskManager/UpdateTasksScheme.js'
 import { FilterToMongoQueryService } from './FilterToMongoQueryService.js'
 import { SelectionService } from './SelectionService.js'
 import {
@@ -21,21 +21,29 @@ import { IConfigContext } from '../interfaces/IConfigContext.js'
 import { AiConfirmationTypeEnum } from '@/domain/enums/AiConfirmationTypeEnum.js'
 import { StatusStatesEnum } from '@/enums/StatusStatesEnum.js'
 import { StatusTypesEnum } from '@/enums/StatusTypesEnum.js'
-import { ISearchEntitiesContent } from '@/application/interfaces/Statuses/Content/ISearchEntitiesContent.js'
+import { ISearchEntitiesContent } from '@/application/interfaces/statuses/content/ISearchEntitiesContent.js'
 import { StatusLog } from '@/application/types/StatusLog.js'
-import { transformSearchTaskToHumanReadableFilters } from '../tools/helpers/SearchTasksHumanReadableFilters.js'
 import { EntityTypesEnum } from '@/domain/enums/EntityTypesEnum.js'
 import { ToolStatusLogLifecycleService } from './ToolStatusLogLifecycleService.js'
-import { DeleteArchiveTasksDTO } from '../tools/schemes/DeleteArchiveTasksScheme.js'
-import { ITextValue } from '@/application/interfaces/Statuses/Content/ITextValue.js'
-import { CloneTasksDTO } from '../tools/schemes/CloneTasksScheme.js'
-import { RecoverTasksDTO } from '../tools/schemes/RecoverTasksScheme.js'
+import { DeleteArchiveTasksDTO } from '../tools/schemes/TaskManager/DeleteArchiveTasksScheme.js'
+import { ITextValue } from '@/application/interfaces/statuses/content/ITextValue.js'
+import { CloneTasksDTO } from '../tools/schemes/TaskManager/CloneTasksScheme.js'
+import { RecoverTasksDTO } from '../tools/schemes/TaskManager/RecoverTasksScheme.js'
+import { MoveTasksDTO } from '../tools/schemes/TaskManager/MoveTasksScheme.js'
+import { CategoryService } from '@/application/services/CategoryService.js'
+import { SearchFilter } from '@/application/types/SearchFilter.js'
+import {
+  getSearchHumanReadableFilter,
+  getTaskColorHumanFilter,
+} from '../tools/helpers/SearchTasksHumanReadableFilters.js'
+import { buildEntitySamples } from '../tools/helpers/EntitySamplesHelpers.js'
 
 export class TaskToolsExecutorService {
   constructor(
     private taskRepository: TaskRepository,
 
     private taskService: TaskService,
+    private categoryService: CategoryService,
     private filterToMongoQueryService: FilterToMongoQueryService,
     private selectionService: SelectionService,
     private toolStatusLogLifecycleService = new ToolStatusLogLifecycleService(),
@@ -48,15 +56,16 @@ export class TaskToolsExecutorService {
     session?: ClientSession,
   ) {
     const toolCall = context.toolCall!
-
     const configurable = config.configurable as Configurable
+    const { filters, fields_to_include = [] } = payload
 
     const mongoQuery = await this.filterToMongoQueryService.prepare(
-      payload,
+      filters,
       configurable.timezone,
       configurable.user.id,
+      { entityType: 'task' },
     )
-    const humanReadableFilters = transformSearchTaskToHumanReadableFilters(payload.filters)
+    const humanReadableFilters = this._transformSearchFiltersToHumanReadableFilters(filters)
 
     const toolContent: ISearchEntitiesContent = {
       filters: humanReadableFilters,
@@ -74,12 +83,11 @@ export class TaskToolsExecutorService {
     await dispatchCustomEvent(CustomEvents.STATUS_ADD_LOG, statusLog)
 
     try {
-      const tasks = await this.taskRepository.findByFilter(mongoQuery, session)
-      const tasksSample = tasks.slice(0, 5).map((task) => ({
-        id: task.id,
-        name: task.name,
-        dueDate: task.dueDate,
-      }))
+      const tasks = await this.taskService.getByFilter(mongoQuery, session)
+      const tasksSample = buildEntitySamples(EntityTypesEnum.TASK, tasks, {
+        timezone: configurable.timezone,
+        additionalFields: fields_to_include,
+      })
       const selection = await this.selectionService.create(
         {
           entityType: EntityTypesEnum.TASK,
@@ -143,7 +151,6 @@ export class TaskToolsExecutorService {
         {
           _id: { $in: taskIds },
           user_id: configurable.user.id,
-          is_deleted: false,
         },
         session,
         {
@@ -151,7 +158,7 @@ export class TaskToolsExecutorService {
         },
       )
 
-      const dtoTasks = transformRawUpdateToDTO(tasks, payload.updates)
+      const dtoTasks = transformRawUpdateToDTO(tasks, payload.updates, configurable.timezone)
 
       if (dtoTasks.length === 0) {
         throw new Error('No tasks to update')
@@ -306,6 +313,74 @@ export class TaskToolsExecutorService {
     }
 
     return []
+  }
+
+  private async _resolveMoveHumanReadableFilters(
+    payload: MoveTasksDTO,
+    userId: Types.ObjectId,
+    session?: ClientSession,
+  ): Promise<ITextValue[]> {
+    const filters: ITextValue[] = []
+
+    if (payload.toStart) {
+      filters.push({
+        text: 'Позиция',
+        value: 'в начало',
+      })
+    }
+
+    if (payload.toEnd) {
+      filters.push({
+        text: 'Позиция',
+        value: 'в конец',
+      })
+    }
+
+    const anchorTaskIds = Array.from(
+      new Set([payload.beforeTaskId, payload.afterTaskId].filter(Boolean) as string[]),
+    )
+    const anchorTaskNamesById = new Map<string, string>()
+
+    if (anchorTaskIds.length > 0) {
+      const anchorTasks = await this.taskService.getByCriteria(
+        { ids: anchorTaskIds },
+        userId,
+        session,
+      )
+
+      anchorTasks.forEach((task) => {
+        anchorTaskNamesById.set(task.id.toString(), task.name)
+      })
+    }
+
+    if (payload.beforeTaskId) {
+      filters.push({
+        text: 'Перед задачей',
+        value: anchorTaskNamesById.get(payload.beforeTaskId) ?? payload.beforeTaskId,
+      })
+    }
+
+    if (payload.afterTaskId) {
+      filters.push({
+        text: 'После задачи',
+        value: anchorTaskNamesById.get(payload.afterTaskId) ?? payload.afterTaskId,
+      })
+    }
+
+    if (payload.newCategoryId) {
+      const categories = await this.categoryService.getByCriteria(
+        { id: payload.newCategoryId },
+        userId,
+        session,
+      )
+
+      filters.push({
+        text: 'Новая категория',
+        value: categories[0]?.name ?? payload.newCategoryId,
+      })
+    }
+
+    return filters
   }
 
   public async deleteArchiveTasks(
@@ -584,5 +659,115 @@ export class TaskToolsExecutorService {
 
       throw error
     }
+  }
+
+  public async moveTasks(
+    payload: MoveTasksDTO,
+    config: RunnableConfig,
+    context: IConfigContext,
+    session?: ClientSession,
+  ) {
+    const configurable = config.configurable as Configurable
+    const taskIds = await this._resolveTaskIds(payload, configurable.user.id, session)
+    const humanReadableFilters = await this._resolveMoveHumanReadableFilters(
+      payload,
+      configurable.user.id,
+      session,
+    )
+    const toolCall = context.toolCall!
+
+    const statusLog = await this.toolStatusLogLifecycleService.getOrCreateInProgressLog({
+      existingLog: context.statusLog,
+      toolCallId: toolCall.id!,
+      toolName: 'move_tasks',
+      toolContent: {
+        ids: Array.from(new Set(taskIds)),
+        filters: humanReadableFilters,
+      },
+    })
+
+    let isDryRun = false
+
+    try {
+      if (configurable.aiConfirmationType === AiConfirmationTypeEnum.ALWAYS) {
+        if (context.isApproved === undefined) {
+          isDryRun = true
+        } else if (context.isApproved === false) {
+          await this.toolStatusLogLifecycleService.setCancelled(statusLog)
+
+          return new SuccessToolResult('Task move operation was rejected by the user.')
+        }
+      }
+
+      const moveTasksResult = await this.taskService.moveMany(
+        {
+          ids: taskIds,
+          beforeTaskId: payload.beforeTaskId,
+          afterTaskId: payload.afterTaskId,
+          toStart: payload.toStart,
+          toEnd: payload.toEnd,
+          newCategoryId: payload.newCategoryId,
+        },
+        configurable.user,
+        session,
+        isDryRun,
+      )
+
+      if (moveTasksResult.logId) {
+        const operationLogId = moveTasksResult.logId.toString()
+
+        if (isDryRun) {
+          await this.toolStatusLogLifecycleService.setAwaitingConfirmation(statusLog, (content) => {
+            content.logId = operationLogId
+          })
+
+          return new ConfirmationToolResult({
+            logId: operationLogId,
+          })
+        }
+
+        await dispatchCustomEvent(CustomEvents.OPERATION, {
+          logId: operationLogId,
+          session,
+        })
+
+        await this.toolStatusLogLifecycleService.setCompleted(statusLog, (content) => {
+          content.logId = operationLogId
+        })
+
+        return new SuccessToolResult(
+          `Successfully moved ${moveTasksResult.data.length} tasks. Operation Log ID: ${operationLogId}`,
+          {
+            logId: operationLogId,
+          },
+        )
+      }
+
+      return new FailedToolResult('Failed to create operation log for tasks move.')
+    } catch (error) {
+      statusLog.state = StatusStatesEnum.FAILED
+      await dispatchCustomEvent(CustomEvents.STATUS_UPDATE_LOG, statusLog)
+
+      throw error
+    }
+  }
+
+  private _transformSearchFiltersToHumanReadableFilters(filters: SearchFilter[]): ITextValue[] {
+    return filters
+      .map((filter) => {
+        try {
+          const { field, ...operator } = filter
+
+          if (field === 'color') return getTaskColorHumanFilter(operator)
+
+          return getSearchHumanReadableFilter(filter)
+        } catch (error) {
+          console.error(
+            `Error transforming filter to human-readable format: ${error instanceof Error ? error.message : error}`,
+          )
+          return null
+        }
+      })
+      .filter((filter): filter is ITextValue => filter !== null)
   }
 }

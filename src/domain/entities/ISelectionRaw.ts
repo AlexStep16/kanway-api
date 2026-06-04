@@ -1,6 +1,6 @@
 import { Types } from 'mongoose'
 import { EntityTypesEnum } from '../enums/EntityTypesEnum.js'
-import { ITextValue } from '@/application/interfaces/Statuses/Content/ITextValue.js'
+import { ITextValue } from '@/application/interfaces/statuses/content/ITextValue.js'
 
 export interface ISelectionRaw {
   _id: Types.ObjectId

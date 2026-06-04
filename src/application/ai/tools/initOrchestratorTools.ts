@@ -1,14 +1,18 @@
 import { tool } from '@langchain/core/tools'
 import { SuccessToolResult } from './helpers/ToolResult/SuccessToolResult.js'
-import z from 'zod'
 import { AgentDependencies } from '../agent/types/AgentDependencies.js'
 import { CallTaskManagerScheme } from './schemes/CallTaskManagerScheme.js'
 import { Configurable } from '../interfaces/Configurable.js'
 import { RunnableConfig } from '@langchain/core/runnables'
+import { CallCategoryManagerScheme } from './schemes/CallCategoryManagerScheme.js'
+import { CallBoardManagerScheme } from './schemes/CallBoardManagerScheme.js'
+import { CallWorkspaceManagerScheme } from './schemes/CallWorkspaceManagerScheme.js'
+import { UndoOperationsScheme } from './schemes/UndoOperationsScheme.js'
+import { GetSelectionDetailsScheme } from './schemes/GetSelectionDetailsScheme.js'
 
 export function initOrchestratorTools(
   dependencies: AgentDependencies,
-  config: RunnableConfig<Configurable>,
+  runnableConfig: RunnableConfig<Configurable>,
 ) {
   const callTaskManagerAgent = tool(
     () => {
@@ -20,28 +24,69 @@ export function initOrchestratorTools(
     },
   )
 
+  const callCategoryManagerAgent = tool(
+    () => {
+      return new SuccessToolResult('')
+    },
+    {
+      name: 'call_category_manager_agent',
+      schema: CallCategoryManagerScheme,
+    },
+  )
+
+  const callBoardManagerAgent = tool(
+    () => {
+      return new SuccessToolResult('')
+    },
+    {
+      name: 'call_board_manager_agent',
+      schema: CallBoardManagerScheme,
+    },
+  )
+
+  const callWorkspaceManagerAgent = tool(
+    () => {
+      return new SuccessToolResult('')
+    },
+    {
+      name: 'call_workspace_manager_agent',
+      schema: CallWorkspaceManagerScheme,
+    },
+  )
+
+  const undoOperations = tool(
+    async (data, config) => {
+      return await dependencies.services.generalToolsExecutor.undoOperations(
+        data.log_ids,
+        runnableConfig,
+        config.context,
+      )
+    },
+    {
+      name: 'undo_operations',
+      schema: UndoOperationsScheme,
+    },
+  )
+
   const getSelectionDetails = tool(
     async (data) => {
-      const configurable = config.configurable as Configurable
-
       return await dependencies.services.generalToolsExecutor.getSelectionDetails(
-        data.selection_id,
-        configurable.user.id,
+        data,
+        runnableConfig,
       )
     },
     {
       name: 'get_selection_details',
-      schema: z
-        .object({
-          selection_id: z.string(),
-        })
-        .describe(
-          'Use this tool to retrieve the actual text content (titles, descriptions, names) of a previously searched dataset (selection_id). ' +
-            'Use it ONLY when the user asks you to read, analyze, summarize, or list the specific items in that selection. ' +
-            'NEVER use it if you are simply passing the selection to a Sub-Agent for bulk mutation.',
-        ),
+      schema: GetSelectionDetailsScheme,
     },
   )
 
-  return [callTaskManagerAgent, getSelectionDetails]
+  return [
+    callTaskManagerAgent,
+    callCategoryManagerAgent,
+    callBoardManagerAgent,
+    callWorkspaceManagerAgent,
+    undoOperations,
+    getSelectionDetails,
+  ]
 }
