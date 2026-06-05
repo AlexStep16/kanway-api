@@ -6,5 +6,6 @@ export interface IStatus {
   statusText: string
   currentAgent: AgentsEnum
   state: StatusStatesEnum
+  error?: string
   logs: StatusLog[]
 }

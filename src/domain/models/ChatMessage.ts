@@ -25,6 +25,9 @@ const ChatMessageSchema = new Schema<IChatMessageRaw>(
     credits_used: {
       type: Number,
     },
+    rating: {
+      type: Boolean,
+    },
     user_id: {
       type: Schema.Types.ObjectId,
       ref: 'User',

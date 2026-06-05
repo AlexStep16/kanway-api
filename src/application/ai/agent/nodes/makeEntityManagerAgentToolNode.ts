@@ -6,8 +6,6 @@ import z, { ZodAny } from 'zod'
 import { ToolResult } from '../../tools/helpers/ToolResult/ToolResult.js'
 import { AgentDependencies } from '../types/AgentDependencies.js'
 import { ConfirmationToolResult } from '../../tools/helpers/ToolResult/ConfirmationToolResult.js'
-import { dispatchCustomEvent } from '@langchain/core/callbacks/dispatch'
-import { CustomEvents } from '@/enums/CustomEvents.js'
 import { StatusLog } from '@/application/types/StatusLog.js'
 import { IConfigContext } from '../../interfaces/IConfigContext.js'
 import { AgentsEnum } from '@/enums/AgentsEnum.js'
@@ -31,20 +29,21 @@ export const makeEntityManagerAgentToolNode = (dependencies: AgentDependencies) 
 
       task_manager_messages: state.task_manager_messages,
       task_manager_tool_results: [],
-      task_manager_tool_calls_completed: state.task_manager_tool_calls_completed || [],
+      task_manager_tool_calls_completed: state.task_manager_tool_calls_completed,
 
       category_manager_messages: state.category_manager_messages,
       category_manager_tool_results: [],
-      category_manager_tool_calls_completed: state.category_manager_tool_calls_completed || [],
+      category_manager_tool_calls_completed: state.category_manager_tool_calls_completed,
 
       board_manager_messages: state.board_manager_messages,
       board_manager_tool_results: [],
-      board_manager_tool_calls_completed: state.board_manager_tool_calls_completed || [],
+      board_manager_tool_calls_completed: state.board_manager_tool_calls_completed,
 
       workspace_manager_messages: state.workspace_manager_messages,
       workspace_manager_tool_results: [],
-      workspace_manager_tool_calls_completed: state.workspace_manager_tool_calls_completed || [],
+      workspace_manager_tool_calls_completed: state.workspace_manager_tool_calls_completed,
 
+      operation_log_ids: state.operation_log_ids,
       manager_tools_has_error: false,
       active_selections: state.active_selections,
     }
@@ -71,12 +70,15 @@ export const makeEntityManagerAgentToolNode = (dependencies: AgentDependencies) 
         )
 
         if (result.observation instanceof ConfirmationToolResult) {
-          await dispatchCustomEvent(CustomEvents.INTERRUPTED, {})
-
           outputs.tool_waiting_for_review = {
             toolCallId: toolCall.id!,
             logId: result.meta?.logId,
           }
+
+          if (result.meta?.logId) {
+            outputs.operation_log_ids!.push(result.meta.logId)
+          }
+
           break
         }
 

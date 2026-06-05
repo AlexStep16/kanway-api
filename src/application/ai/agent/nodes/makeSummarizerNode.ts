@@ -4,18 +4,18 @@ import { AgentStateAnnotation } from '@/application/ai/agent/AgentStateAnnotatio
 import { ChatPromptTemplate } from '@langchain/core/prompts'
 import { dispatchCustomEvent } from '@langchain/core/callbacks/dispatch'
 import { CustomEvents } from '@/enums/CustomEvents.js'
-import { Types } from 'mongoose'
 import { SummarizerPrompt } from '../../prompts/SummarizerPrompt.js'
 import { HumanMessage, RemoveMessage } from '@langchain/core/messages'
 import { getTextHistory } from '../../helpers/getTextHistory.js'
+import { AgentsEnum } from '@/enums/AgentsEnum.js'
 
 export const makeSummarizerNode = (deps: AgentDependencies): any => {
   return async (state: typeof AgentStateAnnotation.State, _: RunnableConfig) => {
     if (state.messages.length < 25) return {}
 
-    await dispatchCustomEvent(CustomEvents.STEP_ADD, {
-      id: new Types.ObjectId().toString(),
-      name: 'Сжимаю чат',
+    await dispatchCustomEvent(CustomEvents.STATUS_UPDATE, {
+      statusText: 'Сжимаю историю чата',
+      currentAgent: AgentsEnum.SUMMARIZER,
     })
 
     const { SUMMARIZER } = deps.models

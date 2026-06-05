@@ -8,6 +8,7 @@ export interface IChatMessageRaw {
   list_type?: string
   pending_tool_call_id?: string
   credits_used?: number
+  rating?: boolean
   chat_id: Types.ObjectId
   user_id: Types.ObjectId
   thread_id: string

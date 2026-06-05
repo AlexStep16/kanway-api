@@ -1,4 +1,5 @@
 export enum AgentsEnum {
+  SUMMARIZER = 'summarizer',
   ORCHESTRATOR = 'orchestrator',
   TASK_MANAGER = 'task_manager',
   CATEGORY_MANAGER = 'category_manager',

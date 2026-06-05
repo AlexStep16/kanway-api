@@ -1,5 +1,5 @@
 import { IUser } from '@/domain/entities/IUser.js'
-import { ClientSession, FilterQuery, Types } from 'mongoose'
+import { ClientSession, DeleteResult, FilterQuery, Types } from 'mongoose'
 import { IResponseWithLog } from '../IResponseWithLog.js'
 
 export interface IControllerService<
@@ -33,7 +33,7 @@ export interface IControllerService<
     criteria: TCriteria,
     user: IUser,
     externalSession?: ClientSession,
-  ): Promise<IResponseWithLog<null>>
+  ): Promise<IResponseWithLog<DeleteResult | null>>
 
   archive(criteria: TCriteria, user: IUser, externalSession?: ClientSession): Promise<any>
   recover(criteria: TCriteria, user: IUser, externalSession?: ClientSession): Promise<any>

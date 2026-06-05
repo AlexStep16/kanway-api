@@ -13,6 +13,6 @@ export function getAgentStatusText(agent: AgentsEnum) {
     case AgentsEnum.WORKSPACE_MANAGER:
       return 'Работаю с рабочими пространствами'
     default:
-      return 'Unknown agent status.'
+      return 'Работаю.'
   }
 }

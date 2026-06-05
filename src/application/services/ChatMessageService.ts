@@ -12,6 +12,8 @@ import { NotFoundError } from '@/domain/errors/NotFound.js'
 import { AppError } from '@/domain/errors/AppError.js'
 import { BaseService } from './BaseService.js'
 import { IChatMessageRaw } from '@/domain/entities/IChatMessageRaw.js'
+import { RateMessageDTO } from '../dtos/RateMessageDTO.js'
+import { ErrorMessages } from '@/enums/ErrorMessages.js'
 
 const MAX_RETRIES = 3
 
@@ -64,16 +66,31 @@ export class ChatMessageService extends BaseService<
     )
   }
 
+  public async rateMessage(data: RateMessageDTO, id: string, user: IUser) {
+    const { rating } = data
+    const messagesCount = await this.getCount({ id }, user.id)
+
+    if (messagesCount === 0) {
+      throw new NotFoundError(ErrorMessages.MESSAGE_NOT_FOUND)
+    }
+
+    const result = await this.edit(
+      {
+        rating,
+      },
+      { id },
+      user,
+    )
+
+    return result
+  }
+
   private async _executeEditTransaction(
     data: Partial<ChatMessageDTO>,
     criteria: IChatMessageCriteria,
     userId: Types.ObjectId,
     session: ClientSession,
   ): Promise<IChatMessage> {
-    const chatMessagesCount = await this.repository.getCount(criteria, session, userId)
-
-    if (chatMessagesCount === 0) throw new NotFoundError('Сообщения для редактирования не найдены.')
-
     const updateChatMessagesResult = await this.repository.updateManyByCriteria(
       criteria,
       data,
@@ -81,8 +98,8 @@ export class ChatMessageService extends BaseService<
       userId,
     )
 
-    if (updateChatMessagesResult.modifiedCount === 0) {
-      throw new NotFoundError('Сообщения не были обновлены.')
+    if (updateChatMessagesResult.matchedCount === 0) {
+      throw new NotFoundError('Сообщения не найдены.')
     }
 
     const chatMessages = await this.repository.findByCriteria(criteria, session, undefined, userId)
@@ -101,13 +118,8 @@ export class ChatMessageService extends BaseService<
   ): Promise<IResponseWithLog<IChatMessage[]>> {
     const chatMessages = await this.repository.createMany(
       data.map((dto) => ({
-        role: dto.role,
-        content: dto.content,
-        listType: dto.listType,
-        pendingToolCallId: dto.pendingToolCallId,
+        ...dto,
         userId: user.id,
-        chatId: dto.chatId,
-        threadId: dto.threadId,
       })),
       session,
     )

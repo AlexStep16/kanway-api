@@ -27,4 +27,14 @@ export default class ChatMessageController {
       next(error)
     }
   }
+
+  public rateMessage = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const result = await this.service.rateMessage(req.body, req.params.id, req.user!)
+
+      return res.status(200).json(new SuccessResponse(result))
+    } catch (error) {
+      next(error)
+    }
+  }
 }

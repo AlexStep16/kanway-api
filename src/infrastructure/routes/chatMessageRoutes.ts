@@ -10,6 +10,7 @@ export default (controller: ChatMessageController): Router => {
   router.use(confirmationMiddleware)
 
   router.get('/:chatId', controller.getAll)
+  router.patch('/:id/rate', controller.rateMessage)
 
   return router
 }

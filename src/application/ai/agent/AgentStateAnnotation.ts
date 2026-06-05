@@ -136,4 +136,8 @@ export const AgentStateAnnotation = Annotation.Root({
     reducer: (_, y) => y,
     default: () => false,
   }),
+  operation_log_ids: Annotation<string[]>({
+    reducer: (_, y) => y,
+    default: () => [],
+  }),
 })

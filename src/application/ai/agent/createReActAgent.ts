@@ -2,7 +2,6 @@ import { MongoDBSaver } from '@langchain/langgraph-checkpoint-mongodb'
 import { AgentDependencies } from './types/AgentDependencies.js'
 import { makeSummarizerNode } from './nodes/makeSummarizerNode.js'
 import { END, START, StateGraph } from '@langchain/langgraph'
-import { makeChatNameNode } from './nodes/makeChatNameNode.js'
 import { makeEntityManagerAgentNode } from './nodes/makeEntityManagerAgentNode.js'
 import { makeOrchestratorNode } from './nodes/makeOrchestratorNode.js'
 import { makeOrchestratorToolNode } from './nodes/makeOrchestratorToolNode.js'
@@ -21,7 +20,6 @@ export function createReActAgent(dependencies: AgentDependencies, checkpointer: 
   const entityManagerAgentNode = makeEntityManagerAgentNode(dependencies)
   const entityManagerAgentToolNode = makeEntityManagerAgentToolNode(dependencies)
   const toolHumanReviewNode = makeToolHumanReviewNode()
-  const chatNameNode = makeChatNameNode(dependencies)
 
   const summarizerNode = makeSummarizerNode(dependencies)
 
@@ -35,13 +33,11 @@ export function createReActAgent(dependencies: AgentDependencies, checkpointer: 
 
     .addNode('Summarizer', summarizerNode)
 
-    .addNode('ChatName', chatNameNode)
-
     .addEdge(START, 'Summarizer')
     .addEdge('Summarizer', 'Orchestrator')
     .addConditionalEdges('Orchestrator', routeOrchestratorOutput, {
       OrchestratorTool: 'OrchestratorTool',
-      ChatName: 'ChatName',
+      _END: END,
     })
     .addConditionalEdges('OrchestratorTool', routeOrchestratorToolOutput, {
       Orchestrator: 'Orchestrator',
@@ -62,7 +58,6 @@ export function createReActAgent(dependencies: AgentDependencies, checkpointer: 
       EntityManagerAgent: 'EntityManagerAgent',
       EntityManagerAgentTool: 'EntityManagerAgentTool',
     })
-    .addEdge('ChatName', END)
 
   return graphBuilder.compile({ checkpointer })
 }

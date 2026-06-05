@@ -39,6 +39,11 @@ import { StatusStatesEnum } from '@/enums/StatusStatesEnum.js'
 import { IChatMessage } from '@/domain/entities/IChatMessage.js'
 import { AgentWorkerDTO } from '../dtos/AgentWorkerDTO.js'
 import { ToolReviewResumePayload } from '../ai/agent/types/ToolReviewResumePayload.js'
+import { ChatPromptTemplate } from '@langchain/core/prompts'
+import { ChatNamePrompt } from '../ai/prompts/ChatNamePrompt.js'
+import { initAiModels } from '@/infrastructure/ai/initAiModels.js'
+import { UpdateChatNameDTO } from '../dtos/UpdateChatNameDTO.js'
+import { getDefaultState } from '../ai/helpers/getDefaultState.js'
 
 const MAX_RETRIES = 3
 
@@ -52,7 +57,6 @@ type SendThreadContext = {
   threadId: string
   board: ActiveEntity | null
   workspace: ActiveEntity
-  isChatNameNeeded: boolean
   chargedAudioTokens: number
   chatMessages: IChatMessage[]
 }
@@ -135,7 +139,6 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       chatId: string
       modelType: ModelsEnum
       timezone: string
-      isChatNameNeeded?: boolean
       userMessage: string
       chargedAudioTokens?: number
       statusMessageId: string
@@ -182,7 +185,6 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
         categoriesList: categoriesList.length > 0 ? categoriesList : 'No categories',
         tagsList: tagsList.length > 0 ? tagsList : 'No tags',
         timezone: data.timezone,
-        isChatNameNeeded: !!data.isChatNameNeeded,
         userMessage: data.userMessage,
         chargedAudioTokens: data.chargedAudioTokens,
 
@@ -235,7 +237,6 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       chatId: string
       modelType: ModelsEnum
       timezone: string
-      isChatNameNeeded?: boolean
       userMessage: string
       chargedAudioTokens?: number
       activeBoard: { id: string; name: string } | null
@@ -271,7 +272,6 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
         modelType: data.modelType,
         timezone: data.timezone,
         statusMessageId: statusMessage.id.toHexString(),
-        isChatNameNeeded: data.isChatNameNeeded,
         activeBoard: data.activeBoard,
         chargedAudioTokens: data.chargedAudioTokens,
         activeWorkspace: data.activeWorkspace,
@@ -280,8 +280,10 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       externalSession,
     )
 
+    const payload = getDefaultState()
+
     const jobPayload: AgentWorkerDTO = {
-      payload: {},
+      payload,
       config,
     }
 
@@ -309,7 +311,6 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
         chatId: context.chat.id.toString(),
         modelType: data.modelType || ModelsEnum.KANWAY_LITE,
         timezone: data.timezone,
-        isChatNameNeeded: context.isChatNameNeeded,
         userMessage: lastConversationMessage.content as string,
         chargedAudioTokens: context.chargedAudioTokens,
         activeBoard: context.board,
@@ -353,7 +354,6 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
         chatId: context.chat.id.toString(),
         modelType: data.modelType || ModelsEnum.KANWAY_LITE,
         timezone: data.timezone,
-        isChatNameNeeded: context.isChatNameNeeded,
         userMessage: data.message!,
         chargedAudioTokens: context.chargedAudioTokens,
         activeBoard: context.board,
@@ -374,7 +374,6 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
   public async send(data: ChatSendDTO, user: IUser, externalSession: ClientSession) {
     let chat: IChat | null = null
     let toolsWithNoDecision = 0
-    let isChatNameNeeded = false
     let chargedAudioTokens = 0
 
     const threadId = data.threadId || new Types.ObjectId().toString()
@@ -409,8 +408,6 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     )
 
     if (!data.threadId) {
-      isChatNameNeeded = true
-
       const createResult = await this.create(
         {
           name: 'Новый чат',
@@ -454,7 +451,6 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       threadId,
       board,
       workspace,
-      isChatNameNeeded,
       chargedAudioTokens,
       chatMessages,
     }
@@ -476,21 +472,45 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     return await this.getByCriteria(criteria, user.id)
   }
 
+  public async updateChatName(
+    data: UpdateChatNameDTO,
+    chatId: string,
+    user: IUser,
+  ): Promise<IChat> {
+    const { CHAT_NAME } = initAiModels()
+    const { userMessage } = data
+
+    const prompt = ChatPromptTemplate.fromMessages([
+      ['system', ChatNamePrompt],
+      ['human', userMessage],
+    ])
+
+    const chain = prompt.pipe(CHAT_NAME)
+
+    const response = await chain.invoke({})
+
+    const name = response.text.trim().replace(/^"|"$/g, '')
+
+    const updateResult = await this.edit({ name }, { id: chatId }, user)
+
+    return updateResult[0]
+  }
+
   private async _deleteLastIteration(
-    lastStepperMessageId: string,
+    lastStatusMessageId: string,
     data: { chatId: string; threadId: string },
     user: IUser,
     externalSession?: ClientSession,
   ) {
-    const lastStepperMessages = await this.chatMessageService.getByCriteria(
-      { id: lastStepperMessageId },
+    const lastStatusMessages = await this.chatMessageService.getByCriteria(
+      { id: lastStatusMessageId },
       user.id,
       externalSession,
     )
 
-    const lastStepperMessage = lastStepperMessages[0]
+    const lastStatusMessage = lastStatusMessages[0]
 
-    if (!lastStepperMessage) {
+    if (!lastStatusMessage) {
       throw new AppError('Не найдено сообщение для повторной попытки.', 400)
     }
 
@@ -498,7 +518,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       {
         chatId: data.chatId,
         createdAt: {
-          $gt: lastStepperMessage.createdAt,
+          $gt: lastStatusMessage.createdAt,
         },
       },
       user,
@@ -561,8 +581,10 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       externalSession,
     )
 
+    const payload = getDefaultState()
+
     const jobPayload: AgentWorkerDTO = {
-      payload: {},
+      payload,
       config,
       isRetry: true,
     }

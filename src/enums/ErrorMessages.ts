@@ -129,9 +129,13 @@ export enum ErrorMessages {
   OPERATION_LOGS_NOT_FOUND = 'Записи журнала операций не найдены.',
   OPERATION_LOG_NOT_FOUND = 'Запись журнала операций не найдена.',
 
+  MESSAGE_ID_INVALID = 'Неверный идентификатор сообщения.',
+  MESSAGE_NOT_FOUND = 'Сообщение не найдено.',
   MESSAGE_TYPE_INVALID = 'Неверный тип сообщения.',
   MESSAGE_TOO_SHORT = 'Сообщение должно содержать не менее 1 символа.',
   MESSAGE_TOO_LONG = 'Сообщение не должно превышать 1000 символов.',
+
+  RATING_VALUE_INVALID = 'Неверное значение рейтинга.',
 
   CHAT_ID_INVALID = 'Неверный идентификатор чата.',
   CHAT_NAME_INVALID = 'Неверное название чата.',

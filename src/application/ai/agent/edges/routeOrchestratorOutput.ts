@@ -5,5 +5,5 @@ export const routeOrchestratorOutput = (state: typeof AgentStateAnnotation.State
     return 'OrchestratorTool'
   }
 
-  return 'ChatName'
+  return '_END'
 }

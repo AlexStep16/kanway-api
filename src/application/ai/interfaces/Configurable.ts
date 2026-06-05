@@ -22,7 +22,6 @@ export interface Configurable {
   tagsList: string
   timezone: string
   userMessage: string
-  isChatNameNeeded?: boolean
 
   aiName: string
   aiConfirmationType: AiConfirmationTypeEnum

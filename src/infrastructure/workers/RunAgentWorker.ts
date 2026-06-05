@@ -150,7 +150,6 @@ export const RunAgentWorker = new Worker(
 
     const agentEventsHandler = new AgentEventsHandler(
       job,
-      dependencies.services.chatService,
       dependencies.services.chatMessageService,
       dependencies.services.operationLogService,
       configurable,
@@ -159,15 +158,33 @@ export const RunAgentWorker = new Worker(
 
     let hasExecutionError = false
     let wasCancelled = false
+    let isInterrupted = false
 
     try {
-      await agentEventsHandler.updateStatus({
-        state: StatusStatesEnum.IN_PROGRESS,
-      })
+      await agentEventsHandler.startStatus()
 
       const agent = await getAgent(dependencies)
 
-      if (!isResume) {
+      const currentState = await agent.getState(config)
+
+      if (
+        currentState.values.operation_log_ids &&
+        currentState.values.operation_log_ids.length > 0 &&
+        isRetry
+      ) {
+        await dependencies.services.operationLogService.undoOperations(
+          currentState.values.operation_log_ids,
+          configurable.user,
+        )
+
+        await agentEventsHandler.pushProgress({
+          id: crypto.randomUUID(),
+          role: CustomEvents.OPERATION,
+          data: currentState.values.operation_log_ids[0],
+        })
+      }
+
+      if (!isResume && !isRetry) {
         const updateData: Partial<typeof AgentStateAnnotation.State> = {
           messages: [new HumanMessage(configurable.userMessage)],
         }
@@ -178,15 +195,12 @@ export const RunAgentWorker = new Worker(
         await cleanupLastIteration(agent, config)
       }
 
-      const stream: any = agent.streamEvents(
-        isResume ? new Command({ resume: payload }) : payload,
-        {
-          ...config,
-          version: 'v2',
-          callbacks: [agentEventsHandler],
-          signal: controller.signal,
-        },
-      )
+      const stream = agent.streamEvents(isResume ? new Command({ resume: payload }) : payload, {
+        ...config,
+        version: 'v2',
+        callbacks: [agentEventsHandler],
+        signal: controller.signal,
+      })
 
       let accumulatedContent = ''
 
@@ -218,6 +232,18 @@ export const RunAgentWorker = new Worker(
           }
         }
 
+        if (eventType === 'on_chain_stream') {
+          const chunk = event.data.chunk
+
+          if (chunk.__interrupt__) {
+            isInterrupted = true
+
+            await agentEventsHandler.updateStatus({
+              state: StatusStatesEnum.AWAITING_CONFIRMATION,
+            })
+          }
+        }
+
         if (abortWatcher.isCancelled()) {
           throw new JobAbortedError()
         }
@@ -231,11 +257,7 @@ export const RunAgentWorker = new Worker(
         abortWatcher.isCancelled()
 
       if (wasCancelled) {
-        await agentEventsHandler.failStatus(true)
-        await agentEventsHandler.pushProgress({
-          id: crypto.randomUUID(),
-          status: 'completed',
-        })
+        await agentEventsHandler.failStatus(true, error)
 
         throw error
       }
@@ -243,54 +265,34 @@ export const RunAgentWorker = new Worker(
       console.error('Error in RunAgentWorker:', error)
       hasExecutionError = true
 
-      await agentEventsHandler.failStatus(false)
+      await agentEventsHandler.failStatus(false, error)
 
       //Sentry.captureException(error, { extra: { jobId: job.id, chatId: configurable?.chatId } })
 
-      try {
-        await agentEventsHandler.pushProgress({
-          id: crypto.randomUUID(),
-          status: 'failed',
-        })
-
-        await agentEventsHandler.createErrorMessage(error)
-      } catch (dbError) {
-        Sentry.captureException(dbError, {
-          extra: { jobId: job.id, chatId: configurable?.chatId },
-        })
-      }
-
       throw error
     } finally {
-      dependencies.services.userService.spendCredits(
-        agentEventsHandler.totalTokensUsed,
-        configurable.user.id.toString(),
-        configurable.modelType,
-      )
+      if (!hasExecutionError && !wasCancelled) {
+        dependencies.services.userService.spendCredits(
+          agentEventsHandler.totalTokensUsed,
+          configurable.user.id.toString(),
+          configurable.modelType,
+        )
+      }
 
       abortWatcher.stop()
 
-      const agent = await getAgent(dependencies)
-
-      const currentState = await agent.getState(config)
-
-      const finalMessages = currentState.values.final_messages || []
-
-      const updateData: Partial<typeof AgentStateAnnotation.State> = {
-        messages: finalMessages,
-      }
-      await agent.updateState(config, updateData)
-
-      const shouldMarkAsCompleted =
-        !agentEventsHandler.isInterrupted && !hasExecutionError && !wasCancelled
+      const shouldMarkAsCompleted = !isInterrupted && !hasExecutionError && !wasCancelled
 
       if (shouldMarkAsCompleted) {
         await agentEventsHandler.completeStatus()
-        await agentEventsHandler.pushProgress({
-          id: crypto.randomUUID(),
-          status: 'completed',
-        })
       }
+
+      await agentEventsHandler.updateStatusMessage()
+
+      await agentEventsHandler.pushProgress({
+        id: crypto.randomUUID(),
+        status: 'completed',
+      })
     }
   },
   {

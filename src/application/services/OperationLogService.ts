@@ -157,6 +157,8 @@ export class OperationLogService extends BaseService<
     }
 
     for (const log of logs) {
+      if (log.isUndone) continue
+
       const result = await this._recursiveRevert(log, user, session, isDryRun)
 
       results.push(...result)

@@ -6,6 +6,7 @@ import { ChatSendDTOSchema } from '@dtos/ChatSendDTO.js'
 import { aiLimiter, patchEntitiesLimiter } from '@/limiters.js'
 import { ChatEditDTOSchema } from '@/application/dtos/ChatEditDTO.js'
 import { confirmationMiddleware } from '../auth/confirmationMiddleware.js'
+import { UpdateChatNameDTOSchema } from '@/application/dtos/UpdateChatNameDTO.js'
 
 export default (controller: ChatController): Router => {
   const router = express.Router()
@@ -28,6 +29,12 @@ export default (controller: ChatController): Router => {
     patchEntitiesLimiter,
     validationMiddleware(ChatEditDTOSchema),
     controller.update,
+  )
+  router.patch(
+    '/:id/update-name',
+    aiLimiter,
+    validationMiddleware(UpdateChatNameDTOSchema),
+    controller.updateChatName.bind(controller),
   )
   router.get('/stream/:jobId/status', controller.streamStatus.bind(controller))
   router.post('/tool/approve', aiLimiter, controller.approveTool.bind(controller))

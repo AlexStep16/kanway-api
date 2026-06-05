@@ -11,7 +11,6 @@ import { IChatMessageCriteria } from '@/application/interfaces/criterias/IChatMe
 import { getFriendlyErrorMessage } from '@/utils/getFriendlyErrorMessage.js'
 import { OperationLogService } from '@/application/services/OperationLogService.js'
 import { getCreditsUsed } from '@/utils/getCreditsUsed.js'
-import { ChatService } from '@/application/services/ChatService.js'
 import { Redis } from 'ioredis'
 import { ModelsEnum } from '@/domain/enums/ModelsEnum.js'
 import { StatusStatesEnum } from '@/enums/StatusStatesEnum.js'
@@ -21,7 +20,6 @@ import { StatusLog } from '@/application/types/StatusLog.js'
 export class AgentEventsHandler extends BaseCallbackHandler {
   name = 'AgentEventsHandler'
 
-  private chatService: ChatService
   private chatMessageService: ChatMessageService
   private operationLogService: OperationLogService
   private job: Job
@@ -39,7 +37,6 @@ export class AgentEventsHandler extends BaseCallbackHandler {
 
   constructor(
     job: Job,
-    chatService: ChatService,
     chatMessageService: ChatMessageService,
     operationLogService: OperationLogService,
     configurable: Configurable,
@@ -47,7 +44,6 @@ export class AgentEventsHandler extends BaseCallbackHandler {
   ) {
     super()
     this.job = job
-    this.chatService = chatService
     this.chatMessageService = chatMessageService
     this.operationLogService = operationLogService
     this.configurable = configurable
@@ -101,45 +97,16 @@ export class AgentEventsHandler extends BaseCallbackHandler {
     })
   }
 
-  async createErrorMessage(error: any) {
-    const userFriendlyMessage = getFriendlyErrorMessage(error)
-
-    const errorMsgDTO: ChatMessageDTO = {
-      role: 'error',
-      content: `${userFriendlyMessage}`,
-      threadId: this.configurable?.thread_id,
-      chatId: new Types.ObjectId(this.configurable?.chatId),
-    }
-
-    const savedMsg = await this.chatMessageService.create(errorMsgDTO, this.configurable?.user)
-
-    await this.pushProgress({
-      id: crypto.randomUUID(),
-      role: CustomEvents.NEW_MESSAGE,
-      data: {
-        ...savedMsg.data[0],
-        isError: true,
-      },
-    })
-  }
-
   async completeStatus() {
     this.status.state = StatusStatesEnum.COMPLETED
     this.status.statusText = 'Выполнение завершено'
-
-    this.status.logs.forEach((log) => {
-      log.state = StatusStatesEnum.COMPLETED
-    })
 
     await this.updateStatusMessage()
   }
 
   async updateStatusMessage() {
-    const creditsUsed = getCreditsUsed(this.totalTokensUsed, this.modelType)
-
     const dto: Partial<ChatMessageDTO> = {
       content: this.status,
-      creditsUsed: creditsUsed + this.chargedAudioTokens + (this.statusMessage.creditsUsed || 0),
     }
 
     await this.editChatMessage(
@@ -151,15 +118,23 @@ export class AgentEventsHandler extends BaseCallbackHandler {
     )
   }
 
-  async failStatus(isCancelled = false) {
+  async failStatus(isCancelled = false, error: any) {
+    const status = isCancelled ? StatusStatesEnum.CANCELLED : StatusStatesEnum.FAILED
+
     if (this.status.state === StatusStatesEnum.IN_PROGRESS) {
-      this.status.state = isCancelled ? StatusStatesEnum.CANCELLED : StatusStatesEnum.FAILED
+      this.status.state = status
     }
+
     this.status.logs.forEach((log) => {
       if (log.state === StatusStatesEnum.IN_PROGRESS) {
-        log.state = isCancelled ? StatusStatesEnum.CANCELLED : StatusStatesEnum.FAILED
+        log.state = status
       }
     })
+
+    if (!isCancelled) {
+      this.status.statusText = 'Произошла ошибка при выполнении'
+      this.status.error = getFriendlyErrorMessage(error)
+    }
 
     await this.updateStatusMessage()
   }
@@ -167,8 +142,14 @@ export class AgentEventsHandler extends BaseCallbackHandler {
   async updateAssistantMessage(dto: Partial<ChatMessageDTO>) {
     if (!this.aiMessage) return
 
+    const creditsUsed = getCreditsUsed(this.totalTokensUsed, this.modelType)
+
     await this.editChatMessage(
-      dto,
+      {
+        ...dto,
+
+        creditsUsed: creditsUsed + this.chargedAudioTokens + (this.statusMessage.creditsUsed || 0),
+      },
       {
         id: this.aiMessage.id.toString(),
       },
@@ -180,6 +161,14 @@ export class AgentEventsHandler extends BaseCallbackHandler {
     Object.assign(this.status, data)
 
     await this.updateProgressStatus()
+  }
+
+  async startStatus() {
+    await this.updateStatus({
+      state: StatusStatesEnum.IN_PROGRESS,
+      logs: this.status.logs.filter(() => false),
+      error: '',
+    })
   }
 
   async updateProgressStatus() {
@@ -214,25 +203,6 @@ export class AgentEventsHandler extends BaseCallbackHandler {
         this.totalTokensUsed += data || 0
         return
 
-      case CustomEvents.CHAT_UPDATED: {
-        const chatEditResult = await this.chatService.edit(
-          {
-            name: data.name,
-          },
-          {
-            id: this.configurable.chatId,
-          },
-          this.configurable.user,
-        )
-
-        await this.pushProgress({
-          id: crypto.randomUUID(),
-          role: CustomEvents.CHAT_UPDATED,
-          data: chatEditResult[0],
-        })
-        return
-      }
-
       case CustomEvents.FINAL_RESPONSE:
         await this.updateAssistantMessage({
           content: data.text,
@@ -241,13 +211,6 @@ export class AgentEventsHandler extends BaseCallbackHandler {
 
       case CustomEvents.STATUS_ADD_LOG:
         await this.addLog(data)
-        return
-
-      case CustomEvents.INTERRUPTED:
-        this.isInterrupted = true
-        await this.updateStatus({
-          state: StatusStatesEnum.AWAITING_CONFIRMATION,
-        })
         return
 
       case CustomEvents.STATUS_UPDATE_LOG:

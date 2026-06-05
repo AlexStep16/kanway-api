@@ -160,6 +160,16 @@ export default class ChatController {
     }
   }
 
+  public async updateChatName(req: Request, res: Response, next: NextFunction) {
+    try {
+      const result = await this.service.updateChatName(req.body, req.params.id, req.user!)
+
+      return res.status(200).json(new SuccessResponse(result))
+    } catch (error) {
+      next(error)
+    }
+  }
+
   public async retry(req: Request, res: Response, next: NextFunction) {
     try {
       const result = await this.service.retry(req.body, req.user!)
