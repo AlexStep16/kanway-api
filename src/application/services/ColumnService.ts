@@ -325,7 +325,7 @@ export class ColumnService extends BaseService<
     )
 
     if (columnsToUpdate.length === 0)
-      throw new NotFoundError('Категории для редактирования не найдены.')
+      throw new NotFoundError('Колонки для редактирования не найдены.')
 
     const columnsBoardMap = await this._getColumnsBoardMap([data], user, session)
 
@@ -345,7 +345,7 @@ export class ColumnService extends BaseService<
     )
 
     if (updateManyResult.modifiedCount === 0)
-      throw new AppError('Не удалось обновить категории.', 500)
+      throw new AppError('Не удалось обновить колонки.', 500)
 
     const sideEffects: Promise<any>[] = []
 
@@ -445,7 +445,7 @@ export class ColumnService extends BaseService<
     )
 
     if (existingColumns.length === 0) {
-      throw new NotFoundError('Категории для обновления не найдены.')
+      throw new NotFoundError('Колонки для обновления не найдены.')
     }
 
     const existingMap = new Map(existingColumns.map((c) => [c.id.toString(), c]))
@@ -517,7 +517,7 @@ export class ColumnService extends BaseService<
     const updatedColumnsResult = await this.repository.bulkUpdate(columnPayloads, user.id, session)
 
     if (!updatedColumnsResult || updatedColumnsResult.modifiedCount === 0) {
-      throw new AppError('Не удалось обновить категории.', 500)
+      throw new AppError('Не удалось обновить колонки.', 500)
     }
 
     const sideEffects: Promise<any>[] = []
@@ -695,7 +695,7 @@ export class ColumnService extends BaseService<
     )
 
     if (columnsToDelete.length === 0) {
-      throw new NotFoundError('Категории для удаления не найдены.')
+      throw new NotFoundError('Колонки для удаления не найдены.')
     }
 
     const status = isDryRun ? OperationLogStatusesEnum.PENDING : OperationLogStatusesEnum.SUCCESS
@@ -785,7 +785,7 @@ export class ColumnService extends BaseService<
 
     const columnsCriteria = { columnIds: columnsToProcess.map((b) => b.id.toString()) }
 
-    if (columnsToProcess.length === 0) throw new NotFoundError('Категории не найдены.')
+    if (columnsToProcess.length === 0) throw new NotFoundError('Колонки не найдены.')
 
     const status = isDryRun ? OperationLogStatusesEnum.PENDING : OperationLogStatusesEnum.SUCCESS
 
@@ -894,8 +894,7 @@ export class ColumnService extends BaseService<
     const boardIds = columnsToClone.map((c) => c.board.toString())
     await this._checkColumnsLimitByBoards(boardIds, user, session)
 
-    if (columnsToClone.length === 0)
-      throw new NotFoundError('Категории для клонирования не найдены.')
+    if (columnsToClone.length === 0) throw new NotFoundError('Колонки для клонирования не найдены.')
 
     const columnsGrouppedByBoard: Map<string, (IColumn & { embeddings: number[] })[]> = new Map()
     columnsToClone.forEach((column) => {
@@ -1070,7 +1069,7 @@ export class ColumnService extends BaseService<
     const beforeColumn = beforeId ? columns.find((t) => t.id.toString() === beforeId) : null
     const afterColumn = afterId ? columns.find((t) => t.id.toString() === afterId) : null
 
-    if (!column) throw new NotFoundError('Категория не найдена.')
+    if (!column) throw new NotFoundError('Колонка не найдена.')
 
     let newRank: LexoRank
 
@@ -1182,11 +1181,11 @@ export class ColumnService extends BaseService<
 
     const uniqueColumnIds = [...new Set(ids)]
     if (uniqueColumnIds.length === 0) {
-      throw new NotFoundError('Категории не найдены.')
+      throw new NotFoundError('Колонки не найдены.')
     }
 
     if (toStart && toEnd) {
-      throw new AppError('Нельзя переместить категории одновременно в начало и в конец.', 400)
+      throw new AppError('Нельзя переместить колонки одновременно в начало и в конец.', 400)
     }
 
     if ((toStart || toEnd) && (beforeColumnId || afterColumnId)) {
@@ -1197,11 +1196,11 @@ export class ColumnService extends BaseService<
     }
 
     if (beforeColumnId && uniqueColumnIds.includes(beforeColumnId)) {
-      throw new AppError('beforeColumnId не может быть среди перемещаемых категорий.', 400)
+      throw new AppError('beforeColumnId не может быть среди перемещаемых колонок.', 400)
     }
 
     if (afterColumnId && uniqueColumnIds.includes(afterColumnId)) {
-      throw new AppError('afterColumnId не может быть среди перемещаемых категорий.', 400)
+      throw new AppError('afterColumnId не может быть среди перемещаемых колонок.', 400)
     }
 
     const relatedColumnIds = [
@@ -1219,7 +1218,7 @@ export class ColumnService extends BaseService<
       .sort((a, b) => a.rank.localeCompare(b.rank))
 
     if (columnsToMove.length !== uniqueColumnIds.length) {
-      throw new NotFoundError('Категории не найдены.')
+      throw new NotFoundError('Колонки не найдены.')
     }
 
     const beforeColumn = beforeColumnId
@@ -1230,11 +1229,11 @@ export class ColumnService extends BaseService<
       : null
 
     if (beforeColumnId && !beforeColumn) {
-      throw new NotFoundError('Опорная категория beforeColumnId не найдена.')
+      throw new NotFoundError('Опорная колонка beforeColumnId не найдена.')
     }
 
     if (afterColumnId && !afterColumn) {
-      throw new NotFoundError('Опорная категория afterColumnId не найдена.')
+      throw new NotFoundError('Опорная колонка afterColumnId не найдена.')
     }
 
     const moveWithinEachCurrentBoard =
@@ -1275,7 +1274,7 @@ export class ColumnService extends BaseService<
 
       if (hasDifferentBoard) {
         throw new AppError(
-          'Для массового перемещения без newBoardId все категории должны быть из одной доски.',
+          'Для массового перемещения без newBoardId все колонки должны быть из одной доски.',
           400,
         )
       }
@@ -1401,7 +1400,7 @@ export class ColumnService extends BaseService<
       )
 
       if (!updateResult || updateResult.modifiedCount === 0) {
-        throw new AppError('Не удалось переместить категории.', 500)
+        throw new AppError('Не удалось переместить колонки.', 500)
       }
 
       const log = await this.operationLogService.create(
@@ -1562,7 +1561,7 @@ export class ColumnService extends BaseService<
     )
 
     if (!updateResult || updateResult.modifiedCount === 0) {
-      throw new AppError('Не удалось переместить категории.', 500)
+      throw new AppError('Не удалось переместить колонки.', 500)
     }
 
     const log = await this.operationLogService.create(
@@ -1674,7 +1673,7 @@ export class ColumnService extends BaseService<
       const boardData = boardIdsMap.get(column.board.toString())
 
       if (!boardData) {
-        throw new AppError('Ошибка при клонировании категорий: не найдена целевая доска.', 400)
+        throw new AppError('Ошибка при клонировании колонок: не найдена целевая доска.', 400)
       }
 
       return {

@@ -472,7 +472,7 @@ export class TaskToolsExecutorService {
       )
 
       filters.push({
-        text: 'Новая категория',
+        text: 'Новая колонка',
         value: columns[0]?.name ?? payload.newColumnId,
       })
     }

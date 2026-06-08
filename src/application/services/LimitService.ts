@@ -93,7 +93,7 @@ export class LimitService {
     )
 
     if (columnsCount >= maxColumns) {
-      throw new AppError(`Вы достигли лимита по количеству категорий - ${maxColumns}.`, 403)
+      throw new AppError(`Вы достигли лимита по количеству колонок - ${maxColumns}.`, 403)
     }
   }
 
@@ -119,7 +119,7 @@ export class LimitService {
 
       if (currentInDb + requestedToAdd > MAX_COLUMNS_PER_BOARD) {
         throw new AppError(
-          `Вы достигли лимита по количеству категорий - ${MAX_COLUMNS_PER_BOARD} в одной из выбранных досок.`,
+          `Вы достигли лимита по количеству колонок - ${MAX_COLUMNS_PER_BOARD} в одной из выбранных досок.`,
           403,
         )
       }

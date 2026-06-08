@@ -445,14 +445,14 @@ export class ColumnToolsExecutorService {
 
     if (payload.beforeColumnId) {
       filters.push({
-        text: 'Перед категорией',
+        text: 'Перед колонкой',
         value: anchorColumnNamesById.get(payload.beforeColumnId) ?? payload.beforeColumnId,
       })
     }
 
     if (payload.afterColumnId) {
       filters.push({
-        text: 'После категории',
+        text: 'После колонки',
         value: anchorColumnNamesById.get(payload.afterColumnId) ?? payload.afterColumnId,
       })
     }

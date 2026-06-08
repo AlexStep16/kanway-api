@@ -16,7 +16,7 @@ export function getSearchHumanReadableFilter(filter: SearchFilter): ITextValue |
   if (field === 'due_time') return getTimeHumanFilter(operator)
   if (field === 'tags') return getTagsHumanFilter(operator)
   if (field === 'tasks_count') return getNumberHumanFilter('Количество задач', operator)
-  if (field === 'columns_count') return getNumberHumanFilter('Количество категорий', operator)
+  if (field === 'columns_count') return getNumberHumanFilter('Количество колонок', operator)
   if (field === 'boards_count') return getNumberHumanFilter('Количество досок', operator)
   if (field === 'is_completed') return getBooleanHumanFilter(operator, 'Выполнено', 'Не выполнено')
   if (field === 'is_deleted') return getBooleanHumanFilter(operator, 'В архиве', 'Не в архиве')

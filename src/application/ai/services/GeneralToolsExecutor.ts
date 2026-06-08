@@ -121,7 +121,7 @@ export class GeneralToolsExecutor {
       case 'tasks':
         return 'задач'
       case 'columns':
-        return 'категорий'
+        return 'колонок'
       case 'boards':
         return 'досок'
       case 'workspaces':

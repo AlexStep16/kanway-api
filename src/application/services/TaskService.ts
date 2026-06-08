@@ -1109,7 +1109,7 @@ export class TaskService extends BaseService<
 
     if (newColumnId) {
       const [column] = await this.columnService.getByCriteria({ id: newColumnId }, user.id, session)
-      if (!column) throw new NotFoundError('Категория не найдена.')
+      if (!column) throw new NotFoundError('Колонка не найдена.')
 
       targetColumn = column
       targetColumnId = column.id.toString()
@@ -1117,7 +1117,7 @@ export class TaskService extends BaseService<
       const anchorTask = beforeTask ?? afterTask
 
       if (!anchorTask) {
-        throw new AppError('Не удалось определить целевую категорию для перемещения.', 400)
+        throw new AppError('Не удалось определить целевую колонку для перемещения.', 400)
       }
 
       const [column] = await this.columnService.getByCriteria(
@@ -1126,7 +1126,7 @@ export class TaskService extends BaseService<
         session,
       )
 
-      if (!column) throw new NotFoundError('Категория не найдена.')
+      if (!column) throw new NotFoundError('Колонка не найдена.')
 
       targetColumn = column
       targetColumnId = column.id.toString()
@@ -1139,7 +1139,7 @@ export class TaskService extends BaseService<
 
       if (hasDifferentColumn) {
         throw new AppError(
-          'Для массового перемещения без newColumnId все задачи должны быть из одной категории.',
+          'Для массового перемещения без newColumnId все задачи должны быть из одной колонки.',
           400,
         )
       }
@@ -1148,11 +1148,11 @@ export class TaskService extends BaseService<
     }
 
     if (beforeTask && beforeTask.column.toString() !== targetColumnId) {
-      throw new AppError('beforeTaskId должен принадлежать целевой категории.', 400)
+      throw new AppError('beforeTaskId должен принадлежать целевой колонки.', 400)
     }
 
     if (afterTask && afterTask.column.toString() !== targetColumnId) {
-      throw new AppError('afterTaskId должен принадлежать целевой категории.', 400)
+      throw new AppError('afterTaskId должен принадлежать целевой колонки.', 400)
     }
 
     let newRanks: string[] = []
@@ -1293,7 +1293,7 @@ export class TaskService extends BaseService<
     }
 
     if (targetColumnId === null) {
-      throw new AppError('Не удалось определить целевую категорию для перемещения.', 400)
+      throw new AppError('Не удалось определить целевую колонку для перемещения.', 400)
     }
 
     if (toStart) {
@@ -1506,7 +1506,7 @@ export class TaskService extends BaseService<
 
     if (newColumnId) {
       const [column] = await this.columnService.getByCriteria({ id: newColumnId }, user.id, session)
-      if (!column) throw new NotFoundError('Категория не найдена.')
+      if (!column) throw new NotFoundError('Колонка не найдена.')
 
       updateData.column = column.id
       updateData.board = column.board.id
@@ -1633,7 +1633,7 @@ export class TaskService extends BaseService<
       const columnData = columnIdsMap.get(task.column.toString())
 
       if (!columnData) {
-        throw new NotFoundError('Категория для клонирования не найдена.')
+        throw new NotFoundError('Колонка для клонирования не найдена.')
       }
 
       return {
@@ -1922,7 +1922,7 @@ export class TaskService extends BaseService<
       const columnData = tasksColumnMap.get(data.columnId)
 
       if (!columnData) {
-        throw new NotFoundError('Категория не найдена.')
+        throw new NotFoundError('Колонка не найдена.')
       }
 
       taskPayload.column = columnData.id

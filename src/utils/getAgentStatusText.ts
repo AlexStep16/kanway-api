@@ -7,7 +7,7 @@ export function getAgentStatusText(agent: AgentsEnum) {
     case AgentsEnum.TASK_MANAGER:
       return 'Работаю с задачами'
     case AgentsEnum.COLUMN_MANAGER:
-      return 'Работаю с категориями'
+      return 'Работаю с колонками'
     case AgentsEnum.BOARD_MANAGER:
       return 'Работаю с досками'
     case AgentsEnum.WORKSPACE_MANAGER:
