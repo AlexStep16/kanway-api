@@ -12,10 +12,7 @@ export const SettingDTOSchema = z.object({
         ? { message: ErrorMessages.SETTING_AI_CONFIRMATION_TYPE_REQUIRED }
         : { message: 'Неверное значение для типа подтверждения ИИ. Допустимы: 0, 1, 2' },
   }),
-  aiDefaultCategory: z
-    .string()
-    .max(100, ErrorMessages.SETTING_AI_DEFAULT_CATEGORY_TOO_LONG)
-    .optional(),
+  aiDefaultColumn: z.string().max(100, ErrorMessages.SETTING_AI_DEFAULT_COLUMN_TOO_LONG).optional(),
   aiDefaultBoard: z.string().max(100, ErrorMessages.SETTING_AI_DEFAULT_BOARD_TOO_LONG).optional(),
 })
 

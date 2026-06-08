@@ -1,107 +1,123 @@
 import { tool } from '@langchain/core/tools'
 import { AgentDependencies } from '../agent/types/AgentDependencies.js'
 import { RunnableConfig } from '@langchain/core/runnables'
-import { SearchCategoriesScheme } from './schemes/CategoryManager/SearchCategoriesScheme.js'
-import { UpdateCategoriesScheme } from './schemes/CategoryManager/UpdateCategoriesScheme.js'
-import { DeleteArchiveCategoriesScheme } from './schemes/CategoryManager/DeleteArchiveCategoriesScheme.js'
-import { CloneCategoriesScheme } from './schemes/CategoryManager/CloneCategoriesScheme.js'
-import { RecoverCategoriesScheme } from './schemes/CategoryManager/RecoverCategoriesScheme.js'
-import { MoveCategoriesScheme } from './schemes/CategoryManager/MoveCategoriesScheme.js'
+import { SearchColumnsScheme } from './schemes/ColumnManager/SearchColumnsScheme.js'
+import { UpdateColumnsScheme } from './schemes/ColumnManager/UpdateColumnsScheme.js'
+import { DeleteArchiveColumnsScheme } from './schemes/ColumnManager/DeleteArchiveColumnsScheme.js'
+import { CloneColumnsScheme } from './schemes/ColumnManager/CloneColumnsScheme.js'
+import { RecoverColumnsScheme } from './schemes/ColumnManager/RecoverColumnsScheme.js'
+import { MoveColumnsScheme } from './schemes/ColumnManager/MoveColumnsScheme.js'
+import { CreateColumnsScheme } from './schemes/ColumnManager/CreateColumnsScheme.js'
 
-export function initCategoryManagerTools(
+export function initColumnManagerTools(
   dependencies: AgentDependencies,
   runnableConfig: RunnableConfig,
 ) {
-  const searchCategories = tool(
+  const searchColumns = tool(
     async (data, config) => {
-      return await dependencies.services.categoryToolsExecutorService.searchCategories(
+      return await dependencies.services.columnToolsExecutorService.searchColumns(
         data,
         runnableConfig,
         config.context,
       )
     },
     {
-      name: 'search_categories',
-      schema: SearchCategoriesScheme,
+      name: 'search_columns',
+      schema: SearchColumnsScheme,
     },
   )
 
-  const updateCategories = tool(
+  const createColumns = tool(
     async (data, config) => {
-      return await dependencies.services.categoryToolsExecutorService.updateCategories(
+      return await dependencies.services.columnToolsExecutorService.createColumns(
         data,
         runnableConfig,
         config.context,
       )
     },
     {
-      name: 'update_categories',
-      schema: UpdateCategoriesScheme,
+      name: 'create_columns',
+      schema: CreateColumnsScheme,
     },
   )
 
-  const deleteArchiveCategories = tool(
+  const updateColumns = tool(
     async (data, config) => {
-      return await dependencies.services.categoryToolsExecutorService.deleteArchiveCategories(
+      return await dependencies.services.columnToolsExecutorService.updateColumns(
         data,
         runnableConfig,
         config.context,
       )
     },
     {
-      name: 'delete_archive_categories',
-      schema: DeleteArchiveCategoriesScheme,
+      name: 'update_columns',
+      schema: UpdateColumnsScheme,
     },
   )
 
-  const cloneCategories = tool(
+  const deleteArchiveColumns = tool(
     async (data, config) => {
-      return await dependencies.services.categoryToolsExecutorService.cloneCategories(
+      return await dependencies.services.columnToolsExecutorService.deleteArchiveColumns(
         data,
         runnableConfig,
         config.context,
       )
     },
     {
-      name: 'clone_categories',
-      schema: CloneCategoriesScheme,
+      name: 'delete_archive_columns',
+      schema: DeleteArchiveColumnsScheme,
     },
   )
 
-  const recoverCategories = tool(
+  const cloneColumns = tool(
     async (data, config) => {
-      return await dependencies.services.categoryToolsExecutorService.recoverCategories(
+      return await dependencies.services.columnToolsExecutorService.cloneColumns(
         data,
         runnableConfig,
         config.context,
       )
     },
     {
-      name: 'recover_categories',
-      schema: RecoverCategoriesScheme,
+      name: 'clone_columns',
+      schema: CloneColumnsScheme,
     },
   )
 
-  const moveCategories = tool(
+  const recoverColumns = tool(
     async (data, config) => {
-      return await dependencies.services.categoryToolsExecutorService.moveCategories(
+      return await dependencies.services.columnToolsExecutorService.recoverColumns(
         data,
         runnableConfig,
         config.context,
       )
     },
     {
-      name: 'move_categories',
-      schema: MoveCategoriesScheme,
+      name: 'recover_columns',
+      schema: RecoverColumnsScheme,
+    },
+  )
+
+  const moveColumns = tool(
+    async (data, config) => {
+      return await dependencies.services.columnToolsExecutorService.moveColumns(
+        data,
+        runnableConfig,
+        config.context,
+      )
+    },
+    {
+      name: 'move_columns',
+      schema: MoveColumnsScheme,
     },
   )
 
   return [
-    searchCategories,
-    updateCategories,
-    deleteArchiveCategories,
-    cloneCategories,
-    recoverCategories,
-    moveCategories,
+    searchColumns,
+    createColumns,
+    updateColumns,
+    deleteArchiveColumns,
+    cloneColumns,
+    recoverColumns,
+    moveColumns,
   ]
 }

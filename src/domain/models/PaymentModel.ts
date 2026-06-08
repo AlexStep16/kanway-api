@@ -22,7 +22,7 @@ export const PaymentSchema = new Schema<IPaymentRaw>(
       type: String,
       required: true,
     },
-    category: {
+    column: {
       type: String,
       enum: PaymentTypeEnum,
       required: true,

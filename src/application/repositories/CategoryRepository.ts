@@ -1,26 +1,23 @@
-import { ICategoryRaw } from '@entities/ICategoryRaw.js'
-import CategoryModel from '@models/CategoryModel.js'
-import { ICategoryCriteria } from '@criterias/ICategoryCriteria.js'
+import { IColumnRaw } from '@entities/IColumnRaw.js'
+import ColumnModel from '@models/ColumnModel.js'
+import { IColumnCriteria } from '@criterias/IColumnCriteria.js'
 import { FilterQuery, Types } from 'mongoose'
 import { BaseRepository } from '@repositories/BaseRepository.js'
-import { ICategory } from '@entities/ICategory.js'
-import { ICategoryCreatePayload } from '@interfaces/ICategoryCreatePayload.js'
+import { IColumn } from '@entities/IColumn.js'
+import { IColumnCreatePayload } from '@interfaces/IColumnCreatePayload.js'
 
-export default class CategoryRepository extends BaseRepository<
-  ICategoryRaw,
-  ICategory,
-  ICategoryCriteria,
-  ICategoryCreatePayload
+export default class ColumnRepository extends BaseRepository<
+  IColumnRaw,
+  IColumn,
+  IColumnCriteria,
+  IColumnCreatePayload
 > {
   constructor() {
-    super(CategoryModel)
+    super(ColumnModel)
   }
 
-  public buildFilter(
-    criteria: ICategoryCriteria,
-    userId?: Types.ObjectId,
-  ): FilterQuery<ICategoryRaw> {
-    const filter: FilterQuery<ICategoryRaw> = {}
+  public buildFilter(criteria: IColumnCriteria, userId?: Types.ObjectId): FilterQuery<IColumnRaw> {
+    const filter: FilterQuery<IColumnRaw> = {}
 
     if (userId) {
       filter.user_id = userId

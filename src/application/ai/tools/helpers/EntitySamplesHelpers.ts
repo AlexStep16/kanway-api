@@ -20,7 +20,7 @@ export interface IEntitySample {
   name?: string
   workspace?: IParentEntity
   board?: IParentEntity
-  category?: IParentEntity
+  column?: IParentEntity
   dueDate?: string
   dueHours?: number
   dueMinutes?: number
@@ -161,8 +161,8 @@ const buildEntitySampleItem = (
     sample.board = entity.board as IParentEntity
   }
 
-  if ('category' in entity) {
-    sample.category = entity.category as IParentEntity
+  if ('column' in entity) {
+    sample.column = entity.column as IParentEntity
   }
 
   if (entityType === EntityTypesEnum.TASK) {

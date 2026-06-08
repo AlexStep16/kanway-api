@@ -1,4 +1,5 @@
 import { ICloneEntitiesContent } from '../interfaces/statuses/content/ICloneEntitiesContent.js'
+import { ICreateEntitiesContent } from '../interfaces/statuses/content/ICreateEntitiesContent.js'
 import { IDeleteArchiveEntitiesContent } from '../interfaces/statuses/content/IDeleteArchiveEntitiesContent.js'
 import { IMoveEntitiesContent } from '../interfaces/statuses/content/IMoveEntitiesContent.js'
 import { IRecoverEntitiesContent } from '../interfaces/statuses/content/IRecoverEntitiesContent.js'
@@ -8,20 +9,23 @@ import { IUpdateEntitiesContent } from '../interfaces/statuses/content/IUpdateEn
 
 export type StatusToolContentMap = {
   search_tasks: ISearchEntitiesContent
+  create_tasks: ICreateEntitiesContent
   update_tasks: IUpdateEntitiesContent
   delete_archive_tasks: IDeleteArchiveEntitiesContent
   clone_tasks: ICloneEntitiesContent
   recover_tasks: IRecoverEntitiesContent
   move_tasks: IMoveEntitiesContent
 
-  search_categories: ISearchEntitiesContent
-  update_categories: IUpdateEntitiesContent
-  delete_archive_categories: IDeleteArchiveEntitiesContent
-  clone_categories: ICloneEntitiesContent
-  recover_categories: IRecoverEntitiesContent
-  move_categories: IMoveEntitiesContent
+  search_columns: ISearchEntitiesContent
+  create_columns: ICreateEntitiesContent
+  update_columns: IUpdateEntitiesContent
+  delete_archive_columns: IDeleteArchiveEntitiesContent
+  clone_columns: ICloneEntitiesContent
+  recover_columns: IRecoverEntitiesContent
+  move_columns: IMoveEntitiesContent
 
   search_boards: ISearchEntitiesContent
+  create_boards: ICreateEntitiesContent
   update_boards: IUpdateEntitiesContent
   delete_archive_boards: IDeleteArchiveEntitiesContent
   clone_boards: ICloneEntitiesContent
@@ -29,6 +33,7 @@ export type StatusToolContentMap = {
   move_boards: IMoveEntitiesContent
 
   search_workspaces: ISearchEntitiesContent
+  create_workspaces: ICreateEntitiesContent
   update_workspaces: IUpdateEntitiesContent
   delete_archive_workspaces: IDeleteArchiveEntitiesContent
   clone_workspaces: ICloneEntitiesContent

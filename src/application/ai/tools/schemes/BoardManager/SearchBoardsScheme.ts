@@ -14,13 +14,13 @@ export const SearchBoardsScheme = z.object({
             'is_favorite',
             'workspace_id',
             'workspace_selection_id',
-            'categories_count',
+            'columns_count',
             'tasks_count',
             'created_at',
             'updated_at',
           ])
           .describe(
-            'The category field to search (e.g. "name", "is_deleted", "board_id"). created_at and updated_at are ISO 8601 datetime strings.',
+            'The column field to search (e.g. "name", "is_deleted", "board_id"). created_at and updated_at are ISO 8601 datetime strings.',
           ),
 
         eq: FilterValueSchema.optional().describe('Equals: Exact match.'),

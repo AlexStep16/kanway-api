@@ -17,7 +17,7 @@ export interface Configurable {
   }
   modelType: ModelsEnum
   currentDate: string
-  categoriesList: string
+  columnsList: string
   chargedAudioTokens?: number
   tagsList: string
   timezone: string
@@ -25,7 +25,7 @@ export interface Configurable {
 
   aiName: string
   aiConfirmationType: AiConfirmationTypeEnum
-  defaultCategoryName: string
+  defaultColumnName: string
   defaultBoardName: string
   statusMessageId: string
 }

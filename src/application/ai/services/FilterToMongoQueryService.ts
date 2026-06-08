@@ -1,5 +1,5 @@
 import { BoardService } from '@/application/services/BoardService.js'
-import { CategoryService } from '@/application/services/CategoryService.js'
+import { ColumnService } from '@/application/services/ColumnService.js'
 import { TaskService } from '@/application/services/TaskService.js'
 import { WorkspaceService } from '@/application/services/WorkspaceService.js'
 import { FilterQuery, Types } from 'mongoose'
@@ -13,7 +13,7 @@ type ColorFilterValue = {
   tone?: 'light' | 'medium' | 'dark'
 }
 
-type SearchEntityType = 'task' | 'category' | 'board' | 'workspace'
+type SearchEntityType = 'task' | 'column' | 'board' | 'workspace'
 
 type PrepareOptions = {
   entityType?: SearchEntityType
@@ -21,20 +21,20 @@ type PrepareOptions = {
 
 export class FilterToMongoQueryService {
   protected taskService: TaskService
-  protected categoryService: CategoryService
+  protected columnService: ColumnService
   protected boardService: BoardService
   protected workspaceService: WorkspaceService
   protected selectionService: SelectionService
 
   constructor(
     taskService: TaskService,
-    categoryService: CategoryService,
+    columnService: ColumnService,
     boardService: BoardService,
     workspaceService: WorkspaceService,
     selectionService: SelectionService,
   ) {
     this.taskService = taskService
-    this.categoryService = categoryService
+    this.columnService = columnService
     this.boardService = boardService
     this.workspaceService = workspaceService
     this.selectionService = selectionService
@@ -255,7 +255,7 @@ export class FilterToMongoQueryService {
   }
 
   private _isEntityCountMatch(
-    field: 'tasks_count' | 'categories_count' | 'boards_count',
+    field: 'tasks_count' | 'columns_count' | 'boards_count',
     count: number,
     operator: SearchFilterOperator,
   ): boolean {
@@ -304,23 +304,23 @@ export class FilterToMongoQueryService {
     )
   }
 
-  private async _getCategoryIdsByTasksCount(
+  private async _getColumnIdsByTasksCount(
     tasksCountOperator: SearchFilterOperator,
-    categoryFilter: FilterQuery<any>,
+    columnFilter: FilterQuery<any>,
     userId: Types.ObjectId,
   ): Promise<Types.ObjectId[]> {
-    const categories = await this.categoryService.getByFilter(categoryFilter)
+    const columns = await this.columnService.getByFilter(columnFilter)
 
-    if (categories.length === 0) return []
+    if (columns.length === 0) return []
 
-    const categoryIds = categories.map((category) => category.id)
-    const groupedTaskCounts = await this.taskService.getTasksCountByCategories(categoryIds, userId)
-    const taskCountByCategoryId = new Map(
+    const columnIds = columns.map((column) => column.id)
+    const groupedTaskCounts = await this.taskService.getTasksCountByColumns(columnIds, userId)
+    const taskCountByColumnId = new Map(
       groupedTaskCounts.map((entry) => [entry.parentId, entry.count]),
     )
 
-    return categoryIds.filter((categoryId) => {
-      const count = taskCountByCategoryId.get(categoryId.toString()) ?? 0
+    return columnIds.filter((columnId) => {
+      const count = taskCountByColumnId.get(columnId.toString()) ?? 0
 
       return this._isTasksCountMatch(count, tasksCountOperator)
     })
@@ -348,8 +348,8 @@ export class FilterToMongoQueryService {
     })
   }
 
-  private async _getBoardIdsByCategoriesCount(
-    categoriesCountOperator: SearchFilterOperator,
+  private async _getBoardIdsByColumnsCount(
+    columnsCountOperator: SearchFilterOperator,
     boardFilter: FilterQuery<any>,
     userId: Types.ObjectId,
   ): Promise<Types.ObjectId[]> {
@@ -358,18 +358,15 @@ export class FilterToMongoQueryService {
     if (boards.length === 0) return []
 
     const boardIds = boards.map((board) => board.id)
-    const groupedCategoryCounts = await this.categoryService.getCategoriesCountByBoards(
-      boardIds,
-      userId,
-    )
-    const categoryCountByBoardId = new Map(
-      groupedCategoryCounts.map((entry) => [entry.parentId, entry.count]),
+    const groupedColumnCounts = await this.columnService.getColumnsCountByBoards(boardIds, userId)
+    const columnCountByBoardId = new Map(
+      groupedColumnCounts.map((entry) => [entry.parentId, entry.count]),
     )
 
     return boardIds.filter((boardId) => {
-      const count = categoryCountByBoardId.get(boardId.toString()) ?? 0
+      const count = columnCountByBoardId.get(boardId.toString()) ?? 0
 
-      return this._isEntityCountMatch('categories_count', count, categoriesCountOperator)
+      return this._isEntityCountMatch('columns_count', count, columnsCountOperator)
     })
   }
 
@@ -398,8 +395,8 @@ export class FilterToMongoQueryService {
     })
   }
 
-  private async _getWorkspaceIdsByCategoriesCount(
-    categoriesCountOperator: SearchFilterOperator,
+  private async _getWorkspaceIdsByColumnsCount(
+    columnsCountOperator: SearchFilterOperator,
     workspaceFilter: FilterQuery<any>,
     userId: Types.ObjectId,
   ): Promise<Types.ObjectId[]> {
@@ -408,18 +405,18 @@ export class FilterToMongoQueryService {
     if (workspaces.length === 0) return []
 
     const workspaceIds = workspaces.map((workspace) => workspace.id)
-    const groupedCategoryCounts = await this.categoryService.getCategoriesCountByWorkspaces(
+    const groupedColumnCounts = await this.columnService.getColumnsCountByWorkspaces(
       workspaceIds,
       userId,
     )
-    const categoryCountByWorkspaceId = new Map(
-      groupedCategoryCounts.map((entry) => [entry.parentId, entry.count]),
+    const columnCountByWorkspaceId = new Map(
+      groupedColumnCounts.map((entry) => [entry.parentId, entry.count]),
     )
 
     return workspaceIds.filter((workspaceId) => {
-      const count = categoryCountByWorkspaceId.get(workspaceId.toString()) ?? 0
+      const count = columnCountByWorkspaceId.get(workspaceId.toString()) ?? 0
 
-      return this._isEntityCountMatch('categories_count', count, categoriesCountOperator)
+      return this._isEntityCountMatch('columns_count', count, columnsCountOperator)
     })
   }
 
@@ -460,8 +457,8 @@ export class FilterToMongoQueryService {
     const tasksCountFilters: SearchFilterOperator[] = []
     const boardTasksCountFilters: SearchFilterOperator[] = []
     const workspaceTasksCountFilters: SearchFilterOperator[] = []
-    const categoriesCountFilters: SearchFilterOperator[] = []
-    const workspaceCategoriesCountFilters: SearchFilterOperator[] = []
+    const columnsCountFilters: SearchFilterOperator[] = []
+    const workspaceColumnsCountFilters: SearchFilterOperator[] = []
     const boardsCountFilters: SearchFilterOperator[] = []
     let isArchviedFilterPresent = false
     const entityType = options?.entityType ?? 'task'
@@ -519,7 +516,7 @@ export class FilterToMongoQueryService {
         }
 
         if (field === 'tasks_count') {
-          if (entityType === 'category') {
+          if (entityType === 'column') {
             tasksCountFilters.push(rest)
           } else if (entityType === 'board') {
             boardTasksCountFilters.push(rest)
@@ -527,19 +524,19 @@ export class FilterToMongoQueryService {
             workspaceTasksCountFilters.push(rest)
           } else {
             throw new Error(
-              `Field 'tasks_count' is supported only for category, board and workspace search`,
+              `Field 'tasks_count' is supported only for column, board and workspace search`,
             )
           }
         }
 
-        if (field === 'categories_count') {
+        if (field === 'columns_count') {
           if (entityType === 'board') {
-            categoriesCountFilters.push(rest)
+            columnsCountFilters.push(rest)
           } else if (entityType === 'workspace') {
-            workspaceCategoriesCountFilters.push(rest)
+            workspaceColumnsCountFilters.push(rest)
           } else {
             throw new Error(
-              `Field 'categories_count' is supported only for board and workspace search`,
+              `Field 'columns_count' is supported only for board and workspace search`,
             )
           }
         }
@@ -616,13 +613,13 @@ export class FilterToMongoQueryService {
           }
         }
 
-        if (field === 'category_id') {
+        if (field === 'column_id') {
           currentAndConditions.push({
-            category: this._getIdFilter('category', rest),
+            column: this._getIdFilter('column', rest),
           })
         }
 
-        if (field === 'category_selection_id') {
+        if (field === 'column_selection_id') {
           if (typeof rest.eq === 'string') {
             const selections = await this.selectionService.getByCriteria({
               id: rest.eq,
@@ -635,13 +632,13 @@ export class FilterToMongoQueryService {
             const selection = selections[0]
 
             currentAndConditions.push({
-              category: {
+              column: {
                 $in: selection.entityIds,
               },
             })
           } else {
             throw new Error(
-              `Unsupported operator for 'category_selection_id' field: ${JSON.stringify(rest)}. Supported only 'eq' operator.`,
+              `Unsupported operator for 'column_selection_id' field: ${JSON.stringify(rest)}. Supported only 'eq' operator.`,
             )
           }
         }
@@ -714,32 +711,32 @@ export class FilterToMongoQueryService {
       }
 
       if (tasksCountFilters.length > 0) {
-        let categoryFilter: FilterQuery<any> =
+        let columnFilter: FilterQuery<any> =
           currentAndConditions.length > 1
             ? { $and: [...currentAndConditions] }
             : currentAndConditions[0]
 
         for (const tasksCountFilter of tasksCountFilters) {
-          const matchedCategoryIds = await this._getCategoryIdsByTasksCount(
+          const matchedColumnIds = await this._getColumnIdsByTasksCount(
             tasksCountFilter,
-            categoryFilter,
+            columnFilter,
             userId,
           )
 
-          currentAndConditions.push({ _id: { $in: matchedCategoryIds } })
-          categoryFilter = { $and: [...currentAndConditions] }
+          currentAndConditions.push({ _id: { $in: matchedColumnIds } })
+          columnFilter = { $and: [...currentAndConditions] }
         }
       }
 
-      if (categoriesCountFilters.length > 0) {
+      if (columnsCountFilters.length > 0) {
         let boardFilter: FilterQuery<any> =
           currentAndConditions.length > 1
             ? { $and: [...currentAndConditions] }
             : currentAndConditions[0]
 
-        for (const categoriesCountFilter of categoriesCountFilters) {
-          const matchedBoardIds = await this._getBoardIdsByCategoriesCount(
-            categoriesCountFilter,
+        for (const columnsCountFilter of columnsCountFilters) {
+          const matchedBoardIds = await this._getBoardIdsByColumnsCount(
+            columnsCountFilter,
             boardFilter,
             userId,
           )
@@ -785,15 +782,15 @@ export class FilterToMongoQueryService {
         }
       }
 
-      if (workspaceCategoriesCountFilters.length > 0) {
+      if (workspaceColumnsCountFilters.length > 0) {
         let workspaceFilter: FilterQuery<any> =
           currentAndConditions.length > 1
             ? { $and: [...currentAndConditions] }
             : currentAndConditions[0]
 
-        for (const workspaceCategoriesCountFilter of workspaceCategoriesCountFilters) {
-          const matchedWorkspaceIds = await this._getWorkspaceIdsByCategoriesCount(
-            workspaceCategoriesCountFilter,
+        for (const workspaceColumnsCountFilter of workspaceColumnsCountFilters) {
+          const matchedWorkspaceIds = await this._getWorkspaceIdsByColumnsCount(
+            workspaceColumnsCountFilter,
             workspaceFilter,
             userId,
           )

@@ -5,7 +5,7 @@ export function getDefaultState(): Partial<typeof AgentStateAnnotation.State> {
   return {
     messages: [],
     task_manager_messages: [],
-    category_manager_messages: [],
+    column_manager_messages: [],
     board_manager_messages: [],
     workspace_manager_messages: [],
 

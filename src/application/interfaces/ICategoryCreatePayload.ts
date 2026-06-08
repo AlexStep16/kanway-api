@@ -1,6 +1,6 @@
 import { Types } from 'mongoose'
 
-export interface ICategoryCreatePayload {
+export interface IColumnCreatePayload {
   id?: string
   name: string
   workspace: Types.ObjectId

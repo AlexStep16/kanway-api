@@ -9,7 +9,7 @@ export interface IPaymentRaw {
   description: string
   amount: string
   currency: string
-  category: PaymentTypeEnum
+  column: PaymentTypeEnum
   item_id?: PaymentItemIdEnum
   status: PaymentStatusesEnum
   user_id: Types.ObjectId

@@ -4,7 +4,7 @@ import { AgentDependencies } from '../agent/types/AgentDependencies.js'
 import { CallTaskManagerScheme } from './schemes/CallTaskManagerScheme.js'
 import { Configurable } from '../interfaces/Configurable.js'
 import { RunnableConfig } from '@langchain/core/runnables'
-import { CallCategoryManagerScheme } from './schemes/CallCategoryManagerScheme.js'
+import { CallColumnManagerScheme } from './schemes/CallColumnManagerScheme.js'
 import { CallBoardManagerScheme } from './schemes/CallBoardManagerScheme.js'
 import { CallWorkspaceManagerScheme } from './schemes/CallWorkspaceManagerScheme.js'
 import { UndoOperationsScheme } from './schemes/UndoOperationsScheme.js'
@@ -24,13 +24,13 @@ export function initOrchestratorTools(
     },
   )
 
-  const callCategoryManagerAgent = tool(
+  const callColumnManagerAgent = tool(
     () => {
       return new SuccessToolResult('')
     },
     {
-      name: 'call_category_manager_agent',
-      schema: CallCategoryManagerScheme,
+      name: 'call_column_manager_agent',
+      schema: CallColumnManagerScheme,
     },
   )
 
@@ -83,7 +83,7 @@ export function initOrchestratorTools(
 
   return [
     callTaskManagerAgent,
-    callCategoryManagerAgent,
+    callColumnManagerAgent,
     callBoardManagerAgent,
     callWorkspaceManagerAgent,
     undoOperations,

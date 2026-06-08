@@ -11,11 +11,7 @@ export const TaskMoveDTOSchema = z.object({
     .nullable()
     .optional(),
   afterId: z.string(ErrorMessages.AFTER_TASK_ID_INVALID).regex(objectIdRegex).nullable().optional(),
-  newCategoryId: z
-    .string(ErrorMessages.CATEGORY_ID_INVALID)
-    .regex(objectIdRegex)
-    .nullable()
-    .optional(),
+  newColumnId: z.string(ErrorMessages.COLUMN_ID_INVALID).regex(objectIdRegex).nullable().optional(),
 })
 
 export type TaskMoveDTO = z.infer<typeof TaskMoveDTOSchema>

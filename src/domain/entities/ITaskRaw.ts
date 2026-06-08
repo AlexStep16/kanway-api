@@ -6,7 +6,7 @@ export interface ITaskRaw {
   name: string
   workspace: Types.ObjectId
   board: Types.ObjectId
-  category: Types.ObjectId
+  column: Types.ObjectId
   is_deleted: boolean
   is_deleted_external: boolean
   rank: string

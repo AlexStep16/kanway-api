@@ -14,7 +14,7 @@ export const AgentStateAnnotation = Annotation.Root({
     reducer: (_, y) => y,
     default: () => [],
   }),
-  category_manager_messages: Annotation<BaseMessage[]>({
+  column_manager_messages: Annotation<BaseMessage[]>({
     reducer: (_, y) => y,
     default: () => [],
   }),
@@ -54,15 +54,15 @@ export const AgentStateAnnotation = Annotation.Root({
     default: () => [],
   }),
 
-  category_manager_tool_calls: Annotation<ToolCall[]>({
+  column_manager_tool_calls: Annotation<ToolCall[]>({
     reducer: (_, y) => y,
     default: () => [],
   }),
-  category_manager_tool_results: Annotation<ToolMessage[]>({
+  column_manager_tool_results: Annotation<ToolMessage[]>({
     reducer: (_, y) => y,
     default: () => [],
   }),
-  category_manager_tool_calls_completed: Annotation<ToolCall[]>({
+  column_manager_tool_calls_completed: Annotation<ToolCall[]>({
     reducer: (_, y) => y,
     default: () => [],
   }),

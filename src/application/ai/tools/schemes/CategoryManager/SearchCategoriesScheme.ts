@@ -2,7 +2,7 @@ import z from 'zod'
 
 const FilterValueSchema = z.union([z.string(), z.number(), z.boolean(), z.array(z.any())])
 
-export const SearchCategoriesScheme = z.object({
+export const SearchColumnsScheme = z.object({
   filters: z
     .array(
       z.object({
@@ -20,7 +20,7 @@ export const SearchCategoriesScheme = z.object({
             'updated_at',
           ])
           .describe(
-            'The category field to search (e.g. "name", "is_deleted", "board_id"). created_at and updated_at are ISO 8601 datetime strings.',
+            'The column field to search (e.g. "name", "is_deleted", "board_id"). created_at and updated_at are ISO 8601 datetime strings.',
           ),
 
         eq: FilterValueSchema.optional().describe('Equals: Exact match.'),
@@ -65,10 +65,10 @@ export const SearchCategoriesScheme = z.object({
       'Additional fields to include in the output samples. Base fields - id, name - are always included if available.',
     ),
 }).describe(`
-  Tool for searching categories. 
+  Tool for searching columns. 
   Construct an array of criteria objects. 
   Multiple objects in the array are combined with AND logic. 
   Provide ONLY ONE operator (eq, in, gt, etc.) per object.
 `)
 
-export type SearchCategoriesDTO = z.infer<typeof SearchCategoriesScheme>
+export type SearchColumnsDTO = z.infer<typeof SearchColumnsScheme>

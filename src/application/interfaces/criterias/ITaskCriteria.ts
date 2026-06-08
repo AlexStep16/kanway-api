@@ -7,7 +7,7 @@ export interface ITaskCriteria extends IBaseCriteria {
   boardIds?: string[]
   workspaceId?: string
   workspaceIds?: string[]
-  categoryId?: string
-  categoryIds?: string[]
+  columnId?: string
+  columnIds?: string[]
   name?: string
 }

@@ -3,7 +3,7 @@ import { ITaskPopulated } from '@/application/interfaces/ITaskPopulated.js'
 interface CompressedTask {
   id: string
   name: string
-  categoryName?: string
+  columnName?: string
   description?: string
   isCompleted: boolean
   dueDate?: string
@@ -13,7 +13,7 @@ export function getCompressedTasks(tasks: ITaskPopulated[]): Array<CompressedTas
   return tasks.map((task) => ({
     id: task.id.toString(),
     name: task.name,
-    categoryName: task.category.name,
+    columnName: task.column.name,
     boardName: task.board.name,
     workspaceName: task.workspace.name,
     description: task.description ? task.description.slice(0, 100) : '',

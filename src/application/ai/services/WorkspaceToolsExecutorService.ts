@@ -33,6 +33,9 @@ import { RecoverWorkspacesDTO } from '../tools/schemes/WorkspaceManager/RecoverW
 import { IWorkspace } from '@/domain/entities/IWorkspace.js'
 import { getWorkspaceColorHumanFilter } from '../tools/helpers/UpdateWorkspacesHelpers.js'
 import { buildEntitySamples } from '../tools/helpers/EntitySamplesHelpers.js'
+import { CreateWorkspacesDTO } from '../tools/schemes/WorkspaceManager/CreateWorkspacesScheme.js'
+import { WorkspaceDTO } from '@/application/dtos/WorkspaceDTO.js'
+import { BASE_COLORS } from '@/constants/BASE_COLORS.js'
 
 export class WorkspaceToolsExecutorService {
   constructor(
@@ -136,7 +139,7 @@ export class WorkspaceToolsExecutorService {
       toolCallId: toolCall.id!,
       toolName: 'update_workspaces',
       toolContent: {
-        ids: Array.from(new Set(workspaceIds)),
+        count: workspaceIds.length,
         filters: humanReadableUpdates,
       },
     })
@@ -209,6 +212,94 @@ export class WorkspaceToolsExecutorService {
       }
 
       return new FailedToolResult('Failed to create operation log for workspaces update.')
+    } catch (error) {
+      statusLog.state = StatusStatesEnum.FAILED
+      await dispatchCustomEvent(CustomEvents.STATUS_UPDATE_LOG, statusLog)
+
+      throw error
+    }
+  }
+
+  public async createWorkspaces(
+    payload: CreateWorkspacesDTO,
+    config: RunnableConfig,
+    context: IConfigContext,
+    session?: ClientSession,
+  ) {
+    const configurable = config.configurable as Configurable
+    const toolCall = context.toolCall!
+
+    const statusLog = await this.toolStatusLogLifecycleService.getOrCreateInProgressLog({
+      existingLog: context.statusLog,
+      toolCallId: toolCall.id!,
+      toolName: 'create_workspaces',
+      toolContent: {
+        count: payload.workspaces.length,
+      },
+    })
+
+    try {
+      const dtoWorkspaces: WorkspaceDTO[] = payload.workspaces.map((workspace) => ({
+        name: workspace.name,
+        color: (workspace.color ?? BASE_COLORS[0]) as WorkspaceDTO['color'],
+        isFavorite: workspace.is_favorite,
+      }))
+
+      if (dtoWorkspaces.length === 0) {
+        throw new Error('No workspaces to create')
+      }
+
+      let isDryRun = false
+
+      if (configurable.aiConfirmationType === AiConfirmationTypeEnum.ALWAYS) {
+        if (context.isApproved === undefined) {
+          isDryRun = true
+        } else if (context.isApproved === false) {
+          await this.toolStatusLogLifecycleService.setCancelled(statusLog)
+
+          return new SuccessToolResult('Workspace create operation was rejected by the user.')
+        }
+      }
+
+      const createWorkspacesResult = await this.workspaceService.createMany(
+        dtoWorkspaces,
+        configurable.user,
+        session,
+        isDryRun,
+      )
+
+      if (createWorkspacesResult.logId) {
+        const operationLogId = createWorkspacesResult.logId.toString()
+
+        if (isDryRun) {
+          await this.toolStatusLogLifecycleService.setAwaitingConfirmation(statusLog, (content) => {
+            content.logId = operationLogId
+          })
+
+          return new ConfirmationToolResult({
+            logId: operationLogId,
+          })
+        }
+
+        await dispatchCustomEvent(CustomEvents.OPERATION, {
+          logId: operationLogId,
+          session,
+        })
+
+        await this.toolStatusLogLifecycleService.setCompleted(statusLog, (content) => {
+          content.count = createWorkspacesResult.data.length
+          content.logId = operationLogId
+        })
+
+        return new SuccessToolResult(
+          `Successfully created ${createWorkspacesResult.data.length} workspaces. Operation Log ID: ${operationLogId}`,
+          {
+            logId: operationLogId,
+          },
+        )
+      }
+
+      return new FailedToolResult('Failed to create operation log for workspaces create.')
     } catch (error) {
       statusLog.state = StatusStatesEnum.FAILED
       await dispatchCustomEvent(CustomEvents.STATUS_UPDATE_LOG, statusLog)
@@ -338,7 +429,7 @@ export class WorkspaceToolsExecutorService {
       toolCallId: toolCall.id!,
       toolName: 'delete_archive_workspaces',
       toolContent: {
-        ids: Array.from(new Set(workspaceIds)),
+        count: workspaceIds.length,
         filters: humanReadableFilters,
         isSoftDelete: payload.soft_delete,
       },
@@ -443,7 +534,7 @@ export class WorkspaceToolsExecutorService {
       toolCallId: toolCall.id!,
       toolName: 'clone_workspaces',
       toolContent: {
-        ids: Array.from(new Set(workspaceIds)),
+        count: workspaceIds.length,
         filters: humanReadableFilters,
       },
     })
@@ -529,7 +620,7 @@ export class WorkspaceToolsExecutorService {
       toolCallId: toolCall.id!,
       toolName: 'recover_workspaces',
       toolContent: {
-        ids: Array.from(new Set(workspaceIds)),
+        count: workspaceIds.length,
         filters: humanReadableFilters,
       },
     })

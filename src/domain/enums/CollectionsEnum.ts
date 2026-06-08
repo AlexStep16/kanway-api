@@ -2,7 +2,7 @@ export enum CollectionsEnum {
   USERS = 'users',
   WORKSPACES = 'workspaces',
   BOARDS = 'boards',
-  CATEGORIES = 'categories',
+  COLUMNS = 'columns',
   TASKS = 'tasks',
   TOKENS = 'tokens',
   OPERATION_LOGS = 'operation_logs',

@@ -6,7 +6,7 @@ export function projectProperties<T extends Record<string, any>>(
 })[] {
   const keysToKeep = Object.keys(targetObject).concat([
     'id',
-    'category',
+    'column',
     'board',
     'workspace',
     'name',

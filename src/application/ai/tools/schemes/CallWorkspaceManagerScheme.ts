@@ -2,6 +2,11 @@ import { z } from 'zod'
 
 export const CallWorkspaceManagerScheme = z.object({
   instruction: z.string().describe('Natural language instruction describing the requested action.'),
+  payload: z
+    .record(z.string(), z.unknown())
+    .describe(
+      'The payload to be sent to the Workspace Manager Agent. Provide all necessary technical details such as ids, selection_ids, and exact criteria.',
+    ),
 }).describe(`
   DTO for delegating workspace-related work to the Workspace Manager Agent.
 

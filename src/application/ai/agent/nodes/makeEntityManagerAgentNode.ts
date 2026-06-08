@@ -21,6 +21,7 @@ import {
   getAgentManagerTools,
 } from '../../helpers/managerHelpers.js'
 import { getCurrentAgentOutputs } from '../../helpers/getCurrentAgentOutput.js'
+import { getBeautifiedSelections } from '../../helpers/getBeautifiedSelections.js'
 
 export const makeEntityManagerAgentNode = (deps: AgentDependencies) => {
   return async (state: typeof AgentStateAnnotation.State, config: RunnableConfig) => {
@@ -40,26 +41,26 @@ export const makeEntityManagerAgentNode = (deps: AgentDependencies) => {
       messages: [],
 
       task_manager_messages: state.task_manager_messages,
-      task_manager_tool_calls: [],
-      task_manager_tool_results: [],
-      task_manager_tool_calls_completed: [],
+      task_manager_tool_calls: state.task_manager_tool_calls,
+      task_manager_tool_results: state.task_manager_tool_results,
+      task_manager_tool_calls_completed: state.task_manager_tool_calls_completed,
 
-      category_manager_messages: state.category_manager_messages,
-      category_manager_tool_calls: [],
-      category_manager_tool_results: [],
-      category_manager_tool_calls_completed: [],
+      column_manager_messages: state.column_manager_messages,
+      column_manager_tool_calls: state.column_manager_tool_calls,
+      column_manager_tool_results: state.column_manager_tool_results,
+      column_manager_tool_calls_completed: state.column_manager_tool_calls_completed,
 
       board_manager_messages: state.board_manager_messages,
-      board_manager_tool_calls: [],
-      board_manager_tool_results: [],
-      board_manager_tool_calls_completed: [],
+      board_manager_tool_calls: state.board_manager_tool_calls,
+      board_manager_tool_results: state.board_manager_tool_results,
+      board_manager_tool_calls_completed: state.board_manager_tool_calls_completed,
 
       workspace_manager_messages: state.workspace_manager_messages,
-      workspace_manager_tool_calls: [],
-      workspace_manager_tool_results: [],
-      workspace_manager_tool_calls_completed: [],
+      workspace_manager_tool_calls: state.workspace_manager_tool_calls,
+      workspace_manager_tool_results: state.workspace_manager_tool_results,
+      workspace_manager_tool_calls_completed: state.workspace_manager_tool_calls_completed,
 
-      tools_reviewed_map: new Map(),
+      tools_reviewed_map: state.tools_reviewed_map || new Map(),
       current_agent: activeManager,
     }
 
@@ -85,13 +86,17 @@ export const makeEntityManagerAgentNode = (deps: AgentDependencies) => {
 
     const chain = prompt.pipe(modelToUse.bindTools(managerTools))
 
+    const beautifiedSelections = getBeautifiedSelections(state.active_selections || [])
+
     const response = await chain.invoke({
       board: configurable.activeBoard || 'Нет активной доски',
       workspace: configurable.activeWorkspace,
       current_date: configurable.currentDate,
+      active_selections: beautifiedSelections,
       tags_list: configurable.tagsList,
       aiName: configurable.aiName,
-      orchestrator_intent: JSON.stringify(lastCallManagerTool?.args || {}),
+      orchestrator_instruction: JSON.stringify(lastCallManagerTool?.args?.instruction || {}),
+      orchestrator_payload: JSON.stringify(lastCallManagerTool?.args?.payload || {}),
     })
 
     await dispatchCustomEvent(CustomEvents.TOKENS_ADDED, response.usage_metadata?.total_tokens || 0)
@@ -121,8 +126,8 @@ function getOrchestratorManagerToolCall(
   switch (agent) {
     case AgentsEnum.TASK_MANAGER:
       return reversedToolCalls.find((call) => call.name === 'call_task_manager_agent')
-    case AgentsEnum.CATEGORY_MANAGER:
-      return reversedToolCalls.find((call) => call.name === 'call_category_manager_agent')
+    case AgentsEnum.COLUMN_MANAGER:
+      return reversedToolCalls.find((call) => call.name === 'call_column_manager_agent')
     case AgentsEnum.BOARD_MANAGER:
       return reversedToolCalls.find((call) => call.name === 'call_board_manager_agent')
     default:
@@ -140,9 +145,9 @@ function fillOutputsBasedOnAgent(
       outputs.task_manager_messages!.push(response)
       outputs.task_manager_tool_calls = response.tool_calls || []
       break
-    case AgentsEnum.CATEGORY_MANAGER:
-      outputs.category_manager_messages!.push(response)
-      outputs.category_manager_tool_calls = response.tool_calls || []
+    case AgentsEnum.COLUMN_MANAGER:
+      outputs.column_manager_messages!.push(response)
+      outputs.column_manager_tool_calls = response.tool_calls || []
       break
     case AgentsEnum.BOARD_MANAGER:
       outputs.board_manager_messages!.push(response)

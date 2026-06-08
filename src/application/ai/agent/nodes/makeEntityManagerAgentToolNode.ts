@@ -28,19 +28,19 @@ export const makeEntityManagerAgentToolNode = (dependencies: AgentDependencies) 
       tool_waiting_for_review: null,
 
       task_manager_messages: state.task_manager_messages,
-      task_manager_tool_results: [],
+      task_manager_tool_results: state.task_manager_tool_results,
       task_manager_tool_calls_completed: state.task_manager_tool_calls_completed,
 
-      category_manager_messages: state.category_manager_messages,
-      category_manager_tool_results: [],
-      category_manager_tool_calls_completed: state.category_manager_tool_calls_completed,
+      column_manager_messages: state.column_manager_messages,
+      column_manager_tool_results: state.column_manager_tool_results,
+      column_manager_tool_calls_completed: state.column_manager_tool_calls_completed,
 
       board_manager_messages: state.board_manager_messages,
-      board_manager_tool_results: [],
+      board_manager_tool_results: state.board_manager_tool_results,
       board_manager_tool_calls_completed: state.board_manager_tool_calls_completed,
 
       workspace_manager_messages: state.workspace_manager_messages,
-      workspace_manager_tool_results: [],
+      workspace_manager_tool_results: state.workspace_manager_tool_results,
       workspace_manager_tool_calls_completed: state.workspace_manager_tool_calls_completed,
 
       operation_log_ids: state.operation_log_ids,
@@ -131,7 +131,7 @@ async function executeToolCall(
     throw new ToolMessage(`Tool ${toolCall.name} not found.`, toolCall.id!)
   }
 
-  const validationResult = (toolByToolCalls.schema as ZodAny).safeParse(toolCall.args)
+  const validationResult = await (toolByToolCalls.schema as ZodAny).safeParseAsync(toolCall.args)
 
   if (!validationResult.success) {
     throw new ToolMessage(

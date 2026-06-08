@@ -1,6 +1,6 @@
 import { IBaseCriteria } from './IBaseCriteria.js'
 
-export interface ICategoryCriteria extends IBaseCriteria {
+export interface IColumnCriteria extends IBaseCriteria {
   isDeleted?: boolean
   isDeletedExternal?: boolean
   workspaceId?: string

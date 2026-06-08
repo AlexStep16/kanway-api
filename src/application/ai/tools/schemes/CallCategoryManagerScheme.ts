@@ -1,12 +1,17 @@
 import { z } from 'zod'
 
-export const CallCategoryManagerScheme = z.object({
+export const CallColumnManagerScheme = z.object({
   instruction: z.string().describe('Natural language instruction describing the requested action.'),
+  payload: z
+    .record(z.string(), z.unknown())
+    .describe(
+      'The payload to be sent to the Column Manager Agent. Provide all necessary technical details such as ids, selection_ids, and exact criteria.',
+    ),
 }).describe(`
-  DTO for delegating category-related work to the Category Manager Agent.
+  DTO for delegating column-related work to the Column Manager Agent.
 
   The orchestrator should use this DTO only for high-level intent routing.
   Use instruction to describe the requested action in natural language.
 `)
 
-export type CallCategoryManagerAgentDTO = z.infer<typeof CallCategoryManagerScheme>
+export type CallColumnManagerAgentDTO = z.infer<typeof CallColumnManagerScheme>

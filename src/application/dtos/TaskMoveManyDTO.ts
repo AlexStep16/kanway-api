@@ -19,11 +19,7 @@ export const TaskMoveManyDTOSchema = z.object({
     .regex(objectIdRegex)
     .nullable()
     .optional(),
-  newCategoryId: z
-    .string(ErrorMessages.CATEGORY_ID_INVALID)
-    .regex(objectIdRegex)
-    .nullable()
-    .optional(),
+  newColumnId: z.string(ErrorMessages.COLUMN_ID_INVALID).regex(objectIdRegex).nullable().optional(),
   toStart: z.boolean().optional(),
   toEnd: z.boolean().optional(),
 })

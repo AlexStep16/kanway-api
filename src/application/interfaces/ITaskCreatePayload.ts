@@ -6,7 +6,7 @@ export interface ITaskCreatePayload {
   name: string
   workspace: Types.ObjectId
   board: Types.ObjectId
-  category: Types.ObjectId
+  column: Types.ObjectId
   userId: Types.ObjectId
   rank: string
   tags: Array<string>

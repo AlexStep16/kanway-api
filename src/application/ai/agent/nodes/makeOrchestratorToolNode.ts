@@ -10,9 +10,7 @@ import { Configurable } from '../../interfaces/Configurable.js'
 import { AgentsEnum } from '@/enums/AgentsEnum.js'
 import { IConfigContext } from '../../interfaces/IConfigContext.js'
 import { StatusLog } from '@/application/types/StatusLog.js'
-import { dispatchCustomEvent } from '@langchain/core/callbacks/dispatch'
 import { ConfirmationToolResult } from '../../tools/helpers/ToolResult/ConfirmationToolResult.js'
-import { CustomEvents } from '@/enums/CustomEvents.js'
 
 export const makeOrchestratorToolNode = (deps: AgentDependencies) => {
   return async (state: typeof AgentStateAnnotation.State, config: RunnableConfig) => {
@@ -52,8 +50,8 @@ export const makeOrchestratorToolNode = (deps: AgentDependencies) => {
           outputs.is_manager_called = true
           continue
         }
-        if (toolCall.name === 'call_category_manager_agent') {
-          outputs.active_manager = AgentsEnum.CATEGORY_MANAGER
+        if (toolCall.name === 'call_column_manager_agent') {
+          outputs.active_manager = AgentsEnum.COLUMN_MANAGER
           outputs.is_manager_called = true
           continue
         }
@@ -76,8 +74,6 @@ export const makeOrchestratorToolNode = (deps: AgentDependencies) => {
         )
 
         if (result.observation instanceof ConfirmationToolResult) {
-          await dispatchCustomEvent(CustomEvents.INTERRUPTED, {})
-
           outputs.tool_waiting_for_review = {
             toolCallId: toolCall.id!,
             logId: result.meta?.logId,
@@ -129,7 +125,7 @@ async function executeToolCall(
     throw new ToolMessage(`Tool ${toolCall.name} not found.`, toolCall.id!)
   }
 
-  const validationResult = (toolByToolCalls.schema as ZodAny).safeParse(toolCall.args)
+  const validationResult = await (toolByToolCalls.schema as ZodAny).safeParseAsync(toolCall.args)
 
   if (!validationResult.success) {
     throw new ToolMessage(

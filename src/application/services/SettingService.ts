@@ -26,7 +26,7 @@ export class SettingService extends BaseService<ISettingRaw, ISetting, ISettingC
     const setting: Omit<ISetting, SystemFields> = {
       aiName: data.aiName,
       aiConfirmationType: data.aiConfirmationType,
-      aiDefaultCategory: data.aiDefaultCategory ?? '',
+      aiDefaultColumn: data.aiDefaultColumn ?? '',
       aiDefaultBoard: data.aiDefaultBoard ?? '',
       userId: userId,
     }

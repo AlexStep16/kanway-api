@@ -6,6 +6,7 @@ import { DeleteArchiveWorkspacesScheme } from './schemes/WorkspaceManager/Delete
 import { CloneWorkspacesScheme } from './schemes/WorkspaceManager/CloneWorkspacesScheme.js'
 import { RecoverWorkspacesScheme } from './schemes/WorkspaceManager/RecoverWorkspacesScheme.js'
 import { SearchWorkspacesScheme } from './schemes/WorkspaceManager/SearchWorkspacesScheme.js'
+import { CreateWorkspacesScheme } from './schemes/WorkspaceManager/CreateWorkspacesScheme.js'
 
 export function initWorkspaceManagerTools(
   dependencies: AgentDependencies,
@@ -22,6 +23,20 @@ export function initWorkspaceManagerTools(
     {
       name: 'search_workspaces',
       schema: SearchWorkspacesScheme,
+    },
+  )
+
+  const createWorkspaces = tool(
+    async (data, config) => {
+      return await dependencies.services.workspaceToolsExecutorService.createWorkspaces(
+        data,
+        runnableConfig,
+        config.context,
+      )
+    },
+    {
+      name: 'create_workspaces',
+      schema: CreateWorkspacesScheme,
     },
   )
 
@@ -83,6 +98,7 @@ export function initWorkspaceManagerTools(
 
   return [
     searchWorkspaces,
+    createWorkspaces,
     updateWorkspaces,
     deleteArchiveWorkspaces,
     cloneWorkspaces,

@@ -48,7 +48,7 @@ print({
         {
             "id": t.get("_id"),
             "name": t.get("name"),
-            "category": t.get("category"),
+            "column": t.get("column"),
             "is_completed": t.get("is_completed"),
             "tags": t.get("tags", []),
             "priority": t.get("priority"),
@@ -63,10 +63,10 @@ completed_tasks = [t for t in tasks if t.get("is_completed") is True]
 
 # If there are completed tasks, move them back to a working stage based on launch phase
 # Heuristic:
-# - Prefer categories whose names suggest active work stages
-# - Avoid categories whose names suggest completion/archive
-categories_resp = search_categories(mongo_filter={"board": board_id}, limit=100)
-categories = categories_resp.get("items", [])
+# - Prefer columns whose names suggest active work stages
+# - Avoid columns whose names suggest completion/archive
+columns_resp = search_columns(mongo_filter={"board": board_id}, limit=100)
+columns = columns_resp.get("items", [])
 
 working_keywords = [
     "план", "backlog", "todo", "to do", "в работе", "работа", "разработка",
@@ -74,40 +74,40 @@ working_keywords = [
 ]
 completed_keywords = ["done", "готово", "completed", "заверш", "архив", "archive"]
 
-working_categories = []
-for c in categories:
+working_columns = []
+for c in columns:
     name = (c.get("name") or "").lower()
     if any(k in name for k in working_keywords) and not any(k in name for k in completed_keywords):
-        working_categories.append(c)
+        working_columns.append(c)
 
-# Fallback: if no obvious working category exists, use any non-completed category
-if not working_categories:
-    for c in categories:
+# Fallback: if no obvious working column exists, use any non-completed column
+if not working_columns:
+    for c in columns:
         name = (c.get("name") or "").lower()
         if not any(k in name for k in completed_keywords):
-            working_categories.append(c)
+            working_columns.append(c)
 
-# If still ambiguous, ask user to choose the target category
-target_category_id = None
-if len(working_categories) == 1:
-    target_category_id = working_categories[0].get("_id")
-elif len(working_categories) > 1:
+# If still ambiguous, ask user to choose the target column
+target_column_id = None
+if len(working_columns) == 1:
+    target_column_id = working_columns[0].get("_id")
+elif len(working_columns) > 1:
     selected = resolve_ambiguous(
-        entity_type="category",
-        ids=[c.get("_id") for c in working_categories],
+        entity_type="column",
+        ids=[c.get("_id") for c in working_columns],
         min_select=1,
         max_select=1,
         id=board_id,
     )
-    target_category_id = selected[0] if selected else None
+    target_column_id = selected[0] if selected else None
 
-# Move completed tasks to the selected working category and mark them as not completed
-if completed_tasks and target_category_id:
+# Move completed tasks to the selected working column and mark them as not completed
+if completed_tasks and target_column_id:
     updates = []
     for t in completed_tasks:
         updates.append({
             "_id": t.get("_id"),
-            "category": target_category_id,
+            "column": target_column_id,
             "is_completed": False,
         })
     update_tasks(updates)
@@ -117,14 +117,14 @@ tasks_after_resp = search_tasks(mongo_filter={"board": board_id, "is_completed":
 remaining_completed = tasks_after_resp.get("items", [])
 
 print({
-    "moved_tasks_count": len(completed_tasks) if target_category_id else 0,
-    "target_category_id": target_category_id,
+    "moved_tasks_count": len(completed_tasks) if target_column_id else 0,
+    "target_column_id": target_column_id,
     "remaining_completed_count": len(remaining_completed),
     "remaining_completed_tasks": [
         {
             "id": t.get("_id"),
             "name": t.get("name"),
-            "category": t.get("category"),
+            "column": t.get("column"),
         }
         for t in remaining_completed
     ],
@@ -134,7 +134,7 @@ print({
           payload: {
             board_name: 'Контент‑план: Дизайн‑блог',
             board_workspace_id: '69b9753802918145c4e83227',
-            categories: [
+            columns: [
               {
                 name: 'Идеи',
                 tasks: [

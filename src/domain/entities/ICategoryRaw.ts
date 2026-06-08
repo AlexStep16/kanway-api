@@ -1,6 +1,6 @@
 import { Types } from 'mongoose'
 
-export interface ICategoryRaw {
+export interface IColumnRaw {
   _id: Types.ObjectId
   name: string
   workspace: Types.ObjectId

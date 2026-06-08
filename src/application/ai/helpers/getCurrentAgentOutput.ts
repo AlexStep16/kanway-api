@@ -13,12 +13,12 @@ export function getCurrentAgentOutputs(
         toolCallsCompleted: outputs.task_manager_tool_calls_completed || [],
         messages: outputs.task_manager_messages || [],
       }
-    case AgentsEnum.CATEGORY_MANAGER:
+    case AgentsEnum.COLUMN_MANAGER:
       return {
-        toolCalls: outputs.category_manager_tool_calls || [],
-        toolResults: outputs.category_manager_tool_results || [],
-        toolCallsCompleted: outputs.category_manager_tool_calls_completed || [],
-        messages: outputs.category_manager_messages || [],
+        toolCalls: outputs.column_manager_tool_calls || [],
+        toolResults: outputs.column_manager_tool_results || [],
+        toolCallsCompleted: outputs.column_manager_tool_calls_completed || [],
+        messages: outputs.column_manager_messages || [],
       }
     case AgentsEnum.BOARD_MANAGER:
       return {

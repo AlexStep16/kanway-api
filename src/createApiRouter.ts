@@ -3,7 +3,7 @@ import { Router } from 'express'
 import authRoutes from '@routes/authRoutes.js'
 import workspaceRoutes from '@routes/workspaceRoutes.js'
 import boardRoutes from '@routes/boardRoutes.js'
-import categoryRoutes from '@routes/categoryRoutes.js'
+import columnRoutes from '@routes/columnRoutes.js'
 import taskRoutes from '@routes/taskRoutes.js'
 import archiveRoutes from '@routes/archiveRoutes.js'
 import settingRoutes from '@routes/settingRoutes.js'
@@ -29,7 +29,7 @@ export const createApiRouter = (): Router => {
   apiRouter.use('/support', supportRoutes(dependencies.controllers.supportController))
   apiRouter.use('/workspaces', workspaceRoutes(dependencies.controllers.workspaceController))
   apiRouter.use('/boards', boardRoutes(dependencies.controllers.boardController))
-  apiRouter.use('/categories', categoryRoutes(dependencies.controllers.categoryController))
+  apiRouter.use('/columns', columnRoutes(dependencies.controllers.columnController))
   apiRouter.use('/tasks', taskRoutes(dependencies.controllers.taskController))
   apiRouter.use('/chats', chatRoutes(dependencies.controllers.chatController))
   apiRouter.use('/chat-messages', chatMessageRoutes(dependencies.controllers.chatMessageController))

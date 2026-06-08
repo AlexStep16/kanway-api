@@ -1,7 +1,7 @@
 import { ITextValue } from './ITextValue.js'
 
 export interface IUpdateEntitiesContent {
-  ids: string[]
+  count: number
   filters: ITextValue[]
   logId?: string
 }

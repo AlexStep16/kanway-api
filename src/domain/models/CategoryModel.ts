@@ -1,7 +1,7 @@
 import { model, Schema } from 'mongoose'
-import { ICategoryRaw } from '@entities/ICategoryRaw.js'
+import { IColumnRaw } from '@entities/IColumnRaw.js'
 
-export const CategorySchema = new Schema<ICategoryRaw>(
+export const ColumnSchema = new Schema<IColumnRaw>(
   {
     name: {
       type: String,
@@ -46,6 +46,6 @@ export const CategorySchema = new Schema<ICategoryRaw>(
   { timestamps: true },
 )
 
-const Category = model<ICategoryRaw>('Category', CategorySchema)
+const Column = model<IColumnRaw>('Column', ColumnSchema)
 
-export default Category
+export default Column

@@ -15,7 +15,7 @@ Extract exactly what was requested and what was changed in the system, strictly 
 ### OUTPUT STRUCTURE
 1. **Completed User Intents:** A concise bulleted list of requests that were FULLY executed and confirmed.
 2. **System Changes Registry:**
-   - **Created/Updated:** Entities (Board, Category, Task) with exact Names and IDs. (Leave empty if no IDs are confirmed).
+   - **Created/Updated:** Entities (Board, Column, Task) with exact Names and IDs. (Leave empty if no IDs are confirmed).
    - **Deleted/Archived:** Exact IDs that were removed.
 3. **Pending/Unresolved Requests:** 
    - A clear description of the user's latest request that has NOT YET been processed or confirmed by the system.

@@ -1,11 +1,11 @@
 import z from 'zod'
 
-export const RecoverCategoriesScheme = z.object({
+export const RecoverColumnsScheme = z.object({
   selection_id: z.string().optional().describe('Target selection id.'),
-  category_ids: z.array(z.string()).optional().describe('Target category ids.'),
+  column_ids: z.array(z.string()).optional().describe('Target column ids.'),
 }).describe(`
-  Recover categories.
-  Pass selection_id or category_ids.
+  Recover columns.
+  Pass selection_id or column_ids.
 `)
 
-export type RecoverCategoriesDTO = z.infer<typeof RecoverCategoriesScheme>
+export type RecoverColumnsDTO = z.infer<typeof RecoverColumnsScheme>

@@ -25,7 +25,7 @@ import { IChatRaw } from '@entities/IChatRaw.js'
 import { BoardService } from './BoardService.js'
 import { WorkspaceService } from './WorkspaceService.js'
 import { TaskService } from './TaskService.js'
-import { CategoryService } from './CategoryService.js'
+import { ColumnService } from './ColumnService.js'
 import CheckpointWriteRepository from '../repositories/CheckpointWriteRepository.js'
 import CheckpointRepository from '../repositories/CheckpointRepository.js'
 import { ChatEditDTO } from '../dtos/ChatEditDTO.js'
@@ -68,7 +68,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
   protected chatMessageService: ChatMessageService
   protected settingService: SettingService
   protected taskService: TaskService
-  protected categoryService: CategoryService
+  protected columnService: ColumnService
   protected boardService: BoardService
   protected workspaceService: WorkspaceService
   protected checkpointWriteRepository: CheckpointWriteRepository
@@ -81,7 +81,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     chatMessageService: ChatMessageService,
     settingService: SettingService,
     taskService: TaskService,
-    categoryService: CategoryService,
+    columnService: ColumnService,
     boardService: BoardService,
     workspaceService: WorkspaceService,
     checkpointWriteRepository: CheckpointWriteRepository,
@@ -95,7 +95,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     this.chatMessageService = chatMessageService
     this.settingService = settingService
     this.taskService = taskService
-    this.categoryService = categoryService
+    this.columnService = columnService
     this.boardService = boardService
     this.workspaceService = workspaceService
     this.checkpointWriteRepository = checkpointWriteRepository
@@ -150,14 +150,12 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     const userSettings = await this.settingService.getByCriteria({}, user.id, session)
     const userSetting = userSettings[0]
 
-    const categories = await this.categoryService.getByCriteria(
+    const columns = await this.columnService.getByCriteria(
       { boardId: data.activeBoard?.id, isDeleted: false, isDeletedExternal: false },
       user.id,
       session,
     )
-    const categoriesList = categories
-      .map((category) => `${category.name} (${category.id})`)
-      .join(', ')
+    const columnsList = columns.map((column) => `${column.name} (${column.id})`).join(', ')
 
     const tasks = await this.taskService.getByCriteria(
       { boardId: data.activeBoard?.id, isDeleted: false, isDeletedExternal: false },
@@ -182,7 +180,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
         modelType,
         activeWorkspace: data.activeWorkspace,
         currentDate: dayjs.tz(dayjs(), data.timezone).toISOString(),
-        categoriesList: categoriesList.length > 0 ? categoriesList : 'No categories',
+        columnsList: columnsList.length > 0 ? columnsList : 'No columns',
         tagsList: tagsList.length > 0 ? tagsList : 'No tags',
         timezone: data.timezone,
         userMessage: data.userMessage,
@@ -190,7 +188,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
 
         aiName: userSetting.aiName || 'Kanway',
         aiConfirmationType: userSetting.aiConfirmationType,
-        defaultCategoryName: userSetting.aiDefaultCategory,
+        defaultColumnName: userSetting.aiDefaultColumn,
         defaultBoardName: userSetting.aiDefaultBoard,
         statusMessageId: data.statusMessageId,
       },

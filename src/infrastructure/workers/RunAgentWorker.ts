@@ -25,6 +25,7 @@ import { AgentEventsHandler } from '@/application/ai/callbacks/AgentEventsHandle
 import { setGlobalDispatcher, EnvHttpProxyAgent } from 'undici'
 import { AgentWorkerDTO } from '@/application/dtos/AgentWorkerDTO.js'
 import { StatusStatesEnum } from '@/enums/StatusStatesEnum.js'
+import { IStatus } from '@/application/interfaces/statuses/IStatus.js'
 
 const proxyAgent = new EnvHttpProxyAgent()
 if (process.env.NODE_ENV === 'production') setGlobalDispatcher(proxyAgent)
@@ -161,7 +162,16 @@ export const RunAgentWorker = new Worker(
     let isInterrupted = false
 
     try {
-      await agentEventsHandler.startStatus()
+      const initialStatus: Partial<IStatus> = {
+        state: StatusStatesEnum.IN_PROGRESS,
+        error: '',
+      }
+
+      if (isRetry) {
+        initialStatus.logs = agentEventsHandler.status.logs.filter(() => false)
+      }
+
+      await agentEventsHandler.updateStatus(initialStatus)
 
       const agent = await getAgent(dependencies)
 

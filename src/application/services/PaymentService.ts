@@ -69,7 +69,7 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
     const payment: Omit<IPayment, SystemFields> = {
       serviceId: data.serviceId,
       itemId: data.itemId,
-      category: data.category,
+      column: data.column,
       description: data.description,
       amount: data.amount,
       currency: data.currency,
@@ -83,7 +83,7 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
   public async createPayment(
     createPayload: ICreatePayment,
     userId: Types.ObjectId,
-    category: PaymentTypeEnum,
+    column: PaymentTypeEnum,
     itemId: PaymentItemIdEnum,
   ) {
     const idempotenceKey = crypto.randomUUID()
@@ -94,7 +94,7 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
       description: createPayload.description ?? 'Subscription Payment',
       amount: createPayload.amount.value,
       currency: createPayload.amount.currency,
-      category,
+      column,
       itemId,
       status: payment.status as PaymentStatusesEnum,
     }
@@ -361,7 +361,7 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
       description: payload!.description || 'Kanway | Продление подписки',
       amount: payment.amount.value,
       currency: payment.amount.currency,
-      category: PaymentTypeEnum.SUBSCRIPTION,
+      column: PaymentTypeEnum.SUBSCRIPTION,
       itemId: SUBSCRIPTION_PLAN_TO_ITEM_ID[user.subscriptionId],
       status: payment.status as PaymentStatusesEnum,
     }
@@ -489,7 +489,7 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
     session: ClientSession,
     user: IUser,
   ) {
-    if (paymentModel.category === PaymentTypeEnum.CREDIT_PACK) return
+    if (paymentModel.column === PaymentTypeEnum.CREDIT_PACK) return
     if (user.isSubscriptionActive === false) return
 
     const newCount = (user.paymentRetriesCount || 0) + 1

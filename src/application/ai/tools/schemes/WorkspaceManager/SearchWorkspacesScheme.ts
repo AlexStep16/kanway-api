@@ -15,13 +15,13 @@ export const SearchWorkspacesScheme = z.object({
             'color',
             'is_favorite',
             'boards_count',
-            'categories_count',
+            'columns_count',
             'tasks_count',
             'created_at',
             'updated_at',
           ])
           .describe(
-            'The category field to search (e.g. "name", "is_deleted", "color"). created_at and updated_at are ISO 8601 datetime strings. Colors available: ' +
+            'The column field to search (e.g. "name", "is_deleted", "color"). created_at and updated_at are ISO 8601 datetime strings. Colors available: ' +
               Object.values(BASE_COLORS_MAP)
                 .map((color) => color.name)
                 .join(', '),

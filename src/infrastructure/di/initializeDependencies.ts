@@ -13,9 +13,9 @@ import OperationLogRepository from '@repositories/OperationLogRepository.js'
 import { BoardService } from '@application/services/BoardService.js'
 import BoardRepository from '@repositories/BoardRepository.js'
 import BoardController from '@controllers/BoardController.js'
-import { CategoryService } from '@application/services/CategoryService.js'
-import CategoryRepository from '@repositories/CategoryRepository.js'
-import CategoryController from '@controllers/CategoryController.js'
+import { ColumnService } from '@application/services/ColumnService.js'
+import ColumnRepository from '@repositories/ColumnRepository.js'
+import ColumnController from '@controllers/ColumnController.js'
 import TaskRepository from '@application/repositories/TaskRepository.js'
 import { TaskService } from '@application/services/TaskService.js'
 import TaskController from '@controllers/TaskController.js'
@@ -54,7 +54,7 @@ import { FilterToMongoQueryService } from '@/application/ai/services/FilterToMon
 import { SelectionService } from '@/application/ai/services/SelectionService.js'
 import { GeneralToolsExecutor } from '@/application/ai/services/GeneralToolsExecutor.js'
 import SelectionRepository from '@/application/repositories/SelectionRepository.js'
-import { CategoryToolsExecutorService } from '@/application/ai/services/CategoryToolsExecutorService.js'
+import { ColumnToolsExecutorService } from '@/application/ai/services/ColumnToolsExecutorService.js'
 import { BoardToolsExecutorService } from '@/application/ai/services/BoardToolsExecutorService.js'
 import { WorkspaceToolsExecutorService } from '@/application/ai/services/WorkspaceToolsExecutorService.js'
 
@@ -65,7 +65,7 @@ export function initializeDependencies() {
   const workspaceRepository = new WorkspaceRepository()
   const operationLogRepository = new OperationLogRepository()
   const boardRepository = new BoardRepository()
-  const categoryRepository = new CategoryRepository()
+  const columnRepository = new ColumnRepository()
   const taskRepository = new TaskRepository()
   const settingRepository = new SettingRepository()
   const subscriptionRepository = new SubscriptionRepository()
@@ -79,7 +79,7 @@ export function initializeDependencies() {
   const selectionRepository = new SelectionRepository()
 
   /* MOCK SERVICES START */
-  const mockCategoryService = {} as CategoryService
+  const mockColumnService = {} as ColumnService
   const mockBoardService = {} as BoardService
   const mockTaskService = {} as TaskService
   const mockWorkspaceService = {} as WorkspaceService
@@ -90,12 +90,12 @@ export function initializeDependencies() {
     operationLogRepository,
     new Map<string, IRevertableService>([
       ['tasks', mockTaskService],
-      ['categories', mockCategoryService],
+      ['columns', mockColumnService],
       ['boards', mockBoardService],
       ['workspaces', mockWorkspaceService],
     ]),
 
-    mockCategoryService,
+    mockColumnService,
     mockBoardService,
     mockWorkspaceService,
   )
@@ -103,7 +103,7 @@ export function initializeDependencies() {
 
   const limitService = new LimitService(
     mockBoardService,
-    mockCategoryService,
+    mockColumnService,
     mockTaskService,
     mockWorkspaceService,
   )
@@ -138,16 +138,16 @@ export function initializeDependencies() {
     taskRepository,
     embeddingService,
     operationLogService,
-    mockCategoryService,
+    mockColumnService,
     mockBoardService,
     mockWorkspaceService,
     limitService,
   )
   /* TASK SERVICES END */
 
-  /* CATEGORY SERVICES START */
-  const categoryService = new CategoryService(
-    categoryRepository,
+  /* COLUMN SERVICES START */
+  const columnService = new ColumnService(
+    columnRepository,
     embeddingService,
     operationLogService,
     mockWorkspaceService,
@@ -155,7 +155,7 @@ export function initializeDependencies() {
     taskService,
     limitService,
   )
-  /* CATEGORY SERVICES END */
+  /* COLUMN SERVICES END */
 
   /* BOARD SERVICES START */
   const boardService = new BoardService(
@@ -163,7 +163,7 @@ export function initializeDependencies() {
     embeddingService,
     operationLogService,
     mockWorkspaceService,
-    categoryService,
+    columnService,
     taskService,
     limitService,
   )
@@ -175,7 +175,7 @@ export function initializeDependencies() {
     embeddingService,
     operationLogService,
     boardService,
-    categoryService,
+    columnService,
     taskService,
     limitService,
     userService,
@@ -191,21 +191,21 @@ export function initializeDependencies() {
 
     if (typeof method === 'function') {
       ;(mockTaskService as any)[methodName] = method.bind(taskService)
-      ;(mockCategoryService as any)[methodName] = method.bind(categoryService)
+      ;(mockColumnService as any)[methodName] = method.bind(columnService)
       ;(mockBoardService as any)[methodName] = method.bind(boardService)
       ;(mockWorkspaceService as any)[methodName] = method.bind(workspaceService)
     }
   }
 
-  const categoryMethodsToCopy = Object.getOwnPropertyNames(CategoryService.prototype).filter(
+  const columnMethodsToCopy = Object.getOwnPropertyNames(ColumnService.prototype).filter(
     (name) => name !== 'constructor',
   )
 
-  for (const methodName of categoryMethodsToCopy) {
-    const method = (categoryService.constructor.prototype as any)[methodName]
+  for (const methodName of columnMethodsToCopy) {
+    const method = (columnService.constructor.prototype as any)[methodName]
 
     if (typeof method === 'function') {
-      ;(mockCategoryService as any)[methodName] = method.bind(categoryService)
+      ;(mockColumnService as any)[methodName] = method.bind(columnService)
     }
   }
   const boardMethodsToCopy = Object.getOwnPropertyNames(BoardService.prototype).filter(
@@ -244,7 +244,7 @@ export function initializeDependencies() {
     }
   }
 
-  Object.assign(mockCategoryService, categoryService)
+  Object.assign(mockColumnService, columnService)
   Object.assign(mockBoardService, boardService)
   Object.assign(mockTaskService, taskService)
   Object.assign(mockWorkspaceService, workspaceService)
@@ -258,7 +258,7 @@ export function initializeDependencies() {
     chatMessageService,
     settingService,
     taskService,
-    categoryService,
+    columnService,
     boardService,
     workspaceService,
     checkpointWriteRepository,
@@ -269,7 +269,7 @@ export function initializeDependencies() {
 
   const filterToMongoQueryService = new FilterToMongoQueryService(
     taskService,
-    categoryService,
+    columnService,
     boardService,
     workspaceService,
     selectionService,
@@ -278,14 +278,14 @@ export function initializeDependencies() {
   const taskToolsExecutorService = new TaskToolsExecutorService(
     taskRepository,
     taskService,
-    categoryService,
+    columnService,
     filterToMongoQueryService,
     selectionService,
   )
 
-  const categoryToolsExecutorService = new CategoryToolsExecutorService(
-    categoryRepository,
-    categoryService,
+  const columnToolsExecutorService = new ColumnToolsExecutorService(
+    columnRepository,
+    columnService,
     boardService,
     filterToMongoQueryService,
     selectionService,
@@ -309,7 +309,7 @@ export function initializeDependencies() {
   const generalToolsExecutor = new GeneralToolsExecutor(
     selectionService,
     taskService,
-    categoryService,
+    columnService,
     boardService,
     workspaceService,
     operationLogService,
@@ -318,11 +318,11 @@ export function initializeDependencies() {
   const authController = new AuthController(authService, userService)
   const workspaceController = new WorkspaceController(workspaceService)
   const boardController = new BoardController(boardService)
-  const categoryController = new CategoryController(categoryService)
+  const columnController = new ColumnController(columnService)
   const taskController = new TaskController(taskService)
   const archiveController = new ArchiveController(
     taskService,
-    categoryService,
+    columnService,
     boardService,
     workspaceService,
   )
@@ -344,7 +344,7 @@ export function initializeDependencies() {
       emailService,
       tokenService,
       workspaceService,
-      categoryService,
+      columnService,
       boardService,
       taskService,
       settingService,
@@ -353,7 +353,7 @@ export function initializeDependencies() {
       paymentMethodService,
       operationLogService,
       taskToolsExecutorService,
-      categoryToolsExecutorService,
+      columnToolsExecutorService,
       boardToolsExecutorService,
       workspaceToolsExecutorService,
       generalToolsExecutor,
@@ -364,7 +364,7 @@ export function initializeDependencies() {
       authController,
       workspaceController,
       boardController,
-      categoryController,
+      columnController,
       taskController,
       archiveController,
       userController,

@@ -10,7 +10,7 @@ export default (controller: ArchiveController): Router => {
   router.use(confirmationMiddleware)
 
   router.get('/tasks', controller.getAllArchivedTasks.bind(controller))
-  router.get('/categories', controller.getAllArchivedCategories.bind(controller))
+  router.get('/columns', controller.getAllArchivedColumns.bind(controller))
   router.get('/boards', controller.getAllArchivedBoards.bind(controller))
   router.get('/workspaces', controller.getAllArchivedWorkspaces.bind(controller))
 

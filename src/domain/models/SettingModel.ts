@@ -13,7 +13,7 @@ export const SettingSchema = new Schema<ISettingRaw>(
       enum: AiConfirmationTypeEnum,
       required: true,
     },
-    ai_default_category: {
+    ai_default_column: {
       type: String,
       default: '',
     },

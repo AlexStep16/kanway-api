@@ -7,6 +7,7 @@ import { CloneBoardsScheme } from './schemes/BoardManager/CloneBoardsScheme.js'
 import { RecoverBoardsScheme } from './schemes/BoardManager/RecoverBoardsScheme.js'
 import { MoveBoardsScheme } from './schemes/BoardManager/MoveBoardsScheme.js'
 import { SearchBoardsScheme } from './schemes/BoardManager/SearchBoardsScheme.js'
+import { CreateBoardsScheme } from './schemes/BoardManager/CreateBoardsScheme.js'
 
 export function initBoardManagerTools(
   dependencies: AgentDependencies,
@@ -23,6 +24,20 @@ export function initBoardManagerTools(
     {
       name: 'search_boards',
       schema: SearchBoardsScheme,
+    },
+  )
+
+  const createBoards = tool(
+    async (data, config) => {
+      return await dependencies.services.boardToolsExecutorService.createBoards(
+        data,
+        runnableConfig,
+        config.context,
+      )
+    },
+    {
+      name: 'create_boards',
+      schema: CreateBoardsScheme,
     },
   )
 
@@ -96,5 +111,13 @@ export function initBoardManagerTools(
     },
   )
 
-  return [searchBoards, updateBoards, deleteArchiveBoards, cloneBoards, recoverBoards, moveBoards]
+  return [
+    searchBoards,
+    createBoards,
+    updateBoards,
+    deleteArchiveBoards,
+    cloneBoards,
+    recoverBoards,
+    moveBoards,
+  ]
 }

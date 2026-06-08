@@ -1,13 +1,13 @@
 import { z } from 'zod'
-import { CategoryDTOSchema } from '@/application/dtos/CategoryDTO.js'
+import { ColumnDTOSchema } from '@/application/dtos/ColumnDTO.js'
 import { ErrorMessages } from '@/enums/ErrorMessages.js'
 
 const objectIdRegex = /^[0-9a-fA-F]{24}$/
 
-export const CategoryEditDTOSchema = CategoryDTOSchema.partial().extend({
+export const ColumnEditDTOSchema = ColumnDTOSchema.partial().extend({
   id: z
-    .string(ErrorMessages.CATEGORY_ID_INVALID)
-    .regex(objectIdRegex, ErrorMessages.CATEGORY_ID_INVALID),
+    .string(ErrorMessages.COLUMN_ID_INVALID)
+    .regex(objectIdRegex, ErrorMessages.COLUMN_ID_INVALID),
 })
 
-export type CategoryEditDTO = z.infer<typeof CategoryEditDTOSchema>
+export type ColumnEditDTO = z.infer<typeof ColumnEditDTOSchema>

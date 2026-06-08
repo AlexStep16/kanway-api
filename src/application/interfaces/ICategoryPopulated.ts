@@ -1,7 +1,7 @@
-import { ICategory } from '@/domain/entities/ICategory.js'
+import { IColumn } from '@/domain/entities/IColumn.js'
 import { Types } from 'mongoose'
 
-export type ICategoryPopulated = ICategory<
+export type IColumnPopulated = IColumn<
   {
     id: Types.ObjectId
     name: string

@@ -18,9 +18,9 @@ export const TaskSchema = new Schema<ITaskRaw>(
       ref: 'Board',
       required: true,
     },
-    category: {
+    column: {
       type: Schema.Types.ObjectId,
-      ref: 'Category',
+      ref: 'Column',
       required: true,
     },
     embeddings: {

@@ -1,4 +1,4 @@
-export interface ICategoryRawString {
+export interface IColumnRawString {
   _id: string
   name: string
   workspace: string

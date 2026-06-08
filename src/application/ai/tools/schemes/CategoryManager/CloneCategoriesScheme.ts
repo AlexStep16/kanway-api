@@ -1,11 +1,11 @@
 import z from 'zod'
 
-export const CloneCategoriesScheme = z.object({
+export const CloneColumnsScheme = z.object({
   selection_id: z.string().optional().describe('Target selection id.'),
-  category_ids: z.array(z.string()).optional().describe('Target category ids.'),
+  column_ids: z.array(z.string()).optional().describe('Target column ids.'),
 }).describe(`
-  Clone categories.
-  Pass selection_id or category_ids.
+  Clone columns.
+  Pass selection_id or column_ids.
 `)
 
-export type CloneCategoriesDTO = z.infer<typeof CloneCategoriesScheme>
+export type CloneColumnsDTO = z.infer<typeof CloneColumnsScheme>

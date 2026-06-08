@@ -41,12 +41,12 @@ export default class TaskRepository extends BaseRepository<
       filter.name = { $regex: criteria.name, $options: 'i' }
     }
 
-    if (criteria.categoryId) {
-      filter.category = criteria.categoryId
+    if (criteria.columnId) {
+      filter.column = criteria.columnId
     }
 
-    if (criteria.categoryIds) {
-      filter.category = { $in: criteria.categoryIds }
+    if (criteria.columnIds) {
+      filter.column = { $in: criteria.columnIds }
     }
 
     if (criteria.boardId) {

@@ -1,6 +1,6 @@
 import { Types } from 'mongoose'
 
-export interface ICategory<TBoard = Types.ObjectId, TWorkspace = Types.ObjectId> {
+export interface IColumn<TBoard = Types.ObjectId, TWorkspace = Types.ObjectId> {
   id: Types.ObjectId
   name: string
   workspace: TWorkspace

@@ -1,17 +1,15 @@
-import { ICategoryPopulated } from '@/application/interfaces/ICategoryPopulated.js'
+import { IColumnPopulated } from '@/application/interfaces/IColumnPopulated.js'
 
-interface CompressedCategory {
+interface CompressedColumn {
   id: string
   name: string
   boardName: string
 }
 
-export function getCompressedCategories(
-  categories: ICategoryPopulated[],
-): Array<CompressedCategory> {
-  return categories.map((category) => ({
-    id: category.id.toString(),
-    name: category.name,
-    boardName: category.board.name,
+export function getCompressedColumns(columns: IColumnPopulated[]): Array<CompressedColumn> {
+  return columns.map((column) => ({
+    id: column.id.toString(),
+    name: column.name,
+    boardName: column.board.name,
   }))
 }

@@ -17,7 +17,7 @@ import { projectProperties } from '@/utils/projectProperties.js'
 import { IResponseWithLog } from '@interfaces/IResponseWithLog.js'
 import { IOperationLog } from '@/domain/entities/IOperationLog.js'
 import { BASE_COLORS_MAP } from '@/constants/BASE_COLORS.js'
-import { CategoryService } from '@application/services/CategoryService.js'
+import { ColumnService } from '@application/services/ColumnService.js'
 import { TaskService } from '@application/services/TaskService.js'
 import { AppError } from '@/domain/errors/AppError.js'
 import { LifecycleDTO } from '@dtos/LifecycleDTO.js'
@@ -44,7 +44,7 @@ export class WorkspaceService extends BaseService<
   protected embeddingService: EmbeddingService
   protected operationLogService: OperationLogService
   protected boardService: BoardService
-  protected categoryService: CategoryService
+  protected columnService: ColumnService
   protected taskService: TaskService
   protected limitService: LimitService
   protected userService: UserService
@@ -54,7 +54,7 @@ export class WorkspaceService extends BaseService<
     embeddingService: EmbeddingService,
     operationLogService: OperationLogService,
     boardService: BoardService,
-    categoryService: CategoryService,
+    columnService: ColumnService,
     taskService: TaskService,
     limitService: LimitService,
     userService: UserService,
@@ -65,7 +65,7 @@ export class WorkspaceService extends BaseService<
     this.embeddingService = embeddingService
     this.operationLogService = operationLogService
     this.boardService = boardService
-    this.categoryService = categoryService
+    this.columnService = columnService
     this.taskService = taskService
     this.limitService = limitService
     this.userService = userService
@@ -505,7 +505,7 @@ export class WorkspaceService extends BaseService<
 
     await Promise.all([
       this.taskService.deleteTasksByCriteria(workspacesCriteria, userId),
-      this.categoryService.deleteCategoriesByCriteria(workspacesCriteria, userId),
+      this.columnService.deleteColumnsByCriteria(workspacesCriteria, userId),
       this.boardService.deleteBoardsByCriteria(workspacesCriteria, userId),
     ])
 
@@ -609,7 +609,7 @@ export class WorkspaceService extends BaseService<
         user.id,
         session,
       ),
-      this.categoryService.updateLifecycleCategoriesByCriteria(
+      this.columnService.updateLifecycleColumnsByCriteria(
         workspacesCriteria,
         childrenData,
         user.id,
@@ -968,6 +968,7 @@ export class WorkspaceService extends BaseService<
 
     const workspacePayload: IWorkspaceCreatePayload = {
       name: workspaceName,
+      isFavorite: data.isFavorite || false,
       rank: lastRank.toString(),
       color: data.color,
       colorName: '',
@@ -1010,6 +1011,7 @@ export class WorkspaceService extends BaseService<
         rank: newRank.toString(),
         color: dto.color,
         colorName: '',
+        isFavorite: dto.isFavorite || false,
         embeddings: embeddingsMap[dto.name.trim()],
         userId,
       }

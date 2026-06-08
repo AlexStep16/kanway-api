@@ -34,6 +34,8 @@ import { RecoverBoardsDTO } from '../tools/schemes/BoardManager/RecoverBoardsSch
 import { getSearchHumanReadableFilter } from '../tools/helpers/SearchTasksHumanReadableFilters.js'
 import { SearchFilter } from '@/application/types/SearchFilter.js'
 import { buildEntitySamples } from '../tools/helpers/EntitySamplesHelpers.js'
+import { CreateBoardsDTO } from '../tools/schemes/BoardManager/CreateBoardsScheme.js'
+import { BoardDTO } from '@/application/dtos/BoardDTO.js'
 
 export class BoardToolsExecutorService {
   constructor(
@@ -138,7 +140,7 @@ export class BoardToolsExecutorService {
       toolCallId: toolCall.id!,
       toolName: 'update_boards',
       toolContent: {
-        ids: Array.from(new Set(boardIds)),
+        count: boardIds.length,
         filters: humanReadableUpdates,
       },
     })
@@ -211,6 +213,94 @@ export class BoardToolsExecutorService {
       }
 
       return new FailedToolResult('Failed to create operation log for boards update.')
+    } catch (error) {
+      statusLog.state = StatusStatesEnum.FAILED
+      await dispatchCustomEvent(CustomEvents.STATUS_UPDATE_LOG, statusLog)
+
+      throw error
+    }
+  }
+
+  public async createBoards(
+    payload: CreateBoardsDTO,
+    config: RunnableConfig,
+    context: IConfigContext,
+    session?: ClientSession,
+  ) {
+    const configurable = config.configurable as Configurable
+    const toolCall = context.toolCall!
+
+    const statusLog = await this.toolStatusLogLifecycleService.getOrCreateInProgressLog({
+      existingLog: context.statusLog,
+      toolCallId: toolCall.id!,
+      toolName: 'create_boards',
+      toolContent: {
+        count: payload.boards.length,
+      },
+    })
+
+    try {
+      const dtoBoards: BoardDTO[] = payload.boards.map((board) => ({
+        name: board.name,
+        workspaceId: board.workspace_id,
+        isFavorite: board.is_favorite,
+      }))
+
+      if (dtoBoards.length === 0) {
+        throw new Error('No boards to create')
+      }
+
+      let isDryRun = false
+
+      if (configurable.aiConfirmationType === AiConfirmationTypeEnum.ALWAYS) {
+        if (context.isApproved === undefined) {
+          isDryRun = true
+        } else if (context.isApproved === false) {
+          await this.toolStatusLogLifecycleService.setCancelled(statusLog)
+
+          return new SuccessToolResult('Board create operation was rejected by the user.')
+        }
+      }
+
+      const createBoardsResult = await this.boardService.createMany(
+        dtoBoards,
+        configurable.user,
+        session,
+        isDryRun,
+      )
+
+      if (createBoardsResult.logId) {
+        const operationLogId = createBoardsResult.logId.toString()
+
+        if (isDryRun) {
+          await this.toolStatusLogLifecycleService.setAwaitingConfirmation(statusLog, (content) => {
+            content.logId = operationLogId
+          })
+
+          return new ConfirmationToolResult({
+            logId: operationLogId,
+          })
+        }
+
+        await dispatchCustomEvent(CustomEvents.OPERATION, {
+          logId: operationLogId,
+          session,
+        })
+
+        await this.toolStatusLogLifecycleService.setCompleted(statusLog, (content) => {
+          content.count = createBoardsResult.data.length
+          content.logId = operationLogId
+        })
+
+        return new SuccessToolResult(
+          `Successfully created ${createBoardsResult.data.length} boards. Operation Log ID: ${operationLogId}`,
+          {
+            logId: operationLogId,
+          },
+        )
+      }
+
+      return new FailedToolResult('Failed to create operation log for boards create.')
     } catch (error) {
       statusLog.state = StatusStatesEnum.FAILED
       await dispatchCustomEvent(CustomEvents.STATUS_UPDATE_LOG, statusLog)
@@ -408,7 +498,7 @@ export class BoardToolsExecutorService {
       toolCallId: toolCall.id!,
       toolName: 'delete_archive_boards',
       toolContent: {
-        ids: Array.from(new Set(boardIds)),
+        count: boardIds.length,
         filters: humanReadableFilters,
         isSoftDelete: payload.soft_delete,
       },
@@ -513,7 +603,7 @@ export class BoardToolsExecutorService {
       toolCallId: toolCall.id!,
       toolName: 'clone_boards',
       toolContent: {
-        ids: Array.from(new Set(boardIds)),
+        count: boardIds.length,
         filters: humanReadableFilters,
       },
     })
@@ -599,7 +689,7 @@ export class BoardToolsExecutorService {
       toolCallId: toolCall.id!,
       toolName: 'recover_boards',
       toolContent: {
-        ids: Array.from(new Set(boardIds)),
+        count: boardIds.length,
         filters: humanReadableFilters,
       },
     })
@@ -685,7 +775,7 @@ export class BoardToolsExecutorService {
       toolCallId: toolCall.id!,
       toolName: 'move_boards',
       toolContent: {
-        ids: Array.from(new Set(boardIds)),
+        count: boardIds.length,
         filters: humanReadableFilters,
       },
     })

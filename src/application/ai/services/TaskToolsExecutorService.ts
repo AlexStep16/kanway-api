@@ -30,20 +30,22 @@ import { ITextValue } from '@/application/interfaces/statuses/content/ITextValue
 import { CloneTasksDTO } from '../tools/schemes/TaskManager/CloneTasksScheme.js'
 import { RecoverTasksDTO } from '../tools/schemes/TaskManager/RecoverTasksScheme.js'
 import { MoveTasksDTO } from '../tools/schemes/TaskManager/MoveTasksScheme.js'
-import { CategoryService } from '@/application/services/CategoryService.js'
+import { ColumnService } from '@/application/services/ColumnService.js'
 import { SearchFilter } from '@/application/types/SearchFilter.js'
 import {
   getSearchHumanReadableFilter,
   getTaskColorHumanFilter,
 } from '../tools/helpers/SearchTasksHumanReadableFilters.js'
 import { buildEntitySamples } from '../tools/helpers/EntitySamplesHelpers.js'
+import { CreateTasksDTO } from '../tools/schemes/TaskManager/CreateTasksScheme.js'
+import { TaskDTO } from '@/application/dtos/TaskDTO.js'
 
 export class TaskToolsExecutorService {
   constructor(
     private taskRepository: TaskRepository,
 
     private taskService: TaskService,
-    private categoryService: CategoryService,
+    private columnService: ColumnService,
     private filterToMongoQueryService: FilterToMongoQueryService,
     private selectionService: SelectionService,
     private toolStatusLogLifecycleService = new ToolStatusLogLifecycleService(),
@@ -141,7 +143,7 @@ export class TaskToolsExecutorService {
       toolCallId: toolCall.id!,
       toolName: 'update_tasks',
       toolContent: {
-        ids: Array.from(new Set(taskIds)),
+        count: taskIds.length,
         filters: humanReadableUpdates,
       },
     })
@@ -214,6 +216,101 @@ export class TaskToolsExecutorService {
       }
 
       return new FailedToolResult('Failed to create operation log for tasks update.')
+    } catch (error) {
+      statusLog.state = StatusStatesEnum.FAILED
+      await dispatchCustomEvent(CustomEvents.STATUS_UPDATE_LOG, statusLog)
+
+      throw error
+    }
+  }
+
+  public async createTasks(
+    payload: CreateTasksDTO,
+    config: RunnableConfig,
+    context: IConfigContext,
+    session?: ClientSession,
+  ) {
+    const configurable = config.configurable as Configurable
+    const toolCall = context.toolCall!
+
+    const statusLog = await this.toolStatusLogLifecycleService.getOrCreateInProgressLog({
+      existingLog: context.statusLog,
+      toolCallId: toolCall.id!,
+      toolName: 'create_tasks',
+      toolContent: {
+        count: payload.tasks.length,
+      },
+    })
+
+    try {
+      const dtoTasks: TaskDTO[] = payload.tasks.map((task) => ({
+        name: task.name,
+        columnId: task.column_id,
+        description: task.description,
+        dueDate: task.due_date,
+        dueHours: task.due_hours,
+        dueMinutes: task.due_minutes,
+        isCompleted: task.is_completed,
+        color: task.color,
+        tags: task.tags,
+        priority: task.priority,
+      }))
+
+      if (dtoTasks.length === 0) {
+        throw new Error('No tasks to create')
+      }
+
+      let isDryRun = false
+
+      if (configurable.aiConfirmationType === AiConfirmationTypeEnum.ALWAYS) {
+        if (context.isApproved === undefined) {
+          isDryRun = true
+        } else if (context.isApproved === false) {
+          await this.toolStatusLogLifecycleService.setCancelled(statusLog)
+
+          return new SuccessToolResult('Task create operation was rejected by the user.')
+        }
+      }
+
+      const createTasksResult = await this.taskService.createMany(
+        dtoTasks,
+        configurable.user,
+        session,
+        isDryRun,
+      )
+
+      if (createTasksResult.logId) {
+        const operationLogId = createTasksResult.logId.toString()
+
+        if (isDryRun) {
+          await this.toolStatusLogLifecycleService.setAwaitingConfirmation(statusLog, (content) => {
+            content.logId = operationLogId
+          })
+
+          return new ConfirmationToolResult({
+            logId: operationLogId,
+          })
+        }
+
+        await dispatchCustomEvent(CustomEvents.OPERATION, {
+          logId: operationLogId,
+          session,
+        })
+
+        await this.toolStatusLogLifecycleService.setCompleted(statusLog, (content) => {
+          content.count = createTasksResult.data.length
+          content.logId = operationLogId
+        })
+
+        return new SuccessToolResult(
+          `Successfully created ${createTasksResult.data.length} tasks. Operation Log ID: ${operationLogId}`,
+          {
+            logId: operationLogId,
+          },
+        )
+      }
+
+      return new FailedToolResult('Failed to create operation log for tasks create.')
     } catch (error) {
       statusLog.state = StatusStatesEnum.FAILED
       await dispatchCustomEvent(CustomEvents.STATUS_UPDATE_LOG, statusLog)
@@ -367,16 +464,16 @@ export class TaskToolsExecutorService {
       })
     }
 
-    if (payload.newCategoryId) {
-      const categories = await this.categoryService.getByCriteria(
-        { id: payload.newCategoryId },
+    if (payload.newColumnId) {
+      const columns = await this.columnService.getByCriteria(
+        { id: payload.newColumnId },
         userId,
         session,
       )
 
       filters.push({
         text: 'Новая категория',
-        value: categories[0]?.name ?? payload.newCategoryId,
+        value: columns[0]?.name ?? payload.newColumnId,
       })
     }
 
@@ -407,7 +504,7 @@ export class TaskToolsExecutorService {
       toolCallId: toolCall.id!,
       toolName: 'delete_archive_tasks',
       toolContent: {
-        ids: Array.from(new Set(taskIds)),
+        count: taskIds.length,
         filters: humanReadableFilters,
         isSoftDelete: payload.soft_delete,
       },
@@ -509,7 +606,7 @@ export class TaskToolsExecutorService {
       toolCallId: toolCall.id!,
       toolName: 'clone_tasks',
       toolContent: {
-        ids: Array.from(new Set(taskIds)),
+        count: taskIds.length,
         filters: humanReadableFilters,
       },
     })
@@ -595,7 +692,7 @@ export class TaskToolsExecutorService {
       toolCallId: toolCall.id!,
       toolName: 'recover_tasks',
       toolContent: {
-        ids: Array.from(new Set(taskIds)),
+        count: taskIds.length,
         filters: humanReadableFilters,
       },
     })
@@ -681,7 +778,7 @@ export class TaskToolsExecutorService {
       toolCallId: toolCall.id!,
       toolName: 'move_tasks',
       toolContent: {
-        ids: Array.from(new Set(taskIds)),
+        count: taskIds.length,
         filters: humanReadableFilters,
       },
     })
@@ -706,7 +803,7 @@ export class TaskToolsExecutorService {
           afterTaskId: payload.afterTaskId,
           toStart: payload.toStart,
           toEnd: payload.toEnd,
-          newCategoryId: payload.newCategoryId,
+          newColumnId: payload.newColumnId,
         },
         configurable.user,
         session,

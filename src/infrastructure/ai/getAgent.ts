@@ -37,7 +37,7 @@ export async function getAgent(dependencies: ReturnType<typeof initializeDepende
     {
       services: {
         taskToolsExecutorService: dependencies.services.taskToolsExecutorService,
-        categoryToolsExecutorService: dependencies.services.categoryToolsExecutorService,
+        columnToolsExecutorService: dependencies.services.columnToolsExecutorService,
         boardToolsExecutorService: dependencies.services.boardToolsExecutorService,
         workspaceToolsExecutorService: dependencies.services.workspaceToolsExecutorService,
         generalToolsExecutor: dependencies.services.generalToolsExecutor,

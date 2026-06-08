@@ -31,30 +31,14 @@ export const TaskDTOSchema = z
             : ErrorMessages.TASK_PRIORITY_INVALID,
       })
       .optional(),
-    categoryId: z
+    columnId: z
       .string({
         error: (iss) =>
           iss.input === undefined
-            ? ErrorMessages.CATEGORY_ID_REQUIRED
-            : ErrorMessages.CATEGORY_ID_INVALID,
+            ? ErrorMessages.COLUMN_ID_REQUIRED
+            : ErrorMessages.COLUMN_ID_INVALID,
       })
-      .regex(objectIdRegex, ErrorMessages.CATEGORY_ID_INVALID),
-    boardId: z
-      .string({
-        error: (iss) =>
-          iss.input === undefined
-            ? ErrorMessages.BOARD_ID_REQUIRED
-            : ErrorMessages.BOARD_ID_INVALID,
-      })
-      .regex(objectIdRegex, ErrorMessages.BOARD_ID_INVALID),
-    workspaceId: z
-      .string({
-        error: (iss) =>
-          iss.input === undefined
-            ? ErrorMessages.WORKSPACE_ID_REQUIRED
-            : ErrorMessages.WORKSPACE_ID_INVALID,
-      })
-      .regex(objectIdRegex, ErrorMessages.WORKSPACE_ID_INVALID),
+      .regex(objectIdRegex, ErrorMessages.COLUMN_ID_INVALID),
     color: z
       .object({
         value: z.enum(TASK_COLORS_TITLES, {

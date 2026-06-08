@@ -11,7 +11,7 @@ import { AppError } from '@/domain/errors/AppError.js'
 import { BaseService } from './BaseService.js'
 import { IOperationLogCreatePayload } from '../interfaces/IOperationLogCreatePayload.js'
 import { toMongoCaseKeys } from '@/utils/objectTransformers.js'
-import { CategoryService } from './CategoryService.js'
+import { ColumnService } from './ColumnService.js'
 import { BoardService } from './BoardService.js'
 import { WorkspaceService } from './WorkspaceService.js'
 import { IResponseWithLog } from '../interfaces/IResponseWithLog.js'
@@ -26,7 +26,7 @@ export class OperationLogService extends BaseService<
   protected repository: OperationLogRepository
   private revertAdapters: Map<string, IRevertableService>
 
-  private categoryService: CategoryService
+  private columnService: ColumnService
   private boardService: BoardService
   private workspaceService: WorkspaceService
 
@@ -34,7 +34,7 @@ export class OperationLogService extends BaseService<
     operationLogRepository: OperationLogRepository,
     revertServices: Map<string, IRevertableService>,
 
-    categoryService: CategoryService,
+    columnService: ColumnService,
     boardService: BoardService,
     workspaceService: WorkspaceService,
   ) {
@@ -43,7 +43,7 @@ export class OperationLogService extends BaseService<
     this.repository = operationLogRepository
     this.revertAdapters = revertServices
 
-    this.categoryService = categoryService
+    this.columnService = columnService
     this.boardService = boardService
     this.workspaceService = workspaceService
   }
@@ -188,20 +188,20 @@ export class OperationLogService extends BaseService<
     userId: Types.ObjectId,
     session?: ClientSession,
   ) {
-    const uniqueCategoryIds = new Set<string>()
+    const uniqueColumnIds = new Set<string>()
     const uniqueBoardIds = new Set<string>()
     const uniqueWorkspaceIds = new Set<string>()
 
     const allEntities = [...entitiesBefore, ...entitiesAfter]
 
     for (const entity of allEntities) {
-      if (entity.category) uniqueCategoryIds.add(entity.category.toString())
+      if (entity.column) uniqueColumnIds.add(entity.column.toString())
       if (entity.board) uniqueBoardIds.add(entity.board.toString())
       if (entity.workspace) uniqueWorkspaceIds.add(entity.workspace.toString())
     }
 
-    const [categories, boards, workspaces] = await Promise.all([
-      this.categoryService.getByCriteria({ ids: Array.from(uniqueCategoryIds) }, userId, session),
+    const [columns, boards, workspaces] = await Promise.all([
+      this.columnService.getByCriteria({ ids: Array.from(uniqueColumnIds) }, userId, session),
       this.boardService.getByCriteria({ ids: Array.from(uniqueBoardIds) }, userId, session),
       this.workspaceService.getByCriteria({ ids: Array.from(uniqueWorkspaceIds) }, userId, session),
     ])
@@ -209,16 +209,16 @@ export class OperationLogService extends BaseService<
     const createMap = (items: any[]) =>
       new Map(items.map((item) => [item.id.toString(), { id: item.id, name: item.name }]))
 
-    const categoryMap = createMap(categories)
+    const columnMap = createMap(columns)
     const boardMap = createMap(boards)
     const workspaceMap = createMap(workspaces)
 
     const populateEntity = (entity: any) => {
-      const catId = entity.category?.toString()
+      const catId = entity.column?.toString()
       const brdId = entity.board?.toString()
       const wrkId = entity.workspace?.toString()
 
-      if (categoryMap.has(catId)) entity.category = categoryMap.get(catId)
+      if (columnMap.has(catId)) entity.column = columnMap.get(catId)
       if (boardMap.has(brdId)) entity.board = boardMap.get(brdId)
       if (workspaceMap.has(wrkId)) entity.workspace = workspaceMap.get(wrkId)
     }

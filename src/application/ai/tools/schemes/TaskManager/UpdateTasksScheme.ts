@@ -1,4 +1,3 @@
-import { TASK_COLORS_TITLES } from '@/constants/TASK_COLORS.js'
 import z from 'zod'
 import {
   ArrayUpdateSchema,
@@ -7,14 +6,11 @@ import {
   DueMinutesUpdateSchema,
   StringUpdateSchema,
 } from '../updateSchemes.js'
+import { ColorScheme } from '../commonSchemes.js'
 
-const ColorUpdateSchema = z
-  .object({
-    value: z.enum(TASK_COLORS_TITLES).optional().describe('The color name.'),
-    tone: z.enum(['light', 'medium', 'dark']).optional().describe('The tone/shade.'),
-  })
-  .nullable()
-  .describe('Object to update the task color. Pass null to remove the color completely.')
+const ColorUpdateSchema = ColorScheme.nullable().describe(
+  'Object to update the task color. Pass null to remove the color completely.',
+)
 
 export const UpdateTasksScheme = z.object({
   selection_id: z.string().optional().describe('Apply updates to this selection of tasks.'),

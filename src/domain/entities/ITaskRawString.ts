@@ -5,7 +5,7 @@ export interface ITaskRawString {
   name: string
   workspace: string
   board: string
-  category: string
+  column: string
   is_deleted: boolean
   is_deleted_external: boolean
   rank: string

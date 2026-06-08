@@ -7,6 +7,7 @@ import { DeleteArchiveTasksScheme } from './schemes/TaskManager/DeleteArchiveTas
 import { CloneTasksScheme } from './schemes/TaskManager/CloneTasksScheme.js'
 import { RecoverTasksScheme } from './schemes/TaskManager/RecoverTasksScheme.js'
 import { MoveTasksScheme } from './schemes/TaskManager/MoveTasksScheme.js'
+import { CreateTasksScheme } from './schemes/TaskManager/CreateTasksScheme.js'
 
 export function initTaskManagerTools(
   dependencies: AgentDependencies,
@@ -23,6 +24,20 @@ export function initTaskManagerTools(
     {
       name: 'search_tasks',
       schema: SearchTasksScheme,
+    },
+  )
+
+  const createTasks = tool(
+    async (data, config) => {
+      return await dependencies.services.taskToolsExecutorService.createTasks(
+        data,
+        runnableConfig,
+        config.context,
+      )
+    },
+    {
+      name: 'create_tasks',
+      schema: CreateTasksScheme,
     },
   )
 
@@ -96,5 +111,13 @@ export function initTaskManagerTools(
     },
   )
 
-  return [searchTasks, updateTasks, deleteArchiveTasks, cloneTasks, recoverTasks, moveTasks]
+  return [
+    searchTasks,
+    createTasks,
+    updateTasks,
+    deleteArchiveTasks,
+    cloneTasks,
+    recoverTasks,
+    moveTasks,
+  ]
 }

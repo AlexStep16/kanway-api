@@ -1,4 +1,4 @@
-import { CategoryService } from '@/application/services/CategoryService.js'
+import { ColumnService } from '@/application/services/ColumnService.js'
 import { SelectionService } from './SelectionService.js'
 import { WorkspaceService } from '@/application/services/WorkspaceService.js'
 import { BoardService } from '@/application/services/BoardService.js'
@@ -26,7 +26,7 @@ export class GeneralToolsExecutor {
   constructor(
     private selectionService: SelectionService,
     private taskService: TaskService,
-    private categoryService: CategoryService,
+    private columnService: ColumnService,
     private boardService: BoardService,
     private workspaceService: WorkspaceService,
     private operationLogService: OperationLogService,
@@ -69,9 +69,9 @@ export class GeneralToolsExecutor {
           await this.taskService.getByCriteria({ ids: sringifiedEntityIds }, userId, session)
         ).slice(0, 20) // Limit to 20 items to avoid token overload
         break
-      case 'category':
+      case 'column':
         details = (
-          await this.categoryService.getByCriteria({ ids: sringifiedEntityIds }, userId, session)
+          await this.columnService.getByCriteria({ ids: sringifiedEntityIds }, userId, session)
         ).slice(0, 20)
         break
       case 'board':
@@ -120,7 +120,7 @@ export class GeneralToolsExecutor {
     switch (collectionName) {
       case 'tasks':
         return 'задач'
-      case 'categories':
+      case 'columns':
         return 'категорий'
       case 'boards':
         return 'досок'

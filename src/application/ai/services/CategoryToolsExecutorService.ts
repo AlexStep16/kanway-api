@@ -1,9 +1,9 @@
-import CategoryRepository from '@/application/repositories/CategoryRepository.js'
-import { CategoryService } from '@/application/services/CategoryService.js'
+import ColumnRepository from '@/application/repositories/ColumnRepository.js'
+import { ColumnService } from '@/application/services/ColumnService.js'
 import { FilterToMongoQueryService } from './FilterToMongoQueryService.js'
 import { SelectionService } from './SelectionService.js'
 import { ToolStatusLogLifecycleService } from './ToolStatusLogLifecycleService.js'
-import { SearchCategoriesDTO } from '../tools/schemes/CategoryManager/SearchCategoriesScheme.js'
+import { SearchColumnsDTO } from '../tools/schemes/ColumnManager/SearchColumnsScheme.js'
 import { RunnableConfig } from '@langchain/core/runnables'
 import { IConfigContext } from '../interfaces/IConfigContext.js'
 import { ClientSession, Types } from 'mongoose'
@@ -17,37 +17,39 @@ import { dispatchCustomEvent } from '@langchain/core/callbacks/dispatch'
 import { CustomEvents } from '@/enums/CustomEvents.js'
 import { EntityTypesEnum } from '@/domain/enums/EntityTypesEnum.js'
 import { SuccessToolResult } from '../tools/helpers/ToolResult/SuccessToolResult.js'
-import { UpdateCategoriesDTO } from '../tools/schemes/CategoryManager/UpdateCategoriesScheme.js'
-import { ICategory } from '@/domain/entities/ICategory.js'
+import { UpdateColumnsDTO } from '../tools/schemes/ColumnManager/UpdateColumnsScheme.js'
+import { IColumn } from '@/domain/entities/IColumn.js'
 import {
   transformRawUpdateToDTO,
   transformRawUpdateToHumanReadableFilters,
-} from '../tools/helpers/UpdateCategoriesHelpers.js'
+} from '../tools/helpers/UpdateColumnsHelpers.js'
 import { AiConfirmationTypeEnum } from '@/domain/enums/AiConfirmationTypeEnum.js'
 import { ConfirmationToolResult } from '../tools/helpers/ToolResult/ConfirmationToolResult.js'
 import { FailedToolResult } from '../tools/helpers/ToolResult/FailedToolResult.js'
 import { ITextValue } from '@/application/interfaces/statuses/content/ITextValue.js'
-import { MoveCategoriesDTO } from '../tools/schemes/CategoryManager/MoveCategoriesScheme.js'
-import { DeleteArchiveCategoriesDTO } from '../tools/schemes/CategoryManager/DeleteArchiveCategoriesScheme.js'
-import { CloneCategoriesDTO } from '../tools/schemes/CategoryManager/CloneCategoriesScheme.js'
-import { RecoverCategoriesDTO } from '../tools/schemes/CategoryManager/RecoverCategoriesScheme.js'
+import { MoveColumnsDTO } from '../tools/schemes/ColumnManager/MoveColumnsScheme.js'
+import { DeleteArchiveColumnsDTO } from '../tools/schemes/ColumnManager/DeleteArchiveColumnsScheme.js'
+import { CloneColumnsDTO } from '../tools/schemes/ColumnManager/CloneColumnsScheme.js'
+import { RecoverColumnsDTO } from '../tools/schemes/ColumnManager/RecoverColumnsScheme.js'
 import { SearchFilter } from '@/application/types/SearchFilter.js'
 import { getSearchHumanReadableFilter } from '../tools/helpers/SearchTasksHumanReadableFilters.js'
 import { buildEntitySamples } from '../tools/helpers/EntitySamplesHelpers.js'
+import { CreateColumnsDTO } from '../tools/schemes/ColumnManager/CreateColumnsScheme.js'
+import { ColumnDTO } from '@/application/dtos/ColumnDTO.js'
 
-export class CategoryToolsExecutorService {
+export class ColumnToolsExecutorService {
   constructor(
-    private categoryRepository: CategoryRepository,
+    private columnRepository: ColumnRepository,
 
-    private categoryService: CategoryService,
+    private columnService: ColumnService,
     private boardService: BoardService,
     private filterToMongoQueryService: FilterToMongoQueryService,
     private selectionService: SelectionService,
     private toolStatusLogLifecycleService = new ToolStatusLogLifecycleService(),
   ) {}
 
-  public async searchCategories(
-    payload: SearchCategoriesDTO,
+  public async searchColumns(
+    payload: SearchColumnsDTO,
     config: RunnableConfig,
     context: IConfigContext,
     session?: ClientSession,
@@ -60,7 +62,7 @@ export class CategoryToolsExecutorService {
       filters,
       configurable.timezone,
       configurable.user.id,
-      { entityType: 'category' },
+      { entityType: 'column' },
     )
     const humanReadableFilters = this._transformSearchFiltersToHumanReadableFilters(filters)
 
@@ -73,40 +75,40 @@ export class CategoryToolsExecutorService {
       state: StatusStatesEnum.IN_PROGRESS,
       content: {
         id: toolCall.id!,
-        name: 'search_categories',
+        name: 'search_columns',
         content: toolContent,
       },
     }
     await dispatchCustomEvent(CustomEvents.STATUS_ADD_LOG, statusLog)
 
     try {
-      const categories = await this.categoryService.getByFilter(mongoQuery, session)
-      const categoriesSample = buildEntitySamples(EntityTypesEnum.CATEGORY, categories, {
+      const columns = await this.columnService.getByFilter(mongoQuery, session)
+      const columnsSample = buildEntitySamples(EntityTypesEnum.COLUMN, columns, {
         timezone: configurable.timezone,
         additionalFields: fields_to_include,
       })
       const selection = await this.selectionService.create(
         {
-          entityType: EntityTypesEnum.CATEGORY,
-          entityIds: categories.map((c) => c.id),
+          entityType: EntityTypesEnum.COLUMN,
+          entityIds: columns.map((c) => c.id),
           humanReadableFilters,
-          sample: categoriesSample,
-          count: categories.length,
+          sample: columnsSample,
+          count: columns.length,
         },
         configurable.user.id,
         session,
       )
 
       statusLog.state = StatusStatesEnum.COMPLETED
-      toolContent.ids = categories.map((c) => c.id.toString())
+      toolContent.ids = columns.map((c) => c.id.toString())
 
       await dispatchCustomEvent(CustomEvents.STATUS_UPDATE_LOG, statusLog)
 
       return new SuccessToolResult(
         JSON.stringify({
           selection_id: selection.id.toString(),
-          sample: categoriesSample,
-          count: categories.length,
+          sample: columnsSample,
+          count: columns.length,
           human_readable_filters: humanReadableFilters,
         }),
         {
@@ -121,14 +123,14 @@ export class CategoryToolsExecutorService {
     }
   }
 
-  public async updateCategories(
-    payload: UpdateCategoriesDTO,
+  public async updateColumns(
+    payload: UpdateColumnsDTO,
     config: RunnableConfig,
     context: IConfigContext,
     session?: ClientSession,
   ) {
     const configurable = config.configurable as Configurable
-    const categoryIds = await this._resolveCategoryIds(payload, configurable.user.id, session)
+    const columnIds = await this._resolveColumnIds(payload, configurable.user.id, session)
     const toolCall = context.toolCall!
 
     const humanReadableUpdates = transformRawUpdateToHumanReadableFilters(payload.updates)
@@ -136,29 +138,29 @@ export class CategoryToolsExecutorService {
     const statusLog = await this.toolStatusLogLifecycleService.getOrCreateInProgressLog({
       existingLog: context.statusLog,
       toolCallId: toolCall.id!,
-      toolName: 'update_categories',
+      toolName: 'update_columns',
       toolContent: {
-        ids: Array.from(new Set(categoryIds)),
+        count: columnIds.length,
         filters: humanReadableUpdates,
       },
     })
 
     try {
-      const categories = await this.categoryRepository.findByFilter<ICategory>(
+      const columns = await this.columnRepository.findByFilter<IColumn>(
         {
-          _id: { $in: categoryIds },
+          _id: { $in: columnIds },
           user_id: configurable.user.id,
         },
         session,
         {
-          limit: categoryIds.length,
+          limit: columnIds.length,
         },
       )
 
-      const dtoCategories = transformRawUpdateToDTO(categories, payload.updates)
+      const dtoColumns = transformRawUpdateToDTO(columns, payload.updates)
 
-      if (dtoCategories.length === 0) {
-        throw new Error('No categories to update')
+      if (dtoColumns.length === 0) {
+        throw new Error('No columns to update')
       }
 
       let isDryRun = false
@@ -169,19 +171,19 @@ export class CategoryToolsExecutorService {
         } else if (context.isApproved === false) {
           await this.toolStatusLogLifecycleService.setCancelled(statusLog)
 
-          return new SuccessToolResult('Category update operation was rejected by the user.')
+          return new SuccessToolResult('Column update operation was rejected by the user.')
         }
       }
 
-      const updateCategoriesResult = await this.categoryService.editMany(
-        dtoCategories,
+      const updateColumnsResult = await this.columnService.editMany(
+        dtoColumns,
         configurable.user,
         session,
         isDryRun,
       )
 
-      if (updateCategoriesResult.logId) {
-        const operationLogId = updateCategoriesResult.logId.toString()
+      if (updateColumnsResult.logId) {
+        const operationLogId = updateColumnsResult.logId.toString()
 
         if (isDryRun) {
           await this.toolStatusLogLifecycleService.setAwaitingConfirmation(statusLog, (content) => {
@@ -203,14 +205,14 @@ export class CategoryToolsExecutorService {
         })
 
         return new SuccessToolResult(
-          `Successfully updated ${updateCategoriesResult.data.length} categories. Operation Log ID: ${operationLogId}`,
+          `Successfully updated ${updateColumnsResult.data.length} columns. Operation Log ID: ${operationLogId}`,
           {
             logId: operationLogId,
           },
         )
       }
 
-      return new FailedToolResult('Failed to create operation log for categories update.')
+      return new FailedToolResult('Failed to create operation log for columns update.')
     } catch (error) {
       statusLog.state = StatusStatesEnum.FAILED
       await dispatchCustomEvent(CustomEvents.STATUS_UPDATE_LOG, statusLog)
@@ -219,18 +221,105 @@ export class CategoryToolsExecutorService {
     }
   }
 
-  private async _resolveCategoryIds(
+  public async createColumns(
+    payload: CreateColumnsDTO,
+    config: RunnableConfig,
+    context: IConfigContext,
+    session?: ClientSession,
+  ) {
+    const configurable = config.configurable as Configurable
+    const toolCall = context.toolCall!
+
+    const statusLog = await this.toolStatusLogLifecycleService.getOrCreateInProgressLog({
+      existingLog: context.statusLog,
+      toolCallId: toolCall.id!,
+      toolName: 'create_columns',
+      toolContent: {
+        count: payload.columns.length,
+      },
+    })
+
+    try {
+      const dtoColumns: ColumnDTO[] = payload.columns.map((column) => ({
+        name: column.name,
+        boardId: column.board_id,
+      }))
+
+      if (dtoColumns.length === 0) {
+        throw new Error('No columns to create')
+      }
+
+      let isDryRun = false
+
+      if (configurable.aiConfirmationType === AiConfirmationTypeEnum.ALWAYS) {
+        if (context.isApproved === undefined) {
+          isDryRun = true
+        } else if (context.isApproved === false) {
+          await this.toolStatusLogLifecycleService.setCancelled(statusLog)
+
+          return new SuccessToolResult('Column create operation was rejected by the user.')
+        }
+      }
+
+      const createColumnsResult = await this.columnService.createMany(
+        dtoColumns,
+        configurable.user,
+        session,
+        isDryRun,
+      )
+
+      if (createColumnsResult.logId) {
+        const operationLogId = createColumnsResult.logId.toString()
+
+        if (isDryRun) {
+          await this.toolStatusLogLifecycleService.setAwaitingConfirmation(statusLog, (content) => {
+            content.logId = operationLogId
+          })
+
+          return new ConfirmationToolResult({
+            logId: operationLogId,
+          })
+        }
+
+        await dispatchCustomEvent(CustomEvents.OPERATION, {
+          logId: operationLogId,
+          session,
+        })
+
+        await this.toolStatusLogLifecycleService.setCompleted(statusLog, (content) => {
+          content.count = createColumnsResult.data.length
+          content.logId = operationLogId
+        })
+
+        return new SuccessToolResult(
+          `Successfully created ${createColumnsResult.data.length} columns. Operation Log ID: ${operationLogId}`,
+          {
+            logId: operationLogId,
+          },
+        )
+      }
+
+      return new FailedToolResult('Failed to create operation log for columns create.')
+    } catch (error) {
+      statusLog.state = StatusStatesEnum.FAILED
+      await dispatchCustomEvent(CustomEvents.STATUS_UPDATE_LOG, statusLog)
+
+      throw error
+    }
+  }
+
+  private async _resolveColumnIds(
     payload: {
       selection_id?: string
-      category_ids?: string[]
+      column_ids?: string[]
     },
     userId: Types.ObjectId,
     session?: ClientSession,
   ): Promise<string[]> {
-    let categoryIds: string[] = []
+    let columnIds: string[] = []
 
-    if (!payload.category_ids && !payload.selection_id) {
-      throw new Error('Either category_ids or selection_id must be provided')
+    if (!payload.column_ids && !payload.selection_id) {
+      throw new Error('Either column_ids or selection_id must be provided')
     }
 
     if (payload.selection_id) {
@@ -248,30 +337,30 @@ export class CategoryToolsExecutorService {
 
       const selection = selections[0]
 
-      categoryIds = selection.entityIds.map((id) => id.toString())
+      columnIds = selection.entityIds.map((id) => id.toString())
     }
 
-    if (payload.category_ids) {
-      payload.category_ids.forEach((id) => {
+    if (payload.column_ids) {
+      payload.column_ids.forEach((id) => {
         if (!Types.ObjectId.isValid(id)) {
-          throw new Error(`Invalid category id: ${id}`)
+          throw new Error(`Invalid column id: ${id}`)
         }
       })
 
-      categoryIds = Array.from(new Set(payload.category_ids))
+      columnIds = Array.from(new Set(payload.column_ids))
     }
 
-    if (categoryIds.length === 0) {
-      throw new Error('No categories to update')
+    if (columnIds.length === 0) {
+      throw new Error('No columns to update')
     }
 
-    return categoryIds
+    return columnIds
   }
 
   private async _resolveHumanReadableFilters(
     payload: {
       selection_id?: string
-      category_ids?: string[]
+      column_ids?: string[]
     },
     userId: Types.ObjectId,
     session?: ClientSession,
@@ -294,22 +383,22 @@ export class CategoryToolsExecutorService {
       return selection.humanReadableFilters
     }
 
-    if (payload.category_ids) {
-      payload.category_ids.forEach((id) => {
+    if (payload.column_ids) {
+      payload.column_ids.forEach((id) => {
         if (!Types.ObjectId.isValid(id)) {
-          throw new Error(`Invalid category id: ${id}`)
+          throw new Error(`Invalid column id: ${id}`)
         }
       })
 
-      const categories = await this.categoryService.getByCriteria(
-        { ids: payload.category_ids },
+      const columns = await this.columnService.getByCriteria(
+        { ids: payload.column_ids },
         userId,
         session,
       )
 
-      return categories.map((category) => ({
+      return columns.map((column) => ({
         text: 'Название',
-        value: category.name,
+        value: column.name,
       }))
     }
 
@@ -317,7 +406,7 @@ export class CategoryToolsExecutorService {
   }
 
   private async _resolveMoveHumanReadableFilters(
-    payload: MoveCategoriesDTO,
+    payload: MoveColumnsDTO,
     userId: Types.ObjectId,
     session?: ClientSession,
   ): Promise<ITextValue[]> {
@@ -337,34 +426,34 @@ export class CategoryToolsExecutorService {
       })
     }
 
-    const anchorCategoryIds = Array.from(
-      new Set([payload.beforeCategoryId, payload.afterCategoryId].filter(Boolean) as string[]),
+    const anchorColumnIds = Array.from(
+      new Set([payload.beforeColumnId, payload.afterColumnId].filter(Boolean) as string[]),
     )
-    const anchorCategoryNamesById = new Map<string, string>()
+    const anchorColumnNamesById = new Map<string, string>()
 
-    if (anchorCategoryIds.length > 0) {
-      const anchorCategories = await this.categoryService.getByCriteria(
-        { ids: anchorCategoryIds },
+    if (anchorColumnIds.length > 0) {
+      const anchorColumns = await this.columnService.getByCriteria(
+        { ids: anchorColumnIds },
         userId,
         session,
       )
 
-      anchorCategories.forEach((category) => {
-        anchorCategoryNamesById.set(category.id.toString(), category.name)
+      anchorColumns.forEach((column) => {
+        anchorColumnNamesById.set(column.id.toString(), column.name)
       })
     }
 
-    if (payload.beforeCategoryId) {
+    if (payload.beforeColumnId) {
       filters.push({
         text: 'Перед категорией',
-        value: anchorCategoryNamesById.get(payload.beforeCategoryId) ?? payload.beforeCategoryId,
+        value: anchorColumnNamesById.get(payload.beforeColumnId) ?? payload.beforeColumnId,
       })
     }
 
-    if (payload.afterCategoryId) {
+    if (payload.afterColumnId) {
       filters.push({
         text: 'После категории',
-        value: anchorCategoryNamesById.get(payload.afterCategoryId) ?? payload.afterCategoryId,
+        value: anchorColumnNamesById.get(payload.afterColumnId) ?? payload.afterColumnId,
       })
     }
 
@@ -384,14 +473,14 @@ export class CategoryToolsExecutorService {
     return filters
   }
 
-  public async deleteArchiveCategories(
-    payload: DeleteArchiveCategoriesDTO,
+  public async deleteArchiveColumns(
+    payload: DeleteArchiveColumnsDTO,
     config: RunnableConfig,
     context: IConfigContext,
     session?: ClientSession,
   ) {
     const configurable = config.configurable as Configurable
-    const categoryIds = await this._resolveCategoryIds(payload, configurable.user.id, session)
+    const columnIds = await this._resolveColumnIds(payload, configurable.user.id, session)
     const humanReadableFilters = await this._resolveHumanReadableFilters(
       payload,
       configurable.user.id,
@@ -400,15 +489,15 @@ export class CategoryToolsExecutorService {
     const toolCall = context.toolCall!
 
     const mainFunction = payload.soft_delete
-      ? this.categoryService.archive.bind(this.categoryService)
-      : this.categoryService.delete.bind(this.categoryService)
+      ? this.columnService.archive.bind(this.columnService)
+      : this.columnService.delete.bind(this.columnService)
 
     const statusLog = await this.toolStatusLogLifecycleService.getOrCreateInProgressLog({
       existingLog: context.statusLog,
       toolCallId: toolCall.id!,
-      toolName: 'delete_archive_categories',
+      toolName: 'delete_archive_columns',
       toolContent: {
-        ids: Array.from(new Set(categoryIds)),
+        count: columnIds.length,
         filters: humanReadableFilters,
         isSoftDelete: payload.soft_delete,
       },
@@ -426,13 +515,13 @@ export class CategoryToolsExecutorService {
         } else if (context.isApproved === false) {
           await this.toolStatusLogLifecycleService.setCancelled(statusLog)
 
-          return new SuccessToolResult('Category update operation was rejected by the user.')
+          return new SuccessToolResult('Column update operation was rejected by the user.')
         }
       }
 
       const result = await mainFunction(
         {
-          ids: categoryIds,
+          ids: columnIds,
         },
         configurable.user,
         session,
@@ -463,25 +552,25 @@ export class CategoryToolsExecutorService {
           content.logId = operationLogId
         })
 
-        let categoriesProcessedCount = 0
+        let columnsProcessedCount = 0
 
         if (result.data && 'deletedCount' in result.data) {
-          categoriesProcessedCount = result.data.deletedCount
+          columnsProcessedCount = result.data.deletedCount
         } else if (result.data && Array.isArray(result.data)) {
-          categoriesProcessedCount = result.data.length
+          columnsProcessedCount = result.data.length
         } else {
-          return new FailedToolResult('No categories were affected by the operation.')
+          return new FailedToolResult('No columns were affected by the operation.')
         }
 
         return new SuccessToolResult(
-          `Successfully ${actionString} ${categoriesProcessedCount} categories. Operation Log ID: ${operationLogId}`,
+          `Successfully ${actionString} ${columnsProcessedCount} columns. Operation Log ID: ${operationLogId}`,
           {
             logId: operationLogId,
           },
         )
       }
 
-      return new FailedToolResult(`Failed to create operation log for categories ${actionString}.`)
+      return new FailedToolResult(`Failed to create operation log for columns ${actionString}.`)
     } catch (error) {
       statusLog.state = StatusStatesEnum.FAILED
       await dispatchCustomEvent(CustomEvents.STATUS_UPDATE_LOG, statusLog)
@@ -490,14 +579,14 @@ export class CategoryToolsExecutorService {
     }
   }
 
-  public async cloneCategories(
-    payload: CloneCategoriesDTO,
+  public async cloneColumns(
+    payload: CloneColumnsDTO,
     config: RunnableConfig,
     context: IConfigContext,
     session?: ClientSession,
   ) {
     const configurable = config.configurable as Configurable
-    const categoryIds = await this._resolveCategoryIds(payload, configurable.user.id, session)
+    const columnIds = await this._resolveColumnIds(payload, configurable.user.id, session)
     const humanReadableFilters = await this._resolveHumanReadableFilters(
       payload,
       configurable.user.id,
@@ -508,9 +597,9 @@ export class CategoryToolsExecutorService {
     const statusLog = await this.toolStatusLogLifecycleService.getOrCreateInProgressLog({
       existingLog: context.statusLog,
       toolCallId: toolCall.id!,
-      toolName: 'clone_categories',
+      toolName: 'clone_columns',
       toolContent: {
-        ids: Array.from(new Set(categoryIds)),
+        count: columnIds.length,
         filters: humanReadableFilters,
       },
     })
@@ -524,21 +613,21 @@ export class CategoryToolsExecutorService {
         } else if (context.isApproved === false) {
           await this.toolStatusLogLifecycleService.setCancelled(statusLog)
 
-          return new SuccessToolResult('Category clone operation was rejected by the user.')
+          return new SuccessToolResult('Column clone operation was rejected by the user.')
         }
       }
 
-      const cloneCategoriesResult = await this.categoryService.clone(
+      const cloneColumnsResult = await this.columnService.clone(
         {
-          ids: categoryIds,
+          ids: columnIds,
         },
         configurable.user,
         session,
         isDryRun,
       )
 
-      if (cloneCategoriesResult.logId) {
-        const operationLogId = cloneCategoriesResult.logId.toString()
+      if (cloneColumnsResult.logId) {
+        const operationLogId = cloneColumnsResult.logId.toString()
 
         if (isDryRun) {
           await this.toolStatusLogLifecycleService.setAwaitingConfirmation(statusLog, (content) => {
@@ -560,14 +649,14 @@ export class CategoryToolsExecutorService {
         })
 
         return new SuccessToolResult(
-          `Successfully cloned ${cloneCategoriesResult.data.length} categories. Operation Log ID: ${operationLogId}`,
+          `Successfully cloned ${cloneColumnsResult.data.length} columns. Operation Log ID: ${operationLogId}`,
           {
             logId: operationLogId,
           },
         )
       }
 
-      return new FailedToolResult('Failed to create operation log for categories clone.')
+      return new FailedToolResult('Failed to create operation log for columns clone.')
     } catch (error) {
       statusLog.state = StatusStatesEnum.FAILED
       await dispatchCustomEvent(CustomEvents.STATUS_UPDATE_LOG, statusLog)
@@ -576,14 +665,14 @@ export class CategoryToolsExecutorService {
     }
   }
 
-  public async recoverCategories(
-    payload: RecoverCategoriesDTO,
+  public async recoverColumns(
+    payload: RecoverColumnsDTO,
     config: RunnableConfig,
     context: IConfigContext,
     session?: ClientSession,
   ) {
     const configurable = config.configurable as Configurable
-    const categoryIds = await this._resolveCategoryIds(payload, configurable.user.id, session)
+    const columnIds = await this._resolveColumnIds(payload, configurable.user.id, session)
     const humanReadableFilters = await this._resolveHumanReadableFilters(
       payload,
       configurable.user.id,
@@ -594,9 +683,9 @@ export class CategoryToolsExecutorService {
     const statusLog = await this.toolStatusLogLifecycleService.getOrCreateInProgressLog({
       existingLog: context.statusLog,
       toolCallId: toolCall.id!,
-      toolName: 'recover_categories',
+      toolName: 'recover_columns',
       toolContent: {
-        ids: Array.from(new Set(categoryIds)),
+        count: columnIds.length,
         filters: humanReadableFilters,
       },
     })
@@ -610,21 +699,21 @@ export class CategoryToolsExecutorService {
         } else if (context.isApproved === false) {
           await this.toolStatusLogLifecycleService.setCancelled(statusLog)
 
-          return new SuccessToolResult('Category recover operation was rejected by the user.')
+          return new SuccessToolResult('Column recover operation was rejected by the user.')
         }
       }
 
-      const recoverCategoriesResult = await this.categoryService.recover(
+      const recoverColumnsResult = await this.columnService.recover(
         {
-          ids: categoryIds,
+          ids: columnIds,
         },
         configurable.user,
         session,
         isDryRun,
       )
 
-      if (recoverCategoriesResult.logId) {
-        const operationLogId = recoverCategoriesResult.logId.toString()
+      if (recoverColumnsResult.logId) {
+        const operationLogId = recoverColumnsResult.logId.toString()
 
         if (isDryRun) {
           await this.toolStatusLogLifecycleService.setAwaitingConfirmation(statusLog, (content) => {
@@ -646,14 +735,14 @@ export class CategoryToolsExecutorService {
         })
 
         return new SuccessToolResult(
-          `Successfully recovered ${recoverCategoriesResult.data.length} categories. Operation Log ID: ${operationLogId}`,
+          `Successfully recovered ${recoverColumnsResult.data.length} columns. Operation Log ID: ${operationLogId}`,
           {
             logId: operationLogId,
           },
         )
       }
 
-      return new FailedToolResult('Failed to create operation log for categories recover.')
+      return new FailedToolResult('Failed to create operation log for columns recover.')
     } catch (error) {
       statusLog.state = StatusStatesEnum.FAILED
       await dispatchCustomEvent(CustomEvents.STATUS_UPDATE_LOG, statusLog)
@@ -662,14 +751,14 @@ export class CategoryToolsExecutorService {
     }
   }
 
-  public async moveCategories(
-    payload: MoveCategoriesDTO,
+  public async moveColumns(
+    payload: MoveColumnsDTO,
     config: RunnableConfig,
     context: IConfigContext,
     session?: ClientSession,
   ) {
     const configurable = config.configurable as Configurable
-    const categoryIds = await this._resolveCategoryIds(payload, configurable.user.id, session)
+    const columnIds = await this._resolveColumnIds(payload, configurable.user.id, session)
     const humanReadableFilters = await this._resolveMoveHumanReadableFilters(
       payload,
       configurable.user.id,
@@ -680,9 +769,9 @@ export class CategoryToolsExecutorService {
     const statusLog = await this.toolStatusLogLifecycleService.getOrCreateInProgressLog({
       existingLog: context.statusLog,
       toolCallId: toolCall.id!,
-      toolName: 'move_categories',
+      toolName: 'move_columns',
       toolContent: {
-        ids: Array.from(new Set(categoryIds)),
+        count: columnIds.length,
         filters: humanReadableFilters,
       },
     })
@@ -696,15 +785,15 @@ export class CategoryToolsExecutorService {
         } else if (context.isApproved === false) {
           await this.toolStatusLogLifecycleService.setCancelled(statusLog)
 
-          return new SuccessToolResult('Category move operation was rejected by the user.')
+          return new SuccessToolResult('Column move operation was rejected by the user.')
         }
       }
 
-      const moveCategoriesResult = await this.categoryService.moveMany(
+      const moveColumnsResult = await this.columnService.moveMany(
         {
-          ids: categoryIds,
-          beforeCategoryId: payload.beforeCategoryId,
-          afterCategoryId: payload.afterCategoryId,
+          ids: columnIds,
+          beforeColumnId: payload.beforeColumnId,
+          afterColumnId: payload.afterColumnId,
           toStart: payload.toStart,
           toEnd: payload.toEnd,
           newBoardId: payload.newBoardId,
@@ -714,8 +803,8 @@ export class CategoryToolsExecutorService {
         isDryRun,
       )
 
-      if (moveCategoriesResult.logId) {
-        const operationLogId = moveCategoriesResult.logId.toString()
+      if (moveColumnsResult.logId) {
+        const operationLogId = moveColumnsResult.logId.toString()
 
         if (isDryRun) {
           await this.toolStatusLogLifecycleService.setAwaitingConfirmation(statusLog, (content) => {
@@ -737,14 +826,14 @@ export class CategoryToolsExecutorService {
         })
 
         return new SuccessToolResult(
-          `Successfully moved ${moveCategoriesResult.data.length} categories. Operation Log ID: ${operationLogId}`,
+          `Successfully moved ${moveColumnsResult.data.length} columns. Operation Log ID: ${operationLogId}`,
           {
             logId: operationLogId,
           },
         )
       }
 
-      return new FailedToolResult('Failed to create operation log for categories move.')
+      return new FailedToolResult('Failed to create operation log for columns move.')
     } catch (error) {
       statusLog.state = StatusStatesEnum.FAILED
       await dispatchCustomEvent(CustomEvents.STATUS_UPDATE_LOG, statusLog)

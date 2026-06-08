@@ -1,9 +1,9 @@
 import { AgentsEnum } from '@/enums/AgentsEnum.js'
 import { initTaskManagerTools } from '../tools/initTaskManagerTools.js'
 import { TaskManagerAgentPrompt } from '../prompts/TaskManagerAgentPrompt.js'
-import { CategoryManagerAgentPrompt } from '../prompts/CategoryManagerAgentPrompt.js'
+import { ColumnManagerAgentPrompt } from '../prompts/ColumnManagerAgentPrompt.js'
 import { AgentStateAnnotation } from '../agent/AgentStateAnnotation.js'
-import { initCategoryManagerTools } from '../tools/initCategoryManagerTools.js'
+import { initColumnManagerTools } from '../tools/initColumnManagerTools.js'
 import { AgentDependencies } from '../agent/types/AgentDependencies.js'
 import { RunnableConfig } from '@langchain/core/runnables'
 import { initBoardManagerTools } from '../tools/initBoardManagerTools.js'
@@ -19,8 +19,8 @@ export function getAgentManagerTools(
   switch (agent) {
     case AgentsEnum.TASK_MANAGER:
       return initTaskManagerTools(deps, config)
-    case AgentsEnum.CATEGORY_MANAGER:
-      return initCategoryManagerTools(deps, config)
+    case AgentsEnum.COLUMN_MANAGER:
+      return initColumnManagerTools(deps, config)
     case AgentsEnum.BOARD_MANAGER:
       return initBoardManagerTools(deps, config)
     case AgentsEnum.WORKSPACE_MANAGER:
@@ -37,8 +37,8 @@ export function getAgentManagerHistory(
   switch (agent) {
     case AgentsEnum.TASK_MANAGER:
       return state.task_manager_messages.slice(-50)
-    case AgentsEnum.CATEGORY_MANAGER:
-      return state.category_manager_messages.slice(-50)
+    case AgentsEnum.COLUMN_MANAGER:
+      return state.column_manager_messages.slice(-50)
     case AgentsEnum.BOARD_MANAGER:
       return state.board_manager_messages.slice(-50)
     case AgentsEnum.WORKSPACE_MANAGER:
@@ -52,8 +52,8 @@ export function getAgentManagerSystemPrompt(agent: AgentsEnum) {
   switch (agent) {
     case AgentsEnum.TASK_MANAGER:
       return TaskManagerAgentPrompt
-    case AgentsEnum.CATEGORY_MANAGER:
-      return CategoryManagerAgentPrompt
+    case AgentsEnum.COLUMN_MANAGER:
+      return ColumnManagerAgentPrompt
     case AgentsEnum.BOARD_MANAGER:
       return BoardManagerAgentPrompt
     case AgentsEnum.WORKSPACE_MANAGER:

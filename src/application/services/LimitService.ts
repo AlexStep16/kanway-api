@@ -4,26 +4,26 @@ import { WorkspaceService } from './WorkspaceService.js'
 import { SUBSCRIPTION_LIMITS } from '@/constants/SUBSCRIPTION_LIMITS.js'
 import { IUser } from '@/domain/entities/IUser.js'
 import { AppError } from '@/domain/errors/AppError.js'
-import { CategoryService } from './CategoryService.js'
+import { ColumnService } from './ColumnService.js'
 import { TaskService } from './TaskService.js'
 
-const MAX_CATEGORIES_PER_BOARD = 20
+const MAX_COLUMNS_PER_BOARD = 20
 const MAX_TASKS_PER_BOARD = 100
 
 export class LimitService {
   private boardService: BoardService
-  private categoryService: CategoryService
+  private columnService: ColumnService
   private taskService: TaskService
   private workspaceService: WorkspaceService
 
   constructor(
     boardService: BoardService,
-    categoryService: CategoryService,
+    columnService: ColumnService,
     taskService: TaskService,
     workspaceService: WorkspaceService,
   ) {
     this.boardService = boardService
-    this.categoryService = categoryService
+    this.columnService = columnService
     this.taskService = taskService
     this.workspaceService = workspaceService
   }
@@ -79,47 +79,47 @@ export class LimitService {
     })
   }
 
-  public async checkCategoriesLimit(
+  public async checkColumnsLimit(
     user: IUser,
     boardId: string,
     session: ClientSession,
   ): Promise<void> {
-    const maxCategories = MAX_CATEGORIES_PER_BOARD
+    const maxColumns = MAX_COLUMNS_PER_BOARD
 
-    const categoriesCount = await this.categoryService.getCount(
+    const columnsCount = await this.columnService.getCount(
       { boardId, isDeleted: false },
       user.id,
       session,
     )
 
-    if (categoriesCount >= maxCategories) {
-      throw new AppError(`Вы достигли лимита по количеству категорий - ${maxCategories}.`, 403)
+    if (columnsCount >= maxColumns) {
+      throw new AppError(`Вы достигли лимита по количеству категорий - ${maxColumns}.`, 403)
     }
   }
 
-  public async checkCategoriesLimitByBoards(
+  public async checkColumnsLimitByBoards(
     user: IUser,
     boardIds: string[],
     incomingCounts: Record<string, number>,
     session: ClientSession,
   ): Promise<void> {
-    const categoriesCountGrouped = await this.categoryService.getCategoriesCountByBoards(
+    const columnsCountGrouped = await this.columnService.getColumnsCountByBoards(
       boardIds.map((id) => new Types.ObjectId(id)),
       user.id,
       session,
     )
 
     const dbCountsMap = new Map(
-      categoriesCountGrouped.map((group) => [group.parentId.toString(), group.count]),
+      columnsCountGrouped.map((group) => [group.parentId.toString(), group.count]),
     )
 
     boardIds.forEach((boardId) => {
       const currentInDb = dbCountsMap.get(boardId) || 0
       const requestedToAdd = incomingCounts[boardId]
 
-      if (currentInDb + requestedToAdd > MAX_CATEGORIES_PER_BOARD) {
+      if (currentInDb + requestedToAdd > MAX_COLUMNS_PER_BOARD) {
         throw new AppError(
-          `Вы достигли лимита по количеству категорий - ${MAX_CATEGORIES_PER_BOARD} в одной из выбранных досок.`,
+          `Вы достигли лимита по количеству категорий - ${MAX_COLUMNS_PER_BOARD} в одной из выбранных досок.`,
           403,
         )
       }

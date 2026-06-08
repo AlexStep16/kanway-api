@@ -3,14 +3,14 @@ import { TASK_COLORS_TITLES } from '@constants/TASK_COLORS.js'
 
 export interface ITask<
   TBoard = Types.ObjectId,
-  TCategory = Types.ObjectId,
+  TColumn = Types.ObjectId,
   TWorkspace = Types.ObjectId,
 > {
   id: Types.ObjectId
   name: string
   workspace: TWorkspace
   board: TBoard
-  category: TCategory
+  column: TColumn
   isDeleted: boolean
   isDeletedExternal: boolean
   rank: string

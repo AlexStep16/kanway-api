@@ -6,7 +6,7 @@ import { PaymentItemIdEnum } from '@/domain/enums/PaymentItemIdEnum.js'
 
 export const PaymentDTOSchema = z.object({
   serviceId: z.string().min(1, ErrorMessages.PAYMENT_SERVICE_ID_REQUIRED),
-  category: z.enum(PaymentTypeEnum, {
+  column: z.enum(PaymentTypeEnum, {
     error: () => ({ message: ErrorMessages.PAYMENT_TYPE_INVALID }),
   }),
   itemId: z.enum(PaymentItemIdEnum, {

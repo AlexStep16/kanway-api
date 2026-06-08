@@ -9,7 +9,7 @@ import { OperationLogService } from '@application/services/OperationLogService.j
 import { OperationTypesEnum } from '@domain/enums/OperationTypesEnum.js'
 import { CollectionsEnum } from '@domain/enums/CollectionsEnum.js'
 import { BoardEditDTO } from '@dtos/BoardEditDTO.js'
-import { CategoryService } from '@application/services/CategoryService.js'
+import { ColumnService } from '@application/services/ColumnService.js'
 import { NotFoundError } from '@errors/NotFound.js'
 import { TaskService } from '@application/services/TaskService.js'
 import { SingleUpdateDTO } from '@dtos/SingleUpdateDTO.js'
@@ -43,7 +43,7 @@ export class BoardService extends BaseService<
   protected embeddingService: EmbeddingService
   protected operationLogService: OperationLogService
   protected workspaceService: WorkspaceService
-  protected categoryService: CategoryService
+  protected columnService: ColumnService
   protected taskService: TaskService
   protected limitService: LimitService
 
@@ -52,7 +52,7 @@ export class BoardService extends BaseService<
     embeddingService: EmbeddingService,
     operationLogService: OperationLogService,
     workspaceService: WorkspaceService,
-    categoryService: CategoryService,
+    columnService: ColumnService,
     taskService: TaskService,
     limitService: LimitService,
   ) {
@@ -62,7 +62,7 @@ export class BoardService extends BaseService<
     this.embeddingService = embeddingService
     this.operationLogService = operationLogService
     this.workspaceService = workspaceService
-    this.categoryService = categoryService
+    this.columnService = columnService
     this.taskService = taskService
     this.limitService = limitService
   }
@@ -285,7 +285,7 @@ export class BoardService extends BaseService<
     if (boardsToMove.length > 0) {
       const boardIds = boardsToMove.map((b) => b.id.toString())
 
-      const affectedCategoriesPromise = this.categoryService.getByCriteria(
+      const affectedColumnsPromise = this.columnService.getByCriteria(
         { boardIds },
         user.id,
         session,
@@ -295,15 +295,15 @@ export class BoardService extends BaseService<
         projection: { _id: 1 },
       })
 
-      const [affectedCategories, affectedTasks] = await Promise.all([
-        affectedCategoriesPromise,
+      const [affectedColumns, affectedTasks] = await Promise.all([
+        affectedColumnsPromise,
         affectedTasksPromise,
       ])
 
-      if (affectedCategories.length > 0) {
+      if (affectedColumns.length > 0) {
         sideEffects.push(
-          this.categoryService.moveCategoriesByBoards(
-            affectedCategories.map((c) => c.id.toString()),
+          this.columnService.moveColumnsByBoards(
+            affectedColumns.map((c) => c.id.toString()),
             user,
             session,
           ),
@@ -456,7 +456,7 @@ export class BoardService extends BaseService<
 
     /** MOVE */
     if (movedBoardIds.length > 0) {
-      const affectedCategoriesPromise = this.categoryService.getByCriteria(
+      const affectedColumnsPromise = this.columnService.getByCriteria(
         { boardIds: movedBoardIds },
         user.id,
         session,
@@ -469,15 +469,15 @@ export class BoardService extends BaseService<
         { projection: { _id: 1 } },
       )
 
-      const [affectedCategories, affectedTasks] = await Promise.all([
-        affectedCategoriesPromise,
+      const [affectedColumns, affectedTasks] = await Promise.all([
+        affectedColumnsPromise,
         affectedTasksPromise,
       ])
 
-      if (affectedCategories.length > 0) {
+      if (affectedColumns.length > 0) {
         sideEffects.push(
-          this.categoryService.moveCategoriesByBoards(
-            affectedCategories.map((c) => c.id.toString()),
+          this.columnService.moveColumnsByBoards(
+            affectedColumns.map((c) => c.id.toString()),
             user,
             session,
           ),
@@ -599,7 +599,7 @@ export class BoardService extends BaseService<
         userId,
         session,
       ),
-      this.categoryService.deleteCategoriesByCriteria(
+      this.columnService.deleteColumnsByCriteria(
         { boardIds: boardsToDelete.map((b) => b.id.toString()) },
         userId,
         session,
@@ -702,7 +702,7 @@ export class BoardService extends BaseService<
         user.id,
         session,
       ),
-      this.categoryService.updateLifecycleCategoriesByCriteria(
+      this.columnService.updateLifecycleColumnsByCriteria(
         boardsCriteria,
         childrenData,
         user.id,
@@ -1307,13 +1307,13 @@ export class BoardService extends BaseService<
       })
     })
 
-    const cloneCategoriesResult = await this.categoryService.cloneCategoriesByBoards(
+    const cloneColumnsResult = await this.columnService.cloneColumnsByBoards(
       boardIdsMap,
       user.id,
       session,
     )
 
-    if (cloneCategoriesResult.logId) dependencies.push(cloneCategoriesResult.logId)
+    if (cloneColumnsResult.logId) dependencies.push(cloneColumnsResult.logId)
 
     /* LOG */
     const log = await this.operationLogService.create(
@@ -1655,13 +1655,13 @@ export class BoardService extends BaseService<
       })
     })
 
-    const categoriesCloneResult = await this.categoryService.cloneCategoriesByBoards(
+    const columnsCloneResult = await this.columnService.cloneColumnsByBoards(
       boardIdsMap,
       userId,
       session,
     )
 
-    if (categoriesCloneResult.logId) dependencies.push(categoriesCloneResult.logId)
+    if (columnsCloneResult.logId) dependencies.push(columnsCloneResult.logId)
 
     /* LOG */
     const log = await this.operationLogService.create(
@@ -1708,6 +1708,7 @@ export class BoardService extends BaseService<
 
     const boardPayload: IBoardCreatePayload = {
       name: boardName,
+      isFavorite: data.isFavorite || false,
       workspace: Types.ObjectId.createFromHexString(data.workspaceId),
       rank: boardRank,
       embeddings,
@@ -1770,6 +1771,7 @@ export class BoardService extends BaseService<
         boardsPayloads.push({
           id: board.id,
           name: boardName,
+          isFavorite: board.isFavorite,
           workspace: new Types.ObjectId(board.workspaceId),
           rank: newRank.toString(),
           embeddings: embeddingsMap[boardName],

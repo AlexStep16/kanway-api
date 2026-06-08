@@ -1,6 +1,6 @@
 export enum EntityTypesEnum {
   TASK = 'task',
-  CATEGORY = 'category',
+  COLUMN = 'column',
   BOARD = 'board',
   WORKSPACE = 'workspace',
 }

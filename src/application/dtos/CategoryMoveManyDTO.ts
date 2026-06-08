@@ -3,19 +3,19 @@ import { z } from 'zod'
 
 const objectIdRegex = /^[0-9a-fA-F]{24}$/
 
-export const CategoryMoveManyDTOSchema = z.object({
+export const ColumnMoveManyDTOSchema = z.object({
   ids: z
-    .array(z.string(ErrorMessages.CATEGORY_ID_INVALID).regex(objectIdRegex), {
-      error: ErrorMessages.CATEGORIES_BULK_UPDATE_INVALID,
+    .array(z.string(ErrorMessages.COLUMN_ID_INVALID).regex(objectIdRegex), {
+      error: ErrorMessages.COLUMNS_BULK_UPDATE_INVALID,
     })
-    .min(1, ErrorMessages.CATEGORIES_BULK_UPDATE_INVALID),
-  beforeCategoryId: z
-    .string(ErrorMessages.BEFORE_CATEGORY_ID_INVALID)
+    .min(1, ErrorMessages.COLUMNS_BULK_UPDATE_INVALID),
+  beforeColumnId: z
+    .string(ErrorMessages.BEFORE_COLUMN_ID_INVALID)
     .regex(objectIdRegex)
     .nullable()
     .optional(),
-  afterCategoryId: z
-    .string(ErrorMessages.AFTER_CATEGORY_ID_INVALID)
+  afterColumnId: z
+    .string(ErrorMessages.AFTER_COLUMN_ID_INVALID)
     .regex(objectIdRegex)
     .nullable()
     .optional(),
@@ -24,4 +24,4 @@ export const CategoryMoveManyDTOSchema = z.object({
   toEnd: z.boolean().optional(),
 })
 
-export type CategoryMoveManyDTO = z.infer<typeof CategoryMoveManyDTOSchema>
+export type ColumnMoveManyDTO = z.infer<typeof ColumnMoveManyDTOSchema>

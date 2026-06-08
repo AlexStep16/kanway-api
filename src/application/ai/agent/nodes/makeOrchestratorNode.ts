@@ -10,6 +10,7 @@ import { initOrchestratorTools } from '../../tools/initOrchestratorTools.js'
 import { OrchestratorPrompt } from '../../prompts/OrchestratorPrompt.js'
 import { IStatus } from '@/application/interfaces/statuses/IStatus.js'
 import { AgentsEnum } from '@/enums/AgentsEnum.js'
+import { getBeautifiedSelections } from '../../helpers/getBeautifiedSelections.js'
 
 export const makeOrchestratorNode = (deps: AgentDependencies) => {
   return async (state: typeof AgentStateAnnotation.State, config: RunnableConfig) => {
@@ -50,13 +51,7 @@ export const makeOrchestratorNode = (deps: AgentDependencies) => {
 
     const chain = prompt.pipe(modelToUse.bindTools(orchestratorTools))
 
-    const beautifiedSelections =
-      state.active_selections
-        ?.map(
-          (selection) =>
-            `- (ID: ${selection.id}) ${selection.entityType.toUpperCase()} selection with ${selection.count} items (Sample: ${JSON.stringify(selection.sample)}))`,
-        )
-        .join('\n') || 'No active selections'
+    const beautifiedSelections = getBeautifiedSelections(state.active_selections || [])
 
     const response = await chain.invoke({
       board: configurable.activeBoard || 'NO ACTIVE BOARD',

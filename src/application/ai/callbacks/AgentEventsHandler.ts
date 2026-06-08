@@ -105,8 +105,11 @@ export class AgentEventsHandler extends BaseCallbackHandler {
   }
 
   async updateStatusMessage() {
+    const creditsUsed = getCreditsUsed(this.totalTokensUsed, this.modelType)
+
     const dto: Partial<ChatMessageDTO> = {
       content: this.status,
+      creditsUsed: creditsUsed + this.chargedAudioTokens + (this.statusMessage.creditsUsed || 0),
     }
 
     await this.editChatMessage(
@@ -142,13 +145,9 @@ export class AgentEventsHandler extends BaseCallbackHandler {
   async updateAssistantMessage(dto: Partial<ChatMessageDTO>) {
     if (!this.aiMessage) return
 
-    const creditsUsed = getCreditsUsed(this.totalTokensUsed, this.modelType)
-
     await this.editChatMessage(
       {
         ...dto,
-
-        creditsUsed: creditsUsed + this.chargedAudioTokens + (this.statusMessage.creditsUsed || 0),
       },
       {
         id: this.aiMessage.id.toString(),
@@ -161,14 +160,6 @@ export class AgentEventsHandler extends BaseCallbackHandler {
     Object.assign(this.status, data)
 
     await this.updateProgressStatus()
-  }
-
-  async startStatus() {
-    await this.updateStatus({
-      state: StatusStatesEnum.IN_PROGRESS,
-      logs: this.status.logs.filter(() => false),
-      error: '',
-    })
   }
 
   async updateProgressStatus() {

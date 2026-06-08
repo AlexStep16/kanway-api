@@ -33,8 +33,8 @@ export const SearchTasksScheme = z.object({
             'tags',
             'color',
             'is_deleted',
-            'category_id',
-            'category_selection_id',
+            'column_id',
+            'column_selection_id',
             'board_id',
             'board_selection_id',
             'workspace_id',
@@ -43,7 +43,7 @@ export const SearchTasksScheme = z.object({
             'updated_at',
           ])
           .describe(
-            'The task field to search (e.g. "is_completed", "due_date", "category_id", "color"). due_date is YYYY-MM-DD, due_time is HH:mm, created_at and updated_at are ISO 8601 datetime strings.',
+            'The task field to search (e.g. "is_completed", "due_date", "column_id", "color"). due_date is YYYY-MM-DD, due_time is HH:mm, created_at and updated_at are ISO 8601 datetime strings.',
           ),
 
         eq: FilterValueSchema.optional().describe(

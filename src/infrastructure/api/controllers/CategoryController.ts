@@ -1,24 +1,24 @@
-import { CategoryService } from '@application/services/CategoryService.js'
-import { ICategory } from '@entities/ICategory.js'
-import { CategoryDTO } from '@application/dtos/CategoryDTO.js'
+import { ColumnService } from '@application/services/ColumnService.js'
+import { IColumn } from '@entities/IColumn.js'
+import { ColumnDTO } from '@application/dtos/ColumnDTO.js'
 import { BaseController } from '@controllers/BaseController.js'
-import { ICategoryCriteria } from '@interfaces/criterias/ICategoryCriteria.js'
+import { IColumnCriteria } from '@interfaces/criterias/IColumnCriteria.js'
 import { Request, Response, NextFunction } from 'express'
 import SuccessResponse from '@application/services/SuccessResponse.js'
-import { CategoryEditDTO } from '@dtos/CategoryEditDTO.js'
-import { ICategoryPopulated } from '@/application/interfaces/ICategoryPopulated.js'
+import { ColumnEditDTO } from '@dtos/ColumnEditDTO.js'
+import { IColumnPopulated } from '@/application/interfaces/IColumnPopulated.js'
 
-export default class CategoryController extends BaseController<
-  ICategory,
-  CategoryService,
-  ICategoryCriteria,
-  CategoryDTO,
-  CategoryEditDTO,
-  ICategoryPopulated
+export default class ColumnController extends BaseController<
+  IColumn,
+  ColumnService,
+  IColumnCriteria,
+  ColumnDTO,
+  ColumnEditDTO,
+  IColumnPopulated
 > {
   public override getAll = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const criteria: ICategoryCriteria = {
+      const criteria: IColumnCriteria = {
         ...req.query,
         isDeleted: false,
       }

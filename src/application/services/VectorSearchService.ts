@@ -1,5 +1,5 @@
 import { IBoard } from '@/domain/entities/IBoard.js'
-import { ICategory } from '@/domain/entities/ICategory.js'
+import { IColumn } from '@/domain/entities/IColumn.js'
 import { ITask } from '@/domain/entities/ITask.js'
 import { Document } from '@langchain/core/documents'
 import { IWorkspace } from '@/domain/entities/IWorkspace.js'
@@ -94,19 +94,19 @@ export class VectorSearchService {
     })
   }
 
-  public async similaritySearchCategories(
+  public async similaritySearchColumns(
     query: string[],
     userId: Types.ObjectId,
     count: number,
     ids?: Array<Types.ObjectId>,
-  ): Promise<ICategory[]> {
+  ): Promise<IColumn[]> {
     const filter: any = { user_id: { $eq: userId } }
     if (ids?.length) filter._id = { $in: ids }
 
     // Вызываем универсальный метод
-    return this._executeSearch<ICategory>({
-      collectionName: 'categories',
-      indexName: process.env.CATEGORIES_INDEX_NAME!,
+    return this._executeSearch<IColumn>({
+      collectionName: 'columns',
+      indexName: process.env.COLUMNS_INDEX_NAME!,
       query,
       count,
       filter,

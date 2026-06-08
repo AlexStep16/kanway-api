@@ -1,18 +1,18 @@
-import { ICategoryRaw } from '@entities/ICategoryRaw.js'
-import CategoryRepository from '@repositories/CategoryRepository.js'
-import { CategoryDTO } from '@application/dtos/CategoryDTO.js'
+import { IColumnRaw } from '@entities/IColumnRaw.js'
+import ColumnRepository from '@repositories/ColumnRepository.js'
+import { ColumnDTO } from '@application/dtos/ColumnDTO.js'
 import mongoose, { ClientSession, DeleteResult, Types, UpdateWriteOpResult } from 'mongoose'
 import { EmbeddingService } from '@infrastructure/services/EmbeddingService.js'
-import { ICategoryCriteria } from '@criterias/ICategoryCriteria.js'
+import { IColumnCriteria } from '@criterias/IColumnCriteria.js'
 import { OperationLogService } from '@application/services/OperationLogService.js'
 import { OperationTypesEnum } from '@domain/enums/OperationTypesEnum.js'
 import { CollectionsEnum } from '@domain/enums/CollectionsEnum.js'
-import { CategoryEditDTO } from '@dtos/CategoryEditDTO.js'
+import { ColumnEditDTO } from '@dtos/ColumnEditDTO.js'
 import { NotFoundError } from '@errors/NotFound.js'
 import { TaskService } from '@application/services/TaskService.js'
 import { BoardService } from '@application/services/BoardService.js'
 import { SingleUpdateDTO } from '@dtos/SingleUpdateDTO.js'
-import { ICategory } from '@entities/ICategory.js'
+import { IColumn } from '@entities/IColumn.js'
 import { IUser } from '@entities/IUser.js'
 import { projectProperties } from '@/utils/projectProperties.js'
 import { IResponseWithLog } from '@interfaces/IResponseWithLog.js'
@@ -21,25 +21,27 @@ import { AppError } from '@/domain/errors/AppError.js'
 import { LifecycleDTO } from '@dtos/LifecycleDTO.js'
 import { WorkspaceService } from '@application/services/WorkspaceService.js'
 import { BaseService } from '@application/services/BaseService.js'
-import { ICategoryPopulated } from '@interfaces/ICategoryPopulated.js'
-import { ICategoryCreatePayload } from '@interfaces/ICategoryCreatePayload.js'
+import { IColumnPopulated } from '@interfaces/IColumnPopulated.js'
+import { IColumnCreatePayload } from '@interfaces/IColumnCreatePayload.js'
 import { SafeUpdateData } from '@/infrastructure/types/SafeUpdateData.js'
 import { OperationLogStatusesEnum } from '@/domain/enums/OperationLogStatusesEnum.js'
 import { LexoRank } from 'lexorank'
-import { CategoryMoveDTO } from '../dtos/CategoryMoveDTO.js'
+import { ColumnMoveDTO } from '../dtos/ColumnMoveDTO.js'
 import { LimitService } from './LimitService.js'
-import { CategoryMoveManyDTO } from '../dtos/CategoryMoveManyDTO.js'
+import { ColumnMoveManyDTO } from '../dtos/ColumnMoveManyDTO.js'
+import { ErrorMessages } from '@/enums/ErrorMessages.js'
+import { IBoardPopulated } from '../interfaces/IBoardPopulated.js'
 
 const MAX_RETRIES = 3
 
-export class CategoryService extends BaseService<
-  ICategoryRaw,
-  ICategory,
-  ICategoryCriteria,
-  ICategoryPopulated,
-  ICategoryCreatePayload
+export class ColumnService extends BaseService<
+  IColumnRaw,
+  IColumn,
+  IColumnCriteria,
+  IColumnPopulated,
+  IColumnCreatePayload
 > {
-  protected repository: CategoryRepository
+  protected repository: ColumnRepository
   protected embeddingService: EmbeddingService
   protected operationLogService: OperationLogService
   protected workspaceService: WorkspaceService
@@ -48,7 +50,7 @@ export class CategoryService extends BaseService<
   protected limitService: LimitService
 
   constructor(
-    categoryRepository: CategoryRepository,
+    columnRepository: ColumnRepository,
     embeddingService: EmbeddingService,
     operationLogService: OperationLogService,
     workspaceService: WorkspaceService,
@@ -56,9 +58,9 @@ export class CategoryService extends BaseService<
     taskService: TaskService,
     limitService: LimitService,
   ) {
-    super(categoryRepository)
+    super(columnRepository)
 
-    this.repository = categoryRepository
+    this.repository = columnRepository
     this.embeddingService = embeddingService
     this.operationLogService = operationLogService
     this.workspaceService = workspaceService
@@ -106,53 +108,70 @@ export class CategoryService extends BaseService<
   }
 
   private async _executeCreateTransaction(
-    data: CategoryDTO,
+    data: ColumnDTO,
     user: IUser,
     session: ClientSession,
-  ): Promise<IResponseWithLog<ICategoryPopulated[]>> {
+  ): Promise<IResponseWithLog<IColumnPopulated[]>> {
+    const columnBoards = await this.boardService.getByCriteria(
+      { id: data.boardId },
+      user.id,
+      session,
+    )
+
+    if (columnBoards.length === 0) {
+      throw new NotFoundError(ErrorMessages.BOARD_NOT_FOUND)
+    }
+
+    const columnBoard = columnBoards[0]
+
     /** LIMITS CHECK */
-    await this.limitService.checkCategoriesLimit(user, data.boardId, session)
+    await this.limitService.checkColumnsLimit(user, columnBoard.id.toString(), session)
 
     const tempClientId = data.id
 
     delete data.id // Remove temp client ID before creation
 
-    const categoryPayload = await this.prepareCategoryCreationPayload(data, user.id, session)
+    const columnPayload = await this.prepareColumnCreationPayload(
+      data,
+      columnBoard,
+      user.id,
+      session,
+    )
 
     /* CREATE */
-    const newCategory = await this.repository.create(categoryPayload, session)
+    const newColumn = await this.repository.create(columnPayload, session)
 
     /* LOG */
     const log = await this.operationLogService.create(
       {
         operationType: OperationTypesEnum.CREATE,
-        collectionName: CollectionsEnum.CATEGORIES,
-        entitiesAfter: [newCategory],
+        collectionName: CollectionsEnum.COLUMNS,
+        entitiesAfter: [newColumn],
         dependencies: [],
       },
       user.id,
       session,
     )
 
-    const newCategoriesPopulated = await this.getByCriteria(
-      { id: newCategory.id.toString() },
+    const newColumnsPopulated = await this.getByCriteria(
+      { id: newColumn.id.toString() },
       user.id,
       session,
     )
 
-    newCategoriesPopulated[0].tempClientId = tempClientId // Attach temp client ID back to the response to connect with client-side entity
+    newColumnsPopulated[0].tempClientId = tempClientId // Attach temp client ID back to the response to connect with client-side entity
 
     return {
-      data: newCategoriesPopulated,
+      data: newColumnsPopulated,
       logId: log.id,
     }
   }
 
   public async create(
-    data: CategoryDTO,
+    data: ColumnDTO,
     user: IUser,
     externalSession?: ClientSession,
-  ): Promise<IResponseWithLog<ICategoryPopulated[]>> {
+  ): Promise<IResponseWithLog<IColumnPopulated[]>> {
     if (externalSession) {
       return this._executeCreateTransaction(data, user, externalSession)
     } else {
@@ -163,15 +182,19 @@ export class CategoryService extends BaseService<
   }
 
   private async _executeCreateManyTransaction(
-    data: CategoryDTO[],
+    data: ColumnDTO[],
     user: IUser,
     session: ClientSession,
     isDryRun: boolean = false,
-  ): Promise<IResponseWithLog<ICategoryPopulated[]>> {
-    await this._checkCategoriesLimitByBoards(data, user, session)
+  ): Promise<IResponseWithLog<IColumnPopulated[]>> {
+    const columnsBoardMap = await this._getColumnsBoardMap(data, user, session)
+    const boardIds = Array.from(columnsBoardMap.values()).map((board) => board.id.toString())
 
-    const categoriesPayload = await this.prepareCategoriesCreationPayload(
+    await this._checkColumnsLimitByBoards(boardIds, user, session)
+
+    const columnsPayload = await this.prepareColumnsCreationPayload(
       data,
+      columnsBoardMap,
       user.id,
       session,
       isDryRun,
@@ -181,8 +204,8 @@ export class CategoryService extends BaseService<
       const log = await this.operationLogService.create(
         {
           operationType: OperationTypesEnum.CREATE,
-          collectionName: CollectionsEnum.CATEGORIES,
-          entitiesAfter: categoriesPayload,
+          collectionName: CollectionsEnum.COLUMNS,
+          entitiesAfter: columnsPayload,
           dependencies: [],
           status: OperationLogStatusesEnum.PENDING,
         },
@@ -197,15 +220,15 @@ export class CategoryService extends BaseService<
     }
 
     /* CREATE */
-    const newCategories = await this.repository.createMany(categoriesPayload, session)
+    const newColumns = await this.repository.createMany(columnsPayload, session)
 
-    const newCategoriesPopulated = await this.getByCriteria(
-      { ids: newCategories.map((t) => t.id.toString()) },
+    const newColumnsPopulated = await this.getByCriteria(
+      { ids: newColumns.map((t) => t.id.toString()) },
       user.id,
       session,
     )
 
-    newCategoriesPopulated.forEach((nc, index) => {
+    newColumnsPopulated.forEach((nc, index) => {
       nc.tempClientId = data[index].id // Attach temp client ID back to the response to connect with client-side entity
     })
 
@@ -213,8 +236,8 @@ export class CategoryService extends BaseService<
     const log = await this.operationLogService.create(
       {
         operationType: OperationTypesEnum.CREATE,
-        collectionName: CollectionsEnum.CATEGORIES,
-        entitiesAfter: newCategories,
+        collectionName: CollectionsEnum.COLUMNS,
+        entitiesAfter: newColumns,
         dependencies: [],
       },
       user.id,
@@ -222,17 +245,17 @@ export class CategoryService extends BaseService<
     )
 
     return {
-      data: newCategoriesPopulated,
+      data: newColumnsPopulated,
       logId: log.id,
     }
   }
 
   public async createMany(
-    data: CategoryDTO[],
+    data: ColumnDTO[],
     user: IUser,
     externalSession?: ClientSession,
     isDryRun: boolean = false,
-  ): Promise<IResponseWithLog<ICategoryPopulated[]>> {
+  ): Promise<IResponseWithLog<IColumnPopulated[]>> {
     if (externalSession) {
       return this._executeCreateManyTransaction(data, user, externalSession, isDryRun)
     } else {
@@ -242,51 +265,81 @@ export class CategoryService extends BaseService<
     }
   }
 
-  private async _checkCategoriesLimitByBoards(
-    data: { boardId: string }[],
+  private async _getColumnsBoardMap(
+    columns: Pick<ColumnEditDTO, 'boardId'>[],
+    user: IUser,
+    session: ClientSession,
+  ): Promise<Map<string, IBoardPopulated>> {
+    const filteredColumns = columns.filter((c) => c.boardId !== undefined)
+    const boardIds = [...new Set(filteredColumns.map((t) => t.boardId!))]
+
+    const boards = await this.boardService.getByCriteria({ ids: boardIds }, user.id, session)
+
+    const boardMap = new Map<string, IBoardPopulated>()
+
+    boards.forEach((b) => {
+      boardMap.set(b.id.toString(), b)
+    })
+
+    const columnsBoardMap = new Map<string, IBoardPopulated>()
+
+    filteredColumns.forEach((column) => {
+      const board = boardMap.get(column.boardId!)
+
+      if (board) {
+        columnsBoardMap.set(column.boardId!, board)
+      }
+    })
+
+    return columnsBoardMap
+  }
+
+  private async _checkColumnsLimitByBoards(
+    boardIds: string[],
     user: IUser,
     session: ClientSession,
   ) {
-    if (data.length === 0) return
+    if (boardIds.length === 0) return
 
-    const uniqueBoardIds = [...new Set(data.map((task) => task.boardId))]
+    const uniqueBoardIds = [...new Set(boardIds)]
 
     const incomingCounts: Record<string, number> = {}
-    for (const board of data) {
-      incomingCounts[board.boardId] = (incomingCounts[board.boardId] || 0) + 1
+    for (const boardId of boardIds) {
+      incomingCounts[boardId] = (incomingCounts[boardId] || 0) + 1
     }
 
-    await this.limitService.checkCategoriesLimitByBoards(
-      user,
-      uniqueBoardIds,
-      incomingCounts,
-      session,
-    )
+    await this.limitService.checkColumnsLimitByBoards(user, uniqueBoardIds, incomingCounts, session)
   }
 
   private async _executeEditTransaction(
-    data: Omit<CategoryEditDTO, 'id'>,
-    criteria: ICategoryCriteria,
+    data: Omit<ColumnEditDTO, 'id'>,
+    criteria: IColumnCriteria,
     user: IUser,
     session: ClientSession,
-  ): Promise<IResponseWithLog<ICategoryPopulated[]>> {
-    const categoriesToUpdate: ICategory[] = await this.repository.findByCriteria(
+  ): Promise<IResponseWithLog<IColumnPopulated[]>> {
+    const columnsToUpdate: IColumn[] = await this.repository.findByCriteria(
       criteria,
       session,
       undefined,
       user.id,
     )
 
-    if (categoriesToUpdate.length === 0)
+    if (columnsToUpdate.length === 0)
       throw new NotFoundError('Категории для редактирования не найдены.')
 
-    const categoryPayload = await this.prepareCategoryEditPayload(data, categoriesToUpdate)
-    const categoriesBefore = projectProperties<ICategory>(categoriesToUpdate, categoryPayload)
+    const columnsBoardMap = await this._getColumnsBoardMap([data], user, session)
+
+    const columnPayload = await this.prepareColumnEditPayload(
+      data,
+      columnsToUpdate,
+      columnsBoardMap,
+    )
+    const columnsBefore = projectProperties<IColumn>(columnsToUpdate, columnPayload)
 
     /* UPDATE */
     const updateManyResult = await this.repository.updateManyByCriteria(
       criteria,
-      categoryPayload,
+      columnPayload,
       session,
       user.id,
     )
@@ -297,13 +350,13 @@ export class CategoryService extends BaseService<
     const sideEffects: Promise<any>[] = []
 
     /* MOVE */
-    const categoriesToMove = categoriesToUpdate.filter(
+    const columnsToMove = columnsToUpdate.filter(
       (b) => data.boardId !== undefined && b.board.toString() !== data.boardId,
     )
 
-    if (categoriesToMove.length > 0) {
-      await this.moveCategoriesByBoards(
-        categoriesToMove.map((category) => category.id.toString()),
+    if (columnsToMove.length > 0) {
+      await this.moveColumnsByBoards(
+        columnsToMove.map((column) => column.id.toString()),
         user,
         session,
         true,
@@ -311,7 +364,7 @@ export class CategoryService extends BaseService<
 
       const affectedTasks = await this.taskService.getByCriteria(
         {
-          categoryIds: categoriesToMove.map((c) => c.id.toString()),
+          columnIds: columnsToMove.map((c) => c.id.toString()),
         },
         user.id,
         session,
@@ -319,7 +372,7 @@ export class CategoryService extends BaseService<
       )
 
       sideEffects.push(
-        this.taskService.moveTasksByCategories(
+        this.taskService.moveTasksByColumns(
           affectedTasks.map((t) => t.id.toString()),
           user,
           session,
@@ -327,7 +380,7 @@ export class CategoryService extends BaseService<
       )
     }
 
-    const updatedCategories = await this.repository.findByCriteria<ICategory>(
+    const updatedColumns = await this.repository.findByCriteria<IColumn>(
       criteria,
       session,
       undefined,
@@ -338,9 +391,9 @@ export class CategoryService extends BaseService<
     const logPromise = this.operationLogService.create(
       {
         operationType: OperationTypesEnum.UPDATE,
-        collectionName: CollectionsEnum.CATEGORIES,
-        entitiesBefore: categoriesBefore,
-        entitiesAfter: projectProperties(updatedCategories, categoryPayload),
+        collectionName: CollectionsEnum.COLUMNS,
+        entitiesBefore: columnsBefore,
+        entitiesAfter: projectProperties(updatedColumns, columnPayload),
         dependencies: [],
       },
       user.id,
@@ -353,20 +406,20 @@ export class CategoryService extends BaseService<
 
     const log = await logPromise
 
-    const updatedCategoriesPopulated = await this.getByCriteria(criteria, user.id, session)
+    const updatedColumnsPopulated = await this.getByCriteria(criteria, user.id, session)
 
     return {
-      data: updatedCategoriesPopulated,
+      data: updatedColumnsPopulated,
       logId: log.id,
     }
   }
 
   public async edit(
-    data: Omit<CategoryEditDTO, 'id'>,
-    criteria: ICategoryCriteria,
+    data: Omit<ColumnEditDTO, 'id'>,
+    criteria: IColumnCriteria,
     user: IUser,
     externalSession?: ClientSession,
-  ): Promise<IResponseWithLog<ICategoryPopulated[]>> {
+  ): Promise<IResponseWithLog<IColumnPopulated[]>> {
     if (externalSession) {
       return this._executeEditTransaction(data, criteria, user, externalSession)
     } else {
@@ -377,50 +430,62 @@ export class CategoryService extends BaseService<
   }
 
   private async _executeEditManyTransaction(
-    data: CategoryEditDTO[],
+    data: ColumnEditDTO[],
     user: IUser,
     session: ClientSession,
     isDryRun: boolean = false,
-  ): Promise<IResponseWithLog<ICategoryPopulated[]>> {
-    const categoryIds = data.map((d) => d.id)
+  ): Promise<IResponseWithLog<IColumnPopulated[]>> {
+    const columnIds = data.map((d) => d.id)
 
-    const existingCategories = await this.repository.findByCriteria(
-      { ids: categoryIds },
+    const existingColumns = await this.repository.findByCriteria(
+      { ids: columnIds },
       session,
       undefined,
       user.id,
     )
 
-    if (existingCategories.length === 0) {
+    if (existingColumns.length === 0) {
       throw new NotFoundError('Категории для обновления не найдены.')
     }
 
-    const existingMap = new Map(existingCategories.map((c) => [c.id.toString(), c]))
+    const existingMap = new Map(existingColumns.map((c) => [c.id.toString(), c]))
 
-    const categoryPayloads: SingleUpdateDTO<SafeUpdateData<ICategory>>[] = []
-    const categoriesBefore: (Partial<ICategory> & { id: Types.ObjectId })[] = []
-    const movedCategoryIds: string[] = []
+    const columnPayloads: SingleUpdateDTO<SafeUpdateData<IColumn>>[] = []
+    const columnsBefore: (Partial<IColumn> & { id: Types.ObjectId })[] = []
+    const movedColumnIds: string[] = []
+
+    // Need to fill the columnPayload with correct board/workspace ids in case of moving
+    const columnsWithNewBoardIds = data.filter((d) => {
+      const column = existingMap.get(d.id)
+      return column && d.boardId !== undefined && column.board.toString() !== d.boardId
+    })
+    const columnsBoardMap = await this._getColumnsBoardMap(columnsWithNewBoardIds, user, session)
 
     for (const dto of data) {
-      const category = existingMap.get(dto.id)
-      if (!category) continue
+      const column = existingMap.get(dto.id)
+      if (!column) continue
 
-      const categoryPayload = await this.prepareCategoryEditManyPayload(dto, [category], isDryRun)
+      const columnPayload = await this.prepareColumnEditManyPayload(
+        dto,
+        [column],
+        columnsBoardMap,
+        isDryRun,
+      )
 
-      const categoryBefore = projectProperties<ICategory>([category], categoryPayload)[0]
+      const columnBefore = projectProperties<IColumn>([column], columnPayload)[0]
 
-      categoriesBefore.push(categoryBefore)
-      categoryPayloads.push(categoryPayload)
+      columnsBefore.push(columnBefore)
+      columnPayloads.push(columnPayload)
 
-      const isMoving = dto.boardId !== undefined && category.board.toString() !== dto.boardId
+      const isMoving = dto.boardId !== undefined && column.board.toString() !== dto.boardId
       if (isMoving) {
-        movedCategoryIds.push(dto.id)
+        movedColumnIds.push(dto.id)
       }
     }
 
     if (isDryRun) {
-      const categoriesAfter = categoriesBefore.map((c) => {
-        const payload = categoryPayloads.find((p) => p.id.toString() === c.id.toString())
+      const columnsAfter = columnsBefore.map((c) => {
+        const payload = columnPayloads.find((p) => p.id.toString() === c.id.toString())
 
         if (!payload) return c
 
@@ -433,9 +498,9 @@ export class CategoryService extends BaseService<
       const log = await this.operationLogService.create(
         {
           operationType: OperationTypesEnum.UPDATE,
-          collectionName: CollectionsEnum.CATEGORIES,
-          entitiesBefore: categoriesBefore,
-          entitiesAfter: categoriesAfter,
+          collectionName: CollectionsEnum.COLUMNS,
+          entitiesBefore: columnsBefore,
+          entitiesAfter: columnsAfter,
           dependencies: [],
           status: OperationLogStatusesEnum.PENDING,
         },
@@ -449,24 +514,20 @@ export class CategoryService extends BaseService<
       }
     }
 
-    const updatedCategoriesResult = await this.repository.bulkUpdate(
-      categoryPayloads,
-      user.id,
-      session,
-    )
+    const updatedColumnsResult = await this.repository.bulkUpdate(columnPayloads, user.id, session)
 
-    if (!updatedCategoriesResult || updatedCategoriesResult.modifiedCount === 0) {
+    if (!updatedColumnsResult || updatedColumnsResult.modifiedCount === 0) {
       throw new AppError('Не удалось обновить категории.', 500)
     }
 
     const sideEffects: Promise<any>[] = []
 
     /** MOVE */
-    if (movedCategoryIds.length > 0) {
-      await this.moveCategoriesByBoards(movedCategoryIds, user, session, true)
+    if (movedColumnIds.length > 0) {
+      await this.moveColumnsByBoards(movedColumnIds, user, session, true)
 
       const affectedTasks = await this.taskService.getByCriteria(
-        { categoryIds: movedCategoryIds },
+        { columnIds: movedColumnIds },
         user.id,
         session,
         { projection: { _id: 1 } },
@@ -474,7 +535,7 @@ export class CategoryService extends BaseService<
 
       if (affectedTasks.length > 0) {
         sideEffects.push(
-          this.taskService.moveTasksByCategories(
+          this.taskService.moveTasksByColumns(
             affectedTasks.map((t) => t.id.toString()),
             user,
             session,
@@ -483,18 +544,18 @@ export class CategoryService extends BaseService<
       }
     }
 
-    const updatedCategories = await this.repository.findByCriteria(
-      { ids: categoryPayloads.map((p) => p.id.toString()) },
+    const updatedColumns = await this.repository.findByCriteria(
+      { ids: columnPayloads.map((p) => p.id.toString()) },
       session,
       undefined,
       user.id,
     )
 
-    const projectedUpdatedCategories = updatedCategories.map(
+    const projectedUpdatedColumns = updatedColumns.map(
       (c) =>
-        projectProperties<ICategory>(
+        projectProperties<IColumn>(
           [c],
-          categoryPayloads.find((p) => p.id.toString() === c.id.toString())!,
+          columnPayloads.find((p) => p.id.toString() === c.id.toString())!,
         )[0],
     )
 
@@ -502,9 +563,9 @@ export class CategoryService extends BaseService<
     const logPromise = this.operationLogService.create(
       {
         operationType: OperationTypesEnum.UPDATE,
-        collectionName: CollectionsEnum.CATEGORIES,
-        entitiesBefore: categoriesBefore,
-        entitiesAfter: projectedUpdatedCategories,
+        collectionName: CollectionsEnum.COLUMNS,
+        entitiesBefore: columnsBefore,
+        entitiesAfter: projectedUpdatedColumns,
         dependencies: [],
       },
       user.id,
@@ -516,24 +577,20 @@ export class CategoryService extends BaseService<
     await Promise.all(sideEffects)
     const log = await logPromise
 
-    const updatedCategoriesPopulated = await this.getByCriteria(
-      { ids: categoryIds },
-      user.id,
-      session,
-    )
+    const updatedColumnsPopulated = await this.getByCriteria({ ids: columnIds }, user.id, session)
 
     return {
-      data: updatedCategoriesPopulated,
+      data: updatedColumnsPopulated,
       logId: log.id,
     }
   }
 
   public async editMany(
-    data: CategoryEditDTO[],
+    data: ColumnEditDTO[],
     user: IUser,
     externalSession?: ClientSession,
     isDryRun: boolean = false,
-  ): Promise<IResponseWithLog<ICategoryPopulated[]>> {
+  ): Promise<IResponseWithLog<IColumnPopulated[]>> {
     if (externalSession) {
       return this._executeEditManyTransaction(data, user, externalSession, isDryRun)
     } else {
@@ -543,23 +600,23 @@ export class CategoryService extends BaseService<
     }
   }
 
-  public async moveCategoriesByBoards(
-    categoryIds: string[],
+  public async moveColumnsByBoards(
+    columnIds: string[],
     user: IUser,
     session: ClientSession,
     isRerank = false,
   ) {
-    const categories = await this.repository.findByCriteria(
-      { ids: categoryIds },
+    const columns = await this.repository.findByCriteria(
+      { ids: columnIds },
       session,
       {
         sort: { rank: 1 },
       },
       user.id,
     )
-    if (!categories.length) return
+    if (!columns.length) return
 
-    const boardIds = [...new Set(categories.map((c) => c.board))]
+    const boardIds = [...new Set(columns.map((c) => c.board))]
 
     const [boards, lastRanksArray] = await Promise.all([
       this.boardService.getByCriteria(
@@ -577,23 +634,23 @@ export class CategoryService extends BaseService<
       lastRankMap.set(r.parentId.toString(), r.rank)
     })
 
-    const bulkUpdates: SingleUpdateDTO<SafeUpdateData<ICategory>>[] = []
-    const categoriesWithNewBoard: { boardId: string }[] = []
+    const bulkUpdates: SingleUpdateDTO<SafeUpdateData<IColumn>>[] = []
+    const columnsWithNewBoard: { boardId: string }[] = []
 
-    for (const category of categories) {
-      const boardIdStr = category.board.toString()
+    for (const column of columns) {
+      const boardIdStr = column.board.toString()
       const board = boardMap.get(boardIdStr)
 
       if (!board) continue
 
-      const update: SingleUpdateDTO<SafeUpdateData<ICategory>> = {
-        id: category.id,
+      const update: SingleUpdateDTO<SafeUpdateData<IColumn>> = {
+        id: column.id,
         board: board.id,
         workspace: board.workspace.id,
       }
 
-      if (category.board.toString() !== board.id.toString()) {
-        categoriesWithNewBoard.push({ boardId: board.id.toString() })
+      if (column.board.toString() !== board.id.toString()) {
+        columnsWithNewBoard.push({ boardId: board.id.toString() })
       }
 
       if (isRerank) {
@@ -615,7 +672,8 @@ export class CategoryService extends BaseService<
     }
 
     if (bulkUpdates.length > 0) {
-      await this._checkCategoriesLimitByBoards(categoriesWithNewBoard, user, session)
+      const boardIds = columnsWithNewBoard.map((c) => c.boardId)
+      await this._checkColumnsLimitByBoards(boardIds, user, session)
 
       return await this.repository.bulkUpdate(bulkUpdates, user.id, session)
     }
@@ -624,19 +682,19 @@ export class CategoryService extends BaseService<
   }
 
   private async _executeDeleteTransaction(
-    criteria: ICategoryCriteria,
+    criteria: IColumnCriteria,
     userId: Types.ObjectId,
     session: ClientSession,
     isDryRun: boolean = false,
   ): Promise<IResponseWithLog<DeleteResult | null>> {
-    const categoriesToDelete = await this.repository.findByCriteria(
+    const columnsToDelete = await this.repository.findByCriteria(
       criteria,
       session,
       undefined,
       userId,
     )
 
-    if (categoriesToDelete.length === 0) {
+    if (columnsToDelete.length === 0) {
       throw new NotFoundError('Категории для удаления не найдены.')
     }
 
@@ -645,8 +703,8 @@ export class CategoryService extends BaseService<
     const log = await this.operationLogService.create(
       {
         operationType: OperationTypesEnum.DELETE,
-        collectionName: CollectionsEnum.CATEGORIES,
-        entitiesBefore: categoriesToDelete,
+        collectionName: CollectionsEnum.COLUMNS,
+        entitiesBefore: columnsToDelete,
         status,
         dependencies: [],
       },
@@ -665,7 +723,7 @@ export class CategoryService extends BaseService<
 
     await Promise.all([
       this.taskService.deleteTasksByCriteria(
-        { categoryIds: categoriesToDelete.map((c) => c.id.toString()) },
+        { columnIds: columnsToDelete.map((c) => c.id.toString()) },
         userId,
         session,
       ),
@@ -678,7 +736,7 @@ export class CategoryService extends BaseService<
   }
 
   public async delete(
-    criteria: ICategoryCriteria,
+    criteria: IColumnCriteria,
     user: IUser,
     externalSession?: ClientSession,
     isDryRun: boolean = false,
@@ -695,12 +753,12 @@ export class CategoryService extends BaseService<
   }
 
   private async _executeLifecycleTransaction(
-    criteria: ICategoryCriteria,
+    criteria: IColumnCriteria,
     isRecover: boolean,
     user: IUser,
     session: ClientSession,
     isDryRun: boolean = false,
-  ): Promise<IResponseWithLog<ICategoryPopulated[]>> {
+  ): Promise<IResponseWithLog<IColumnPopulated[]>> {
     const deleteData: LifecycleDTO = {
       isDeleted: true,
       isDeletedExternal: false,
@@ -713,7 +771,7 @@ export class CategoryService extends BaseService<
     }
     const data = isRecover ? recoverData : deleteData
 
-    const categoriesToProcess = await this.repository.findByCriteria(
+    const columnsToProcess = await this.repository.findByCriteria(
       criteria,
       session,
       undefined,
@@ -721,27 +779,24 @@ export class CategoryService extends BaseService<
     )
 
     if (isRecover) {
-      await this._checkCategoriesLimitByBoards(
-        categoriesToProcess.map((c) => ({ boardId: c.board.toString() })),
-        user,
-        session,
-      )
+      const boardIds = columnsToProcess.map((c) => c.board.toString())
+      await this._checkColumnsLimitByBoards(boardIds, user, session)
     }
 
-    const categoriesCriteria = { categoryIds: categoriesToProcess.map((b) => b.id.toString()) }
+    const columnsCriteria = { columnIds: columnsToProcess.map((b) => b.id.toString()) }
 
-    if (categoriesToProcess.length === 0) throw new NotFoundError('Категории не найдены.')
+    if (columnsToProcess.length === 0) throw new NotFoundError('Категории не найдены.')
 
     const status = isDryRun ? OperationLogStatusesEnum.PENDING : OperationLogStatusesEnum.SUCCESS
 
-    const entitiesBefore = projectProperties<ICategory>(categoriesToProcess, data)
+    const entitiesBefore = projectProperties<IColumn>(columnsToProcess, data)
     const entitiesAfter = entitiesBefore.map((c) => ({ ...c, ...data }))
 
     /* LOG */
     const log = await this.operationLogService.create(
       {
         operationType: isRecover ? OperationTypesEnum.RECOVER : OperationTypesEnum.ARCHIVE,
-        collectionName: CollectionsEnum.CATEGORIES,
+        collectionName: CollectionsEnum.COLUMNS,
         entitiesBefore: entitiesBefore,
         entitiesAfter: entitiesAfter,
         status,
@@ -761,13 +816,13 @@ export class CategoryService extends BaseService<
     await Promise.all([
       /* PROCESS CHILDREN */
       this.taskService.updateLifecycleTasksByCriteria(
-        categoriesCriteria,
+        columnsCriteria,
         { ...data, isDeletedExternal: isRecover ? false : true },
         user.id,
         session,
       ),
 
-      /* PROCESS CATEGORIES */
+      /* PROCESS COLUMNS */
       this.repository.updateManyByCriteria(criteria, data, session, user.id),
     ])
 
@@ -775,24 +830,24 @@ export class CategoryService extends BaseService<
 
     await Promise.all(sideEffects)
 
-    const updatedCategoriesPopulated = await this.getByCriteria(
+    const updatedColumnsPopulated = await this.getByCriteria(
       { ids: entitiesAfter.map((c) => c.id.toString()) },
       user.id,
       session,
     )
 
     return {
-      data: updatedCategoriesPopulated,
+      data: updatedColumnsPopulated,
       logId: log.id,
     }
   }
 
   public async archive(
-    criteria: ICategoryCriteria,
+    criteria: IColumnCriteria,
     user: IUser,
     externalSession?: ClientSession,
     isDryRun: boolean = false,
-  ): Promise<IResponseWithLog<ICategoryPopulated[]>> {
+  ): Promise<IResponseWithLog<IColumnPopulated[]>> {
     if (externalSession) {
       return this._executeLifecycleTransaction(criteria, false, user, externalSession, isDryRun)
     } else {
@@ -803,11 +858,11 @@ export class CategoryService extends BaseService<
   }
 
   public async recover(
-    criteria: ICategoryCriteria,
+    criteria: IColumnCriteria,
     user: IUser,
     externalSession?: ClientSession,
     isDryRun: boolean = false,
-  ): Promise<IResponseWithLog<ICategoryPopulated[]>> {
+  ): Promise<IResponseWithLog<IColumnPopulated[]>> {
     if (externalSession) {
       return this._executeLifecycleTransaction(criteria, true, user, externalSession, isDryRun)
     } else {
@@ -818,15 +873,15 @@ export class CategoryService extends BaseService<
   }
 
   private async _executeCloneTransaction(
-    criteria: ICategoryCriteria,
+    criteria: IColumnCriteria,
     user: IUser,
     session: ClientSession,
     isDryRun: boolean = false,
     tempIds: string[] = [],
-  ): Promise<IResponseWithLog<ICategoryPopulated[]>> {
+  ): Promise<IResponseWithLog<IColumnPopulated[]>> {
     const dependencies: Types.ObjectId[] = []
 
-    const categoriesToClone = await this.repository.findByCriteria(
+    const columnsToClone = await this.repository.findByCriteria(
       criteria,
       session,
       {
@@ -836,28 +891,24 @@ export class CategoryService extends BaseService<
     )
 
     /** LIMITS CHECK */
-    await this._checkCategoriesLimitByBoards(
-      categoriesToClone.map((c) => ({ boardId: c.board.toString() })),
-      user,
-      session,
-    )
+    const boardIds = columnsToClone.map((c) => c.board.toString())
+    await this._checkColumnsLimitByBoards(boardIds, user, session)
 
-    if (categoriesToClone.length === 0)
+    if (columnsToClone.length === 0)
       throw new NotFoundError('Категории для клонирования не найдены.')
 
-    const categoriesGrouppedByBoard: Map<string, (ICategory & { embeddings: number[] })[]> =
-      new Map()
-    categoriesToClone.forEach((category) => {
-      const boardId = category.board.toString()
+    const columnsGrouppedByBoard: Map<string, (IColumn & { embeddings: number[] })[]> = new Map()
+    columnsToClone.forEach((column) => {
+      const boardId = column.board.toString()
 
-      if (!categoriesGrouppedByBoard.has(boardId)) {
-        categoriesGrouppedByBoard.set(boardId, [])
+      if (!columnsGrouppedByBoard.has(boardId)) {
+        columnsGrouppedByBoard.set(boardId, [])
       }
 
-      categoriesGrouppedByBoard.get(boardId)!.push(category)
+      columnsGrouppedByBoard.get(boardId)!.push(column)
     })
 
-    const uniqueBoardIds = [...new Set(categoriesToClone.map((c) => c.board))]
+    const uniqueBoardIds = [...new Set(columnsToClone.map((c) => c.board))]
     const lastRanksArray = await this.repository.getLastRanksByParents(
       uniqueBoardIds,
       'board',
@@ -869,11 +920,11 @@ export class CategoryService extends BaseService<
       lastRankMap.set(r.parentId.toString(), r.rank)
     })
 
-    const transformedCategories: ICategoryCreatePayload[] = []
+    const transformedColumns: IColumnCreatePayload[] = []
 
-    for (const [boardId, categories] of categoriesGrouppedByBoard) {
-      for (let i = 0; i < categories.length; i++) {
-        const category = categories[i]
+    for (const [boardId, columns] of columnsGrouppedByBoard) {
+      for (let i = 0; i < columns.length; i++) {
+        const column = columns[i]
         const id = tempIds[i] || undefined
 
         const lastRankInMap = lastRankMap.get(boardId)
@@ -887,14 +938,14 @@ export class CategoryService extends BaseService<
 
         lastRankMap.set(boardId, nextRank)
 
-        const cleanCategory = {
-          ...category,
-          id: isDryRun ? category.id.toString() : id,
-          name: `${category.name} (Копия)`,
+        const cleanColumn = {
+          ...column,
+          id: isDryRun ? column.id.toString() : id,
+          name: `${column.name} (Копия)`,
           rank: nextRank,
         }
 
-        transformedCategories.push(cleanCategory)
+        transformedColumns.push(cleanColumn)
       }
     }
 
@@ -902,8 +953,8 @@ export class CategoryService extends BaseService<
       const log = await this.operationLogService.create(
         {
           operationType: OperationTypesEnum.CLONE,
-          collectionName: CollectionsEnum.CATEGORIES,
-          entitiesAfter: transformedCategories,
+          collectionName: CollectionsEnum.COLUMNS,
+          entitiesAfter: transformedColumns,
           dependencies: [],
           status: OperationLogStatusesEnum.PENDING,
         },
@@ -917,27 +968,27 @@ export class CategoryService extends BaseService<
       }
     }
 
-    const clonedCategories = await this.repository.createMany(transformedCategories, session)
+    const clonedColumns = await this.repository.createMany(transformedColumns, session)
 
-    const categoryIdsMap: Map<
+    const columnIdsMap: Map<
       string,
       {
-        categoryId: Types.ObjectId
+        columnId: Types.ObjectId
         boardId: Types.ObjectId
         workspaceId: Types.ObjectId
       }
     > = new Map()
 
-    categoriesToClone.forEach((category, index) => {
-      categoryIdsMap.set(category.id.toString(), {
-        categoryId: clonedCategories[index].id,
-        boardId: clonedCategories[index].board,
-        workspaceId: clonedCategories[index].workspace,
+    columnsToClone.forEach((column, index) => {
+      columnIdsMap.set(column.id.toString(), {
+        columnId: clonedColumns[index].id,
+        boardId: clonedColumns[index].board,
+        workspaceId: clonedColumns[index].workspace,
       })
     })
 
-    const cloneTasksResult = await this.taskService.cloneTasksByCategories(
-      categoryIdsMap,
+    const cloneTasksResult = await this.taskService.cloneTasksByColumns(
+      columnIdsMap,
       user.id,
       session,
     )
@@ -948,33 +999,33 @@ export class CategoryService extends BaseService<
     const log = await this.operationLogService.create(
       {
         operationType: OperationTypesEnum.CLONE,
-        collectionName: CollectionsEnum.CATEGORIES,
-        entitiesAfter: clonedCategories,
+        collectionName: CollectionsEnum.COLUMNS,
+        entitiesAfter: clonedColumns,
         dependencies,
       },
       user.id,
       session,
     )
 
-    const clonedCategoriesPopulated = await this.getByCriteria(
-      { ids: clonedCategories.map((c) => c.id.toString()) },
+    const clonedColumnsPopulated = await this.getByCriteria(
+      { ids: clonedColumns.map((c) => c.id.toString()) },
       user.id,
       session,
     )
 
     return {
-      data: clonedCategoriesPopulated,
+      data: clonedColumnsPopulated,
       logId: log.id,
     }
   }
 
   public async clone(
-    criteria: ICategoryCriteria,
+    criteria: IColumnCriteria,
     user: IUser,
     externalSession?: ClientSession,
     isDryRun: boolean = false,
     tempIds: string[] = [],
-  ): Promise<IResponseWithLog<ICategoryPopulated[]>> {
+  ): Promise<IResponseWithLog<IColumnPopulated[]>> {
     if (externalSession) {
       return this._executeCloneTransaction(criteria, user, externalSession, isDryRun, tempIds)
     } else {
@@ -985,11 +1036,11 @@ export class CategoryService extends BaseService<
   }
 
   public async move(
-    dto: CategoryMoveDTO,
+    dto: ColumnMoveDTO,
     user: IUser,
     externalSession?: ClientSession,
     isDryRun: boolean = false,
-  ): Promise<IResponseWithLog<ICategoryPopulated[]>> {
+  ): Promise<IResponseWithLog<IColumnPopulated[]>> {
     if (externalSession) {
       return this._executeMoveTransaction(dto, user, externalSession, isDryRun)
     } else {
@@ -1000,35 +1051,35 @@ export class CategoryService extends BaseService<
   }
 
   private async _executeMoveTransaction(
-    dto: CategoryMoveDTO,
+    dto: ColumnMoveDTO,
     user: IUser,
     session: ClientSession,
     isDryRun: boolean = false,
-  ): Promise<IResponseWithLog<ICategoryPopulated[]>> {
+  ): Promise<IResponseWithLog<IColumnPopulated[]>> {
     const { beforeId, afterId, id, newBoardId } = dto
 
-    const categoryIds = [id, beforeId, afterId].filter(Boolean) as string[]
-    const categories = await this.repository.findByCriteria(
-      { ids: categoryIds },
+    const columnIds = [id, beforeId, afterId].filter(Boolean) as string[]
+    const columns = await this.repository.findByCriteria(
+      { ids: columnIds },
       session,
       undefined,
       user.id,
     )
 
-    const category = categories.find((t) => t.id.toString() === id)
-    const beforeCategory = beforeId ? categories.find((t) => t.id.toString() === beforeId) : null
-    const afterCategory = afterId ? categories.find((t) => t.id.toString() === afterId) : null
+    const column = columns.find((t) => t.id.toString() === id)
+    const beforeColumn = beforeId ? columns.find((t) => t.id.toString() === beforeId) : null
+    const afterColumn = afterId ? columns.find((t) => t.id.toString() === afterId) : null
 
-    if (!category) throw new NotFoundError('Категория не найдена.')
+    if (!column) throw new NotFoundError('Категория не найдена.')
 
     let newRank: LexoRank
 
-    if (beforeCategory && afterCategory) {
-      newRank = LexoRank.parse(beforeCategory.rank).between(LexoRank.parse(afterCategory.rank))
-    } else if (beforeCategory) {
-      newRank = LexoRank.parse(beforeCategory.rank).genPrev()
-    } else if (afterCategory) {
-      newRank = LexoRank.parse(afterCategory.rank).genNext()
+    if (beforeColumn && afterColumn) {
+      newRank = LexoRank.parse(beforeColumn.rank).between(LexoRank.parse(afterColumn.rank))
+    } else if (beforeColumn) {
+      newRank = LexoRank.parse(beforeColumn.rank).genPrev()
+    } else if (afterColumn) {
+      newRank = LexoRank.parse(afterColumn.rank).genNext()
     } else {
       if (newBoardId) {
         const lastRankData = await this.repository.getLastRanksByParents(
@@ -1045,7 +1096,7 @@ export class CategoryService extends BaseService<
       }
     }
 
-    const updateData: SafeUpdateData<ICategory> = {
+    const updateData: SafeUpdateData<IColumn> = {
       rank: newRank.toString(),
     }
 
@@ -1057,8 +1108,8 @@ export class CategoryService extends BaseService<
       updateData.workspace = board.workspace.id
     }
 
-    const categoriesBefore = projectProperties<ICategory>([category], updateData)
-    const categoriesAfter = categoriesBefore.map((t) => ({
+    const columnsBefore = projectProperties<IColumn>([column], updateData)
+    const columnsAfter = columnsBefore.map((t) => ({
       ...t,
       ...updateData,
     }))
@@ -1067,9 +1118,9 @@ export class CategoryService extends BaseService<
       const log = await this.operationLogService.create(
         {
           operationType: OperationTypesEnum.UPDATE,
-          collectionName: CollectionsEnum.CATEGORIES,
-          entitiesBefore: categoriesBefore,
-          entitiesAfter: categoriesAfter,
+          collectionName: CollectionsEnum.COLUMNS,
+          entitiesBefore: columnsBefore,
+          entitiesAfter: columnsAfter,
           dependencies: [],
           status: OperationLogStatusesEnum.PENDING,
         },
@@ -1088,9 +1139,9 @@ export class CategoryService extends BaseService<
     const log = await this.operationLogService.create(
       {
         operationType: OperationTypesEnum.UPDATE,
-        collectionName: CollectionsEnum.CATEGORIES,
-        entitiesBefore: categoriesBefore,
-        entitiesAfter: categoriesAfter,
+        collectionName: CollectionsEnum.COLUMNS,
+        entitiesBefore: columnsBefore,
+        entitiesAfter: columnsAfter,
         dependencies: [],
         status: OperationLogStatusesEnum.SUCCESS,
       },
@@ -1098,20 +1149,20 @@ export class CategoryService extends BaseService<
       session,
     )
 
-    const updatedCategories = await this.getByCriteria({ id }, user.id, session)
+    const updatedColumns = await this.getByCriteria({ id }, user.id, session)
 
     return {
-      data: updatedCategories,
+      data: updatedColumns,
       logId: log.id,
     }
   }
 
   public async moveMany(
-    dto: CategoryMoveManyDTO,
+    dto: ColumnMoveManyDTO,
     user: IUser,
     externalSession?: ClientSession,
     isDryRun: boolean = false,
-  ): Promise<IResponseWithLog<ICategoryPopulated[]>> {
+  ): Promise<IResponseWithLog<IColumnPopulated[]>> {
     if (externalSession) {
       return this._executeMoveManyTransaction(dto, user, externalSession, isDryRun)
     } else {
@@ -1122,15 +1173,15 @@ export class CategoryService extends BaseService<
   }
 
   private async _executeMoveManyTransaction(
-    dto: CategoryMoveManyDTO,
+    dto: ColumnMoveManyDTO,
     user: IUser,
     session: ClientSession,
     isDryRun: boolean = false,
-  ): Promise<IResponseWithLog<ICategoryPopulated[]>> {
-    const { ids, beforeCategoryId, afterCategoryId, newBoardId, toStart, toEnd } = dto
+  ): Promise<IResponseWithLog<IColumnPopulated[]>> {
+    const { ids, beforeColumnId, afterColumnId, newBoardId, toStart, toEnd } = dto
 
-    const uniqueCategoryIds = [...new Set(ids)]
-    if (uniqueCategoryIds.length === 0) {
+    const uniqueColumnIds = [...new Set(ids)]
+    if (uniqueColumnIds.length === 0) {
       throw new NotFoundError('Категории не найдены.')
     }
 
@@ -1138,56 +1189,56 @@ export class CategoryService extends BaseService<
       throw new AppError('Нельзя переместить категории одновременно в начало и в конец.', 400)
     }
 
-    if ((toStart || toEnd) && (beforeCategoryId || afterCategoryId)) {
+    if ((toStart || toEnd) && (beforeColumnId || afterColumnId)) {
       throw new AppError(
-        'Нельзя одновременно использовать beforeCategoryId/afterCategoryId и toStart/toEnd.',
+        'Нельзя одновременно использовать beforeColumnId/afterColumnId и toStart/toEnd.',
         400,
       )
     }
 
-    if (beforeCategoryId && uniqueCategoryIds.includes(beforeCategoryId)) {
-      throw new AppError('beforeCategoryId не может быть среди перемещаемых категорий.', 400)
+    if (beforeColumnId && uniqueColumnIds.includes(beforeColumnId)) {
+      throw new AppError('beforeColumnId не может быть среди перемещаемых категорий.', 400)
     }
 
-    if (afterCategoryId && uniqueCategoryIds.includes(afterCategoryId)) {
-      throw new AppError('afterCategoryId не может быть среди перемещаемых категорий.', 400)
+    if (afterColumnId && uniqueColumnIds.includes(afterColumnId)) {
+      throw new AppError('afterColumnId не может быть среди перемещаемых категорий.', 400)
     }
 
-    const relatedCategoryIds = [
-      ...new Set([...uniqueCategoryIds, beforeCategoryId, afterCategoryId].filter(Boolean)),
+    const relatedColumnIds = [
+      ...new Set([...uniqueColumnIds, beforeColumnId, afterColumnId].filter(Boolean)),
     ]
-    const categories = await this.repository.findByCriteria(
-      { ids: relatedCategoryIds as string[] },
+    const columns = await this.repository.findByCriteria(
+      { ids: relatedColumnIds as string[] },
       session,
       undefined,
       user.id,
     )
 
-    const categoriesToMove = categories
-      .filter((category) => uniqueCategoryIds.includes(category.id.toString()))
+    const columnsToMove = columns
+      .filter((column) => uniqueColumnIds.includes(column.id.toString()))
       .sort((a, b) => a.rank.localeCompare(b.rank))
 
-    if (categoriesToMove.length !== uniqueCategoryIds.length) {
+    if (columnsToMove.length !== uniqueColumnIds.length) {
       throw new NotFoundError('Категории не найдены.')
     }
 
-    const beforeCategory = beforeCategoryId
-      ? categories.find((c) => c.id.toString() === beforeCategoryId)
+    const beforeColumn = beforeColumnId
+      ? columns.find((c) => c.id.toString() === beforeColumnId)
       : null
-    const afterCategory = afterCategoryId
-      ? categories.find((c) => c.id.toString() === afterCategoryId)
+    const afterColumn = afterColumnId
+      ? columns.find((c) => c.id.toString() === afterColumnId)
       : null
 
-    if (beforeCategoryId && !beforeCategory) {
-      throw new NotFoundError('Опорная категория beforeCategoryId не найдена.')
+    if (beforeColumnId && !beforeColumn) {
+      throw new NotFoundError('Опорная категория beforeColumnId не найдена.')
     }
 
-    if (afterCategoryId && !afterCategory) {
-      throw new NotFoundError('Опорная категория afterCategoryId не найдена.')
+    if (afterColumnId && !afterColumn) {
+      throw new NotFoundError('Опорная категория afterColumnId не найдена.')
     }
 
     const moveWithinEachCurrentBoard =
-      !newBoardId && !beforeCategory && !afterCategory && (toStart || toEnd)
+      !newBoardId && !beforeColumn && !afterColumn && (toStart || toEnd)
 
     let targetBoard: Awaited<ReturnType<BoardService['getByCriteria']>>[number] | null = null
     let targetBoardId: string | null = null
@@ -1198,15 +1249,15 @@ export class CategoryService extends BaseService<
 
       targetBoard = board
       targetBoardId = board.id.toString()
-    } else if (beforeCategory || afterCategory) {
-      const anchorCategory = beforeCategory ?? afterCategory
+    } else if (beforeColumn || afterColumn) {
+      const anchorColumn = beforeColumn ?? afterColumn
 
-      if (!anchorCategory) {
+      if (!anchorColumn) {
         throw new AppError('Не удалось определить целевую доску для перемещения.', 400)
       }
 
       const [board] = await this.boardService.getByCriteria(
-        { id: anchorCategory.board.toString() },
+        { id: anchorColumn.board.toString() },
         user.id,
         session,
       )
@@ -1216,10 +1267,10 @@ export class CategoryService extends BaseService<
       targetBoard = board
       targetBoardId = board.id.toString()
     } else if (!moveWithinEachCurrentBoard) {
-      targetBoardId = categoriesToMove[0].board.toString()
+      targetBoardId = columnsToMove[0].board.toString()
 
-      const hasDifferentBoard = categoriesToMove.some(
-        (category) => category.board.toString() !== targetBoardId,
+      const hasDifferentBoard = columnsToMove.some(
+        (column) => column.board.toString() !== targetBoardId,
       )
 
       if (hasDifferentBoard) {
@@ -1232,33 +1283,33 @@ export class CategoryService extends BaseService<
       targetBoardId = null
     }
 
-    if (beforeCategory && beforeCategory.board.toString() !== targetBoardId) {
-      throw new AppError('beforeCategoryId должен принадлежать целевой доске.', 400)
+    if (beforeColumn && beforeColumn.board.toString() !== targetBoardId) {
+      throw new AppError('beforeColumnId должен принадлежать целевой доске.', 400)
     }
 
-    if (afterCategory && afterCategory.board.toString() !== targetBoardId) {
-      throw new AppError('afterCategoryId должен принадлежать целевой доске.', 400)
+    if (afterColumn && afterColumn.board.toString() !== targetBoardId) {
+      throw new AppError('afterColumnId должен принадлежать целевой доске.', 400)
     }
 
     let newRanks: string[] = []
 
     if (moveWithinEachCurrentBoard) {
       const updatesWithMetadata: Array<{
-        category: ICategory
-        updateData: SingleUpdateDTO<SafeUpdateData<ICategory>>
+        column: IColumn
+        updateData: SingleUpdateDTO<SafeUpdateData<IColumn>>
       }> = []
 
-      const categoriesByBoard = new Map<string, ICategory[]>()
-      for (const category of categoriesToMove) {
-        const boardId = category.board.toString()
-        const currentGroup = categoriesByBoard.get(boardId) || []
-        currentGroup.push(category)
-        categoriesByBoard.set(boardId, currentGroup)
+      const columnsByBoard = new Map<string, IColumn[]>()
+      for (const column of columnsToMove) {
+        const boardId = column.board.toString()
+        const currentGroup = columnsByBoard.get(boardId) || []
+        currentGroup.push(column)
+        columnsByBoard.set(boardId, currentGroup)
       }
 
-      for (const [boardId, boardCategories] of categoriesByBoard.entries()) {
+      for (const [boardId, boardColumns] of columnsByBoard.entries()) {
         if (toStart) {
-          const firstCategoriesInBoard = await this.repository.findByCriteria(
+          const firstColumnsInBoard = await this.repository.findByCriteria(
             { boardId },
             session,
             { sort: { rank: 1 }, limit: 1 },
@@ -1266,26 +1317,26 @@ export class CategoryService extends BaseService<
           )
 
           let rankCursor =
-            firstCategoriesInBoard.length > 0
-              ? LexoRank.parse(firstCategoriesInBoard[0].rank)
+            firstColumnsInBoard.length > 0
+              ? LexoRank.parse(firstColumnsInBoard[0].rank)
               : LexoRank.middle()
 
           const boardRanks: string[] = []
-          for (let i = 0; i < boardCategories.length; i++) {
+          for (let i = 0; i < boardColumns.length; i++) {
             rankCursor =
-              firstCategoriesInBoard.length > 0 ? rankCursor.genPrev() : rankCursor.genNext()
+              firstColumnsInBoard.length > 0 ? rankCursor.genPrev() : rankCursor.genNext()
             boardRanks.push(rankCursor.toString())
           }
 
-          if (firstCategoriesInBoard.length > 0) {
+          if (firstColumnsInBoard.length > 0) {
             boardRanks.reverse()
           }
 
-          boardCategories.forEach((category, index) => {
+          boardColumns.forEach((column, index) => {
             updatesWithMetadata.push({
-              category,
+              column,
               updateData: {
-                id: category.id,
+                id: column.id,
                 rank: boardRanks[index],
               },
             })
@@ -1302,12 +1353,12 @@ export class CategoryService extends BaseService<
             ? LexoRank.parse(lastRankData[0].rank)
             : LexoRank.middle()
 
-          boardCategories.forEach((category) => {
+          boardColumns.forEach((column) => {
             rankCursor = rankCursor.genNext()
             updatesWithMetadata.push({
-              category,
+              column,
               updateData: {
-                id: category.id,
+                id: column.id,
                 rank: rankCursor.toString(),
               },
             })
@@ -1316,7 +1367,7 @@ export class CategoryService extends BaseService<
       }
 
       const entitiesBefore = updatesWithMetadata.map(
-        ({ category, updateData }) => projectProperties<ICategory>([category], updateData)[0],
+        ({ column, updateData }) => projectProperties<IColumn>([column], updateData)[0],
       )
       const entitiesAfter = entitiesBefore.map((beforeEntity, index) => ({
         ...beforeEntity,
@@ -1327,7 +1378,7 @@ export class CategoryService extends BaseService<
         const log = await this.operationLogService.create(
           {
             operationType: OperationTypesEnum.UPDATE,
-            collectionName: CollectionsEnum.CATEGORIES,
+            collectionName: CollectionsEnum.COLUMNS,
             entitiesBefore,
             entitiesAfter,
             dependencies: [],
@@ -1356,7 +1407,7 @@ export class CategoryService extends BaseService<
       const log = await this.operationLogService.create(
         {
           operationType: OperationTypesEnum.UPDATE,
-          collectionName: CollectionsEnum.CATEGORIES,
+          collectionName: CollectionsEnum.COLUMNS,
           entitiesBefore,
           entitiesAfter,
           dependencies: [],
@@ -1366,14 +1417,14 @@ export class CategoryService extends BaseService<
         session,
       )
 
-      const updatedCategories = await this.getByCriteria(
-        { ids: categoriesToMove.map((category) => category.id.toString()) },
+      const updatedColumns = await this.getByCriteria(
+        { ids: columnsToMove.map((column) => column.id.toString()) },
         user.id,
         session,
       )
 
       return {
-        data: updatedCategories,
+        data: updatedColumns,
         logId: log.id,
       }
     }
@@ -1383,18 +1434,18 @@ export class CategoryService extends BaseService<
     }
 
     if (toStart) {
-      const firstCategoriesInBoard = await this.repository.findByCriteria(
+      const firstColumnsInBoard = await this.repository.findByCriteria(
         { boardId: targetBoardId },
         session,
         { sort: { rank: 1 }, limit: 1 },
         user.id,
       )
 
-      if (firstCategoriesInBoard.length > 0) {
+      if (firstColumnsInBoard.length > 0) {
         const generatedRanks: string[] = []
-        let rankCursor = LexoRank.parse(firstCategoriesInBoard[0].rank)
+        let rankCursor = LexoRank.parse(firstColumnsInBoard[0].rank)
 
-        for (let i = 0; i < categoriesToMove.length; i++) {
+        for (let i = 0; i < columnsToMove.length; i++) {
           rankCursor = rankCursor.genPrev()
           generatedRanks.push(rankCursor.toString())
         }
@@ -1402,33 +1453,33 @@ export class CategoryService extends BaseService<
         newRanks = generatedRanks.reverse()
       } else {
         let rankCursor = LexoRank.middle()
-        for (let i = 0; i < categoriesToMove.length; i++) {
+        for (let i = 0; i < columnsToMove.length; i++) {
           rankCursor = rankCursor.genNext()
           newRanks.push(rankCursor.toString())
         }
       }
-    } else if (beforeCategory && afterCategory) {
-      let left = LexoRank.parse(beforeCategory.rank)
-      const right = LexoRank.parse(afterCategory.rank)
+    } else if (beforeColumn && afterColumn) {
+      let left = LexoRank.parse(beforeColumn.rank)
+      const right = LexoRank.parse(afterColumn.rank)
 
-      for (let i = 0; i < categoriesToMove.length; i++) {
+      for (let i = 0; i < columnsToMove.length; i++) {
         left = left.between(right)
         newRanks.push(left.toString())
       }
-    } else if (beforeCategory) {
+    } else if (beforeColumn) {
       const generatedRanks: string[] = []
-      let rankCursor = LexoRank.parse(beforeCategory.rank)
+      let rankCursor = LexoRank.parse(beforeColumn.rank)
 
-      for (let i = 0; i < categoriesToMove.length; i++) {
+      for (let i = 0; i < columnsToMove.length; i++) {
         rankCursor = rankCursor.genPrev()
         generatedRanks.push(rankCursor.toString())
       }
 
       newRanks = generatedRanks.reverse()
-    } else if (afterCategory) {
-      let rankCursor = LexoRank.parse(afterCategory.rank)
+    } else if (afterColumn) {
+      let rankCursor = LexoRank.parse(afterColumn.rank)
 
-      for (let i = 0; i < categoriesToMove.length; i++) {
+      for (let i = 0; i < columnsToMove.length; i++) {
         rankCursor = rankCursor.genNext()
         newRanks.push(rankCursor.toString())
       }
@@ -1444,15 +1495,15 @@ export class CategoryService extends BaseService<
         ? LexoRank.parse(lastRankData[0].rank)
         : LexoRank.middle()
 
-      for (let i = 0; i < categoriesToMove.length; i++) {
+      for (let i = 0; i < columnsToMove.length; i++) {
         rankCursor = rankCursor.genNext()
         newRanks.push(rankCursor.toString())
       }
     }
 
-    const updatesWithMetadata = categoriesToMove.map((category, index) => {
-      const updateData: SingleUpdateDTO<SafeUpdateData<ICategory>> = {
-        id: category.id,
+    const updatesWithMetadata = columnsToMove.map((column, index) => {
+      const updateData: SingleUpdateDTO<SafeUpdateData<IColumn>> = {
+        id: column.id,
         rank: newRanks[index],
       }
 
@@ -1462,21 +1513,22 @@ export class CategoryService extends BaseService<
       }
 
       return {
-        category,
+        column,
         updateData,
       }
     })
 
     if (targetBoard) {
-      const categoriesWithNewBoard = updatesWithMetadata
-        .filter(({ category }) => category.board.toString() !== targetBoard.id.toString())
+      const columnsWithNewBoard = updatesWithMetadata
+        .filter(({ column }) => column.board.toString() !== targetBoard.id.toString())
         .map(() => ({ boardId: targetBoard.id.toString() }))
+      const boardIds = columnsWithNewBoard.map((c) => c.boardId)
 
-      await this._checkCategoriesLimitByBoards(categoriesWithNewBoard, user, session)
+      await this._checkColumnsLimitByBoards(boardIds, user, session)
     }
 
     const entitiesBefore = updatesWithMetadata.map(
-      ({ category, updateData }) => projectProperties<ICategory>([category], updateData)[0],
+      ({ column, updateData }) => projectProperties<IColumn>([column], updateData)[0],
     )
     const entitiesAfter = entitiesBefore.map((beforeEntity, index) => ({
       ...beforeEntity,
@@ -1487,7 +1539,7 @@ export class CategoryService extends BaseService<
       const log = await this.operationLogService.create(
         {
           operationType: OperationTypesEnum.UPDATE,
-          collectionName: CollectionsEnum.CATEGORIES,
+          collectionName: CollectionsEnum.COLUMNS,
           entitiesBefore,
           entitiesAfter,
           dependencies: [],
@@ -1516,7 +1568,7 @@ export class CategoryService extends BaseService<
     const log = await this.operationLogService.create(
       {
         operationType: OperationTypesEnum.UPDATE,
-        collectionName: CollectionsEnum.CATEGORIES,
+        collectionName: CollectionsEnum.COLUMNS,
         entitiesBefore,
         entitiesAfter,
         dependencies: [],
@@ -1526,14 +1578,14 @@ export class CategoryService extends BaseService<
       session,
     )
 
-    const updatedCategories = await this.getByCriteria(
-      { ids: categoriesToMove.map((category) => category.id.toString()) },
+    const updatedColumns = await this.getByCriteria(
+      { ids: columnsToMove.map((column) => column.id.toString()) },
       user.id,
       session,
     )
 
     return {
-      data: updatedCategories,
+      data: updatedColumns,
       logId: log.id,
     }
   }
@@ -1546,8 +1598,8 @@ export class CategoryService extends BaseService<
   ): Promise<IResponseWithLog<any>> {
     const { operationType } = log
 
-    const before = log.entitiesBefore as (Partial<ICategory> & { id: Types.ObjectId })[]
-    const after = log.entitiesAfter as (Partial<ICategory> & { id: Types.ObjectId })[]
+    const before = log.entitiesBefore as (Partial<IColumn> & { id: Types.ObjectId })[]
+    const after = log.entitiesAfter as (Partial<IColumn> & { id: Types.ObjectId })[]
 
     const idsBefore = before?.map((e) => e.id?.toString()) || []
     const idsAfter = after?.map((e) => e.id?.toString()) || []
@@ -1580,9 +1632,9 @@ export class CategoryService extends BaseService<
     }
   }
 
-  public async updateLifecycleCategoriesByCriteria(
-    criteria: ICategoryCriteria,
-    data: SafeUpdateData<ICategory>,
+  public async updateLifecycleColumnsByCriteria(
+    criteria: IColumnCriteria,
+    data: SafeUpdateData<IColumn>,
     userId: Types.ObjectId,
     session?: ClientSession,
   ): Promise<UpdateWriteOpResult> {
@@ -1591,15 +1643,15 @@ export class CategoryService extends BaseService<
     return await this.repository.updateManyByCriteria(criteria, data, session, userId)
   }
 
-  public async deleteCategoriesByCriteria(
-    criteria: ICategoryCriteria,
+  public async deleteColumnsByCriteria(
+    criteria: IColumnCriteria,
     userId: Types.ObjectId,
     session?: ClientSession,
   ): Promise<DeleteResult> {
     return await this.repository.deleteMany(criteria, userId, session)
   }
 
-  public async cloneCategoriesByBoards(
+  public async cloneColumnsByBoards(
     boardIdsMap: Map<
       string,
       {
@@ -1609,8 +1661,8 @@ export class CategoryService extends BaseService<
     >,
     userId: Types.ObjectId,
     session: ClientSession,
-  ): Promise<IResponseWithLog<ICategory[]>> {
-    const sourceCategories = await this.repository.findByCriteria(
+  ): Promise<IResponseWithLog<IColumn[]>> {
+    const sourceColumns = await this.repository.findByCriteria(
       { boardIds: Array.from(boardIdsMap.keys()), isDeleted: false, isDeletedExternal: false },
       session,
       undefined,
@@ -1618,42 +1670,42 @@ export class CategoryService extends BaseService<
     )
     const dependencies: Types.ObjectId[] = []
 
-    const cleanCategories = sourceCategories.map((category) => {
-      const boardData = boardIdsMap.get(category.board.toString())
+    const cleanColumns = sourceColumns.map((column) => {
+      const boardData = boardIdsMap.get(column.board.toString())
 
       if (!boardData) {
         throw new AppError('Ошибка при клонировании категорий: не найдена целевая доска.', 400)
       }
 
       return {
-        ...category,
+        ...column,
         board: boardData.boardId,
         workspace: boardData.workspaceId,
         id: undefined,
       }
     })
 
-    const clonedCategories = await this.repository.createMany(cleanCategories, session)
+    const clonedColumns = await this.repository.createMany(cleanColumns, session)
 
-    const categoryIdsMap: Map<
+    const columnIdsMap: Map<
       string,
       {
-        categoryId: Types.ObjectId
+        columnId: Types.ObjectId
         boardId: Types.ObjectId
         workspaceId: Types.ObjectId
       }
     > = new Map()
 
-    sourceCategories.forEach((category, index) => {
-      categoryIdsMap.set(category.id.toString(), {
-        categoryId: clonedCategories[index].id,
-        boardId: clonedCategories[index].board,
-        workspaceId: clonedCategories[index].workspace,
+    sourceColumns.forEach((column, index) => {
+      columnIdsMap.set(column.id.toString(), {
+        columnId: clonedColumns[index].id,
+        boardId: clonedColumns[index].board,
+        workspaceId: clonedColumns[index].workspace,
       })
     })
 
-    const tasksCloneResult = await this.taskService.cloneTasksByCategories(
-      categoryIdsMap,
+    const tasksCloneResult = await this.taskService.cloneTasksByColumns(
+      columnIdsMap,
       userId,
       session,
     )
@@ -1664,8 +1716,8 @@ export class CategoryService extends BaseService<
     const log = await this.operationLogService.create(
       {
         operationType: OperationTypesEnum.CREATE,
-        collectionName: CollectionsEnum.CATEGORIES,
-        entitiesAfter: clonedCategories,
+        collectionName: CollectionsEnum.COLUMNS,
+        entitiesAfter: clonedColumns,
         dependencies,
       },
       userId,
@@ -1673,76 +1725,77 @@ export class CategoryService extends BaseService<
     )
 
     return {
-      data: clonedCategories,
+      data: clonedColumns,
       logId: log.id,
     }
   }
 
-  private async prepareCategoryCreationPayload(
-    data: CategoryDTO,
+  private async prepareColumnCreationPayload(
+    data: ColumnDTO,
+    columnBoard: IBoardPopulated,
     userId: Types.ObjectId,
     session?: ClientSession,
-  ): Promise<ICategoryCreatePayload> {
-    const categoryName = data.name.trim()
+  ): Promise<IColumnCreatePayload> {
+    const columnName = data.name.trim()
 
-    const embeddings = await this.embeddingService.getEmbeddings(categoryName)
+    const embeddings = await this.embeddingService.getEmbeddings(columnName)
 
-    let categoryRank = LexoRank.middle().toString()
+    let columnRank = LexoRank.middle().toString()
 
     /* RANKING */
-    const lastCategoriesInBoard = await this.repository.findByCriteria(
+    const lastColumnsInBoard = await this.repository.findByCriteria(
       { boardId: data.boardId },
       session,
       { sort: { rank: -1 }, limit: 1 },
       userId,
     )
-    if (lastCategoriesInBoard.length > 0) {
-      const lastCategory = lastCategoriesInBoard[0]
-      const lastRank = LexoRank.parse(lastCategory.rank)
+    if (lastColumnsInBoard.length > 0) {
+      const lastColumn = lastColumnsInBoard[0]
+      const lastRank = LexoRank.parse(lastColumn.rank)
 
-      categoryRank = lastRank.genNext().toString()
+      columnRank = lastRank.genNext().toString()
     }
 
-    const categoryPayload: ICategoryCreatePayload = {
-      name: categoryName,
-      workspace: Types.ObjectId.createFromHexString(data.workspaceId),
-      board: Types.ObjectId.createFromHexString(data.boardId),
-      rank: categoryRank,
+    const columnPayload: IColumnCreatePayload = {
+      name: columnName,
+      workspace: columnBoard.workspace.id,
+      board: columnBoard.id,
+      rank: columnRank,
       embeddings,
       userId,
     }
 
-    return categoryPayload
+    return columnPayload
   }
 
-  private async prepareCategoriesCreationPayload(
-    data: CategoryDTO[],
+  private async prepareColumnsCreationPayload(
+    data: ColumnDTO[],
+    columnsBoardMap: Map<string, IBoardPopulated>,
     userId: Types.ObjectId,
     session?: ClientSession,
     isDryRun: boolean = false,
-  ): Promise<ICategoryCreatePayload[]> {
-    const categoriesPayloads: ICategoryCreatePayload[] = []
-    const categoriesGroupedByBoard: { [key: string]: CategoryDTO[] } = {}
+  ): Promise<IColumnCreatePayload[]> {
+    const columnsPayloads: IColumnCreatePayload[] = []
+    const columnsGroupedByBoard: { [key: string]: ColumnDTO[] } = {}
     const uniqueBoardIds = Array.from(
-      new Set(data.map((category) => new Types.ObjectId(category.boardId))),
+      new Set(data.map((column) => new Types.ObjectId(column.boardId))),
     )
 
-    data.forEach((category) => {
-      const boardId = category.boardId
-      if (!categoriesGroupedByBoard[boardId]) {
-        categoriesGroupedByBoard[boardId] = []
+    data.forEach((column) => {
+      const boardId = column.boardId
+      if (!columnsGroupedByBoard[boardId]) {
+        columnsGroupedByBoard[boardId] = []
       }
 
-      categoriesGroupedByBoard[boardId].push(category)
+      columnsGroupedByBoard[boardId].push(column)
     })
 
     const embeddingsMap: { [key: string]: number[] } = {}
 
     if (!isDryRun) {
-      const categoryNames = Array.from(new Set(data.map((category) => category.name.trim())))
-      const embeddingsArray =
-        await this.embeddingService.getEmbeddingsForMultipleTexts(categoryNames)
-      categoryNames.forEach((name, index) => {
+      const columnNames = Array.from(new Set(data.map((column) => column.name.trim())))
+      const embeddingsArray = await this.embeddingService.getEmbeddingsForMultipleTexts(columnNames)
+      columnNames.forEach((name, index) => {
         embeddingsMap[name] = embeddingsArray[index]
       })
     }
@@ -1754,7 +1807,7 @@ export class CategoryService extends BaseService<
       session,
     )
 
-    for (const [boardId, categories] of Object.entries(categoriesGroupedByBoard)) {
+    for (const [boardId, columns] of Object.entries(columnsGroupedByBoard)) {
       let lastRank = LexoRank.middle()
 
       const lastRankData = lastRanksByBoards.find((r) => r.parentId.toString() === boardId)
@@ -1762,17 +1815,17 @@ export class CategoryService extends BaseService<
         lastRank = LexoRank.parse(lastRankData.rank)
       }
 
-      for (const category of categories) {
+      for (const column of columns) {
         const newRank = lastRank.genNext()
-        const categoryName = category.name.trim()
+        const columnName = column.name.trim()
 
-        categoriesPayloads.push({
-          id: category.id,
-          name: categoryName,
-          workspace: new Types.ObjectId(category.workspaceId),
-          board: new Types.ObjectId(category.boardId),
+        columnsPayloads.push({
+          id: column.id,
+          name: columnName,
+          workspace: columnsBoardMap.get(column.boardId)!.workspace.id,
+          board: columnsBoardMap.get(column.boardId)!.id,
           rank: newRank.toString(),
-          embeddings: embeddingsMap[categoryName],
+          embeddings: embeddingsMap[columnName],
           userId,
         })
 
@@ -1780,69 +1833,86 @@ export class CategoryService extends BaseService<
       }
     }
 
-    return categoriesPayloads
+    return columnsPayloads
   }
 
   private async _prepareMainEditFields(
-    data: Omit<CategoryEditDTO, 'id'>,
-    categoryPayload: SafeUpdateData<ICategory>,
-    categoriesToUpdate: ICategory[],
+    data: Omit<ColumnEditDTO, 'id'>,
+    columnPayload: SafeUpdateData<IColumn>,
+    columnsToUpdate: IColumn[],
     isDryRun: boolean = false,
   ) {
-    if (data.boardId) {
-      categoryPayload.board = Types.ObjectId.createFromHexString(data.boardId)
-    }
-    if (data.workspaceId) {
-      categoryPayload.workspace = Types.ObjectId.createFromHexString(data.workspaceId)
-    }
-
-    if (!isDryRun && data.name && categoriesToUpdate.length > 0) {
-      const needEmbeddingsUpdate = categoriesToUpdate.some(
+    if (!isDryRun && data.name && columnsToUpdate.length > 0) {
+      const needEmbeddingsUpdate = columnsToUpdate.some(
         (ws) => data.name && ws.name.trim() !== data.name.trim(),
       )
 
-      const categoryName = data.name.trim()
+      const columnName = data.name.trim()
 
       if (needEmbeddingsUpdate) {
-        const embeddings = await this.embeddingService.getEmbeddings(categoryName)
+        const embeddings = await this.embeddingService.getEmbeddings(columnName)
 
-        categoryPayload.embeddings = embeddings
+        columnPayload.embeddings = embeddings
       }
     }
   }
 
-  private async prepareCategoryEditPayload(
-    data: Omit<CategoryEditDTO, 'id'>,
-    categoriesToUpdate: ICategory[],
-  ): Promise<SafeUpdateData<ICategory>> {
-    const categoryPayload: SafeUpdateData<ICategory> = {
+  private async prepareColumnEditPayload(
+    data: Omit<ColumnEditDTO, 'id'>,
+    columnsToUpdate: IColumn[],
+    columnsBoardMap: Map<string, IBoardPopulated>,
+  ): Promise<SafeUpdateData<IColumn>> {
+    const columnPayload: SafeUpdateData<IColumn> = {
       ...data,
     }
 
-    await this._prepareMainEditFields(data, categoryPayload, categoriesToUpdate)
+    if (data.boardId) {
+      const boardData = columnsBoardMap.get(data.boardId)
 
-    return categoryPayload
+      if (boardData) {
+        columnPayload.board = boardData.id
+        columnPayload.workspace = boardData.workspace.id
+      }
+    }
+
+    await this._prepareMainEditFields(data, columnPayload, columnsToUpdate)
+
+    return columnPayload
   }
 
-  private async prepareCategoryEditManyPayload(
-    data: CategoryEditDTO,
-    categoriesToUpdate: ICategory[],
+  private async prepareColumnEditManyPayload(
+    data: ColumnEditDTO,
+    columnsToUpdate: IColumn[],
+    columnsBoardMap: Map<string, IBoardPopulated>,
     isDryRun: boolean = false,
-  ): Promise<SingleUpdateDTO<SafeUpdateData<ICategory>>> {
+  ): Promise<SingleUpdateDTO<SafeUpdateData<IColumn>>> {
     const { id, ...rest } = data
 
-    const categoryPayload: SingleUpdateDTO<SafeUpdateData<ICategory>> = {
+    const column = columnsToUpdate[0]
+
+    const columnPayload: SingleUpdateDTO<SafeUpdateData<IColumn>> = {
       ...rest,
 
       id: new Types.ObjectId(id),
     }
 
-    await this._prepareMainEditFields(rest, categoryPayload, categoriesToUpdate, isDryRun)
+    if (data.boardId !== undefined && column.board.toString() !== data.boardId) {
+      const boardData = columnsBoardMap.get(data.boardId)
 
-    return categoryPayload
+      if (!boardData) {
+        throw new NotFoundError('Доска не найдена.')
+      }
+
+      columnPayload.board = boardData.id
+      columnPayload.workspace = boardData.workspace.id
+    }
+
+    await this._prepareMainEditFields(rest, columnPayload, columnsToUpdate, isDryRun)
+
+    return columnPayload
   }
 
-  public async getCategoriesCountByBoards(
+  public async getColumnsCountByBoards(
     boardIds: Types.ObjectId[],
     userId: Types.ObjectId,
     session?: ClientSession,
@@ -1850,7 +1920,7 @@ export class CategoryService extends BaseService<
     return this.repository.getCountGroupedByParents(boardIds, 'board', userId, session)
   }
 
-  public async getCategoriesCountByWorkspaces(
+  public async getColumnsCountByWorkspaces(
     workspaceIds: Types.ObjectId[],
     userId: Types.ObjectId,
     session?: ClientSession,
