@@ -278,7 +278,7 @@ export const RunAgentWorker = new Worker(
 
       throw error
     } finally {
-      if (!hasExecutionError && !wasCancelled) {
+      if (!hasExecutionError) {
         await agentEventsHandler.spendCredits()
       }
 
