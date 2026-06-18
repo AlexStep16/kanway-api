@@ -125,7 +125,7 @@ export class UserService {
       const isMatch = await bcrypt.compare(oldPassword, passwordHash)
 
       if (!isMatch) {
-        throw new AppError({ oldPassword: ErrorMessages.INVALID_CURRENT_PASSWORD }, 422)
+        throw new AppError(ErrorMessages.INVALID_CURRENT_PASSWORD, 422)
       }
 
       return passwordHash
