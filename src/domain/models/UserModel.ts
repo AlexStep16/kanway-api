@@ -64,7 +64,7 @@ export const UserSchema = new Schema<IUserRaw, IUserRawStatics, IUserRawMethods>
     },
     credits: {
       type: Number,
-      default: 20,
+      default: 200,
     },
     paid_credits: {
       type: Number,
