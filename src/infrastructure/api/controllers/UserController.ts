@@ -31,6 +31,13 @@ export class UserController {
       const criteria = { id: req.user!.id.toHexString() } as IUserCriteria
       await this.service.delete(criteria)
 
+      res.clearCookie('token', {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        path: '/',
+      })
+
       res.status(200).json(new SuccessResponse(null))
     } catch (error) {
       next(error)

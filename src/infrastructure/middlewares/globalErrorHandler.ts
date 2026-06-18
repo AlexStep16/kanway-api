@@ -4,6 +4,7 @@ import * as Sentry from '@sentry/node'
 import { ValidationError } from '@/domain/errors/ValidationError.js'
 import { UserNotFoundError } from '@/domain/errors/UserAuthError.js'
 import { serialize } from 'cookie'
+import { ErrorMessages } from '@/enums/ErrorMessages.js'
 
 export const globalErrorHandler = (err: any, _r: Request, res: Response, _n: NextFunction) => {
   if (process.env.NODE_ENV === 'development') {
@@ -21,6 +22,14 @@ export const globalErrorHandler = (err: any, _r: Request, res: Response, _n: Nex
         path: '/',
       }),
     )
+
+    return res.status(401).json({
+      success: false,
+      error: {
+        code: 401,
+        description: ErrorMessages.USER_NOT_AUTHORIZED,
+      },
+    })
   }
 
   if (err instanceof AppError || err instanceof ValidationError) {
