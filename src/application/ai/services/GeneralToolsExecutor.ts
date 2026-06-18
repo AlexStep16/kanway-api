@@ -188,7 +188,7 @@ export class GeneralToolsExecutor {
           return new SuccessToolResult('Undo operation was rejected by the user.')
         }
       }
-      console.log(isDryRun)
+
       const undoResult = await this.operationLogService.undoOperations(
         logIds,
         configurable.user,

@@ -33,6 +33,7 @@ import { TaskMoveManyDTO } from '@dtos/TaskMoveManyDTO.js'
 import { LimitService } from './LimitService.js'
 import { ErrorMessages } from '@/enums/ErrorMessages.js'
 import { IColumnPopulated } from '../interfaces/IColumnPopulated.js'
+import { TaskReorderDTO } from '../dtos/TaskReorderDTO.js'
 
 const MAX_RETRIES = 3
 
@@ -1559,6 +1560,113 @@ export class TaskService extends BaseService<
     return {
       data: updatedTasks,
       logId: log.id,
+    }
+  }
+
+  private async _executeReorderTransaction(
+    dto: TaskReorderDTO,
+    user: IUser,
+    session: ClientSession,
+    isDryRun: boolean = false,
+  ): Promise<IResponseWithLog<ITaskPopulated[]>> {
+    const { ids, columnId } = dto
+
+    const tasks = await this.repository.findByCriteria({ ids }, session, undefined, user.id)
+
+    const isAllFromSameColumn = tasks.every((task) => task.column.toString() === columnId)
+
+    if (!isAllFromSameColumn) {
+      throw new AppError('Все задачи должны принадлежать одной колонке.', 400)
+    }
+
+    const bulkUpdates: SingleUpdateDTO<SafeUpdateData<ITask>>[] = []
+    let currentRank = LexoRank.middle()
+
+    const tasksMap = new Map(tasks.map((t) => [t.id.toString(), t]))
+
+    ids.forEach((taskId, index) => {
+      bulkUpdates.push({
+        id: new Types.ObjectId(taskId),
+        rank: currentRank.toString(),
+      })
+
+      if (index < ids.length - 1) {
+        currentRank = currentRank.genNext()
+      }
+    })
+
+    const updatesWithMetadata = bulkUpdates.map((updateData) => {
+      const task = tasksMap.get(updateData.id.toString())!
+      return { task, updateData }
+    })
+
+    const entitiesBefore = updatesWithMetadata.map(
+      ({ task, updateData }) => projectProperties<ITask>([task], updateData)[0],
+    )
+    const entitiesAfter = entitiesBefore.map((beforeEntity, index) => ({
+      ...beforeEntity,
+      ...updatesWithMetadata[index].updateData,
+    }))
+
+    if (isDryRun) {
+      const log = await this.operationLogService.create(
+        {
+          operationType: OperationTypesEnum.UPDATE,
+          collectionName: CollectionsEnum.TASKS,
+          entitiesBefore,
+          entitiesAfter,
+          dependencies: [],
+          status: OperationLogStatusesEnum.PENDING,
+        },
+        user.id,
+        session,
+      )
+
+      return {
+        data: [],
+        logId: log.id,
+      }
+    }
+
+    const updateResult = await this.repository.bulkUpdate(bulkUpdates, user.id, session)
+
+    if (!updateResult || updateResult.modifiedCount === 0) {
+      throw new AppError('Не удалось переупорядочить задачи.', 500)
+    }
+
+    const log = await this.operationLogService.create(
+      {
+        operationType: OperationTypesEnum.UPDATE,
+        collectionName: CollectionsEnum.TASKS,
+        entitiesBefore,
+        entitiesAfter,
+        dependencies: [],
+        status: OperationLogStatusesEnum.SUCCESS,
+      },
+      user.id,
+      session,
+    )
+
+    const updatedTasks = await this.getByCriteria({ ids }, user.id, session)
+
+    return {
+      data: updatedTasks,
+      logId: log.id,
+    }
+  }
+
+  public async reorder(
+    dto: TaskReorderDTO,
+    user: IUser,
+    externalSession?: ClientSession,
+    isDryRun: boolean = false,
+  ): Promise<IResponseWithLog<ITaskPopulated[]>> {
+    if (externalSession) {
+      return this._executeReorderTransaction(dto, user, externalSession, isDryRun)
+    } else {
+      return await this._retryExecutor((session: ClientSession) =>
+        this._executeReorderTransaction(dto, user, session, isDryRun),
+      )
     }
   }
 

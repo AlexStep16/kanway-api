@@ -11,6 +11,10 @@ const ChatMessageSchema = new Schema<IChatMessageRaw>(
       type: Schema.Types.Mixed,
       required: true,
     },
+    iteration_id: {
+      type: String,
+      required: true,
+    },
     list_type: {
       type: String,
     },
@@ -23,6 +27,9 @@ const ChatMessageSchema = new Schema<IChatMessageRaw>(
       required: true,
     },
     credits_used: {
+      type: Number,
+    },
+    audio_credits_used: {
       type: Number,
     },
     rating: {

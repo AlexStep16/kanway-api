@@ -31,6 +31,7 @@ import { LimitService } from './LimitService.js'
 import { ColumnMoveManyDTO } from '../dtos/ColumnMoveManyDTO.js'
 import { ErrorMessages } from '@/enums/ErrorMessages.js'
 import { IBoardPopulated } from '../interfaces/IBoardPopulated.js'
+import { ColumnReorderDTO } from '../dtos/ColumnReorderDTO.js'
 
 const MAX_RETRIES = 3
 
@@ -1586,6 +1587,113 @@ export class ColumnService extends BaseService<
     return {
       data: updatedColumns,
       logId: log.id,
+    }
+  }
+
+  private async _executeReorderTransaction(
+    dto: ColumnReorderDTO,
+    user: IUser,
+    session: ClientSession,
+    isDryRun: boolean = false,
+  ): Promise<IResponseWithLog<IColumnPopulated[]>> {
+    const { ids, boardId } = dto
+
+    const columns = await this.repository.findByCriteria({ ids }, session, undefined, user.id)
+
+    const isAllFromSameBoard = columns.every((column) => column.board.toString() === boardId)
+
+    if (!isAllFromSameBoard) {
+      throw new AppError('Все колонки должны принадлежать одной доске.', 400)
+    }
+
+    const bulkUpdates: SingleUpdateDTO<SafeUpdateData<IColumn>>[] = []
+    let currentRank = LexoRank.middle()
+
+    const columnsMap = new Map(columns.map((c) => [c.id.toString(), c]))
+
+    ids.forEach((columnId, index) => {
+      bulkUpdates.push({
+        id: new Types.ObjectId(columnId),
+        rank: currentRank.toString(),
+      })
+
+      if (index < ids.length - 1) {
+        currentRank = currentRank.genNext()
+      }
+    })
+
+    const updatesWithMetadata = bulkUpdates.map((updateData) => {
+      const column = columnsMap.get(updateData.id.toString())!
+      return { column, updateData }
+    })
+
+    const entitiesBefore = updatesWithMetadata.map(
+      ({ column, updateData }) => projectProperties<IColumn>([column], updateData)[0],
+    )
+    const entitiesAfter = entitiesBefore.map((beforeEntity, index) => ({
+      ...beforeEntity,
+      ...updatesWithMetadata[index].updateData,
+    }))
+
+    if (isDryRun) {
+      const log = await this.operationLogService.create(
+        {
+          operationType: OperationTypesEnum.UPDATE,
+          collectionName: CollectionsEnum.COLUMNS,
+          entitiesBefore,
+          entitiesAfter,
+          dependencies: [],
+          status: OperationLogStatusesEnum.PENDING,
+        },
+        user.id,
+        session,
+      )
+
+      return {
+        data: [],
+        logId: log.id,
+      }
+    }
+
+    const updateResult = await this.repository.bulkUpdate(bulkUpdates, user.id, session)
+
+    if (!updateResult || updateResult.modifiedCount === 0) {
+      throw new AppError('Не удалось переупорядочить колонки.', 500)
+    }
+
+    const log = await this.operationLogService.create(
+      {
+        operationType: OperationTypesEnum.UPDATE,
+        collectionName: CollectionsEnum.COLUMNS,
+        entitiesBefore,
+        entitiesAfter,
+        dependencies: [],
+        status: OperationLogStatusesEnum.SUCCESS,
+      },
+      user.id,
+      session,
+    )
+
+    const updatedColumns = await this.getByCriteria({ ids }, user.id, session)
+
+    return {
+      data: updatedColumns,
+      logId: log.id,
+    }
+  }
+
+  public async reorder(
+    dto: ColumnReorderDTO,
+    user: IUser,
+    externalSession?: ClientSession,
+    isDryRun: boolean = false,
+  ): Promise<IResponseWithLog<IColumnPopulated[]>> {
+    if (externalSession) {
+      return this._executeReorderTransaction(dto, user, externalSession, isDryRun)
+    } else {
+      return await this._retryExecutor((session: ClientSession) =>
+        this._executeReorderTransaction(dto, user, session, isDryRun),
+      )
     }
   }
 

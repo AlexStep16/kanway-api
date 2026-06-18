@@ -12,7 +12,7 @@ export interface IUser {
   isDeleted?: boolean
   deletedTime?: Date
   isConfirmed: boolean
-  audioTokensUsed: number
+  audioCreditsSpent: number
   subscriptionId: SubscriptionPlanEnum
   subscriptionUntil?: Date | null
   isSubscriptionActive?: boolean

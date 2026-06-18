@@ -5,9 +5,11 @@ export interface IChatMessage {
   id: Types.ObjectId
   role: IChatMessageRoles
   content: any
+  iterationId: string
   listType?: string
   pendingToolCallId?: string
   creditsUsed?: number
+  audioCreditsUsed?: number
   rating?: boolean
   userId: Types.ObjectId
   chatId: Types.ObjectId

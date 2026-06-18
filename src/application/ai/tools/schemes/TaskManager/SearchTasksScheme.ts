@@ -10,13 +10,7 @@ const ColorFilterValueSchema = z
     message: 'At least one of color value or tone must be provided.',
   })
 
-const FilterValueSchema = z.union([
-  z.string(),
-  ColorFilterValueSchema,
-  z.number(),
-  z.boolean(),
-  z.array(z.any()),
-])
+const FilterValueSchema = z.union([ColorFilterValueSchema, z.any()])
 
 export const SearchTasksScheme = z.object({
   filters: z

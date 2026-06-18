@@ -36,6 +36,7 @@ import { SearchFilter } from '@/application/types/SearchFilter.js'
 import { buildEntitySamples } from '../tools/helpers/EntitySamplesHelpers.js'
 import { CreateBoardsDTO } from '../tools/schemes/BoardManager/CreateBoardsScheme.js'
 import { BoardDTO } from '@/application/dtos/BoardDTO.js'
+import { ReorderBoardsDTO } from '../tools/schemes/BoardManager/ReorderBoardsScheme.js'
 
 export class BoardToolsExecutorService {
   constructor(
@@ -292,8 +293,13 @@ export class BoardToolsExecutorService {
           content.logId = operationLogId
         })
 
+        const createdSamples = createBoardsResult.data.map((board) => ({
+          id: board.id.toString(),
+          name: board.name,
+        }))
+
         return new SuccessToolResult(
-          `Successfully created ${createBoardsResult.data.length} boards. Operation Log ID: ${operationLogId}`,
+          `Successfully created boards: ${JSON.stringify(createdSamples)}. Operation Log ID: ${operationLogId}`,
           {
             logId: operationLogId,
           },
@@ -474,6 +480,34 @@ export class BoardToolsExecutorService {
     return filters
   }
 
+  private async _resolveReorderHumanReadableFilters(
+    payload: ReorderBoardsDTO,
+    userId: Types.ObjectId,
+    session?: ClientSession,
+  ): Promise<ITextValue[]> {
+    const filters: ITextValue[] = []
+    const newNames: string[] = []
+
+    if (payload.board_ids && payload.board_ids.length > 0) {
+      const boards = await this.boardService.getByCriteria(
+        { ids: payload.board_ids },
+        userId,
+        session,
+      )
+
+      boards.forEach((board) => {
+        newNames.push(board.name)
+      })
+    }
+
+    filters.push({
+      text: 'Новый порядок досок',
+      value: newNames.join(', '),
+    })
+
+    return filters
+  }
+
   public async deleteArchiveBoards(
     payload: DeleteArchiveBoardsDTO,
     config: RunnableConfig,
@@ -504,7 +538,10 @@ export class BoardToolsExecutorService {
       },
     })
 
+    const actionString = payload.soft_delete ? 'archived' : 'deleted'
+
     let isDryRun = false
+
     try {
       if (
         [AiConfirmationTypeEnum.ALWAYS, AiConfirmationTypeEnum.ONLY_FOR_SENSITIVE].includes(
@@ -516,7 +553,9 @@ export class BoardToolsExecutorService {
         } else if (context.isApproved === false) {
           await this.toolStatusLogLifecycleService.setCancelled(statusLog)
 
-          return new SuccessToolResult('Board update operation was rejected by the user.')
+          return new SuccessToolResult(
+            `Board ${actionString} operation was rejected by the user. The user decided not to proceed with ${actionString}. Do not attempt to ${actionString} the boards again.`,
+          )
         }
       }
 
@@ -528,8 +567,6 @@ export class BoardToolsExecutorService {
         session,
         isDryRun,
       )
-
-      const actionString = payload.soft_delete ? 'archived' : 'deleted'
 
       if (result.logId) {
         const operationLogId = result.logId.toString()
@@ -563,7 +600,7 @@ export class BoardToolsExecutorService {
         } else if (result.data === null && !payload.soft_delete) {
           boardsProcessedCount = boardIds.length
         } else {
-          return new FailedToolResult('No boards were affected by the operation.')
+          return new FailedToolResult(`No boards were ${actionString} by the operation.`)
         }
 
         return new SuccessToolResult(
@@ -838,6 +875,93 @@ export class BoardToolsExecutorService {
       }
 
       return new FailedToolResult('Failed to create operation log for boards move.')
+    } catch (error) {
+      statusLog.state = StatusStatesEnum.FAILED
+      await dispatchCustomEvent(CustomEvents.STATUS_UPDATE_LOG, statusLog)
+
+      throw error
+    }
+  }
+
+  public async reorderBoards(
+    payload: ReorderBoardsDTO,
+    config: RunnableConfig,
+    context: IConfigContext,
+    session?: ClientSession,
+  ) {
+    const configurable = config.configurable as Configurable
+    const boardIds = await this._resolveBoardIds(payload, configurable.user.id, session)
+    const humanReadableFilters = await this._resolveReorderHumanReadableFilters(
+      payload,
+      configurable.user.id,
+      session,
+    )
+    const toolCall = context.toolCall!
+
+    const statusLog = await this.toolStatusLogLifecycleService.getOrCreateInProgressLog({
+      existingLog: context.statusLog,
+      toolCallId: toolCall.id!,
+      toolName: 'reorder_boards',
+      toolContent: {
+        count: boardIds.length,
+        filters: humanReadableFilters,
+      },
+    })
+
+    let isDryRun = false
+
+    try {
+      if (configurable.aiConfirmationType === AiConfirmationTypeEnum.ALWAYS) {
+        if (context.isApproved === undefined) {
+          isDryRun = true
+        } else if (context.isApproved === false) {
+          await this.toolStatusLogLifecycleService.setCancelled(statusLog)
+
+          return new SuccessToolResult('Board reorder operation was rejected by the user.')
+        }
+      }
+
+      const reorderBoardsResult = await this.boardService.reorder(
+        {
+          ids: boardIds,
+          workspaceId: payload.workspace_id,
+        },
+        configurable.user,
+        session,
+        isDryRun,
+      )
+
+      if (reorderBoardsResult.logId) {
+        const operationLogId = reorderBoardsResult.logId.toString()
+
+        if (isDryRun) {
+          await this.toolStatusLogLifecycleService.setAwaitingConfirmation(statusLog, (content) => {
+            content.logId = operationLogId
+          })
+
+          return new ConfirmationToolResult({
+            logId: operationLogId,
+          })
+        }
+
+        await dispatchCustomEvent(CustomEvents.OPERATION, {
+          logId: operationLogId,
+          session,
+        })
+
+        await this.toolStatusLogLifecycleService.setCompleted(statusLog, (content) => {
+          content.logId = operationLogId
+        })
+
+        return new SuccessToolResult(
+          `Successfully reordered ${reorderBoardsResult.data.length} boards. Operation Log ID: ${operationLogId}`,
+          {
+            logId: operationLogId,
+          },
+        )
+      }
+
+      return new FailedToolResult('Failed to create operation log for boards reorder.')
     } catch (error) {
       statusLog.state = StatusStatesEnum.FAILED
       await dispatchCustomEvent(CustomEvents.STATUS_UPDATE_LOG, statusLog)

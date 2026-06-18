@@ -12,12 +12,15 @@ import { AgentsEnum } from '@/enums/AgentsEnum.js'
 import { getAgentManagerTools } from '../../helpers/managerHelpers.js'
 import { getToolCallsByAgent } from '../../helpers/getToolCallsByAgent.js'
 import { getCurrentAgentOutputs } from '../../helpers/getCurrentAgentOutput.js'
+import { initManagerTools } from '../../tools/initManagerTools.js'
+import { Configurable } from '../../interfaces/Configurable.js'
 
 export const makeEntityManagerAgentToolNode = (dependencies: AgentDependencies) => {
   return async (state: typeof AgentStateAnnotation.State, config: RunnableConfig) => {
     const activeManager = state.active_manager as AgentsEnum
 
     const toolCalls = getToolCallsByAgent(activeManager, state)
+    const configurable = config.configurable as Configurable
 
     const reviewedByToolCallId = state.tools_reviewed_map || new Map()
     const statusLogByToolCallId = state.tools_log_map || new Map()
@@ -46,9 +49,11 @@ export const makeEntityManagerAgentToolNode = (dependencies: AgentDependencies) 
       operation_log_ids: state.operation_log_ids,
       manager_tools_has_error: false,
       active_selections: state.active_selections,
+      requested_tools: state.requested_tools,
     }
 
     const managerTools = getAgentManagerTools(activeManager, dependencies, config)
+    const mainManagerTools = initManagerTools()
     const {
       toolCalls: managerToolCalls,
       toolCallsCompleted: managerToolCallsCompleted,
@@ -58,6 +63,23 @@ export const makeEntityManagerAgentToolNode = (dependencies: AgentDependencies) 
 
     for (const toolCall of toolCalls) {
       if (managerToolCallsCompleted.some((completedCall) => completedCall.id === toolCall.id)) {
+        continue
+      }
+
+      if (toolCall.name === 'lookup_toolset') {
+        await validateToolCall(
+          toolCall,
+          mainManagerTools.find((tool) => tool.name === toolCall.name)!,
+        )
+
+        const toolNames = toolCall.args.tool_names as string[]
+
+        outputs.requested_tools!.push(...toolNames)
+
+        managerMessages.push(
+          new ToolMessage(`Tools: ${toolNames.join(', ')} are available to call now`, toolCall.id!),
+        )
+
         continue
       }
 
@@ -75,8 +97,11 @@ export const makeEntityManagerAgentToolNode = (dependencies: AgentDependencies) 
             logId: result.meta?.logId,
           }
 
-          if (result.meta?.logId) {
-            outputs.operation_log_ids!.push(result.meta.logId)
+          if (result.meta?.logId && outputs.operation_log_ids) {
+            if (!outputs.operation_log_ids.has(configurable.iterationId)) {
+              outputs.operation_log_ids.set(configurable.iterationId, [])
+            }
+            outputs.operation_log_ids.get(configurable.iterationId)!.push(result.meta.logId)
           }
 
           break
@@ -117,20 +142,10 @@ export const makeEntityManagerAgentToolNode = (dependencies: AgentDependencies) 
   }
 }
 
-async function executeToolCall(
+async function validateToolCall(
   toolCall: ToolCall,
-  managerTools: DynamicStructuredTool[],
-  reviewedByToolCallId?: Map<string, boolean>,
-  statusLogByToolCallId?: Map<string, StatusLog>,
-) {
-  const toolByToolCalls: DynamicStructuredTool | undefined = managerTools.find(
-    (tool) => tool.name === toolCall.name,
-  )
-
-  if (!toolByToolCalls) {
-    throw new ToolMessage(`Tool ${toolCall.name} not found.`, toolCall.id!)
-  }
-
+  toolByToolCalls: DynamicStructuredTool,
+): Promise<boolean> {
   const validationResult = await (toolByToolCalls.schema as ZodAny).safeParseAsync(toolCall.args)
 
   if (!validationResult.success) {
@@ -142,7 +157,26 @@ async function executeToolCall(
     )
   }
 
+  return true
+}
+
+async function executeToolCall(
+  toolCall: ToolCall,
+  managerTools: DynamicStructuredTool[],
+  reviewedByToolCallId?: Map<string, boolean>,
+  statusLogByToolCallId?: Map<string, StatusLog>,
+) {
   try {
+    const toolByToolCalls: DynamicStructuredTool | undefined = managerTools.find(
+      (tool) => tool.name === toolCall.name,
+    )
+
+    if (!toolByToolCalls) {
+      throw new ToolMessage(`Tool ${toolCall.name} not found.`, toolCall.id!)
+    }
+
+    await validateToolCall(toolCall, toolByToolCalls)
+
     const toolCallId = toolCall.id!
 
     const context: IConfigContext = {

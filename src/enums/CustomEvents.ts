@@ -6,6 +6,5 @@ export enum CustomEvents {
   TOOL_REVIEW = 'tool_review',
   NEW_MESSAGE = 'new_message',
   UPDATE_MESSAGE = 'update_message',
-  TOKENS_ADDED = 'tokens_added',
   FINAL_RESPONSE = 'final_response',
 }

@@ -152,6 +152,7 @@ export class ChatMessageService extends BaseService<
         content: data.content,
         listType: data.listType,
         pendingToolCallId: data.pendingToolCallId,
+        iterationId: data.iterationId,
         userId: user.id,
         chatId: data.chatId,
         threadId: data.threadId,

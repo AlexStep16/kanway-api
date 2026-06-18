@@ -7,6 +7,8 @@ import { CloneWorkspacesScheme } from './schemes/WorkspaceManager/CloneWorkspace
 import { RecoverWorkspacesScheme } from './schemes/WorkspaceManager/RecoverWorkspacesScheme.js'
 import { SearchWorkspacesScheme } from './schemes/WorkspaceManager/SearchWorkspacesScheme.js'
 import { CreateWorkspacesScheme } from './schemes/WorkspaceManager/CreateWorkspacesScheme.js'
+import { MoveWorkspacesScheme } from './schemes/WorkspaceManager/MoveWorkspacesScheme.js'
+import { ReorderWorkspacesScheme } from './schemes/WorkspaceManager/ReorderWorkspacesScheme.js'
 
 export function initWorkspaceManagerTools(
   dependencies: AgentDependencies,
@@ -96,6 +98,34 @@ export function initWorkspaceManagerTools(
     },
   )
 
+  const moveWorkspaces = tool(
+    async (data, config) => {
+      return await dependencies.services.workspaceToolsExecutorService.moveWorkspaces(
+        data,
+        runnableConfig,
+        config.context,
+      )
+    },
+    {
+      name: 'move_workspaces',
+      schema: MoveWorkspacesScheme,
+    },
+  )
+
+  const reorderWorkspaces = tool(
+    async (data, config) => {
+      return await dependencies.services.workspaceToolsExecutorService.reorderWorkspaces(
+        data,
+        runnableConfig,
+        config.context,
+      )
+    },
+    {
+      name: 'reorder_workspaces',
+      schema: ReorderWorkspacesScheme,
+    },
+  )
+
   return [
     searchWorkspaces,
     createWorkspaces,
@@ -103,5 +133,7 @@ export function initWorkspaceManagerTools(
     deleteArchiveWorkspaces,
     cloneWorkspaces,
     recoverWorkspaces,
+    moveWorkspaces,
+    reorderWorkspaces,
   ]
 }

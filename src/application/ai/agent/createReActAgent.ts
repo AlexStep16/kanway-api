@@ -21,7 +21,7 @@ export function createReActAgent(dependencies: AgentDependencies, checkpointer: 
   const entityManagerAgentToolNode = makeEntityManagerAgentToolNode(dependencies)
   const toolHumanReviewNode = makeToolHumanReviewNode()
 
-  const summarizerNode = makeSummarizerNode(dependencies)
+  const summarizerNode = makeSummarizerNode()
 
   const graphBuilder = new StateGraph(AgentStateAnnotation)
     .addNode('Orchestrator', orchestratorNode)

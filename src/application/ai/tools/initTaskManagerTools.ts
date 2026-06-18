@@ -8,6 +8,7 @@ import { CloneTasksScheme } from './schemes/TaskManager/CloneTasksScheme.js'
 import { RecoverTasksScheme } from './schemes/TaskManager/RecoverTasksScheme.js'
 import { MoveTasksScheme } from './schemes/TaskManager/MoveTasksScheme.js'
 import { CreateTasksScheme } from './schemes/TaskManager/CreateTasksScheme.js'
+import { ReorderTasksScheme } from './schemes/TaskManager/ReorderTasksScheme.js'
 
 export function initTaskManagerTools(
   dependencies: AgentDependencies,
@@ -111,6 +112,20 @@ export function initTaskManagerTools(
     },
   )
 
+  const reorderTasks = tool(
+    async (data, config) => {
+      return await dependencies.services.taskToolsExecutorService.reorderTasks(
+        data,
+        runnableConfig,
+        config.context,
+      )
+    },
+    {
+      name: 'reorder_tasks',
+      schema: ReorderTasksScheme,
+    },
+  )
+
   return [
     searchTasks,
     createTasks,
@@ -119,5 +134,6 @@ export function initTaskManagerTools(
     cloneTasks,
     recoverTasks,
     moveTasks,
+    reorderTasks,
   ]
 }

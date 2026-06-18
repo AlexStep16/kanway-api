@@ -28,6 +28,8 @@ import { LimitService } from './LimitService.js'
 import { OperationLogStatusesEnum } from '@/domain/enums/OperationLogStatusesEnum.js'
 import { LexoRank } from 'lexorank'
 import { WorkspaceMoveDTO } from '../dtos/WorkspaceMoveDTO.js'
+import { WorkspaceMoveManyDTO } from '../dtos/WorkspaceMoveManyDTO.js'
+import { WorkspaceReorderDTO } from '../dtos/WorkspaceReorderDTO.js'
 import { WelcomeDTO } from '../dtos/WelcomeDTO.js'
 import { UserService } from './UserService.js'
 
@@ -906,6 +908,341 @@ export class WorkspaceService extends BaseService<
     )
 
     const updatedWorkspaces = await this.getByCriteria({ id }, user.id, session)
+
+    return {
+      data: updatedWorkspaces,
+      logId: log.id,
+    }
+  }
+
+  public async moveMany(
+    dto: WorkspaceMoveManyDTO,
+    user: IUser,
+    externalSession?: ClientSession,
+    isDryRun: boolean = false,
+  ): Promise<IResponseWithLog<IWorkspace[]>> {
+    if (externalSession) {
+      return this._executeMoveManyTransaction(dto, user, externalSession, isDryRun)
+    } else {
+      return await this._retryExecutor((session: ClientSession) =>
+        this._executeMoveManyTransaction(dto, user, session, isDryRun),
+      )
+    }
+  }
+
+  private async _executeMoveManyTransaction(
+    dto: WorkspaceMoveManyDTO,
+    user: IUser,
+    session: ClientSession,
+    isDryRun: boolean = false,
+  ): Promise<IResponseWithLog<IWorkspace[]>> {
+    const { ids, beforeWorkspaceId, afterWorkspaceId, toStart, toEnd } = dto
+
+    const uniqueWorkspaceIds = [...new Set(ids)]
+    if (uniqueWorkspaceIds.length === 0) {
+      throw new NotFoundError('Рабочие пространства не найдены.')
+    }
+
+    if (toStart && toEnd) {
+      throw new AppError(
+        'Нельзя переместить рабочие пространства одновременно в начало и в конец.',
+        400,
+      )
+    }
+
+    if ((toStart || toEnd) && (beforeWorkspaceId || afterWorkspaceId)) {
+      throw new AppError(
+        'Нельзя одновременно использовать beforeWorkspaceId/afterWorkspaceId и toStart/toEnd.',
+        400,
+      )
+    }
+
+    if (beforeWorkspaceId && uniqueWorkspaceIds.includes(beforeWorkspaceId)) {
+      throw new AppError(
+        'beforeWorkspaceId не может быть среди перемещаемых рабочих пространств.',
+        400,
+      )
+    }
+
+    if (afterWorkspaceId && uniqueWorkspaceIds.includes(afterWorkspaceId)) {
+      throw new AppError(
+        'afterWorkspaceId не может быть среди перемещаемых рабочих пространств.',
+        400,
+      )
+    }
+
+    const relatedWorkspaceIds = [
+      ...new Set([...uniqueWorkspaceIds, beforeWorkspaceId, afterWorkspaceId].filter(Boolean)),
+    ]
+    const workspaces = await this.repository.findByCriteria(
+      { ids: relatedWorkspaceIds as string[] },
+      session,
+      undefined,
+      user.id,
+    )
+
+    const workspacesToMove = workspaces
+      .filter((workspace) => uniqueWorkspaceIds.includes(workspace.id.toString()))
+      .sort((a, b) => a.rank.localeCompare(b.rank))
+
+    if (workspacesToMove.length !== uniqueWorkspaceIds.length) {
+      throw new NotFoundError('Рабочие пространства не найдены.')
+    }
+
+    const beforeWorkspace = beforeWorkspaceId
+      ? workspaces.find((w) => w.id.toString() === beforeWorkspaceId)
+      : null
+    const afterWorkspace = afterWorkspaceId
+      ? workspaces.find((w) => w.id.toString() === afterWorkspaceId)
+      : null
+
+    if (beforeWorkspaceId && !beforeWorkspace) {
+      throw new NotFoundError('Опорное рабочее пространство beforeWorkspaceId не найдено.')
+    }
+
+    if (afterWorkspaceId && !afterWorkspace) {
+      throw new NotFoundError('Опорное рабочее пространство afterWorkspaceId не найдено.')
+    }
+
+    let newRanks: string[] = []
+
+    if (toStart) {
+      const firstWorkspaces = await this.repository.findByCriteria(
+        {},
+        session,
+        { sort: { rank: 1 }, limit: 1 },
+        user.id,
+      )
+
+      if (firstWorkspaces.length > 0) {
+        const generatedRanks: string[] = []
+        let rankCursor = LexoRank.parse(firstWorkspaces[0].rank)
+
+        for (let i = 0; i < workspacesToMove.length; i++) {
+          rankCursor = rankCursor.genPrev()
+          generatedRanks.push(rankCursor.toString())
+        }
+
+        newRanks = generatedRanks.reverse()
+      } else {
+        let rankCursor = LexoRank.middle()
+        for (let i = 0; i < workspacesToMove.length; i++) {
+          rankCursor = rankCursor.genNext()
+          newRanks.push(rankCursor.toString())
+        }
+      }
+    } else if (beforeWorkspace && afterWorkspace) {
+      let left = LexoRank.parse(beforeWorkspace.rank)
+      const right = LexoRank.parse(afterWorkspace.rank)
+
+      for (let i = 0; i < workspacesToMove.length; i++) {
+        left = left.between(right)
+        newRanks.push(left.toString())
+      }
+    } else if (beforeWorkspace) {
+      const generatedRanks: string[] = []
+      let rankCursor = LexoRank.parse(beforeWorkspace.rank)
+
+      for (let i = 0; i < workspacesToMove.length; i++) {
+        rankCursor = rankCursor.genPrev()
+        generatedRanks.push(rankCursor.toString())
+      }
+
+      newRanks = generatedRanks.reverse()
+    } else if (afterWorkspace) {
+      let rankCursor = LexoRank.parse(afterWorkspace.rank)
+
+      for (let i = 0; i < workspacesToMove.length; i++) {
+        rankCursor = rankCursor.genNext()
+        newRanks.push(rankCursor.toString())
+      }
+    } else {
+      const lastWorkspaces = await this.repository.findByCriteria(
+        {},
+        session,
+        { sort: { rank: -1 }, limit: 1 },
+        user.id,
+      )
+
+      let rankCursor = lastWorkspaces.length
+        ? LexoRank.parse(lastWorkspaces[0].rank)
+        : LexoRank.middle()
+
+      for (let i = 0; i < workspacesToMove.length; i++) {
+        rankCursor = rankCursor.genNext()
+        newRanks.push(rankCursor.toString())
+      }
+    }
+
+    const updatesWithMetadata = workspacesToMove.map((workspace, index) => ({
+      workspace,
+      updateData: {
+        id: workspace.id,
+        rank: newRanks[index],
+      } as SingleUpdateDTO<SafeUpdateData<IWorkspace>>,
+    }))
+
+    const entitiesBefore = updatesWithMetadata.map(
+      ({ workspace, updateData }) => projectProperties<IWorkspace>([workspace], updateData)[0],
+    )
+    const entitiesAfter = entitiesBefore.map((beforeEntity, index) => ({
+      ...beforeEntity,
+      ...updatesWithMetadata[index].updateData,
+    }))
+
+    if (isDryRun) {
+      const log = await this.operationLogService.create(
+        {
+          operationType: OperationTypesEnum.UPDATE,
+          collectionName: CollectionsEnum.WORKSPACES,
+          entitiesBefore,
+          entitiesAfter,
+          dependencies: [],
+          status: OperationLogStatusesEnum.PENDING,
+        },
+        user.id,
+        session,
+      )
+
+      return {
+        data: [],
+        logId: log.id,
+      }
+    }
+
+    const updateResult = await this.repository.bulkUpdate(
+      updatesWithMetadata.map(({ updateData }) => updateData),
+      user.id,
+      session,
+    )
+
+    if (!updateResult || updateResult.modifiedCount === 0) {
+      throw new AppError('Не удалось переместить рабочие пространства.', 500)
+    }
+
+    const log = await this.operationLogService.create(
+      {
+        operationType: OperationTypesEnum.UPDATE,
+        collectionName: CollectionsEnum.WORKSPACES,
+        entitiesBefore,
+        entitiesAfter,
+        dependencies: [],
+        status: OperationLogStatusesEnum.SUCCESS,
+      },
+      user.id,
+      session,
+    )
+
+    const updatedWorkspaces = await this.getByCriteria(
+      { ids: workspacesToMove.map((w) => w.id.toString()) },
+      user.id,
+      session,
+    )
+
+    return {
+      data: updatedWorkspaces,
+      logId: log.id,
+    }
+  }
+
+  public async reorder(
+    dto: WorkspaceReorderDTO,
+    user: IUser,
+    externalSession?: ClientSession,
+    isDryRun: boolean = false,
+  ): Promise<IResponseWithLog<IWorkspace[]>> {
+    if (externalSession) {
+      return this._executeReorderTransaction(dto, user, externalSession, isDryRun)
+    } else {
+      return await this._retryExecutor((session: ClientSession) =>
+        this._executeReorderTransaction(dto, user, session, isDryRun),
+      )
+    }
+  }
+
+  private async _executeReorderTransaction(
+    dto: WorkspaceReorderDTO,
+    user: IUser,
+    session: ClientSession,
+    isDryRun: boolean = false,
+  ): Promise<IResponseWithLog<IWorkspace[]>> {
+    const { ids } = dto
+
+    const workspaces = await this.repository.findByCriteria({ ids }, session, undefined, user.id)
+
+    if (workspaces.length !== ids.length) {
+      throw new NotFoundError('Рабочие пространства не найдены.')
+    }
+
+    const bulkUpdates: SingleUpdateDTO<SafeUpdateData<IWorkspace>>[] = []
+    let currentRank = LexoRank.middle()
+
+    const workspacesMap = new Map(workspaces.map((w) => [w.id.toString(), w]))
+
+    ids.forEach((workspaceId, index) => {
+      bulkUpdates.push({
+        id: new Types.ObjectId(workspaceId),
+        rank: currentRank.toString(),
+      })
+
+      if (index < ids.length - 1) {
+        currentRank = currentRank.genNext()
+      }
+    })
+
+    const updatesWithMetadata = bulkUpdates.map((updateData) => {
+      const workspace = workspacesMap.get(updateData.id.toString())!
+      return { workspace, updateData }
+    })
+
+    const entitiesBefore = updatesWithMetadata.map(
+      ({ workspace, updateData }) => projectProperties<IWorkspace>([workspace], updateData)[0],
+    )
+    const entitiesAfter = entitiesBefore.map((beforeEntity, index) => ({
+      ...beforeEntity,
+      ...updatesWithMetadata[index].updateData,
+    }))
+
+    if (isDryRun) {
+      const log = await this.operationLogService.create(
+        {
+          operationType: OperationTypesEnum.UPDATE,
+          collectionName: CollectionsEnum.WORKSPACES,
+          entitiesBefore,
+          entitiesAfter,
+          dependencies: [],
+          status: OperationLogStatusesEnum.PENDING,
+        },
+        user.id,
+        session,
+      )
+
+      return {
+        data: [],
+        logId: log.id,
+      }
+    }
+
+    const updateResult = await this.repository.bulkUpdate(bulkUpdates, user.id, session)
+
+    if (!updateResult || updateResult.modifiedCount === 0) {
+      throw new AppError('Не удалось переупорядочить рабочие пространства.', 500)
+    }
+
+    const log = await this.operationLogService.create(
+      {
+        operationType: OperationTypesEnum.UPDATE,
+        collectionName: CollectionsEnum.WORKSPACES,
+        entitiesBefore,
+        entitiesAfter,
+        dependencies: [],
+        status: OperationLogStatusesEnum.SUCCESS,
+      },
+      user.id,
+      session,
+    )
+
+    const updatedWorkspaces = await this.getByCriteria({ ids }, user.id, session)
 
     return {
       data: updatedWorkspaces,

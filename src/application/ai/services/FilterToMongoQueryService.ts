@@ -968,6 +968,9 @@ export class FilterToMongoQueryService {
       },
     }
 
+    // Exclude documents with null/empty due_date from all date comparisons
+    const notNullDueDate = { due_date: { $exists: true, $nin: [null, ''] } }
+
     // 4. Формируем условия (логика та же, что и выше)
     if (operator.eq) {
       // Попадает в интервал [startOfDay, nextDayStart)
@@ -977,7 +980,7 @@ export class FilterToMongoQueryService {
           { $lt: [constructedDateExpr, nextDayStart] },
         ],
       }
-      return { $expr: condition }
+      return { $and: [notNullDueDate, { $expr: condition }] }
     } else if (operator.neq) {
       // Попадает в интервал [startOfDay, nextDayStart)
       const condition = {
@@ -986,23 +989,15 @@ export class FilterToMongoQueryService {
           { $gte: [constructedDateExpr, nextDayStart] },
         ],
       }
-      return { $expr: condition }
+      return { $and: [notNullDueDate, { $expr: condition }] }
     } else if (operator.gt) {
-      const val = nextDayStart
-      const op = '$gt'
-      return { $expr: { [op]: [constructedDateExpr, val] } }
+      return { $and: [notNullDueDate, { $expr: { $gt: [constructedDateExpr, nextDayStart] } }] }
     } else if (operator.gte) {
-      const val = startOfDay
-      const op = '$gte'
-      return { $expr: { [op]: [constructedDateExpr, val] } }
+      return { $and: [notNullDueDate, { $expr: { $gte: [constructedDateExpr, startOfDay] } }] }
     } else if (operator.lt) {
-      const val = startOfDay
-      const op = '$lt'
-      return { $expr: { [op]: [constructedDateExpr, val] } }
+      return { $and: [notNullDueDate, { $expr: { $lt: [constructedDateExpr, startOfDay] } }] }
     } else if (operator.lte) {
-      const val = nextDayStart
-      const op = '$lte'
-      return { $expr: { [op]: [constructedDateExpr, val] } }
+      return { $and: [notNullDueDate, { $expr: { $lte: [constructedDateExpr, nextDayStart] } }] }
     } else {
       throw new Error(`Unsupported operator for 'due_date' field: ${JSON.stringify(operator)}`)
     }
@@ -1012,17 +1007,17 @@ export class FilterToMongoQueryService {
     operator: Omit<SearchTasksDTO['filters'][number], 'field'>,
     timezone: string,
   ): FilterQuery<any> {
-    let value =
+    const value =
       operator.eq || operator.neq || operator.gt || operator.gte || operator.lt || operator.lte
 
     if (typeof value !== 'string') {
       throw new Error(`Invalid value for time operator: ${JSON.stringify(operator)}`)
     }
 
-    value = value.toString().padStart(5, '0')
+    const parsedValue = value.toString().padStart(5, '0')
 
-    let hour: string | number = value.split(':')[0]
-    let minute: string | number = value.split(':')[1]
+    let hour: string | number = parsedValue.split(':')[0]
+    let minute: string | number = parsedValue.split(':')[1]
 
     const date = dayjs.utc().tz(timezone)
 

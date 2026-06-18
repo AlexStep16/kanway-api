@@ -8,6 +8,7 @@ import { CloneColumnsScheme } from './schemes/ColumnManager/CloneColumnsScheme.j
 import { RecoverColumnsScheme } from './schemes/ColumnManager/RecoverColumnsScheme.js'
 import { MoveColumnsScheme } from './schemes/ColumnManager/MoveColumnsScheme.js'
 import { CreateColumnsScheme } from './schemes/ColumnManager/CreateColumnsScheme.js'
+import { ReorderColumnsScheme } from './schemes/ColumnManager/ReorderColumnsScheme.js'
 
 export function initColumnManagerTools(
   dependencies: AgentDependencies,
@@ -111,6 +112,20 @@ export function initColumnManagerTools(
     },
   )
 
+  const reorderColumns = tool(
+    async (data, config) => {
+      return await dependencies.services.columnToolsExecutorService.reorderColumns(
+        data,
+        runnableConfig,
+        config.context,
+      )
+    },
+    {
+      name: 'reorder_columns',
+      schema: ReorderColumnsScheme,
+    },
+  )
+
   return [
     searchColumns,
     createColumns,
@@ -119,5 +134,6 @@ export function initColumnManagerTools(
     cloneColumns,
     recoverColumns,
     moveColumns,
+    reorderColumns,
   ]
 }

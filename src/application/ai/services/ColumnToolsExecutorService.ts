@@ -36,6 +36,7 @@ import { getSearchHumanReadableFilter } from '../tools/helpers/SearchTasksHumanR
 import { buildEntitySamples } from '../tools/helpers/EntitySamplesHelpers.js'
 import { CreateColumnsDTO } from '../tools/schemes/ColumnManager/CreateColumnsScheme.js'
 import { ColumnDTO } from '@/application/dtos/ColumnDTO.js'
+import { ReorderColumnsDTO } from '../tools/schemes/ColumnManager/ReorderColumnsScheme.js'
 
 export class ColumnToolsExecutorService {
   constructor(
@@ -291,8 +292,13 @@ export class ColumnToolsExecutorService {
           content.logId = operationLogId
         })
 
+        const createdSamples = createColumnsResult.data.map((column) => ({
+          id: column.id.toString(),
+          name: column.name,
+        }))
+
         return new SuccessToolResult(
-          `Successfully created ${createColumnsResult.data.length} columns. Operation Log ID: ${operationLogId}`,
+          `Successfully created columns: ${JSON.stringify(createdSamples)}. Operation Log ID: ${operationLogId}`,
           {
             logId: operationLogId,
           },
@@ -473,6 +479,34 @@ export class ColumnToolsExecutorService {
     return filters
   }
 
+  private async _resolveReorderHumanReadableFilters(
+    payload: ReorderColumnsDTO,
+    userId: Types.ObjectId,
+    session?: ClientSession,
+  ): Promise<ITextValue[]> {
+    const filters: ITextValue[] = []
+    const newNames: string[] = []
+
+    if (payload.column_ids && payload.column_ids.length > 0) {
+      const columns = await this.columnService.getByCriteria(
+        { ids: payload.column_ids },
+        userId,
+        session,
+      )
+
+      columns.forEach((column) => {
+        newNames.push(column.name)
+      })
+    }
+
+    filters.push({
+      text: 'Новый порядок колонок',
+      value: newNames.join(', '),
+    })
+
+    return filters
+  }
+
   public async deleteArchiveColumns(
     payload: DeleteArchiveColumnsDTO,
     config: RunnableConfig,
@@ -503,7 +537,10 @@ export class ColumnToolsExecutorService {
       },
     })
 
+    const actionString = payload.soft_delete ? 'archived' : 'deleted'
+
     let isDryRun = false
+
     try {
       if (
         [AiConfirmationTypeEnum.ALWAYS, AiConfirmationTypeEnum.ONLY_FOR_SENSITIVE].includes(
@@ -515,7 +552,9 @@ export class ColumnToolsExecutorService {
         } else if (context.isApproved === false) {
           await this.toolStatusLogLifecycleService.setCancelled(statusLog)
 
-          return new SuccessToolResult('Column update operation was rejected by the user.')
+          return new SuccessToolResult(
+            `Column ${actionString} operation was rejected by the user. The user decided not to proceed with ${actionString}. Do not attempt to ${actionString} the columns again.`,
+          )
         }
       }
 
@@ -527,8 +566,6 @@ export class ColumnToolsExecutorService {
         session,
         isDryRun,
       )
-
-      const actionString = payload.soft_delete ? 'archived' : 'deleted'
 
       if (result.logId) {
         const operationLogId = result.logId.toString()
@@ -559,7 +596,7 @@ export class ColumnToolsExecutorService {
         } else if (result.data && Array.isArray(result.data)) {
           columnsProcessedCount = result.data.length
         } else {
-          return new FailedToolResult('No columns were affected by the operation.')
+          return new FailedToolResult(`No columns were ${actionString} by the operation.`)
         }
 
         return new SuccessToolResult(
@@ -743,6 +780,93 @@ export class ColumnToolsExecutorService {
       }
 
       return new FailedToolResult('Failed to create operation log for columns recover.')
+    } catch (error) {
+      statusLog.state = StatusStatesEnum.FAILED
+      await dispatchCustomEvent(CustomEvents.STATUS_UPDATE_LOG, statusLog)
+
+      throw error
+    }
+  }
+
+  public async reorderColumns(
+    payload: ReorderColumnsDTO,
+    config: RunnableConfig,
+    context: IConfigContext,
+    session?: ClientSession,
+  ) {
+    const configurable = config.configurable as Configurable
+    const columnIds = await this._resolveColumnIds(payload, configurable.user.id, session)
+    const humanReadableFilters = await this._resolveReorderHumanReadableFilters(
+      payload,
+      configurable.user.id,
+      session,
+    )
+    const toolCall = context.toolCall!
+
+    const statusLog = await this.toolStatusLogLifecycleService.getOrCreateInProgressLog({
+      existingLog: context.statusLog,
+      toolCallId: toolCall.id!,
+      toolName: 'reorder_columns',
+      toolContent: {
+        count: columnIds.length,
+        filters: humanReadableFilters,
+      },
+    })
+
+    let isDryRun = false
+
+    try {
+      if (configurable.aiConfirmationType === AiConfirmationTypeEnum.ALWAYS) {
+        if (context.isApproved === undefined) {
+          isDryRun = true
+        } else if (context.isApproved === false) {
+          await this.toolStatusLogLifecycleService.setCancelled(statusLog)
+
+          return new SuccessToolResult('Column reorder operation was rejected by the user.')
+        }
+      }
+
+      const reorderColumnsResult = await this.columnService.reorder(
+        {
+          ids: columnIds,
+          boardId: payload.board_id,
+        },
+        configurable.user,
+        session,
+        isDryRun,
+      )
+
+      if (reorderColumnsResult.logId) {
+        const operationLogId = reorderColumnsResult.logId.toString()
+
+        if (isDryRun) {
+          await this.toolStatusLogLifecycleService.setAwaitingConfirmation(statusLog, (content) => {
+            content.logId = operationLogId
+          })
+
+          return new ConfirmationToolResult({
+            logId: operationLogId,
+          })
+        }
+
+        await dispatchCustomEvent(CustomEvents.OPERATION, {
+          logId: operationLogId,
+          session,
+        })
+
+        await this.toolStatusLogLifecycleService.setCompleted(statusLog, (content) => {
+          content.logId = operationLogId
+        })
+
+        return new SuccessToolResult(
+          `Successfully reordered ${reorderColumnsResult.data.length} columns. Operation Log ID: ${operationLogId}`,
+          {
+            logId: operationLogId,
+          },
+        )
+      }
+
+      return new FailedToolResult('Failed to create operation log for columns reorder.')
     } catch (error) {
       statusLog.state = StatusStatesEnum.FAILED
       await dispatchCustomEvent(CustomEvents.STATUS_UPDATE_LOG, statusLog)

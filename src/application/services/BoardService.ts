@@ -29,6 +29,7 @@ import { OperationLogStatusesEnum } from '@/domain/enums/OperationLogStatusesEnu
 import { LexoRank } from 'lexorank'
 import { BoardMoveDTO } from '../dtos/BoardMoveDTO.js'
 import { BoardMoveManyDTO } from '../dtos/BoardMoveManyDTO.js'
+import { BoardReorderDTO } from '../dtos/BoardReorderDTO.js'
 
 const MAX_RETRIES = 3
 
@@ -1188,6 +1189,115 @@ export class BoardService extends BaseService<
     return {
       data: updatedBoards,
       logId: log.id,
+    }
+  }
+
+  private async _executeReorderTransaction(
+    dto: BoardReorderDTO,
+    user: IUser,
+    session: ClientSession,
+    isDryRun: boolean = false,
+  ): Promise<IResponseWithLog<IBoardPopulated[]>> {
+    const { ids, workspaceId } = dto
+
+    const boards = await this.repository.findByCriteria({ ids }, session, undefined, user.id)
+
+    const isAllFromSameWorkspace = boards.every(
+      (board) => board.workspace.toString() === workspaceId,
+    )
+
+    if (!isAllFromSameWorkspace) {
+      throw new AppError('Все доски должны принадлежать одному рабочему пространству.', 400)
+    }
+
+    const bulkUpdates: SingleUpdateDTO<SafeUpdateData<IBoard>>[] = []
+    let currentRank = LexoRank.middle()
+
+    const boardsMap = new Map(boards.map((b) => [b.id.toString(), b]))
+
+    ids.forEach((boardId, index) => {
+      bulkUpdates.push({
+        id: new Types.ObjectId(boardId),
+        rank: currentRank.toString(),
+      })
+
+      if (index < ids.length - 1) {
+        currentRank = currentRank.genNext()
+      }
+    })
+
+    const updatesWithMetadata = bulkUpdates.map((updateData) => {
+      const board = boardsMap.get(updateData.id.toString())!
+      return { board, updateData }
+    })
+
+    const entitiesBefore = updatesWithMetadata.map(
+      ({ board, updateData }) => projectProperties<IBoard>([board], updateData)[0],
+    )
+    const entitiesAfter = entitiesBefore.map((beforeEntity, index) => ({
+      ...beforeEntity,
+      ...updatesWithMetadata[index].updateData,
+    }))
+
+    if (isDryRun) {
+      const log = await this.operationLogService.create(
+        {
+          operationType: OperationTypesEnum.UPDATE,
+          collectionName: CollectionsEnum.BOARDS,
+          entitiesBefore,
+          entitiesAfter,
+          dependencies: [],
+          status: OperationLogStatusesEnum.PENDING,
+        },
+        user.id,
+        session,
+      )
+
+      return {
+        data: [],
+        logId: log.id,
+      }
+    }
+
+    const updateResult = await this.repository.bulkUpdate(bulkUpdates, user.id, session)
+
+    if (!updateResult || updateResult.modifiedCount === 0) {
+      throw new AppError('Не удалось переупорядочить доски.', 500)
+    }
+
+    const log = await this.operationLogService.create(
+      {
+        operationType: OperationTypesEnum.UPDATE,
+        collectionName: CollectionsEnum.BOARDS,
+        entitiesBefore,
+        entitiesAfter,
+        dependencies: [],
+        status: OperationLogStatusesEnum.SUCCESS,
+      },
+      user.id,
+      session,
+    )
+
+    const updatedBoards = await this.getByCriteria({ ids }, user.id, session)
+
+    return {
+      data: updatedBoards,
+      logId: log.id,
+    }
+  }
+
+  public async reorder(
+    dto: BoardReorderDTO,
+    user: IUser,
+    externalSession?: ClientSession,
+    isDryRun: boolean = false,
+  ): Promise<IResponseWithLog<IBoardPopulated[]>> {
+    if (externalSession) {
+      return this._executeReorderTransaction(dto, user, externalSession, isDryRun)
+    } else {
+      return await this._retryExecutor((session: ClientSession) =>
+        this._executeReorderTransaction(dto, user, session, isDryRun),
+      )
     }
   }
 

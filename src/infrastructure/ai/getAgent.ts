@@ -1,7 +1,6 @@
 import { MongoDBSaver } from '@langchain/langgraph-checkpoint-mongodb'
 import { MongoClient } from 'mongodb'
 import { CompiledStateGraph } from '@langchain/langgraph' // Тип скомпилированного графа
-import { initAiModels } from './initAiModels.js'
 import { createReActAgent } from '@/application/ai/agent/createReActAgent.js'
 import { initializeDependencies } from '../di/initializeDependencies.js'
 
@@ -41,9 +40,6 @@ export async function getAgent(dependencies: ReturnType<typeof initializeDepende
         boardToolsExecutorService: dependencies.services.boardToolsExecutorService,
         workspaceToolsExecutorService: dependencies.services.workspaceToolsExecutorService,
         generalToolsExecutor: dependencies.services.generalToolsExecutor,
-      },
-      models: {
-        ...initAiModels(),
       },
     },
     checkpointer,

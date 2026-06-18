@@ -2,6 +2,8 @@ import WebSocket from 'ws'
 import { SocksProxyAgent } from 'socks-proxy-agent'
 import { Server, Socket } from 'socket.io'
 import { initializeDependencies } from '../di/initializeDependencies.js'
+import { calculateCredits } from '@/application/ai/helpers/calculateCredits.js'
+import { ModelsEnum } from '@/domain/enums/ModelsEnum.js'
 
 const dependencies = initializeDependencies()
 
@@ -16,7 +18,7 @@ export function setupOpenAISocket(io: Server) {
     const stopAndCommit = (reason: string) => {
       if (!isForwarding) return
       isForwarding = false
-      console.log('Останавливаем и коммитим аудио. Причина:', reason)
+
       if (recordingTimer) clearTimeout(recordingTimer)
 
       if (openaiWs?.readyState === WebSocket.OPEN) {
@@ -30,22 +32,22 @@ export function setupOpenAISocket(io: Server) {
       agent: process.env.NODE_ENV === 'development' ? undefined : agent,
       headers: {
         Authorization: 'Bearer ' + process.env.OPENAI_API_KEY,
-        'OpenAI-Beta': 'realtime=v1',
       },
     })
 
     openaiWs.on('open', () => {
       openaiWs.send(
         JSON.stringify({
-          type: 'transcription_session.update',
+          type: 'session.update',
           session: {
-            input_audio_transcription: {
-              language: 'ru',
-              model: 'gpt-4o-transcribe',
-              prompt: "Respond in Russian and don't hallucinate. Be as accurate as possible.",
-            },
-            turn_detection: {
-              type: 'semantic_vad',
+            type: 'transcription',
+            audio: {
+              input: {
+                transcription: {
+                  model: 'gpt-realtime-whisper',
+                  language: 'ru',
+                },
+              },
             },
           },
         }),
@@ -65,9 +67,16 @@ export function setupOpenAISocket(io: Server) {
         socket.emit('openai-response', response)
 
         if (response.usage) {
-          const tokensUsed = response.usage.total_tokens || 0
+          const tokensSpent = calculateCredits(response.usage, ModelsEnum.GPT_4O_TRANSCRIBE)
 
-          dependencies.services.userService.appendUsedAudioTokens(tokensUsed, socket.data.userId)
+          dependencies.services.userService.edit(
+            {
+              audioCreditsSpent: tokensSpent,
+            },
+            {
+              id: socket.data.userId,
+            },
+          )
         }
       } catch {
         console.log('Не удалось разобрать ответ OpenAI:', data)

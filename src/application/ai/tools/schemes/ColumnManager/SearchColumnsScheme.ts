@@ -1,7 +1,5 @@
 import z from 'zod'
 
-const FilterValueSchema = z.union([z.string(), z.number(), z.boolean(), z.array(z.any())])
-
 export const SearchColumnsScheme = z.object({
   filters: z
     .array(
@@ -23,8 +21,8 @@ export const SearchColumnsScheme = z.object({
             'The column field to search (e.g. "name", "is_deleted", "board_id"). created_at and updated_at are ISO 8601 datetime strings.',
           ),
 
-        eq: FilterValueSchema.optional().describe('Equals: Exact match.'),
-        neq: FilterValueSchema.optional().describe('Not Equals: Exclude this value.'),
+        eq: z.any().optional().describe('Equals: Exact match.'),
+        neq: z.any().optional().describe('Not Equals: Exclude this value.'),
 
         in: z
           .array(z.union([z.string(), z.number(), z.boolean()]))

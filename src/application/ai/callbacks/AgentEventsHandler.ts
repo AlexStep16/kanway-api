@@ -10,18 +10,19 @@ import { Types } from 'mongoose'
 import { IChatMessageCriteria } from '@/application/interfaces/criterias/IChatMessageCriteria.js'
 import { getFriendlyErrorMessage } from '@/utils/getFriendlyErrorMessage.js'
 import { OperationLogService } from '@/application/services/OperationLogService.js'
-import { getCreditsUsed } from '@/utils/getCreditsUsed.js'
 import { Redis } from 'ioredis'
 import { ModelsEnum } from '@/domain/enums/ModelsEnum.js'
 import { StatusStatesEnum } from '@/enums/StatusStatesEnum.js'
 import { IStatus } from '@/application/interfaces/statuses/IStatus.js'
 import { StatusLog } from '@/application/types/StatusLog.js'
+import { UserService } from '@/application/services/UserService.js'
 
 export class AgentEventsHandler extends BaseCallbackHandler {
   name = 'AgentEventsHandler'
 
   private chatMessageService: ChatMessageService
   private operationLogService: OperationLogService
+  private userService: UserService
   private job: Job
   private configurable: Configurable
 
@@ -29,16 +30,17 @@ export class AgentEventsHandler extends BaseCallbackHandler {
   public status: IStatus
   public statusMessage: IChatMessage
   public jobHistory: any[] = []
-  public totalTokensUsed = 0
+  public creditsSpent = 0
   public redisPublisher: Redis
-  public modelType = ModelsEnum.KANWAY_LITE
-  public chargedAudioTokens = 0
+  public modelType = ModelsEnum.GPT_5_4_MINI
+  public audioCreditsSpent = 0
   public isInterrupted = false
 
   constructor(
     job: Job,
     chatMessageService: ChatMessageService,
     operationLogService: OperationLogService,
+    userService: UserService,
     configurable: Configurable,
     statusMessage: IChatMessage,
   ) {
@@ -46,10 +48,11 @@ export class AgentEventsHandler extends BaseCallbackHandler {
     this.job = job
     this.chatMessageService = chatMessageService
     this.operationLogService = operationLogService
+    this.userService = userService
     this.configurable = configurable
     this.statusMessage = statusMessage
     this.modelType = configurable.modelType
-    this.chargedAudioTokens = configurable.chargedAudioTokens || 0
+    this.audioCreditsSpent = configurable.audioCreditsSpent || 0
 
     this.status = statusMessage.content
 
@@ -69,6 +72,7 @@ export class AgentEventsHandler extends BaseCallbackHandler {
         role: 'assistant',
         content: '',
         threadId: this.configurable.thread_id,
+        iterationId: this.configurable.iterationId,
         chatId: new Types.ObjectId(this.configurable.chatId),
       },
       this.configurable.user,
@@ -105,11 +109,10 @@ export class AgentEventsHandler extends BaseCallbackHandler {
   }
 
   async updateStatusMessage() {
-    const creditsUsed = getCreditsUsed(this.totalTokensUsed, this.modelType)
-
     const dto: Partial<ChatMessageDTO> = {
       content: this.status,
-      creditsUsed: creditsUsed + this.chargedAudioTokens + (this.statusMessage.creditsUsed || 0),
+      creditsUsed: this.creditsSpent + (this.statusMessage.creditsUsed || 0),
+      audioCreditsUsed: this.audioCreditsSpent + (this.statusMessage.audioCreditsUsed || 0),
     }
 
     await this.editChatMessage(
@@ -188,12 +191,13 @@ export class AgentEventsHandler extends BaseCallbackHandler {
     }
   }
 
+  async spendCredits() {
+    await this.userService.spendCredits(this.creditsSpent, this.configurable.user.id.toString())
+    await this.userService.chargeAudioUsage(this.audioCreditsSpent, this.configurable.user)
+  }
+
   async handleCustomEvent(event: string, data: any) {
     switch (event) {
-      case CustomEvents.TOKENS_ADDED:
-        this.totalTokensUsed += data || 0
-        return
-
       case CustomEvents.FINAL_RESPONSE:
         await this.updateAssistantMessage({
           content: data.text,

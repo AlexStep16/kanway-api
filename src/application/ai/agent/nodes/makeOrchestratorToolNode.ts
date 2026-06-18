@@ -7,7 +7,6 @@ import z, { ZodAny } from 'zod'
 import { ToolResult } from '../../tools/helpers/ToolResult/ToolResult.js'
 import { AgentDependencies } from '../types/AgentDependencies.js'
 import { Configurable } from '../../interfaces/Configurable.js'
-import { AgentsEnum } from '@/enums/AgentsEnum.js'
 import { IConfigContext } from '../../interfaces/IConfigContext.js'
 import { StatusLog } from '@/application/types/StatusLog.js'
 import { ConfirmationToolResult } from '../../tools/helpers/ToolResult/ConfirmationToolResult.js'
@@ -18,6 +17,7 @@ export const makeOrchestratorToolNode = (deps: AgentDependencies) => {
 
     const reviewedByToolCallId = state.tools_reviewed_map || new Map()
     const statusLogByToolCallId = state.tools_log_map || new Map()
+    let managerCallsCount = 0
 
     const outputs: Partial<typeof AgentStateAnnotation.State> = {
       messages: [],
@@ -45,30 +45,40 @@ export const makeOrchestratorToolNode = (deps: AgentDependencies) => {
       try {
         outputs.orchestrator_tool_calls!.push(toolCall)
 
-        if (toolCall.name === 'call_task_manager_agent') {
-          outputs.active_manager = AgentsEnum.TASK_MANAGER
-          outputs.is_manager_called = true
-          continue
+        const toolByToolCalls: DynamicStructuredTool | undefined = orchestratorTools.find(
+          (tool) => tool.name === toolCall.name,
+        )
+
+        if (!toolByToolCalls) {
+          throw new ToolMessage(`Tool ${toolCall.name} not found.`, toolCall.id!)
         }
-        if (toolCall.name === 'call_column_manager_agent') {
-          outputs.active_manager = AgentsEnum.COLUMN_MANAGER
-          outputs.is_manager_called = true
-          continue
+
+        const validationResult = await (toolByToolCalls.schema as ZodAny).safeParseAsync(
+          toolCall.args,
+        )
+
+        if (!validationResult.success) {
+          throw new ToolMessage(
+            `Validation Error: Invalid arguments. \n${z.prettifyError(
+              validationResult.error,
+            )}. \nPlease fix the arguments and try again.`,
+            toolCall.id!,
+          )
         }
-        if (toolCall.name === 'call_board_manager_agent') {
-          outputs.active_manager = AgentsEnum.BOARD_MANAGER
+
+        if (toolCall.name === 'call_manager_agent') {
+          if (managerCallsCount >= 1) {
+            throw new ToolMessage(`Manager agent has already been called once.`, toolCall.id!)
+          }
+          outputs.active_manager = toolCall.args.manager
           outputs.is_manager_called = true
-          continue
-        }
-        if (toolCall.name === 'call_workspace_manager_agent') {
-          outputs.active_manager = AgentsEnum.WORKSPACE_MANAGER
-          outputs.is_manager_called = true
+          managerCallsCount++
           continue
         }
 
         const result = await executeToolCall(
           toolCall,
-          orchestratorTools,
+          toolByToolCalls,
           reviewedByToolCallId,
           statusLogByToolCallId,
         )
@@ -113,29 +123,10 @@ export const makeOrchestratorToolNode = (deps: AgentDependencies) => {
 
 async function executeToolCall(
   toolCall: ToolCall,
-  managerTools: DynamicStructuredTool[],
+  toolByToolCalls: DynamicStructuredTool,
   reviewedByToolCallId?: Map<string, boolean>,
   statusLogByToolCallId?: Map<string, StatusLog>,
 ) {
-  const toolByToolCalls: DynamicStructuredTool | undefined = managerTools.find(
-    (tool) => tool.name === toolCall.name,
-  )
-
-  if (!toolByToolCalls) {
-    throw new ToolMessage(`Tool ${toolCall.name} not found.`, toolCall.id!)
-  }
-
-  const validationResult = await (toolByToolCalls.schema as ZodAny).safeParseAsync(toolCall.args)
-
-  if (!validationResult.success) {
-    throw new ToolMessage(
-      `Validation Error: Invalid arguments. \n${z.prettifyError(
-        validationResult.error,
-      )}. \nPlease fix the arguments and try again.`,
-      toolCall.id!,
-    )
-  }
-
   try {
     const toolCallId = toolCall.id!
 

@@ -4,7 +4,6 @@ import { ChatPromptTemplate } from '@langchain/core/prompts'
 import { Configurable } from '@/application/ai/interfaces/Configurable.js'
 import { dispatchCustomEvent } from '@langchain/core/callbacks/dispatch'
 import { CustomEvents } from '@/enums/CustomEvents.js'
-import { ModelsEnum } from '@/domain/enums/ModelsEnum.js'
 import { AgentStateAnnotation } from '../AgentStateAnnotation.js'
 import {
   AIMessageChunk,
@@ -22,10 +21,13 @@ import {
 } from '../../helpers/managerHelpers.js'
 import { getCurrentAgentOutputs } from '../../helpers/getCurrentAgentOutput.js'
 import { getBeautifiedSelections } from '../../helpers/getBeautifiedSelections.js'
+import { initManagerTools } from '../../tools/initManagerTools.js'
+import { getChatModel } from '@/infrastructure/helpers/getChatModel.js'
 
 export const makeEntityManagerAgentNode = (deps: AgentDependencies) => {
   return async (state: typeof AgentStateAnnotation.State, config: RunnableConfig) => {
     const activeManager = state.active_manager
+    const requestedTools = state.requested_tools || []
 
     const statusText = getAgentStatusText(activeManager)
     const statusUpdate: Partial<IStatus> = {
@@ -62,18 +64,19 @@ export const makeEntityManagerAgentNode = (deps: AgentDependencies) => {
 
       tools_reviewed_map: state.tools_reviewed_map || new Map(),
       current_agent: activeManager,
+      requested_tools: requestedTools,
     }
 
-    const lastCallManagerTool = getOrchestratorManagerToolCall(activeManager, state)
+    const lastCallManagerTool = getOrchestratorManagerToolCall(state)
 
     const history = getAgentManagerHistory(activeManager, state)
 
-    const { ORCHESTRATOR, ORCHESTRATOR_PRO } = deps.models
-
-    const modelToUse =
-      configurable.modelType === ModelsEnum.KANWAY_PRO ? ORCHESTRATOR_PRO : ORCHESTRATOR
+    const modelToUse = getChatModel(configurable.modelType, true)
 
     const managerTools = getAgentManagerTools(activeManager, deps, config)
+    const requestedManagerTools = managerTools.filter((tool) => requestedTools.includes(tool.name))
+
+    const mainManagerTools = initManagerTools()
 
     const prompt = ChatPromptTemplate.fromMessages([
       ['system', getAgentManagerSystemPrompt(activeManager)],
@@ -84,7 +87,7 @@ export const makeEntityManagerAgentNode = (deps: AgentDependencies) => {
       throw new Error('Manager agent model does not support tool binding.')
     }
 
-    const chain = prompt.pipe(modelToUse.bindTools(managerTools))
+    const chain = prompt.pipe(modelToUse.bindTools([...requestedManagerTools, ...mainManagerTools]))
 
     const beautifiedSelections = getBeautifiedSelections(state.active_selections || [])
 
@@ -97,9 +100,10 @@ export const makeEntityManagerAgentNode = (deps: AgentDependencies) => {
       aiName: configurable.aiName,
       orchestrator_instruction: JSON.stringify(lastCallManagerTool?.args?.instruction || {}),
       orchestrator_payload: JSON.stringify(lastCallManagerTool?.args?.payload || {}),
+      available_tools_list: managerTools
+        .map((tool) => tool.name)
+        .filter((name) => !requestedTools.includes(name)),
     })
-
-    await dispatchCustomEvent(CustomEvents.TOKENS_ADDED, response.usage_metadata?.total_tokens || 0)
 
     fillOutputsBasedOnAgent(activeManager, response, outputs)
 
@@ -107,7 +111,7 @@ export const makeEntityManagerAgentNode = (deps: AgentDependencies) => {
       const toolResults = getCurrentAgentOutputs(activeManager, state).toolResults
       const toolResultContents = toolResults.map((result) => result.content).join('\n')
 
-      const finalResponse = `Tool Results:\n${toolResultContents}\n\n Final Response:\n${response.content}`
+      const finalResponse = `Tool Results:\n${toolResultContents}\n\n Final Response:\n${JSON.stringify(response.content)}`
 
       outputs.messages!.push(new ToolMessage(finalResponse, lastCallManagerTool!.id!))
     }
@@ -116,23 +120,11 @@ export const makeEntityManagerAgentNode = (deps: AgentDependencies) => {
   }
 }
 
-function getOrchestratorManagerToolCall(
-  agent: AgentsEnum,
-  state: typeof AgentStateAnnotation.State,
-) {
+function getOrchestratorManagerToolCall(state: typeof AgentStateAnnotation.State) {
   const orchestratorToolCalls = state.orchestrator_tool_calls || []
   const reversedToolCalls = [...orchestratorToolCalls].reverse()
 
-  switch (agent) {
-    case AgentsEnum.TASK_MANAGER:
-      return reversedToolCalls.find((call) => call.name === 'call_task_manager_agent')
-    case AgentsEnum.COLUMN_MANAGER:
-      return reversedToolCalls.find((call) => call.name === 'call_column_manager_agent')
-    case AgentsEnum.BOARD_MANAGER:
-      return reversedToolCalls.find((call) => call.name === 'call_board_manager_agent')
-    default:
-      return null
-  }
+  return reversedToolCalls.find((call) => call.name === 'call_manager_agent')
 }
 
 function fillOutputsBasedOnAgent(
@@ -152,6 +144,10 @@ function fillOutputsBasedOnAgent(
     case AgentsEnum.BOARD_MANAGER:
       outputs.board_manager_messages!.push(response)
       outputs.board_manager_tool_calls = response.tool_calls || []
+      break
+    case AgentsEnum.WORKSPACE_MANAGER:
+      outputs.workspace_manager_messages!.push(response)
+      outputs.workspace_manager_tool_calls = response.tool_calls || []
       break
     default:
       break

@@ -5,6 +5,7 @@ import { ModelsEnum } from '@/domain/enums/ModelsEnum.js'
 export interface Configurable {
   thread_id: string
   jobId?: string
+  iterationId: string
   user: IUser
   chatId: string
   activeBoard: {
@@ -18,7 +19,9 @@ export interface Configurable {
   modelType: ModelsEnum
   currentDate: string
   columnsList: string
-  chargedAudioTokens?: number
+  boardsList: string
+  workspacesList: string
+  audioCreditsSpent?: number
   tagsList: string
   timezone: string
   userMessage: string

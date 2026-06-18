@@ -16,9 +16,7 @@ import { ClientSession, Types, UpdateWriteOpResult } from 'mongoose'
 import sharp from 'sharp'
 import { rm } from 'fs/promises'
 import { EmailService } from '@/infrastructure/services/EmailService.js'
-import { getCreditsUsed } from '@/utils/getCreditsUsed.js'
 import { Redis } from 'ioredis'
-import { ModelsEnum } from '@/domain/enums/ModelsEnum.js'
 import { YandexUserDTO } from '../dtos/YandexUserDTO.js'
 import { VkUserDTO } from '../dtos/VkUserDTO.js'
 import { TokenKeysEnum } from '@/domain/enums/TokenKeysEnum.js'
@@ -144,11 +142,11 @@ export class UserService {
     const normalizedEmail = email.toLowerCase().trim()
     const user = await this.repository.findByEmail(normalizedEmail)
 
-    if (!user) {
+    if (!user || !user.password_hash) {
       throw new AppError(ErrorMessages.INVALID_CREDENTIALS, 401)
     }
 
-    const isMatch = await bcrypt.compare(passwordPlain, user.password_hash!)
+    const isMatch = await bcrypt.compare(passwordPlain, user.password_hash)
 
     if (!isMatch) {
       throw new AppError(ErrorMessages.INVALID_CREDENTIALS, 401)
@@ -214,17 +212,10 @@ export class UserService {
     await this.emailService.sendVerifyEmailToUser(user)
   }
 
-  public async spendCredits(
-    tokens: number,
-    userId: string,
-    modelType: ModelsEnum,
-    session?: ClientSession,
-  ) {
+  public async spendCredits(amount: number, userId: string, session?: ClientSession) {
     const user = await this.getById(userId, session)
 
     if (!user) throw new AppError(ErrorMessages.USER_NOT_FOUND, 404)
-
-    const amount = getCreditsUsed(tokens, modelType)
 
     let leftover = amount
     let newCredits = user.credits
@@ -262,20 +253,15 @@ export class UserService {
   }
 
   public async chargeAudioUsage(
-    audioTokensUsed: number,
+    amount: number,
     user: IUser,
     externalSession?: ClientSession,
   ): Promise<number> {
-    const chargedAudioTokens = await this.spendCredits(
-      audioTokensUsed,
-      user.id.toString(),
-      ModelsEnum.KANWAY_AUDIO,
-      externalSession,
-    )
+    const chargedAudioTokens = await this.spendCredits(amount, user.id.toString(), externalSession)
 
     await this.edit(
       {
-        audioTokensUsed: 0,
+        audioCreditsSpent: 0,
       },
       { id: user.id.toString() },
       user,
@@ -296,10 +282,6 @@ export class UserService {
       -credits,
       session,
     )
-  }
-
-  public async appendUsedAudioTokens(tokensUsed: number, userId: string): Promise<void> {
-    await this.repository.decrementFieldByCriteria({ id: userId }, 'audio_tokens_used', -tokensUsed)
   }
 
   public async verifyOTPEmail(code: string, email: string): Promise<string> {

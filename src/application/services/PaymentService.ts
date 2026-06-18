@@ -574,7 +574,7 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
 
     try {
       await this.repository.updateManyByCriteria(
-        { id: paymentModel.id },
+        { id: paymentModel.id.toString() },
         { status: checkedPayment.status as PaymentStatusesEnum },
         session,
       )

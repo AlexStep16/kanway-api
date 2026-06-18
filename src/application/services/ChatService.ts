@@ -41,9 +41,10 @@ import { AgentWorkerDTO } from '../dtos/AgentWorkerDTO.js'
 import { ToolReviewResumePayload } from '../ai/agent/types/ToolReviewResumePayload.js'
 import { ChatPromptTemplate } from '@langchain/core/prompts'
 import { ChatNamePrompt } from '../ai/prompts/ChatNamePrompt.js'
-import { initAiModels } from '@/infrastructure/ai/initAiModels.js'
 import { UpdateChatNameDTO } from '../dtos/UpdateChatNameDTO.js'
 import { getDefaultState } from '../ai/helpers/getDefaultState.js'
+import { HumanMessage } from '@langchain/core/messages'
+import { getChatModel } from '@/infrastructure/helpers/getChatModel.js'
 
 const MAX_RETRIES = 3
 
@@ -57,7 +58,7 @@ type SendThreadContext = {
   threadId: string
   board: ActiveEntity | null
   workspace: ActiveEntity
-  chargedAudioTokens: number
+  audioCreditsSpent: number
   chatMessages: IChatMessage[]
 }
 
@@ -140,7 +141,8 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       modelType: ModelsEnum
       timezone: string
       userMessage: string
-      chargedAudioTokens?: number
+      iterationId: string
+      audioCreditsSpent?: number
       statusMessageId: string
       activeBoard: { id: string; name: string } | null
       activeWorkspace: { id: string; name: string }
@@ -150,12 +152,44 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     const userSettings = await this.settingService.getByCriteria({}, user.id, session)
     const userSetting = userSettings[0]
 
+    const boards = await this.boardService.getByCriteria(
+      { isDeleted: false, isDeletedExternal: false },
+      user.id,
+      session,
+      undefined,
+      {
+        sort: { rank: 1 },
+      },
+    )
+    const boardsList = boards
+      .map((board, index) => `${index + 1}. ${board.name} (${board.id})`)
+      .join(', ')
+
+    const workspaces = await this.workspaceService.getByCriteria(
+      { isDeleted: false },
+      user.id,
+      session,
+      undefined,
+      {
+        sort: { rank: 1 },
+      },
+    )
+    const workspacesList = workspaces
+      .map((workspace, index) => `${index + 1}. ${workspace.name} (${workspace.id})`)
+      .join(', ')
+
     const columns = await this.columnService.getByCriteria(
       { boardId: data.activeBoard?.id, isDeleted: false, isDeletedExternal: false },
       user.id,
       session,
+      undefined,
+      {
+        sort: { rank: 1 },
+      },
     )
-    const columnsList = columns.map((column) => `${column.name} (${column.id})`).join(', ')
+    const columnsList = columns
+      .map((column, index) => `${index + 1}. ${column.name} (${column.id})`)
+      .join(', ')
 
     const tasks = await this.taskService.getByCriteria(
       { boardId: data.activeBoard?.id, isDeleted: false, isDeletedExternal: false },
@@ -168,23 +202,26 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     })
     const tagsList = Array.from(tagsSet).join(', ')
     const modelType =
-      user.subscriptionId === SubscriptionPlanEnum.Basic ? ModelsEnum.KANWAY_LITE : data.modelType
+      user.subscriptionId === SubscriptionPlanEnum.Basic ? ModelsEnum.GPT_5_4_MINI : data.modelType
 
     const config: RunnableConfig<Configurable> = {
-      recursionLimit: 30,
+      recursionLimit: 50,
       configurable: {
         thread_id: data.threadId,
         user,
         chatId: data.chatId,
         activeBoard: data.activeBoard,
+        iterationId: data.iterationId,
         modelType,
         activeWorkspace: data.activeWorkspace,
         currentDate: dayjs.tz(dayjs(), data.timezone).toISOString(),
         columnsList: columnsList.length > 0 ? columnsList : 'No columns',
+        boardsList: boardsList.length > 0 ? boardsList : 'No boards',
+        workspacesList: workspacesList.length > 0 ? workspacesList : 'No workspaces',
         tagsList: tagsList.length > 0 ? tagsList : 'No tags',
         timezone: data.timezone,
         userMessage: data.userMessage,
-        chargedAudioTokens: data.chargedAudioTokens,
+        audioCreditsSpent: data.audioCreditsSpent,
 
         aiName: userSetting.aiName || 'Kanway',
         aiConfirmationType: userSetting.aiConfirmationType,
@@ -234,9 +271,10 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       threadId: string
       chatId: string
       modelType: ModelsEnum
+      iterationId: string
       timezone: string
       userMessage: string
-      chargedAudioTokens?: number
+      audioCreditsSpent?: number
       activeBoard: { id: string; name: string } | null
       activeWorkspace: { id: string; name: string }
     },
@@ -255,6 +293,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
         content: statusContent,
         threadId: data.threadId,
         chatId: new Types.ObjectId(data.chatId),
+        iterationId: data.iterationId,
       },
       user,
       externalSession,
@@ -269,9 +308,10 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
         chatId: data.chatId,
         modelType: data.modelType,
         timezone: data.timezone,
+        iterationId: data.iterationId,
         statusMessageId: statusMessage.id.toHexString(),
         activeBoard: data.activeBoard,
-        chargedAudioTokens: data.chargedAudioTokens,
+        audioCreditsSpent: data.audioCreditsSpent,
         activeWorkspace: data.activeWorkspace,
         userMessage: data.userMessage,
       },
@@ -307,12 +347,13 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       {
         threadId: context.threadId,
         chatId: context.chat.id.toString(),
-        modelType: data.modelType || ModelsEnum.KANWAY_LITE,
+        modelType: data.modelType || ModelsEnum.GPT_5_4_MINI,
         timezone: data.timezone,
         userMessage: lastConversationMessage.content as string,
-        chargedAudioTokens: context.chargedAudioTokens,
+        audioCreditsSpent: context.audioCreditsSpent,
         activeBoard: context.board,
         activeWorkspace: context.workspace,
+        iterationId: lastConversationMessage.iterationId,
       },
       externalSession,
     )
@@ -328,6 +369,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
 
   private async _sendWithMessage(
     data: ChatSendDTO,
+    iterationId: string,
     user: IUser,
     externalSession: ClientSession,
     context: SendThreadContext,
@@ -338,6 +380,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
         content: data.message,
         chatId: context.chat.id,
         threadId: context.threadId,
+        iterationId,
       },
       user,
       externalSession,
@@ -350,15 +393,18 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       {
         threadId: context.threadId,
         chatId: context.chat.id.toString(),
-        modelType: data.modelType || ModelsEnum.KANWAY_LITE,
+        modelType: data.modelType || ModelsEnum.GPT_5_4_MINI,
+        iterationId,
         timezone: data.timezone,
         userMessage: data.message!,
-        chargedAudioTokens: context.chargedAudioTokens,
+        audioCreditsSpent: context.audioCreditsSpent,
         activeBoard: context.board,
         activeWorkspace: context.workspace,
       },
       externalSession,
     )
+
+    jobPayload.payload.messages!.push(new HumanMessage(data.message!))
 
     return {
       jobPayload,
@@ -372,8 +418,8 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
   public async send(data: ChatSendDTO, user: IUser, externalSession: ClientSession) {
     let chat: IChat | null = null
     let toolsWithNoDecision = 0
-    let chargedAudioTokens = 0
 
+    const iterationId = crypto.randomUUID()
     const threadId = data.threadId || new Types.ObjectId().toString()
 
     if (user.credits <= 0 && user.paidCredits <= 0) {
@@ -381,21 +427,10 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     }
 
     if (
-      data.modelType === ModelsEnum.KANWAY_PRO &&
+      data.modelType !== ModelsEnum.GPT_5_4_MINI &&
       user.subscriptionId === SubscriptionPlanEnum.Basic
     ) {
-      throw new AppError(
-        'Модель Kanway Pro доступна только для пользователей с платной подпиской.',
-        403,
-      )
-    }
-
-    if (user.audioTokensUsed >= 2500) {
-      chargedAudioTokens = await this.userService.chargeAudioUsage(
-        user.audioTokensUsed,
-        user,
-        externalSession,
-      )
+      throw new AppError('Модель доступна только для пользователей с платной подпиской.', 403)
     }
 
     const { board, workspace } = await this._getActiveEntities(
@@ -449,12 +484,12 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       threadId,
       board,
       workspace,
-      chargedAudioTokens,
+      audioCreditsSpent: user.audioCreditsSpent,
       chatMessages,
     }
 
     if (data.message) {
-      return await this._sendWithMessage(data, user, externalSession, context)
+      return await this._sendWithMessage(data, iterationId, user, externalSession, context)
     }
 
     if (!data.threadId) {
@@ -475,7 +510,6 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     chatId: string,
     user: IUser,
   ): Promise<IChat> {
-    const { CHAT_NAME } = initAiModels()
     const { userMessage } = data
 
     const prompt = ChatPromptTemplate.fromMessages([
@@ -483,7 +517,9 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       ['human', userMessage],
     ])
 
-    const chain = prompt.pipe(CHAT_NAME)
+    const model = getChatModel(ModelsEnum.GPT_5_4_NANO, false)
+
+    const chain = prompt.pipe(model)
 
     const response = await chain.invoke({})
 
@@ -570,11 +606,12 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
         threadId: data.threadId,
         chatId: data.chatId.toString(),
         timezone: data.timezone,
+        iterationId: lastStatusMessage.iterationId,
         activeBoard: board,
         activeWorkspace: workspace,
         statusMessageId: lastStatusMessageId || '',
         userMessage: lastUserMessage ? lastUserMessage.content : '',
-        modelType: data.modelType || ModelsEnum.KANWAY_LITE,
+        modelType: data.modelType || ModelsEnum.GPT_5_4_MINI,
       },
       externalSession,
     )
@@ -764,10 +801,11 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
         chatId: data.chatId,
         activeBoard: board,
         activeWorkspace: workspace,
+        iterationId: lastStatusMessage.iterationId,
         timezone: data.timezone || 'UTC',
         statusMessageId: lastStatusMessage ? lastStatusMessage.id.toHexString() : '',
         userMessage: lastUserMessage ? lastUserMessage.content : '',
-        modelType: data.modelType || ModelsEnum.KANWAY_LITE,
+        modelType: data.modelType || ModelsEnum.GPT_5_4_MINI,
       },
       externalSession,
     )

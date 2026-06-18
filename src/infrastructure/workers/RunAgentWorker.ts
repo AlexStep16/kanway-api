@@ -20,12 +20,12 @@ import * as Sentry from '@sentry/node'
 import { Command, CompiledStateGraph } from '@langchain/langgraph'
 import getLastHumanMessage from '@/application/ai/helpers/getLastHumanMessage.js'
 import { langgraphQueue } from '../queues/index.js'
-import { AgentStateAnnotation } from '@/application/ai/agent/AgentStateAnnotation.js'
 import { AgentEventsHandler } from '@/application/ai/callbacks/AgentEventsHandler.js'
 import { setGlobalDispatcher, EnvHttpProxyAgent } from 'undici'
 import { AgentWorkerDTO } from '@/application/dtos/AgentWorkerDTO.js'
 import { StatusStatesEnum } from '@/enums/StatusStatesEnum.js'
 import { IStatus } from '@/application/interfaces/statuses/IStatus.js'
+import { calculateCredits } from '@/application/ai/helpers/calculateCredits.js'
 
 const proxyAgent = new EnvHttpProxyAgent()
 if (process.env.NODE_ENV === 'production') setGlobalDispatcher(proxyAgent)
@@ -153,6 +153,7 @@ export const RunAgentWorker = new Worker(
       job,
       dependencies.services.chatMessageService,
       dependencies.services.operationLogService,
+      dependencies.services.userService,
       configurable,
       statusMessage[0],
     )
@@ -178,85 +179,81 @@ export const RunAgentWorker = new Worker(
       const currentState = await agent.getState(config)
 
       if (
+        currentState.values.user_message === configurable.userMessage &&
         currentState.values.operation_log_ids &&
-        currentState.values.operation_log_ids.length > 0 &&
+        currentState.values.operation_log_ids.size > 0 &&
         isRetry
       ) {
+        const operationLogIds =
+          currentState.values.operation_log_ids.get(configurable.iterationId) || []
+
         await dependencies.services.operationLogService.undoOperations(
-          currentState.values.operation_log_ids,
+          operationLogIds,
           configurable.user,
         )
 
         await agentEventsHandler.pushProgress({
           id: crypto.randomUUID(),
           role: CustomEvents.OPERATION,
-          data: currentState.values.operation_log_ids[0],
+          data: operationLogIds[0],
         })
-      }
-
-      if (!isResume && !isRetry) {
-        const updateData: Partial<typeof AgentStateAnnotation.State> = {
-          messages: [new HumanMessage(configurable.userMessage)],
-        }
-        await agent.updateState(config, updateData)
       }
 
       if (isRetry) {
         await cleanupLastIteration(agent, config)
       }
 
-      const stream = agent.streamEvents(isResume ? new Command({ resume: payload }) : payload, {
-        ...config,
-        version: 'v2',
-        callbacks: [agentEventsHandler],
-        signal: controller.signal,
-      })
+      const stream = await agent.streamEvents(
+        isResume ? new Command({ resume: payload }) : payload,
+        {
+          ...config,
+          version: 'v3',
+          callbacks: [agentEventsHandler],
+          signal: controller.signal,
+        },
+      )
 
       let accumulatedContent = ''
 
-      for await (const event of stream) {
-        const eventType = event.event
+      for await (const message of stream.messages) {
+        for await (const delta of message.text) {
+          if (message.node?.toLowerCase() !== 'orchestrator') continue
 
-        if (eventType === 'on_chat_model_stream') {
-          const chunk = event.data.chunk
+          accumulatedContent += delta
 
-          if (
-            chunk.content &&
-            typeof chunk.content === 'string' &&
-            event.metadata?.langgraph_node === 'Orchestrator'
-          ) {
-            accumulatedContent += chunk.content
-
-            if (!agentEventsHandler.aiMessage) {
-              await agentEventsHandler.initAiMessage()
-            }
-
-            await agentEventsHandler.pushProgress({
-              id: crypto.randomUUID(),
-              role: CustomEvents.UPDATE_MESSAGE,
-              data: {
-                ...agentEventsHandler.aiMessage,
-                content: accumulatedContent,
-              },
-            })
+          if (!agentEventsHandler.aiMessage) {
+            await agentEventsHandler.initAiMessage()
           }
-        }
 
-        if (eventType === 'on_chain_stream') {
-          const chunk = event.data.chunk
-
-          if (chunk.__interrupt__) {
-            isInterrupted = true
-
-            await agentEventsHandler.updateStatus({
-              state: StatusStatesEnum.AWAITING_CONFIRMATION,
-            })
-          }
+          await agentEventsHandler.pushProgress({
+            id: crypto.randomUUID(),
+            role: CustomEvents.UPDATE_MESSAGE,
+            data: {
+              ...agentEventsHandler.aiMessage,
+              content: accumulatedContent,
+            },
+          })
         }
 
         if (abortWatcher.isCancelled()) {
           throw new JobAbortedError()
         }
+
+        const usage = await message.usage
+
+        if (usage) {
+          const creditsSpent = calculateCredits(usage, configurable.modelType)
+
+          agentEventsHandler.creditsSpent += creditsSpent
+        }
+      }
+
+      if (stream.interrupted) {
+        await agentEventsHandler.updateStatus({
+          state: StatusStatesEnum.AWAITING_CONFIRMATION,
+        })
+
+        isInterrupted = true
       }
 
       return { status: 'completed' }
@@ -282,11 +279,7 @@ export const RunAgentWorker = new Worker(
       throw error
     } finally {
       if (!hasExecutionError && !wasCancelled) {
-        dependencies.services.userService.spendCredits(
-          agentEventsHandler.totalTokensUsed,
-          configurable.user.id.toString(),
-          configurable.modelType,
-        )
+        await agentEventsHandler.spendCredits()
       }
 
       abortWatcher.stop()

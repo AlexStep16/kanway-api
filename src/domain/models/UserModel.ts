@@ -70,7 +70,7 @@ export const UserSchema = new Schema<IUserRaw, IUserRawStatics, IUserRawMethods>
       type: Number,
       default: 0,
     },
-    audio_tokens_used: {
+    audio_credits_spent: {
       type: Number,
       default: 0,
     },

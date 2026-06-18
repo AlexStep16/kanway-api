@@ -1,0 +1,13 @@
+diff --git a/dist/converters/responses.js b/dist/converters/responses.js
+index 6480cac821fed40a180f5bc3d652c9bb2e99a89a..115ab52f35a4d85fbdb22575d47d5f518778589d 100644
+--- a/dist/converters/responses.js
++++ b/dist/converters/responses.js
+@@ -784,7 +784,7 @@ const convertStandardContentMessageToResponsesInput = (message) => {
+ 				return block.extras.phase;
+ 			});
+ 			pushMessageContent([{
+-				type: "input_text",
++				type: messageRole === "assistant" ? "output_text" : "input_text",
+ 				text: block.text
+ 			}], phase);
+ 		} else if (block.type === "invalid_tool_call") {} else if (block.type === "reasoning") {

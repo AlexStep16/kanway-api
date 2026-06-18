@@ -8,6 +8,7 @@ import { RecoverBoardsScheme } from './schemes/BoardManager/RecoverBoardsScheme.
 import { MoveBoardsScheme } from './schemes/BoardManager/MoveBoardsScheme.js'
 import { SearchBoardsScheme } from './schemes/BoardManager/SearchBoardsScheme.js'
 import { CreateBoardsScheme } from './schemes/BoardManager/CreateBoardsScheme.js'
+import { ReorderBoardsScheme } from './schemes/BoardManager/ReorderBoardsScheme.js'
 
 export function initBoardManagerTools(
   dependencies: AgentDependencies,
@@ -111,6 +112,20 @@ export function initBoardManagerTools(
     },
   )
 
+  const reorderBoards = tool(
+    async (data, config) => {
+      return await dependencies.services.boardToolsExecutorService.reorderBoards(
+        data,
+        runnableConfig,
+        config.context,
+      )
+    },
+    {
+      name: 'reorder_boards',
+      schema: ReorderBoardsScheme,
+    },
+  )
+
   return [
     searchBoards,
     createBoards,
@@ -119,5 +134,6 @@ export function initBoardManagerTools(
     cloneBoards,
     recoverBoards,
     moveBoards,
+    reorderBoards,
   ]
 }

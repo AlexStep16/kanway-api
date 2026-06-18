@@ -10,6 +10,10 @@ export const AgentStateAnnotation = Annotation.Root({
     reducer: messagesStateReducer,
     default: () => [],
   }),
+  user_message: Annotation<string>({
+    reducer: (_, y) => y,
+    default: () => '',
+  }),
   task_manager_messages: Annotation<BaseMessage[]>({
     reducer: (_, y) => y,
     default: () => [],
@@ -136,7 +140,11 @@ export const AgentStateAnnotation = Annotation.Root({
     reducer: (_, y) => y,
     default: () => false,
   }),
-  operation_log_ids: Annotation<string[]>({
+  operation_log_ids: Annotation<Map<string, string[]>>({
+    reducer: (_, y) => y,
+    default: () => new Map(),
+  }),
+  requested_tools: Annotation<string[]>({
     reducer: (_, y) => y,
     default: () => [],
   }),

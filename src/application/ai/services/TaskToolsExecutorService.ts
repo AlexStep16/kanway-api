@@ -39,6 +39,7 @@ import {
 import { buildEntitySamples } from '../tools/helpers/EntitySamplesHelpers.js'
 import { CreateTasksDTO } from '../tools/schemes/TaskManager/CreateTasksScheme.js'
 import { TaskDTO } from '@/application/dtos/TaskDTO.js'
+import { ReorderTasksDTO } from '../tools/schemes/TaskManager/ReorderTasksScheme.js'
 
 export class TaskToolsExecutorService {
   constructor(
@@ -302,8 +303,13 @@ export class TaskToolsExecutorService {
           content.logId = operationLogId
         })
 
+        const createdSamples = createTasksResult.data.map((task) => ({
+          id: task.id.toString(),
+          name: task.name,
+        }))
+
         return new SuccessToolResult(
-          `Successfully created ${createTasksResult.data.length} tasks. Operation Log ID: ${operationLogId}`,
+          `Successfully created tasks: ${JSON.stringify(createdSamples)}. Operation Log ID: ${operationLogId}`,
           {
             logId: operationLogId,
           },
@@ -480,6 +486,30 @@ export class TaskToolsExecutorService {
     return filters
   }
 
+  private async _resolveReorderHumanReadableFilters(
+    payload: ReorderTasksDTO,
+    userId: Types.ObjectId,
+    session?: ClientSession,
+  ): Promise<ITextValue[]> {
+    const filters: ITextValue[] = []
+    const newNames: string[] = []
+
+    if (payload.task_ids && payload.task_ids.length > 0) {
+      const tasks = await this.taskService.getByCriteria({ ids: payload.task_ids }, userId, session)
+
+      tasks.forEach((task) => {
+        newNames.push(task.name)
+      })
+    }
+
+    filters.push({
+      text: 'Новый порядок задач',
+      value: newNames.join(', '),
+    })
+
+    return filters
+  }
+
   public async deleteArchiveTasks(
     payload: DeleteArchiveTasksDTO,
     config: RunnableConfig,
@@ -510,6 +540,8 @@ export class TaskToolsExecutorService {
       },
     })
 
+    const actionString = payload.soft_delete ? 'archived' : 'deleted'
+
     let isDryRun = false
     try {
       if (
@@ -522,7 +554,9 @@ export class TaskToolsExecutorService {
         } else if (context.isApproved === false) {
           await this.toolStatusLogLifecycleService.setCancelled(statusLog)
 
-          return new SuccessToolResult('Task update operation was rejected by the user.')
+          return new SuccessToolResult(
+            `Task ${actionString} operation was rejected by the user. The user decided not to proceed with ${actionString}. Do not attempt to ${actionString} the tasks again.`,
+          )
         }
       }
 
@@ -534,8 +568,6 @@ export class TaskToolsExecutorService {
         session,
         isDryRun,
       )
-
-      const actionString = payload.soft_delete ? 'archived' : 'deleted'
 
       if (result.logId) {
         const operationLogId = result.logId.toString()
@@ -566,7 +598,7 @@ export class TaskToolsExecutorService {
         } else if (result.data && Array.isArray(result.data)) {
           tasksProcessedCount = result.data.length
         } else {
-          return new FailedToolResult('No tasks were affected by the operation.')
+          return new FailedToolResult(`No tasks were ${actionString} by the operation.`)
         }
 
         return new SuccessToolResult(
@@ -841,6 +873,93 @@ export class TaskToolsExecutorService {
       }
 
       return new FailedToolResult('Failed to create operation log for tasks move.')
+    } catch (error) {
+      statusLog.state = StatusStatesEnum.FAILED
+      await dispatchCustomEvent(CustomEvents.STATUS_UPDATE_LOG, statusLog)
+
+      throw error
+    }
+  }
+
+  public async reorderTasks(
+    payload: ReorderTasksDTO,
+    config: RunnableConfig,
+    context: IConfigContext,
+    session?: ClientSession,
+  ) {
+    const configurable = config.configurable as Configurable
+    const taskIds = await this._resolveTaskIds(payload, configurable.user.id, session)
+    const humanReadableFilters = await this._resolveReorderHumanReadableFilters(
+      payload,
+      configurable.user.id,
+      session,
+    )
+    const toolCall = context.toolCall!
+
+    const statusLog = await this.toolStatusLogLifecycleService.getOrCreateInProgressLog({
+      existingLog: context.statusLog,
+      toolCallId: toolCall.id!,
+      toolName: 'reorder_tasks',
+      toolContent: {
+        count: taskIds.length,
+        filters: humanReadableFilters,
+      },
+    })
+
+    let isDryRun = false
+
+    try {
+      if (configurable.aiConfirmationType === AiConfirmationTypeEnum.ALWAYS) {
+        if (context.isApproved === undefined) {
+          isDryRun = true
+        } else if (context.isApproved === false) {
+          await this.toolStatusLogLifecycleService.setCancelled(statusLog)
+
+          return new SuccessToolResult('Task reorder operation was rejected by the user.')
+        }
+      }
+
+      const reorderTasksResult = await this.taskService.reorder(
+        {
+          ids: taskIds,
+          columnId: payload.column_id,
+        },
+        configurable.user,
+        session,
+        isDryRun,
+      )
+
+      if (reorderTasksResult.logId) {
+        const operationLogId = reorderTasksResult.logId.toString()
+
+        if (isDryRun) {
+          await this.toolStatusLogLifecycleService.setAwaitingConfirmation(statusLog, (content) => {
+            content.logId = operationLogId
+          })
+
+          return new ConfirmationToolResult({
+            logId: operationLogId,
+          })
+        }
+
+        await dispatchCustomEvent(CustomEvents.OPERATION, {
+          logId: operationLogId,
+          session,
+        })
+
+        await this.toolStatusLogLifecycleService.setCompleted(statusLog, (content) => {
+          content.logId = operationLogId
+        })
+
+        return new SuccessToolResult(
+          `Successfully reordered ${reorderTasksResult.data.length} tasks. Operation Log ID: ${operationLogId}`,
+          {
+            logId: operationLogId,
+          },
+        )
+      }
+
+      return new FailedToolResult('Failed to create operation log for tasks reorder.')
     } catch (error) {
       statusLog.state = StatusStatesEnum.FAILED
       await dispatchCustomEvent(CustomEvents.STATUS_UPDATE_LOG, statusLog)

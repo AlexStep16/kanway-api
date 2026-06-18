@@ -1,8 +1,6 @@
 import { BASE_COLORS_MAP } from '@/constants/BASE_COLORS.js'
 import z from 'zod'
 
-const FilterValueSchema = z.union([z.string(), z.number(), z.boolean(), z.array(z.any())])
-
 export const SearchWorkspacesScheme = z.object({
   filters: z
     .array(
@@ -27,8 +25,8 @@ export const SearchWorkspacesScheme = z.object({
                 .join(', '),
           ),
 
-        eq: FilterValueSchema.optional().describe('Equals: Exact match.'),
-        neq: FilterValueSchema.optional().describe('Not Equals: Exclude this value.'),
+        eq: z.any().optional().describe('Equals: Exact match.'),
+        neq: z.any().optional().describe('Not Equals: Exclude this value.'),
 
         in: z
           .array(z.union([z.string(), z.number(), z.boolean()]))

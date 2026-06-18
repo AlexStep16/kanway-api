@@ -30,6 +30,8 @@ import { UpdateWorkspacesDTO } from '../tools/schemes/WorkspaceManager/UpdateWor
 import { DeleteArchiveWorkspacesDTO } from '../tools/schemes/WorkspaceManager/DeleteArchiveWorkspacesScheme.js'
 import { CloneWorkspacesDTO } from '../tools/schemes/WorkspaceManager/CloneWorkspacesScheme.js'
 import { RecoverWorkspacesDTO } from '../tools/schemes/WorkspaceManager/RecoverWorkspacesScheme.js'
+import { MoveWorkspacesDTO } from '../tools/schemes/WorkspaceManager/MoveWorkspacesScheme.js'
+import { ReorderWorkspacesDTO } from '../tools/schemes/WorkspaceManager/ReorderWorkspacesScheme.js'
 import { IWorkspace } from '@/domain/entities/IWorkspace.js'
 import { getWorkspaceColorHumanFilter } from '../tools/helpers/UpdateWorkspacesHelpers.js'
 import { buildEntitySamples } from '../tools/helpers/EntitySamplesHelpers.js'
@@ -291,8 +293,13 @@ export class WorkspaceToolsExecutorService {
           content.logId = operationLogId
         })
 
+        const createdSamples = createWorkspacesResult.data.map((workspace) => ({
+          id: workspace.id.toString(),
+          name: workspace.name,
+        }))
+
         return new SuccessToolResult(
-          `Successfully created ${createWorkspacesResult.data.length} workspaces. Operation Log ID: ${operationLogId}`,
+          `Successfully created workspaces: ${JSON.stringify(createdSamples)}. Operation Log ID: ${operationLogId}`,
           {
             logId: operationLogId,
           },
@@ -435,7 +442,10 @@ export class WorkspaceToolsExecutorService {
       },
     })
 
+    const actionString = payload.soft_delete ? 'archived' : 'deleted'
+
     let isDryRun = false
+
     try {
       if (
         [AiConfirmationTypeEnum.ALWAYS, AiConfirmationTypeEnum.ONLY_FOR_SENSITIVE].includes(
@@ -447,7 +457,9 @@ export class WorkspaceToolsExecutorService {
         } else if (context.isApproved === false) {
           await this.toolStatusLogLifecycleService.setCancelled(statusLog)
 
-          return new SuccessToolResult('Workspace update operation was rejected by the user.')
+          return new SuccessToolResult(
+            `Workspace ${actionString} operation was rejected by the user. The user decided not to proceed with ${actionString}. Do not attempt to ${actionString} the workspaces again.`,
+          )
         }
       }
 
@@ -459,8 +471,6 @@ export class WorkspaceToolsExecutorService {
         session,
         isDryRun,
       )
-
-      const actionString = payload.soft_delete ? 'archived' : 'deleted'
 
       if (result.logId) {
         const operationLogId = result.logId.toString()
@@ -494,7 +504,7 @@ export class WorkspaceToolsExecutorService {
         } else if (result.data === null && !payload.soft_delete) {
           workspacesProcessedCount = workspaceIds.length
         } else {
-          return new FailedToolResult('No workspaces were affected by the operation.')
+          return new FailedToolResult(`No workspaces were ${actionString} by the operation.`)
         }
 
         return new SuccessToolResult(
@@ -678,6 +688,275 @@ export class WorkspaceToolsExecutorService {
       }
 
       return new FailedToolResult('Failed to create operation log for workspaces recover.')
+    } catch (error) {
+      statusLog.state = StatusStatesEnum.FAILED
+      await dispatchCustomEvent(CustomEvents.STATUS_UPDATE_LOG, statusLog)
+
+      throw error
+    }
+  }
+
+  private async _resolveMoveHumanReadableFilters(
+    payload: MoveWorkspacesDTO,
+    userId: Types.ObjectId,
+    session?: ClientSession,
+  ): Promise<ITextValue[]> {
+    const filters: ITextValue[] = []
+
+    if (payload.toStart) {
+      filters.push({
+        text: 'Позиция',
+        value: 'в начало',
+      })
+    }
+
+    if (payload.toEnd) {
+      filters.push({
+        text: 'Позиция',
+        value: 'в конец',
+      })
+    }
+
+    const anchorWorkspaceIds = Array.from(
+      new Set([payload.beforeWorkspaceId, payload.afterWorkspaceId].filter(Boolean) as string[]),
+    )
+    const anchorWorkspaceNamesById = new Map<string, string>()
+
+    if (anchorWorkspaceIds.length > 0) {
+      const anchorWorkspaces = await this.workspaceService.getByCriteria(
+        { ids: anchorWorkspaceIds },
+        userId,
+        session,
+      )
+
+      anchorWorkspaces.forEach((workspace) => {
+        anchorWorkspaceNamesById.set(workspace.id.toString(), workspace.name)
+      })
+    }
+
+    if (payload.beforeWorkspaceId) {
+      filters.push({
+        text: 'Перед рабочим пространством',
+        value: anchorWorkspaceNamesById.get(payload.beforeWorkspaceId) ?? payload.beforeWorkspaceId,
+      })
+    }
+
+    if (payload.afterWorkspaceId) {
+      filters.push({
+        text: 'После рабочего пространства',
+        value: anchorWorkspaceNamesById.get(payload.afterWorkspaceId) ?? payload.afterWorkspaceId,
+      })
+    }
+
+    return filters
+  }
+
+  private async _resolveReorderHumanReadableFilters(
+    payload: ReorderWorkspacesDTO,
+    userId: Types.ObjectId,
+    session?: ClientSession,
+  ): Promise<ITextValue[]> {
+    const filters: ITextValue[] = []
+    const newNames: string[] = []
+    const workspaceNamesMap = new Map<string, string>()
+
+    if (payload.workspace_ids && payload.workspace_ids.length > 0) {
+      const workspaces = await this.workspaceService.getByCriteria(
+        { ids: payload.workspace_ids },
+        userId,
+        session,
+      )
+
+      workspaces.forEach((workspace) => {
+        workspaceNamesMap.set(workspace.id.toString(), workspace.name)
+      })
+    }
+
+    payload.workspace_ids.forEach((id) => {
+      const name = workspaceNamesMap.get(id) ?? id
+      newNames.push(name)
+    })
+
+    filters.push({
+      text: 'Новый порядок пространств',
+      value: newNames.join(', '),
+    })
+
+    return filters
+  }
+
+  public async moveWorkspaces(
+    payload: MoveWorkspacesDTO,
+    config: RunnableConfig,
+    context: IConfigContext,
+    session?: ClientSession,
+  ) {
+    const configurable = config.configurable as Configurable
+    const workspaceIds = await this._resolveWorkspaceIds(payload, configurable.user.id, session)
+    const humanReadableFilters = await this._resolveMoveHumanReadableFilters(
+      payload,
+      configurable.user.id,
+      session,
+    )
+    const toolCall = context.toolCall!
+
+    const statusLog = await this.toolStatusLogLifecycleService.getOrCreateInProgressLog({
+      existingLog: context.statusLog,
+      toolCallId: toolCall.id!,
+      toolName: 'move_workspaces',
+      toolContent: {
+        count: workspaceIds.length,
+        filters: humanReadableFilters,
+      },
+    })
+
+    let isDryRun = false
+
+    try {
+      if (configurable.aiConfirmationType === AiConfirmationTypeEnum.ALWAYS) {
+        if (context.isApproved === undefined) {
+          isDryRun = true
+        } else if (context.isApproved === false) {
+          await this.toolStatusLogLifecycleService.setCancelled(statusLog)
+
+          return new SuccessToolResult('Workspace move operation was rejected by the user.')
+        }
+      }
+
+      const moveWorkspacesResult = await this.workspaceService.moveMany(
+        {
+          ids: workspaceIds,
+          beforeWorkspaceId: payload.beforeWorkspaceId,
+          afterWorkspaceId: payload.afterWorkspaceId,
+          toStart: payload.toStart,
+          toEnd: payload.toEnd,
+        },
+        configurable.user,
+        session,
+        isDryRun,
+      )
+
+      if (moveWorkspacesResult.logId) {
+        const operationLogId = moveWorkspacesResult.logId.toString()
+
+        if (isDryRun) {
+          await this.toolStatusLogLifecycleService.setAwaitingConfirmation(statusLog, (content) => {
+            content.logId = operationLogId
+          })
+
+          return new ConfirmationToolResult({
+            logId: operationLogId,
+          })
+        }
+
+        await dispatchCustomEvent(CustomEvents.OPERATION, {
+          logId: operationLogId,
+          session,
+        })
+
+        await this.toolStatusLogLifecycleService.setCompleted(statusLog, (content) => {
+          content.logId = operationLogId
+        })
+
+        return new SuccessToolResult(
+          `Successfully moved ${moveWorkspacesResult.data.length} workspaces. Operation Log ID: ${operationLogId}`,
+          {
+            logId: operationLogId,
+          },
+        )
+      }
+
+      return new FailedToolResult('Failed to create operation log for workspaces move.')
+    } catch (error) {
+      statusLog.state = StatusStatesEnum.FAILED
+      await dispatchCustomEvent(CustomEvents.STATUS_UPDATE_LOG, statusLog)
+
+      throw error
+    }
+  }
+
+  public async reorderWorkspaces(
+    payload: ReorderWorkspacesDTO,
+    config: RunnableConfig,
+    context: IConfigContext,
+    session?: ClientSession,
+  ) {
+    const configurable = config.configurable as Configurable
+    const workspaceIds = await this._resolveWorkspaceIds(
+      { workspace_ids: payload.workspace_ids },
+      configurable.user.id,
+      session,
+    )
+    const humanReadableFilters = await this._resolveReorderHumanReadableFilters(
+      payload,
+      configurable.user.id,
+      session,
+    )
+    const toolCall = context.toolCall!
+
+    const statusLog = await this.toolStatusLogLifecycleService.getOrCreateInProgressLog({
+      existingLog: context.statusLog,
+      toolCallId: toolCall.id!,
+      toolName: 'reorder_workspaces',
+      toolContent: {
+        count: workspaceIds.length,
+        filters: humanReadableFilters,
+      },
+    })
+
+    let isDryRun = false
+
+    try {
+      if (configurable.aiConfirmationType === AiConfirmationTypeEnum.ALWAYS) {
+        if (context.isApproved === undefined) {
+          isDryRun = true
+        } else if (context.isApproved === false) {
+          await this.toolStatusLogLifecycleService.setCancelled(statusLog)
+
+          return new SuccessToolResult('Workspace reorder operation was rejected by the user.')
+        }
+      }
+
+      const reorderWorkspacesResult = await this.workspaceService.reorder(
+        {
+          ids: workspaceIds,
+        },
+        configurable.user,
+        session,
+        isDryRun,
+      )
+
+      if (reorderWorkspacesResult.logId) {
+        const operationLogId = reorderWorkspacesResult.logId.toString()
+
+        if (isDryRun) {
+          await this.toolStatusLogLifecycleService.setAwaitingConfirmation(statusLog, (content) => {
+            content.logId = operationLogId
+          })
+
+          return new ConfirmationToolResult({
+            logId: operationLogId,
+          })
+        }
+
+        await dispatchCustomEvent(CustomEvents.OPERATION, {
+          logId: operationLogId,
+          session,
+        })
+
+        await this.toolStatusLogLifecycleService.setCompleted(statusLog, (content) => {
+          content.logId = operationLogId
+        })
+
+        return new SuccessToolResult(
+          `Successfully reordered ${reorderWorkspacesResult.data.length} workspaces. Operation Log ID: ${operationLogId}`,
+          {
+            logId: operationLogId,
+          },
+        )
+      }
+
+      return new FailedToolResult('Failed to create operation log for workspaces reorder.')
     } catch (error) {
       statusLog.state = StatusStatesEnum.FAILED
       await dispatchCustomEvent(CustomEvents.STATUS_UPDATE_LOG, statusLog)

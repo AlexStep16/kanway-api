@@ -9,6 +9,8 @@ export function getToolCallsByAgent(agent: AgentsEnum, state: typeof AgentStateA
       return state.column_manager_tool_calls || []
     case AgentsEnum.BOARD_MANAGER:
       return state.board_manager_tool_calls || []
+    case AgentsEnum.WORKSPACE_MANAGER:
+      return state.workspace_manager_tool_calls || []
     default:
       return []
   }
