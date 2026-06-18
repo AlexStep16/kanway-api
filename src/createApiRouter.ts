@@ -54,7 +54,5 @@ export const createApiRouter = (): Router => {
   )
   apiRouter.use('/me', userRoutes(dependencies.controllers.userController))
 
-  //apiRouter.use('/sandbox', sandboxRoutes(dependencies.controllers.sandboxController))
-
   return apiRouter
 }

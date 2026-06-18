@@ -376,7 +376,6 @@ export function initializeDependencies() {
       chatController,
       chatMessageController,
       supportController,
-      //sandboxController,
     },
   }
 }
