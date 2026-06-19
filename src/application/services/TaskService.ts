@@ -721,7 +721,7 @@ export class TaskService extends BaseService<
       {
         operationType: OperationTypesEnum.DELETE,
         collectionName: CollectionsEnum.TASKS,
-        entitiesBefore: [],
+        entitiesBefore: tasksToDelete,
         status,
         dependencies: [],
       },
