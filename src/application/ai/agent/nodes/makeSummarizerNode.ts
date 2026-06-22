@@ -4,7 +4,7 @@ import { ChatPromptTemplate } from '@langchain/core/prompts'
 import { dispatchCustomEvent } from '@langchain/core/callbacks/dispatch'
 import { CustomEvents } from '@/enums/CustomEvents.js'
 import { SummarizerPrompt } from '../../prompts/SummarizerPrompt.js'
-import { HumanMessage, RemoveMessage } from '@langchain/core/messages'
+import { HumanMessage, RemoveMessage, ToolMessage } from '@langchain/core/messages'
 import { getTextHistory } from '../../helpers/getTextHistory.js'
 import { AgentsEnum } from '@/enums/AgentsEnum.js'
 import { ModelsEnum } from '@/domain/enums/ModelsEnum.js'
@@ -19,8 +19,19 @@ export const makeSummarizerNode = (): any => {
       currentAgent: AgentsEnum.SUMMARIZER,
     })
 
-    const messagesToSummarize = state.messages.slice(0, 20)
-    const remainingMessages = state.messages.map((msg) => ({ ...msg, id: undefined })).slice(20)
+    let summaryBoundary = 20
+
+    while (
+      summaryBoundary < state.messages.length &&
+      state.messages[summaryBoundary] instanceof ToolMessage
+    ) {
+      summaryBoundary++
+    }
+
+    const messagesToSummarize = state.messages.slice(0, summaryBoundary)
+    const remainingMessages = state.messages
+      .slice(summaryBoundary)
+      .map((msg) => ({ ...msg, id: undefined }))
     const removeMessages = state.messages
       .map((msg) =>
         msg.id

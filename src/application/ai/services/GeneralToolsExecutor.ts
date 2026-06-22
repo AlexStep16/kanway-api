@@ -179,7 +179,11 @@ export class GeneralToolsExecutor {
     try {
       let isDryRun = false
 
-      if (configurable.aiConfirmationType === AiConfirmationTypeEnum.ALWAYS) {
+      if (
+        [AiConfirmationTypeEnum.ALWAYS, AiConfirmationTypeEnum.ONLY_FOR_SENSITIVE].includes(
+          configurable.aiConfirmationType,
+        )
+      ) {
         if (context.isApproved === undefined) {
           isDryRun = true
         } else if (context.isApproved === false) {

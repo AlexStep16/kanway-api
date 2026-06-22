@@ -28,5 +28,5 @@ export function calculateCredits(
 
   const creditsSpent = rubWithMarkup * 10
 
-  return Math.max(1, Math.ceil(creditsSpent))
+  return Math.ceil(creditsSpent)
 }
