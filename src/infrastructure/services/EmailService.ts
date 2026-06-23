@@ -36,7 +36,7 @@ export class EmailService {
     }
 
     const encodedEmail = Buffer.from(user.email).toString('base64')
-    const verificationUrl = `https://kanway.ru/auth/${AllowedAuthStepsEnum.VERIFY_LOGIN}/${encodeURIComponent(encodedEmail)}?token=${token}`
+    const verificationUrl = `https://kanway.ru/auth?step=${AllowedAuthStepsEnum.VERIFY_LOGIN}&payload=${encodeURIComponent(encodedEmail)}&token=${token}`
     const otpCode = crypto.randomInt(100000, 999999).toString()
 
     await redis
@@ -115,7 +115,7 @@ export class EmailService {
       throw new AppError(`Слишком много запросов. Попробуйте через ${ttl} секунд(ы).`, 429)
     }
     const encodedEmail = Buffer.from(user.email).toString('base64')
-    const verificationUrl = `https://kanway.ru/auth/${AllowedAuthStepsEnum.VERIFY_EMAIL}/${encodeURIComponent(encodedEmail)}?token=${token}`
+    const verificationUrl = `https://kanway.ru/auth?step=${AllowedAuthStepsEnum.VERIFY_EMAIL}&payload=${encodeURIComponent(encodedEmail)}&token=${token}`
     const otpCode = crypto.randomInt(100000, 999999).toString()
 
     await redis
@@ -194,7 +194,7 @@ export class EmailService {
     }
 
     const encodedEmail = Buffer.from(user.email).toString('base64')
-    const recoveryUrl = `https://kanway.ru/auth/${AllowedAuthStepsEnum.VERIFY_PASSWORD}/${encodeURIComponent(encodedEmail)}?token=${token}`
+    const recoveryUrl = `https://kanway.ru/auth?step=${AllowedAuthStepsEnum.VERIFY_PASSWORD}&payload=${encodeURIComponent(encodedEmail)}&token=${token}`
     const otpCode = crypto.randomInt(100000, 999999).toString()
 
     await redis
