@@ -274,7 +274,7 @@ export const RunAgentWorker = new Worker(
 
       await agentEventsHandler.failStatus(false, error)
 
-      //Sentry.captureException(error, { extra: { jobId: job.id, chatId: configurable?.chatId } })
+      Sentry.captureException(error, { extra: { jobId: job.id, chatId: configurable?.chatId } })
 
       throw error
     } finally {

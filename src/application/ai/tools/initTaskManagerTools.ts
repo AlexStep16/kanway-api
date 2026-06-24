@@ -9,6 +9,7 @@ import { RecoverTasksScheme } from './schemes/TaskManager/RecoverTasksScheme.js'
 import { MoveTasksScheme } from './schemes/TaskManager/MoveTasksScheme.js'
 import { CreateTasksScheme } from './schemes/TaskManager/CreateTasksScheme.js'
 import { ReorderTasksScheme } from './schemes/TaskManager/ReorderTasksScheme.js'
+import { SearchTasksSemanticScheme } from './schemes/TaskManager/SearchTasksSemanticScheme.js'
 
 export function initTaskManagerTools(
   dependencies: AgentDependencies,
@@ -25,6 +26,20 @@ export function initTaskManagerTools(
     {
       name: 'search_tasks',
       schema: SearchTasksScheme,
+    },
+  )
+
+  const searchTasksSemantic = tool(
+    async (data, config) => {
+      return await dependencies.services.taskToolsExecutorService.searchTasksSemantic(
+        data,
+        runnableConfig,
+        config.context,
+      )
+    },
+    {
+      name: 'search_tasks_semantic',
+      schema: SearchTasksSemanticScheme,
     },
   )
 
@@ -128,6 +143,7 @@ export function initTaskManagerTools(
 
   return [
     searchTasks,
+    searchTasksSemantic,
     createTasks,
     updateTasks,
     deleteArchiveTasks,

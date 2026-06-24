@@ -1,9 +1,3 @@
-import { ColumnService } from '@/application/services/ColumnService.js'
-import { SelectionService } from './SelectionService.js'
-import { WorkspaceService } from '@/application/services/WorkspaceService.js'
-import { BoardService } from '@/application/services/BoardService.js'
-import { TaskService } from '@/application/services/TaskService.js'
-import { ToolResult } from '../tools/helpers/ToolResult/ToolResult.js'
 import { FailedToolResult } from '../tools/helpers/ToolResult/FailedToolResult.js'
 import { SuccessToolResult } from '../tools/helpers/ToolResult/SuccessToolResult.js'
 import { ClientSession, Types } from 'mongoose'
@@ -19,83 +13,13 @@ import { ConfirmationToolResult } from '../tools/helpers/ToolResult/Confirmation
 import { dispatchCustomEvent } from '@langchain/core/callbacks/dispatch'
 import { CustomEvents } from '@/enums/CustomEvents.js'
 import { StatusStatesEnum } from '@/enums/StatusStatesEnum.js'
-import { buildEntitySamples } from '../tools/helpers/EntitySamplesHelpers.js'
-import { GetSelectionDetailsDTO } from '../tools/schemes/GetSelectionDetailsScheme.js'
 
 export class GeneralToolsExecutor {
   constructor(
-    private selectionService: SelectionService,
-    private taskService: TaskService,
-    private columnService: ColumnService,
-    private boardService: BoardService,
-    private workspaceService: WorkspaceService,
     private operationLogService: OperationLogService,
 
     private toolStatusLogLifecycleService = new ToolStatusLogLifecycleService(),
   ) {}
-
-  public async getSelectionDetails(
-    payload: GetSelectionDetailsDTO,
-    config: RunnableConfig,
-    session?: ClientSession,
-  ): Promise<ToolResult> {
-    const { selection_id, fields_to_include = [] } = payload
-    const configurable = config.configurable as Configurable
-    const timezone = configurable.user.timezone || 'UTC'
-    const userId = configurable.user.id
-
-    const selections = await this.selectionService.getByCriteria(
-      {
-        id: selection_id,
-      },
-      userId,
-      session,
-    )
-
-    if (selections.length === 0) {
-      return new FailedToolResult(`Selection with id ${selection_id} not found.`)
-    }
-
-    const selection = selections[0]
-
-    const { entityType, entityIds } = selection
-    const sringifiedEntityIds = entityIds.map((id) => id.toString())
-
-    let details: any[] = []
-
-    switch (entityType) {
-      case 'task':
-        details = (
-          await this.taskService.getByCriteria({ ids: sringifiedEntityIds }, userId, session)
-        ).slice(0, 20) // Limit to 20 items to avoid token overload
-        break
-      case 'column':
-        details = (
-          await this.columnService.getByCriteria({ ids: sringifiedEntityIds }, userId, session)
-        ).slice(0, 20)
-        break
-      case 'board':
-        details = (
-          await this.boardService.getByCriteria({ ids: sringifiedEntityIds }, userId, session)
-        ).slice(0, 20)
-        break
-      case 'workspace':
-        details = (
-          await this.workspaceService.getByCriteria({ ids: sringifiedEntityIds }, userId, session)
-        ).slice(0, 20)
-        break
-      default:
-        return new FailedToolResult(`Unsupported entity type: ${entityType}`)
-    }
-
-    const samples = buildEntitySamples(entityType, details, {
-      timezone,
-      limit: 20,
-      additionalFields: fields_to_include,
-    })
-
-    return new SuccessToolResult(JSON.stringify(samples))
-  }
 
   private _getOperationTypeText(operationType: OperationTypesEnum): string {
     switch (operationType) {

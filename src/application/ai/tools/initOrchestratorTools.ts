@@ -4,7 +4,6 @@ import { CallManagerScheme } from './schemes/CallManagerScheme.js'
 import { Configurable } from '../interfaces/Configurable.js'
 import { RunnableConfig } from '@langchain/core/runnables'
 import { UndoOperationsScheme } from './schemes/UndoOperationsScheme.js'
-import { GetSelectionDetailsScheme } from './schemes/GetSelectionDetailsScheme.js'
 
 export function initOrchestratorTools(
   dependencies: AgentDependencies,
@@ -29,18 +28,5 @@ export function initOrchestratorTools(
     },
   )
 
-  const getSelectionDetails = tool(
-    async (data) => {
-      return await dependencies.services.generalToolsExecutor.getSelectionDetails(
-        data,
-        runnableConfig,
-      )
-    },
-    {
-      name: 'get_selection_details',
-      schema: GetSelectionDetailsScheme,
-    },
-  )
-
-  return [callManagerAgent, undoOperations, getSelectionDetails]
+  return [callManagerAgent, undoOperations]
 }

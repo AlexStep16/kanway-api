@@ -19,7 +19,6 @@ import {
   getAgentManagerSystemPrompt,
   getAgentManagerTools,
 } from '../../helpers/managerHelpers.js'
-import { getCurrentAgentOutputs } from '../../helpers/getCurrentAgentOutput.js'
 import { getBeautifiedSelections } from '../../helpers/getBeautifiedSelections.js'
 import { initManagerTools } from '../../tools/initManagerTools.js'
 import { getChatModel } from '@/infrastructure/helpers/getChatModel.js'
@@ -108,12 +107,7 @@ export const makeEntityManagerAgentNode = (deps: AgentDependencies) => {
     fillOutputsBasedOnAgent(activeManager, response, outputs)
 
     if (response.tool_calls?.length === 0) {
-      const toolResults = getCurrentAgentOutputs(activeManager, state).toolResults
-      const toolResultContents = toolResults.map((result) => result.content).join('\n')
-
-      const finalResponse = `Tool Results:\n${toolResultContents}\n\n Final Response:\n${JSON.stringify(response.content)}`
-
-      outputs.messages!.push(new ToolMessage(finalResponse, lastCallManagerTool!.id!))
+      outputs.messages!.push(new ToolMessage(response.content, lastCallManagerTool!.id!))
     }
 
     return outputs

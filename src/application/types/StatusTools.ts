@@ -5,11 +5,13 @@ import { IMoveEntitiesContent } from '../interfaces/statuses/content/IMoveEntiti
 import { IRecoverEntitiesContent } from '../interfaces/statuses/content/IRecoverEntitiesContent.js'
 import { IReorderEntitiesContent } from '../interfaces/statuses/content/IReorderEntitiesContent.js'
 import { ISearchEntitiesContent } from '../interfaces/statuses/content/ISearchEntitiesContent.js'
+import { ISearchSemanticEntitiesContent } from '../interfaces/statuses/content/ISearchSemanticEntitiesContent.js'
 import { ITextValue } from '../interfaces/statuses/content/ITextValue.js'
 import { IUpdateEntitiesContent } from '../interfaces/statuses/content/IUpdateEntitiesContent.js'
 
 export type StatusToolContentMap = {
   search_tasks: ISearchEntitiesContent
+  search_tasks_semantic: ISearchSemanticEntitiesContent
   create_tasks: ICreateEntitiesContent
   update_tasks: IUpdateEntitiesContent
   delete_archive_tasks: IDeleteArchiveEntitiesContent

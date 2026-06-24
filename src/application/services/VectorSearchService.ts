@@ -75,10 +75,12 @@ export class VectorSearchService {
     query: string[],
     userId: Types.ObjectId,
     count: number,
+    boardId?: Types.ObjectId,
     ids?: Array<Types.ObjectId>,
   ): Promise<ITask[]> {
-    const filter: any = { user_id: { $eq: userId } }
+    const filter: any = { user_id: { $eq: userId }, is_deleted: { $eq: false } }
     if (ids?.length) filter._id = { $in: ids }
+    if (boardId) filter.board = { $eq: boardId }
 
     // Вызываем универсальный метод
     return this._executeSearch<ITask>({
@@ -98,10 +100,12 @@ export class VectorSearchService {
     query: string[],
     userId: Types.ObjectId,
     count: number,
+    boardId?: Types.ObjectId,
     ids?: Array<Types.ObjectId>,
   ): Promise<IColumn[]> {
-    const filter: any = { user_id: { $eq: userId } }
+    const filter: any = { user_id: { $eq: userId }, is_deleted: { $eq: false } }
     if (ids?.length) filter._id = { $in: ids }
+    if (boardId) filter.board = { $eq: boardId }
 
     // Вызываем универсальный метод
     return this._executeSearch<IColumn>({
@@ -121,10 +125,12 @@ export class VectorSearchService {
     query: string[],
     userId: Types.ObjectId,
     count: number,
+    workspaceId?: Types.ObjectId,
     ids?: Array<Types.ObjectId>,
   ): Promise<IBoard[]> {
-    const filter: any = { user_id: { $eq: userId } }
+    const filter: any = { user_id: { $eq: userId }, is_deleted: { $eq: false } }
     if (ids?.length) filter._id = { $in: ids }
+    if (workspaceId) filter.workspace = { $eq: workspaceId }
 
     // Вызываем универсальный метод
     return this._executeSearch<IBoard>({
@@ -146,7 +152,7 @@ export class VectorSearchService {
     count: number,
     ids?: Array<Types.ObjectId>,
   ): Promise<IWorkspace[]> {
-    const filter: any = { user_id: { $eq: userId } }
+    const filter: any = { user_id: { $eq: userId }, is_deleted: { $eq: false } }
     if (ids?.length) filter._id = { $in: ids }
 
     // Вызываем универсальный метод

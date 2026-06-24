@@ -1,6 +1,6 @@
 import { OpenAIEmbeddings } from '@langchain/openai'
 
-const embeddingModel = new OpenAIEmbeddings({ model: 'text-embedding-3-large' })
+const embeddingModel = new OpenAIEmbeddings({ model: 'text-embedding-3-small' })
 
 export class EmbeddingService {
   public async getEmbeddings(text: string): Promise<number[]> {

@@ -278,6 +278,7 @@ export function initializeDependencies() {
   const taskToolsExecutorService = new TaskToolsExecutorService(
     taskRepository,
     taskService,
+    vectorSearchService,
     columnService,
     filterToMongoQueryService,
     selectionService,
@@ -306,14 +307,7 @@ export function initializeDependencies() {
     selectionService,
   )
 
-  const generalToolsExecutor = new GeneralToolsExecutor(
-    selectionService,
-    taskService,
-    columnService,
-    boardService,
-    workspaceService,
-    operationLogService,
-  )
+  const generalToolsExecutor = new GeneralToolsExecutor(operationLogService)
 
   const authController = new AuthController(authService, userService)
   const workspaceController = new WorkspaceController(workspaceService)

@@ -15,6 +15,15 @@ import { SystemFields } from '@/infrastructure/types/SystemFields.js'
 import { toMongoCaseKeys, toServerCaseKeys } from '@/utils/objectTransformers.js'
 import { SafeUpdateData } from '@/infrastructure/types/SafeUpdateData.js'
 
+export type Options<TRawEntity> = {
+  projection?: ProjectionType<TRawEntity> | null
+  limit?: number
+  populate?: PopulateOptions | (string | PopulateOptions)[]
+  sort?: Record<string, 1 | -1>
+  isMongoCase?: boolean
+  skip?: number
+}
+
 export abstract class BaseRepository<
   TRawEntity,
   TEntity,
@@ -187,17 +196,22 @@ export abstract class BaseRepository<
   public async find<TFindResult = TEntity>(
     filter: FilterQuery<TRawEntity>,
     session: ClientSession | null = null,
-    options: {
-      projection?: ProjectionType<TRawEntity> | null
-      limit?: number
-      populate?: PopulateOptions | (string | PopulateOptions)[]
-      sort?: Record<string, 1 | -1>
-      isMongoCase?: boolean
-    } = {},
+    options: Options<TRawEntity> = {},
   ): Promise<TFindResult[]> {
-    const { projection = null, limit = 1000, populate, sort = { created_at: -1 } } = options
+    const {
+      projection = null,
+      limit = 1000,
+      skip = 0,
+      populate,
+      sort = { created_at: -1 },
+    } = options
 
-    let query = this.model.find(filter, projection).session(session).limit(limit).sort(sort)
+    let query = this.model
+      .find(filter, projection)
+      .session(session)
+      .limit(limit)
+      .skip(skip)
+      .sort(sort)
 
     if (populate) {
       query = query.populate(populate) as any
@@ -213,13 +227,7 @@ export abstract class BaseRepository<
   public async findByCriteria<TFindResult = TEntity>(
     criteria: TCriteria,
     session: ClientSession | null = null,
-    options: {
-      projection?: ProjectionType<TRawEntity> | null
-      limit?: number
-      populate?: PopulateOptions | (string | PopulateOptions)[]
-      sort?: Record<string, 1 | -1>
-      isMongoCase?: boolean
-    } = {},
+    options: Options<TRawEntity> = {},
     userId?: Types.ObjectId,
   ): Promise<TFindResult[]> {
     const filter = this.buildFilter(criteria, userId)
@@ -230,13 +238,7 @@ export abstract class BaseRepository<
   public async findByFilter<TFindResult = TEntity>(
     filter: FilterQuery<TRawEntity>,
     session: ClientSession | null = null,
-    options: {
-      projection?: ProjectionType<TRawEntity> | null
-      limit?: number
-      populate?: PopulateOptions | (string | PopulateOptions)[]
-      sort?: Record<string, 1 | -1>
-      isMongoCase?: boolean
-    } = {},
+    options: Options<TRawEntity> = {},
   ): Promise<TFindResult[]> {
     return this.find<TFindResult>(filter, session, options)
   }

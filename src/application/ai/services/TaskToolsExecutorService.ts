@@ -40,12 +40,16 @@ import { buildEntitySamples } from '../tools/helpers/EntitySamplesHelpers.js'
 import { CreateTasksDTO } from '../tools/schemes/TaskManager/CreateTasksScheme.js'
 import { TaskDTO } from '@/application/dtos/TaskDTO.js'
 import { ReorderTasksDTO } from '../tools/schemes/TaskManager/ReorderTasksScheme.js'
+import { SearchTasksSemanticDTO } from '../tools/schemes/TaskManager/SearchTasksSemanticScheme.js'
+import { ISearchSemanticEntitiesContent } from '@/application/interfaces/statuses/content/ISearchSemanticEntitiesContent.js'
+import { VectorSearchService } from '@/application/services/VectorSearchService.js'
 
 export class TaskToolsExecutorService {
   constructor(
     private taskRepository: TaskRepository,
 
     private taskService: TaskService,
+    private vectorSearchService: VectorSearchService,
     private columnService: ColumnService,
     private filterToMongoQueryService: FilterToMongoQueryService,
     private selectionService: SelectionService,
@@ -60,7 +64,7 @@ export class TaskToolsExecutorService {
   ) {
     const toolCall = context.toolCall!
     const configurable = config.configurable as Configurable
-    const { filters, fields_to_include = [] } = payload
+    const { filters, fields_to_include = [], sample_limit, offset } = payload
 
     const mongoQuery = await this.filterToMongoQueryService.prepare(
       filters,
@@ -86,10 +90,14 @@ export class TaskToolsExecutorService {
     await dispatchCustomEvent(CustomEvents.STATUS_ADD_LOG, statusLog)
 
     try {
-      const tasks = await this.taskService.getByFilter(mongoQuery, session)
+      const tasks = await this.taskService.getByFilter(mongoQuery, session, {
+        skip: offset,
+        sort: { created_at: -1 },
+      })
       const tasksSample = buildEntitySamples(EntityTypesEnum.TASK, tasks, {
         timezone: configurable.timezone,
         additionalFields: fields_to_include,
+        limit: sample_limit,
       })
       const selection = await this.selectionService.create(
         {
@@ -108,17 +116,113 @@ export class TaskToolsExecutorService {
 
       await dispatchCustomEvent(CustomEvents.STATUS_UPDATE_LOG, statusLog)
 
-      return new SuccessToolResult(
-        JSON.stringify({
-          selection_id: selection.id.toString(),
+      const finalResponse: any = {
+        selection_id: selection.id.toString(),
+        sample: tasksSample,
+        count: tasks.length,
+        human_readable_filters: humanReadableFilters,
+      }
+
+      if (typeof sample_limit !== 'undefined') {
+        finalResponse.sample_count = sample_limit
+      }
+
+      if (typeof offset !== 'undefined') {
+        finalResponse.offset = offset
+      }
+
+      return new SuccessToolResult(JSON.stringify(finalResponse), {
+        selections: [selection],
+      })
+    } catch (error) {
+      statusLog.state = StatusStatesEnum.FAILED
+      await dispatchCustomEvent(CustomEvents.STATUS_UPDATE_LOG, statusLog)
+
+      throw error
+    }
+  }
+
+  public async searchTasksSemantic(
+    payload: SearchTasksSemanticDTO,
+    config: RunnableConfig,
+    context: IConfigContext,
+    session?: ClientSession,
+  ) {
+    const toolCall = context.toolCall!
+    const configurable = config.configurable as Configurable
+    const { query, fields_to_include = [], sample_limit, board_id } = payload
+
+    const toolContent: ISearchSemanticEntitiesContent = {
+      query,
+    }
+
+    const statusLog: StatusLog = {
+      id: new Types.ObjectId().toString(),
+      type: StatusTypesEnum.TOOL,
+      state: StatusStatesEnum.IN_PROGRESS,
+      content: {
+        id: toolCall.id!,
+        name: 'search_tasks_semantic',
+        content: toolContent,
+      },
+    }
+    await dispatchCustomEvent(CustomEvents.STATUS_ADD_LOG, statusLog)
+
+    const humanReadableFilters: ITextValue[] = [
+      {
+        text: 'Семантический поиск',
+        value: query,
+      },
+    ]
+
+    try {
+      const tasksSemantic = await this.vectorSearchService.similaritySearchTasks(
+        [query],
+        configurable.user.id,
+        sample_limit,
+        new Types.ObjectId(board_id),
+      )
+
+      const tasks = await this.taskService.getByCriteria({
+        ids: tasksSemantic.map((t) => t.id.toString()),
+      })
+
+      const tasksSample = buildEntitySamples(EntityTypesEnum.TASK, tasks, {
+        timezone: configurable.timezone,
+        additionalFields: fields_to_include,
+        limit: sample_limit,
+      })
+      const selection = await this.selectionService.create(
+        {
+          entityType: EntityTypesEnum.TASK,
+          entityIds: tasks.map((t) => t.id),
+          humanReadableFilters,
           sample: tasksSample,
           count: tasks.length,
-          human_readable_filters: humanReadableFilters,
-        }),
-        {
-          selections: [selection],
         },
+        configurable.user.id,
+        session,
       )
+
+      statusLog.state = StatusStatesEnum.COMPLETED
+      toolContent.ids = tasks.map((t) => t.id.toString())
+
+      await dispatchCustomEvent(CustomEvents.STATUS_UPDATE_LOG, statusLog)
+
+      const finalResponse: any = {
+        selection_id: selection.id.toString(),
+        sample: tasksSample,
+        count: tasks.length,
+        human_readable_filters: humanReadableFilters,
+      }
+
+      if (typeof sample_limit !== 'undefined') {
+        finalResponse.sample_count = sample_limit
+      }
+
+      return new SuccessToolResult(JSON.stringify(finalResponse), {
+        selections: [selection],
+      })
     } catch (error) {
       statusLog.state = StatusStatesEnum.FAILED
       await dispatchCustomEvent(CustomEvents.STATUS_UPDATE_LOG, statusLog)

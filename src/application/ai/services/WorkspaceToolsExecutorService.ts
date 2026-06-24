@@ -57,7 +57,7 @@ export class WorkspaceToolsExecutorService {
   ) {
     const toolCall = context.toolCall!
     const configurable = config.configurable as Configurable
-    const { filters, fields_to_include = [] } = payload
+    const { filters, fields_to_include = [], sample_limit, offset } = payload
 
     const mongoQuery = await this.filterToMongoQueryService.prepare(
       filters,
@@ -83,10 +83,14 @@ export class WorkspaceToolsExecutorService {
     await dispatchCustomEvent(CustomEvents.STATUS_ADD_LOG, statusLog)
 
     try {
-      const workspaces = await this.workspaceService.getByFilter(mongoQuery, session)
+      const workspaces = await this.workspaceService.getByFilter(mongoQuery, session, {
+        skip: offset,
+        sort: { created_at: -1 },
+      })
       const workspacesSample = buildEntitySamples(EntityTypesEnum.WORKSPACE, workspaces, {
         timezone: configurable.timezone,
         additionalFields: fields_to_include,
+        limit: sample_limit,
       })
       const selection = await this.selectionService.create(
         {
@@ -105,17 +109,24 @@ export class WorkspaceToolsExecutorService {
 
       await dispatchCustomEvent(CustomEvents.STATUS_UPDATE_LOG, statusLog)
 
-      return new SuccessToolResult(
-        JSON.stringify({
-          selection_id: selection.id.toString(),
-          sample: workspacesSample,
-          count: workspaces.length,
-          human_readable_filters: humanReadableFilters,
-        }),
-        {
-          selections: [selection],
-        },
-      )
+      const finalResponse: any = {
+        selection_id: selection.id.toString(),
+        sample: workspacesSample,
+        count: workspaces.length,
+        human_readable_filters: humanReadableFilters,
+      }
+
+      if (typeof sample_limit !== 'undefined') {
+        finalResponse.sample_count = sample_limit
+      }
+
+      if (typeof offset !== 'undefined') {
+        finalResponse.offset = offset
+      }
+
+      return new SuccessToolResult(JSON.stringify(finalResponse), {
+        selections: [selection],
+      })
     } catch (error) {
       statusLog.state = StatusStatesEnum.FAILED
       await dispatchCustomEvent(CustomEvents.STATUS_UPDATE_LOG, statusLog)

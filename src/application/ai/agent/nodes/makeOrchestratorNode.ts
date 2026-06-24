@@ -9,7 +9,6 @@ import { initOrchestratorTools } from '../../tools/initOrchestratorTools.js'
 import { OrchestratorPrompt } from '../../prompts/OrchestratorPrompt.js'
 import { IStatus } from '@/application/interfaces/statuses/IStatus.js'
 import { AgentsEnum } from '@/enums/AgentsEnum.js'
-import { getBeautifiedSelections } from '../../helpers/getBeautifiedSelections.js'
 import { getChatModel } from '@/infrastructure/helpers/getChatModel.js'
 
 export const makeOrchestratorNode = (deps: AgentDependencies) => {
@@ -54,8 +53,6 @@ export const makeOrchestratorNode = (deps: AgentDependencies) => {
 
     const chain = prompt.pipe(modelToUse.bindTools(orchestratorTools))
 
-    const beautifiedSelections = getBeautifiedSelections(state.active_selections || [])
-
     const response = await chain.invoke({
       board: configurable.activeBoard || 'NO ACTIVE BOARD',
       workspace: configurable.activeWorkspace,
@@ -64,7 +61,6 @@ export const makeOrchestratorNode = (deps: AgentDependencies) => {
       workspaces_list: configurable.workspacesList,
       current_date: configurable.currentDate,
       tags_list: configurable.tagsList,
-      active_selections: beautifiedSelections,
       aiName: configurable.aiName,
     })
 

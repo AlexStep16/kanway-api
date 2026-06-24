@@ -1,5 +1,5 @@
 import { ClientSession, FilterQuery, PopulateOptions, ProjectionType, Types } from 'mongoose'
-import { BaseRepository } from '../repositories/BaseRepository.js'
+import { BaseRepository, Options } from '../repositories/BaseRepository.js'
 import { SystemFields } from '@infrastructure/types/SystemFields.js'
 
 export abstract class BaseService<
@@ -43,15 +43,13 @@ export abstract class BaseService<
   public async getByFilter(
     filter: FilterQuery<TEntity>,
     session?: ClientSession,
-    projection?: ProjectionType<TRawEntity>,
-    limit?: number,
+    options?: Options<TRawEntity>,
   ): Promise<TResult[]> {
     const populateOptions = this.getPopulateOptions()
 
     const items = await this.repository.findByFilter<TResult>(filter, session, {
       populate: populateOptions || undefined,
-      projection,
-      limit,
+      ...options,
     })
 
     return items

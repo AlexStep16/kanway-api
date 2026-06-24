@@ -30,6 +30,12 @@ export default class SelectionRepository extends BaseRepository<
       filter._id = { $in: criteria.ids }
     }
 
+    if (criteria.entityType) {
+      filter.entity_type = criteria.entityType
+    } else if (criteria.entityTypes) {
+      filter.entity_type = { $in: criteria.entityTypes }
+    }
+
     return filter
   }
 }

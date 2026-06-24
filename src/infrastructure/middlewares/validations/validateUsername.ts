@@ -4,7 +4,6 @@ import { ErrorMessages } from '@/enums/ErrorMessages.js'
 
 export const validateUsername = (req: Request, _: Response, next: NextFunction) => {
   try {
-    console.log(req.user?.username)
     if (req.user?.username) next()
     else throw new AppError(ErrorMessages.USERNAME_REQUIRED, 400)
   } catch (error) {
