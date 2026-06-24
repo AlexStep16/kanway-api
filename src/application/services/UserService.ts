@@ -180,6 +180,13 @@ export class UserService {
     return toServerCaseKeys(users[0])
   }
 
+  public async getDueActiveSubscriptions(
+    currentDate: Date = new Date(),
+    session?: ClientSession,
+  ): Promise<Pick<IUser, 'id'>[]> {
+    return await this.repository.findDueActiveSubscriptions(currentDate, session || null)
+  }
+
   public async me(id: Types.ObjectId, session?: ClientSession): Promise<IUser | null> {
     const user = await this.getById(id.toString(), session)
 

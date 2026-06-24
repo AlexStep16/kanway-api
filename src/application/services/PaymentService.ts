@@ -15,7 +15,6 @@ import { PaymentMethodService } from './PaymentMethodService.js'
 import { PaymentStatusesEnum } from '@/domain/enums/PaymentStatusesEnum.js'
 import { EmailService } from '@/infrastructure/services/EmailService.js'
 import { ErrorMessages } from '@/enums/ErrorMessages.js'
-import { subscriptionQueue } from '@/infrastructure/queues/SubscriptionQueue.js'
 import { IPaymentMethod } from '@/domain/entities/IPaymentMethod.js'
 import dayjs from 'dayjs'
 import { CREDIT_PACKS_DATA } from '@/constants/CREDIT_PACKS_DATA.js'
@@ -24,6 +23,7 @@ import { SUBSCRIPTION_PLAN_TO_ITEM_ID } from '@/constants/SUBSCRIPTION_PLAN_TO_I
 import { PaymentItemIdEnum } from '@/domain/enums/PaymentItemIdEnum.js'
 import { SUBSCRIPTION_ITEM_ID_TO_PLAN } from '@/constants/SUBSCRIPTION_ITEM_ID_TO_PLAN.js'
 import { SUBSCRIPTION_PLAN_TO_CREDITS } from '@/constants/SUBSCRIPTION_PLAN_TO_CREDITS.js'
+import * as Sentry from '@sentry/node'
 
 type CreditItemId =
   | PaymentItemIdEnum.CREDIT_PACK_SMALL
@@ -33,6 +33,7 @@ type SubscriptionItemId =
   | PaymentItemIdEnum.BASIC
   | PaymentItemIdEnum.PREMIUM
   | PaymentItemIdEnum.ARCHITECTOR
+type PostCommitAction = () => Promise<void>
 
 export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentCriteria> {
   protected repository: PaymentRepository
@@ -340,8 +341,8 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
 
     const payload = this._getSubscriptionPayload(user, user.subscriptionId)
 
-    const dateKey = new Date().toISOString().slice(0, 10)
-    const idempotenceKey = `auto_${userId}_${dateKey}`
+    const dateKey = new Date().toISOString().slice(0, 10) // YYYY-MM-DD
+    const idempotenceKey = `auto_${userId}_${dateKey}_try_${user.paymentRetriesCount || 0}`
 
     const payment = await this.checkout.createPayment(
       {
@@ -374,7 +375,7 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
     paymentModel: IPayment,
     session: ClientSession,
     user: IUser,
-  ) {
+  ): Promise<PostCommitAction[]> {
     const nextBillingDate = dayjs().add(1, 'month').toDate()
     const itemId = paymentModel.itemId as SubscriptionItemId
     const creditsAmount = SUBSCRIPTION_PLAN_TO_CREDITS[SUBSCRIPTION_ITEM_ID_TO_PLAN[itemId]]
@@ -439,23 +440,15 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
 
     const subscriptionName = itemId === PaymentItemIdEnum.PREMIUM ? 'Премиум' : 'Архитектор'
 
-    await this.emailService.sendPaymentSubSuccessEmail(user, {
-      purpose: `Подписка - ${subscriptionName}`,
-      amount: paymentModel.amount,
-      date: new Date().toISOString(),
-      next_billing_date: nextBillingDate.toISOString(),
-    })
-
-    const delay = nextBillingDate.getTime() - Date.now()
-
-    await subscriptionQueue.add(
-      'renew-subscription',
-      { userId: paymentModel.userId.toString() },
-      {
-        delay: delay,
-        jobId: `renew_${paymentModel.userId}_${nextBillingDate.getTime()}`, // Уникальный ID задачи
-      },
-    )
+    return [
+      async () =>
+        await this.emailService.sendPaymentSubSuccessEmail(user, {
+          purpose: `Подписка - ${subscriptionName}`,
+          amount: paymentModel.amount,
+          date: new Date().toISOString(),
+          next_billing_date: nextBillingDate.toISOString(),
+        }),
+    ]
   }
 
   private async _handleSuccessNotification(
@@ -463,7 +456,7 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
     paymentModel: IPayment,
     session: ClientSession,
     user: IUser,
-  ) {
+  ): Promise<PostCommitAction[]> {
     const metadata = checkedPayment.metadata
     const isCreditPack = metadata?.paymentType === PaymentTypeEnum.CREDIT_PACK
     if (isCreditPack) {
@@ -474,13 +467,21 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
 
       const creditPackLabel = CREDIT_PACKS_DATA[itemId].label
 
-      await this.emailService.sendPaymentCreditsSuccessEmail(user, {
-        purpose: creditPackLabel,
-        amount: paymentModel.amount,
-        date: new Date().toISOString(),
-      })
+      return [
+        async () =>
+          await this.emailService.sendPaymentCreditsSuccessEmail(user, {
+            purpose: creditPackLabel,
+            amount: paymentModel.amount,
+            date: new Date().toISOString(),
+          }),
+      ]
     } else {
-      await this._updateSubscriptionAndNotifyUser(checkedPayment, paymentModel, session, user)
+      return await this._updateSubscriptionAndNotifyUser(
+        checkedPayment,
+        paymentModel,
+        session,
+        user,
+      )
     }
   }
 
@@ -488,9 +489,9 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
     paymentModel: IPayment,
     session: ClientSession,
     user: IUser,
-  ) {
-    if (paymentModel.column === PaymentTypeEnum.CREDIT_PACK) return
-    if (user.isSubscriptionActive === false) return
+  ): Promise<PostCommitAction[]> {
+    if (paymentModel.column === PaymentTypeEnum.CREDIT_PACK) return []
+    if (user.isSubscriptionActive === false) return []
 
     const newCount = (user.paymentRetriesCount || 0) + 1
 
@@ -515,29 +516,20 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
         session,
       )
 
-      await this.emailService.sendPaymentFinalFailedEmail(user)
+      return [async () => await this.emailService.sendPaymentFinalFailedEmail(user)]
     } else {
       let daysLeft = ''
-      let delay = 0
 
       if (newCount === 1) {
         daysLeft = '3'
-        delay = 1000 * 60 * 60 * 24 * 1
       } else if (newCount === 2) {
         daysLeft = '2'
-        delay = 1000 * 60 * 60 * 24 * 2
       }
 
-      await this.emailService.sendPaymentFailedEmail(user, paymentModel.amount, daysLeft)
-
-      await subscriptionQueue.add(
-        'renew-subscription',
-        { userId: paymentModel.userId.toString() },
-        {
-          delay: delay,
-          jobId: `renew_${paymentModel.userId}_${Date.now()}`, // Уникальный ID задачи
-        },
-      )
+      return [
+        async () =>
+          await this.emailService.sendPaymentFailedEmail(user, paymentModel.amount, daysLeft),
+      ]
     }
   }
 
@@ -558,21 +550,30 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
 
     const paymentModel = payments[0]
 
-    const user = await this.userService.getById(paymentModel.userId.toString())
+    if (
+      paymentModel.status === PaymentStatusesEnum.succeeded ||
+      paymentModel.status === PaymentStatusesEnum.canceled
+    ) {
+      return
+    }
 
     const checkedPayment = await this.checkout.getPayment(payment.id)
 
-    if (!user) {
-      throw new AppError(ErrorMessages.USER_NOT_FOUND, 500)
-    }
     if (!checkedPayment) {
       throw new AppError(ErrorMessages.PAYMENT_NOT_FOUND, 500)
     }
 
     const session = await mongoose.startSession()
+    let postCommitActions: PostCommitAction[] = []
     session.startTransaction()
 
     try {
+      const user = await this.userService.getById(paymentModel.userId.toString(), session)
+
+      if (!user) {
+        throw new AppError(ErrorMessages.USER_NOT_FOUND, 500)
+      }
+
       await this.repository.updateManyByCriteria(
         { id: paymentModel.id.toString() },
         { status: checkedPayment.status as PaymentStatusesEnum },
@@ -580,9 +581,14 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
       )
 
       if (checkedPayment.status === 'succeeded') {
-        await this._handleSuccessNotification(checkedPayment, paymentModel, session, user)
+        postCommitActions = await this._handleSuccessNotification(
+          checkedPayment,
+          paymentModel,
+          session,
+          user,
+        )
       } else if (checkedPayment.status === 'canceled') {
-        await this._handleCanceledNotification(paymentModel, session, user)
+        postCommitActions = await this._handleCanceledNotification(paymentModel, session, user)
       }
 
       await session.commitTransaction()
@@ -593,5 +599,13 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
     } finally {
       session.endSession()
     }
+
+    const results = await Promise.allSettled(postCommitActions.map((action) => action()))
+
+    results.forEach((result) => {
+      if (result.status === 'rejected') {
+        Sentry.captureException(result.reason)
+      }
+    })
   }
 }

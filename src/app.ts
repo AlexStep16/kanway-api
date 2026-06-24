@@ -22,6 +22,7 @@ import * as cookie from 'cookie'
 import jwt from 'jsonwebtoken'
 import { AppError } from './domain/errors/AppError.js'
 import { ErrorMessages } from './enums/ErrorMessages.js'
+import { startSubscriptionRenewalCron } from '@/infrastructure/helpers/startSubscriptionRenewalCron.js'
 
 const KEY = process.env.JWT_KEY || 'FF123ABC-456D-789E-F012-3456789ABCDF'
 
@@ -129,3 +130,4 @@ app.use(globalErrorHandler)
 server.listen(3333, '0.0.0.0')
 
 dependencies.services.subscriptionService.initSubscriptions()
+startSubscriptionRenewalCron(dependencies.services.userService)
