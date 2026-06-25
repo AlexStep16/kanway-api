@@ -138,11 +138,11 @@ export default class ChatController {
         })(),
       ])) as Awaited<ReturnType<ChatService['send']>>
 
-      await session.commitTransaction()
-
       await langgraphQueue.add('process_query', result.jobPayload, {
         jobId: req.body.jobId,
       })
+
+      await session.commitTransaction()
 
       return res.status(200).json(new SuccessResponse(result))
     } catch (error) {

@@ -1425,7 +1425,7 @@ export class WorkspaceService extends BaseService<
     const { workspaceName, workspaceColor, username } = payload
 
     try {
-      const newWorkspace = await this.create(
+      const newWorkspaceResult = await this.create(
         {
           name: workspaceName,
           color: workspaceColor,
@@ -1443,9 +1443,11 @@ export class WorkspaceService extends BaseService<
         session,
       )
 
+      const newWorkspace = newWorkspaceResult.data[0]
+
       session.commitTransaction()
 
-      return newWorkspace.data[0]
+      return newWorkspace
     } catch (error) {
       await session.abortTransaction()
       throw error
