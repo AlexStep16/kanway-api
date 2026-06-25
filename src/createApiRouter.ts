@@ -18,14 +18,13 @@ import chatMessageRoutes from '@routes/chatMessageRoutes.js'
 import { initializeDependencies } from '@infrastructure/di/initializeDependencies.js'
 import supportRoutes from './infrastructure/routes/supportRoutes.js'
 import paymentNotificationRoutes from './infrastructure/routes/paymentNotificationRoutes.js'
-import { authLimiter } from '@/limiters.js'
 
 export const createApiRouter = (): Router => {
   const apiRouter = Router()
 
   const dependencies = initializeDependencies()
 
-  apiRouter.use('/auth', authLimiter, authRoutes(dependencies.controllers.authController))
+  apiRouter.use('/auth', authRoutes(dependencies.controllers.authController))
   apiRouter.use('/support', supportRoutes(dependencies.controllers.supportController))
   apiRouter.use('/workspaces', workspaceRoutes(dependencies.controllers.workspaceController))
   apiRouter.use('/boards', boardRoutes(dependencies.controllers.boardController))

@@ -2,7 +2,15 @@ import express, { Router } from 'express'
 import AuthController from '@controllers/AuthController.js'
 import { validationMiddleware } from '../middlewares/validations/validationMiddleware.js'
 import { PasswordRecoveryLinkSchema } from '@/application/dtos/PasswordRecoveryLinkDTO.js'
-import { emailLimiter } from '@/limiters.js'
+import {
+  emailCheckLimiter,
+  emailSendLimiter,
+  otpVerifyLimiter,
+  signinLimiter,
+  signupLimiter,
+  socialAuthLimiter,
+  tokenVerifyLimiter,
+} from '@/limiters.js'
 import { CheckEmailExistsSchemaDTO } from '@/application/dtos/CheckEmailExistsDTO.js'
 import { TokenSchemaDTO } from '@/application/dtos/TokenDTO.js'
 import { validateResetToken } from '../middlewares/validations/validateResetToken.js'
@@ -17,6 +25,7 @@ export default (controller: AuthController): Router => {
 
   router.post(
     '/sign-up',
+    signupLimiter,
     validationMiddleware(SignupCredentialsSchema),
     controller.register.bind(controller),
   )
@@ -33,39 +42,48 @@ export default (controller: AuthController): Router => {
   )
   router.post(
     '/sign-in',
+    signinLimiter,
     validationMiddleware(SigninCredentialsSchema),
     controller.login.bind(controller),
   )
   router.post(
     '/send/password/recovery',
     validationMiddleware(PasswordRecoveryLinkSchema),
-    emailLimiter,
+    emailSendLimiter,
     controller.sendResetPasswordEmail.bind(controller),
   )
-  router.post('/yandex', controller.yandex.bind(controller))
-  router.post('/vk', controller.vk.bind(controller))
-  router.post('/send/magic-link', emailLimiter, controller.sendMagicLink.bind(controller))
+  router.post('/yandex', socialAuthLimiter, controller.yandex.bind(controller))
+  router.post('/vk', socialAuthLimiter, controller.vk.bind(controller))
+  router.post('/send/magic-link', emailSendLimiter, controller.sendMagicLink.bind(controller))
   router.post(
     '/verify/token/email',
+    tokenVerifyLimiter,
     validationMiddleware(TokenSchemaDTO),
     controller.verifyLinkEmail.bind(controller),
   )
   router.post(
     '/verify/token/login',
+    tokenVerifyLimiter,
     validationMiddleware(TokenSchemaDTO),
     controller.verifyLinkLogin.bind(controller),
   )
   router.post(
     '/verify/token/password',
+    tokenVerifyLimiter,
     validationMiddleware(TokenSchemaDTO),
     controller.verifyLinkPassword.bind(controller),
   )
-  router.post('/verify/otp/login', controller.verifyOTPLogin.bind(controller))
-  router.post('/verify/otp/email', controller.verifyOTPEmail.bind(controller))
-  router.post('/verify/otp/password', controller.verifyOTPPassword.bind(controller))
+  router.post('/verify/otp/login', otpVerifyLimiter, controller.verifyOTPLogin.bind(controller))
+  router.post('/verify/otp/email', otpVerifyLimiter, controller.verifyOTPEmail.bind(controller))
+  router.post(
+    '/verify/otp/password',
+    otpVerifyLimiter,
+    controller.verifyOTPPassword.bind(controller),
+  )
 
   router.post(
     '/check-email',
+    emailCheckLimiter,
     validationMiddleware(CheckEmailExistsSchemaDTO),
     controller.checkEmailExists.bind(controller),
   )

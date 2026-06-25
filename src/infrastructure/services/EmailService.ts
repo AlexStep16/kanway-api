@@ -16,6 +16,13 @@ const resend = new Resend(process.env.RESEND_SECRET || '')
 
 const SEND_INTERVAL = 60
 const SLACK_TIME = 2
+const CHALLENGE_TTL = 900
+
+type EmailChallenge = {
+  code: string
+  userId: string
+  token: string
+}
 
 export class EmailService {
   protected tokenService: TokenService
@@ -24,28 +31,45 @@ export class EmailService {
     this.tokenService = tokenService
   }
 
-  public async sendMagicLink(user: IUser) {
-    const token = crypto.randomBytes(32).toString('hex')
+  private normalizeEmail(email: string): string {
+    return email.toLowerCase().trim()
+  }
 
-    const linkKey = `${TokenKeysEnum.LOGIN_VERIFICATION}:${token}`
-    const otpKey = `${TokenKeysEnum.LOGIN_OTP_VERIFICATION}:${user.email}`
-    const limitKey = `limit:${TokenKeysEnum.LOGIN_VERIFICATION}:${user.email}`
+  private async lockSend(limitKey: string, interval: number) {
+    const result = await redis.set(limitKey, 'locked', 'EX', interval, 'NX')
+
+    if (result) return
 
     const ttl = await redis.ttl(limitKey)
+    throw new AppError(
+      `Слишком много запросов. Попробуйте через ${Math.max(ttl, 1)} секунд(ы).`,
+      429,
+    )
+  }
 
-    if (ttl > 0) {
-      throw new AppError(`Слишком много запросов. Попробуйте через ${ttl} секунд(ы).`, 429)
-    }
+  public async sendMagicLink(user: IUser) {
+    const token = crypto.randomBytes(32).toString('hex')
+    const normalizedEmail = this.normalizeEmail(user.email)
 
-    const encodedEmail = Buffer.from(user.email).toString('base64')
+    const linkKey = `${TokenKeysEnum.LOGIN_VERIFICATION}:${token}`
+    const otpKey = `${TokenKeysEnum.LOGIN_OTP_VERIFICATION}:${normalizedEmail}`
+    const limitKey = `limit:${TokenKeysEnum.LOGIN_VERIFICATION}:${normalizedEmail}`
+
+    await this.lockSend(limitKey, SEND_INTERVAL)
+
+    const previousChallengeRaw = await redis.get(otpKey)
+    const previousChallenge = previousChallengeRaw
+      ? (JSON.parse(previousChallengeRaw) as EmailChallenge)
+      : null
+
+    const encodedEmail = Buffer.from(normalizedEmail).toString('base64')
     const magicLink = `https://kanway.ru/auth?step=${AllowedAuthStepsEnum.VERIFY_LOGIN}&payload=${encodeURIComponent(encodedEmail)}&token=${token}`
     const otpCode = crypto.randomInt(100000, 999999).toString()
 
     await redis
       .multi()
-      .set(limitKey, 'locked', 'EX', SEND_INTERVAL)
-      .set(linkKey, user.id.toString(), 'EX', 600)
-      .set(otpKey, JSON.stringify({ code: otpCode, userId: user.id, token }), 'EX', 600)
+      .set(linkKey, normalizedEmail, 'EX', CHALLENGE_TTL)
+      .set(otpKey, JSON.stringify({ code: otpCode, userId: user.id, token }), 'EX', CHALLENGE_TTL)
       .exec()
 
     if (process.env.NODE_ENV === 'development') {
@@ -55,7 +79,7 @@ export class EmailService {
 
     try {
       await resend.emails.send({
-        to: user.email,
+        to: normalizedEmail,
         template: {
           id: 'kanway-login-code',
           variables: {
@@ -64,6 +88,10 @@ export class EmailService {
           },
         },
       })
+
+      if (previousChallenge?.token) {
+        await redis.del(`${TokenKeysEnum.LOGIN_VERIFICATION}:${previousChallenge.token}`)
+      }
     } catch (err: unknown) {
       await Promise.all([redis.del(limitKey), redis.del(otpKey), redis.del(linkKey)])
       throw err
@@ -72,25 +100,27 @@ export class EmailService {
 
   public async sendVerifyEmailToUser(user: IUser) {
     const token = crypto.randomBytes(32).toString('hex')
+    const normalizedEmail = this.normalizeEmail(user.email)
 
     const linkKey = `${TokenKeysEnum.EMAIL_VERIFICATION}:${token}`
-    const otpKey = `${TokenKeysEnum.EMAIL_OTP_VERIFICATION}:${user.email}`
-    const limitKey = `limit:${TokenKeysEnum.EMAIL_VERIFICATION}:${user.email}`
+    const otpKey = `${TokenKeysEnum.EMAIL_OTP_VERIFICATION}:${normalizedEmail}`
+    const limitKey = `limit:${TokenKeysEnum.EMAIL_VERIFICATION}:${normalizedEmail}`
 
-    const ttl = await redis.ttl(limitKey)
+    await this.lockSend(limitKey, SEND_INTERVAL)
 
-    if (ttl > 0) {
-      throw new AppError(`Слишком много запросов. Попробуйте через ${ttl} секунд(ы).`, 429)
-    }
-    const encodedEmail = Buffer.from(user.email).toString('base64')
+    const previousChallengeRaw = await redis.get(otpKey)
+    const previousChallenge = previousChallengeRaw
+      ? (JSON.parse(previousChallengeRaw) as EmailChallenge)
+      : null
+
+    const encodedEmail = Buffer.from(normalizedEmail).toString('base64')
     const verificationUrl = `https://kanway.ru/auth?step=${AllowedAuthStepsEnum.VERIFY_EMAIL}&payload=${encodeURIComponent(encodedEmail)}&token=${token}`
     const otpCode = crypto.randomInt(100000, 999999).toString()
 
     await redis
       .multi()
-      .set(limitKey, 'locked', 'EX', SEND_INTERVAL)
-      .set(linkKey, user.id.toString(), 'EX', 600)
-      .set(otpKey, JSON.stringify({ code: otpCode, userId: user.id, token }), 'EX', 600)
+      .set(linkKey, normalizedEmail, 'EX', CHALLENGE_TTL)
+      .set(otpKey, JSON.stringify({ code: otpCode, userId: user.id, token }), 'EX', CHALLENGE_TTL)
       .exec()
     if (process.env.NODE_ENV === 'development') {
       console.log(otpCode, token)
@@ -98,7 +128,7 @@ export class EmailService {
     }
     try {
       await resend.emails.send({
-        to: user.email,
+        to: normalizedEmail,
         template: {
           id: 'email-confirmation',
           variables: {
@@ -107,6 +137,10 @@ export class EmailService {
           },
         },
       })
+
+      if (previousChallenge?.token) {
+        await redis.del(`${TokenKeysEnum.EMAIL_VERIFICATION}:${previousChallenge.token}`)
+      }
     } catch (err: unknown) {
       await Promise.all([redis.del(limitKey), redis.del(linkKey), redis.del(otpKey)])
 
@@ -116,26 +150,27 @@ export class EmailService {
 
   public async sendPasswordRecoveryEmailToUser(user: IUser) {
     const token = crypto.randomBytes(32).toString('hex')
+    const normalizedEmail = this.normalizeEmail(user.email)
 
     const linkKey = `${TokenKeysEnum.PASSWORD_RECOVERY}:${token}`
-    const otpKey = `${TokenKeysEnum.PASSWORD_OTP_RECOVERY}:${user.email}`
-    const limitKey = `limit:${TokenKeysEnum.PASSWORD_RECOVERY}:${user.email}`
+    const otpKey = `${TokenKeysEnum.PASSWORD_OTP_RECOVERY}:${normalizedEmail}`
+    const limitKey = `limit:${TokenKeysEnum.PASSWORD_RECOVERY}:${normalizedEmail}`
 
-    const ttl = await redis.ttl(limitKey)
+    await this.lockSend(limitKey, SEND_INTERVAL - SLACK_TIME)
 
-    if (ttl > 0) {
-      throw new AppError(`Слишком много запросов. Попробуйте через ${ttl} секунд(ы).`, 429)
-    }
+    const previousChallengeRaw = await redis.get(otpKey)
+    const previousChallenge = previousChallengeRaw
+      ? (JSON.parse(previousChallengeRaw) as EmailChallenge)
+      : null
 
-    const encodedEmail = Buffer.from(user.email).toString('base64')
+    const encodedEmail = Buffer.from(normalizedEmail).toString('base64')
     const recoveryUrl = `https://kanway.ru/auth?step=${AllowedAuthStepsEnum.VERIFY_PASSWORD}&payload=${encodeURIComponent(encodedEmail)}&token=${token}`
     const otpCode = crypto.randomInt(100000, 999999).toString()
 
     await redis
       .multi()
-      .set(limitKey, 'locked', 'EX', SEND_INTERVAL - SLACK_TIME)
-      .set(linkKey, user.id.toString(), 'EX', 600)
-      .set(otpKey, JSON.stringify({ code: otpCode, userId: user.id, token }), 'EX', 600)
+      .set(linkKey, normalizedEmail, 'EX', CHALLENGE_TTL)
+      .set(otpKey, JSON.stringify({ code: otpCode, userId: user.id, token }), 'EX', CHALLENGE_TTL)
       .exec()
     if (process.env.NODE_ENV === 'development') {
       console.log(otpCode, token)
@@ -143,7 +178,7 @@ export class EmailService {
     }
     try {
       await resend.emails.send({
-        to: user.email,
+        to: normalizedEmail,
         template: {
           id: 'password-reset-code',
           variables: {
@@ -152,6 +187,10 @@ export class EmailService {
           },
         },
       })
+
+      if (previousChallenge?.token) {
+        await redis.del(`${TokenKeysEnum.PASSWORD_RECOVERY}:${previousChallenge.token}`)
+      }
     } catch (err: unknown) {
       await Promise.all([redis.del(limitKey), redis.del(linkKey), redis.del(otpKey)])
       throw err
@@ -164,15 +203,10 @@ export class EmailService {
     userEmail: string,
     userName: string,
   ) {
-    const key = `limit:support`
+    const normalizedEmail = this.normalizeEmail(userEmail)
+    const key = `limit:support:${normalizedEmail}`
 
-    const ttl = await redis.ttl(key)
-
-    if (ttl > 0) {
-      throw new AppError(`Слишком много запросов. Попробуйте через ${ttl} секунд(ы).`, 429)
-    }
-
-    await redis.set(key, 'locked', 'EX', 10)
+    await this.lockSend(key, 10)
 
     try {
       await resend.emails.send({

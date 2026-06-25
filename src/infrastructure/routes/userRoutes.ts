@@ -4,7 +4,7 @@ import { validationMiddleware } from '@/infrastructure/middlewares/validations/v
 import { UserController } from '@controllers/UserController.js'
 import { UserEditSchemaDTO } from '@dtos/UserEditDTO.js'
 import multer from 'multer'
-import { emailLimiter, patchUserLimiter } from '@/limiters.js'
+import { emailSendLimiter, patchUserLimiter } from '@/limiters.js'
 
 const upload = multer({ dest: 'uploads/' })
 
@@ -18,7 +18,7 @@ export default (controller: UserController): Router => {
   router.delete('/avatar', patchUserLimiter, upload.single('avatar'), controller.resetAvatar)
   router.patch('/', patchUserLimiter, validationMiddleware(UserEditSchemaDTO), controller.update)
   router.delete('/', controller.delete)
-  router.post('/send/verify', emailLimiter, controller.sendVerificationEmail.bind(controller))
+  router.post('/send/verify', emailSendLimiter, controller.sendVerificationEmail.bind(controller))
   router.post('/logout', controller.logout.bind(controller))
 
   return router
