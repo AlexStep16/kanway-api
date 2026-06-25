@@ -1,19 +1,18 @@
 import { TokenService } from '@application/services/TokenService.js'
-import path from 'path'
-import * as Sentry from '@sentry/node'
-import * as fs from 'node:fs'
 import { IUser } from '@/domain/entities/IUser.js'
 import { Redis } from 'ioredis'
 import { AppError } from '@/domain/errors/AppError.js'
-import dayjs from 'dayjs'
 import { TokenKeysEnum } from '@/domain/enums/TokenKeysEnum.js'
 import crypto from 'crypto'
 import { AllowedAuthStepsEnum } from '@/enums/AllowedAuthStepsEnum.js'
+import { Resend } from 'resend'
 
 const redis = new Redis({
   host: process.env.REDIS_HOST || '127.0.0.1',
   port: Number(process.env.REDIS_PORT) || 6379,
 })
+
+const resend = new Resend(process.env.RESEND_SECRET || '')
 
 const SEND_INTERVAL = 60
 const SLACK_TIME = 2
@@ -39,7 +38,7 @@ export class EmailService {
     }
 
     const encodedEmail = Buffer.from(user.email).toString('base64')
-    const verificationUrl = `https://kanway.ru/auth?step=${AllowedAuthStepsEnum.VERIFY_LOGIN}&payload=${encodeURIComponent(encodedEmail)}&token=${token}`
+    const magicLink = `https://kanway.ru/auth?step=${AllowedAuthStepsEnum.VERIFY_LOGIN}&payload=${encodeURIComponent(encodedEmail)}&token=${token}`
     const otpCode = crypto.randomInt(100000, 999999).toString()
 
     await redis
@@ -55,50 +54,16 @@ export class EmailService {
     }
 
     try {
-      const templatePath = path.resolve('email-templates/verify-login.html')
-
-      const htmlContent = await fs.promises.readFile(templatePath, 'utf8')
-
-      const inputBody = {
-        message: {
-          recipients: [
-            {
-              email: user.email,
-              substitutions: {
-                confirmation_link: verificationUrl,
-                otp_code: otpCode,
-              },
-            },
-          ],
-          body: {
-            html: htmlContent,
-            plaintext: `Код подтверждения: ${otpCode}. Также можно войти по ссылке: ${verificationUrl}`,
+      await resend.emails.send({
+        to: user.email,
+        template: {
+          id: 'kanway-login-code',
+          variables: {
+            otpCode,
+            magicLink,
           },
-          subject: 'Код для входа в Kanway',
-          from_email: 'noreply@kanway.ru',
-          from_name: 'Kanway',
-          track_links: 0,
-          track_read: 0,
         },
-      }
-
-      const response = await fetch(
-        'https://go2.unisender.ru/ru/transactional/api/v1/email/send.json',
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Accept: 'application/json',
-            'X-API-KEY': process.env.UNISENDER_API_KEY || '',
-          },
-          body: JSON.stringify(inputBody),
-        },
-      )
-
-      const responseBody = await response.json()
-
-      if (responseBody?.status === 'error')
-        Sentry.captureException(new AppError(responseBody.message, 500))
+      })
     } catch (err: unknown) {
       await Promise.all([redis.del(limitKey), redis.del(otpKey), redis.del(linkKey)])
       throw err
@@ -132,50 +97,16 @@ export class EmailService {
       return
     }
     try {
-      const templatePath = path.resolve('email-templates/verify-email.html')
-
-      const htmlContent = await fs.promises.readFile(templatePath, 'utf8')
-
-      const inputBody = {
-        message: {
-          recipients: [
-            {
-              email: user.email,
-              substitutions: {
-                confirmation_link: verificationUrl,
-                otp_code: otpCode,
-              },
-            },
-          ],
-          body: {
-            html: htmlContent,
-            plaintext: `Код подтверждения: ${otpCode}. Также можно подтвердить почту по ссылке: ${verificationUrl}`,
+      await resend.emails.send({
+        to: user.email,
+        template: {
+          id: 'email-confirmation',
+          variables: {
+            otpCode,
+            verificationUrl,
           },
-          subject: 'Подтверждение почты',
-          from_email: 'noreply@kanway.ru',
-          from_name: 'Kanway',
-          track_links: 0,
-          track_read: 0,
         },
-      }
-
-      const response = await fetch(
-        'https://go2.unisender.ru/ru/transactional/api/v1/email/send.json',
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Accept: 'application/json',
-            'X-API-KEY': process.env.UNISENDER_API_KEY || '',
-          },
-          body: JSON.stringify(inputBody),
-        },
-      )
-
-      const responseBody = await response.json()
-
-      if (responseBody?.status === 'error')
-        Sentry.captureException(new AppError(responseBody.message, 500))
+      })
     } catch (err: unknown) {
       await Promise.all([redis.del(limitKey), redis.del(linkKey), redis.del(otpKey)])
 
@@ -211,50 +142,16 @@ export class EmailService {
       return
     }
     try {
-      const templatePath = path.resolve('email-templates/password-recovery.html')
-
-      const htmlContent = await fs.promises.readFile(templatePath, 'utf8')
-
-      const inputBody = {
-        message: {
-          recipients: [
-            {
-              email: user.email,
-              substitutions: {
-                recovery_link: recoveryUrl,
-                otp_code: otpCode,
-              },
-            },
-          ],
-          body: {
-            html: htmlContent,
-            plaintext: `Ваш код для восстановления пароля: ${otpCode}. Также можно восстановить пароль по ссылке: ${recoveryUrl}`,
+      await resend.emails.send({
+        to: user.email,
+        template: {
+          id: 'password-reset-code',
+          variables: {
+            otpCode,
+            recoveryLink: recoveryUrl,
           },
-          subject: 'Восстановление пароля',
-          from_email: 'noreply@kanway.ru',
-          from_name: 'Kanway',
-          track_links: 0,
-          track_read: 0,
         },
-      }
-
-      const response = await fetch(
-        'https://go2.unisender.ru/ru/transactional/api/v1/email/send.json',
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Accept: 'application/json',
-            'X-API-KEY': process.env.UNISENDER_API_KEY || '',
-          },
-          body: JSON.stringify(inputBody),
-        },
-      )
-
-      const responseBody = await response.json()
-
-      if (responseBody?.status === 'error')
-        Sentry.captureException(new AppError(responseBody.message, 500))
+      })
     } catch (err: unknown) {
       await Promise.all([redis.del(limitKey), redis.del(linkKey), redis.del(otpKey)])
       throw err
@@ -278,52 +175,18 @@ export class EmailService {
     await redis.set(key, 'locked', 'EX', 10)
 
     try {
-      const templatePath = path.resolve('email-templates/support.html')
-
-      const htmlContent = await fs.promises.readFile(templatePath, 'utf8')
-
-      const inputBody = {
-        message: {
-          recipients: [
-            {
-              email: process.env.SUPPORT_EMAIL || 'alexander.work2020@gmail.com',
-              substitutions: {
-                email: userEmail,
-                name: userName,
-                theme,
-                details,
-              },
-            },
-          ],
-          body: {
-            html: htmlContent,
-            plaintext: `Сообщение от пользователя`,
+      await resend.emails.send({
+        to: 'alexander.work2020@gmail.com',
+        template: {
+          id: 'support-message',
+          variables: {
+            theme,
+            name: userName,
+            email: userEmail,
+            details,
           },
-          subject: 'Сообщение в поддержку',
-          from_email: 'noreply@kanway.ru',
-          from_name: 'Kanway',
-          track_links: 0,
-          track_read: 0,
         },
-      }
-
-      const response = await fetch(
-        'https://go2.unisender.ru/ru/transactional/api/v1/email/send.json',
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Accept: 'application/json',
-            'X-API-KEY': process.env.UNISENDER_API_KEY || '',
-          },
-          body: JSON.stringify(inputBody),
-        },
-      )
-
-      const responseBody = await response.json()
-
-      if (responseBody?.status === 'error')
-        Sentry.captureException(new AppError(responseBody.message, 500))
+      })
     } catch (err: unknown) {
       await redis.del(key)
       throw err
@@ -331,93 +194,25 @@ export class EmailService {
   }
 
   public async sendPaymentFailedEmail(user: IUser, amount: string, days: string) {
-    const templatePath = path.resolve('email-templates/payment-failed.html')
-
-    const htmlContent = await fs.promises.readFile(templatePath, 'utf8')
-
-    const inputBody = {
-      message: {
-        recipients: [
-          {
-            email: user.email,
-            substitutions: {
-              amount,
-              days,
-            },
-          },
-        ],
-        body: {
-          html: htmlContent,
-          plaintext: `К сожалению, ваш платеж не прошёл.`,
+    await resend.emails.send({
+      to: user.email,
+      template: {
+        id: 'payment-issue',
+        variables: {
+          amount,
+          days,
         },
-        subject: 'Проблема с оплатой подписки — Kanway.',
-        from_email: 'noreply@kanway.ru',
-        from_name: 'Kanway',
-        track_links: 0,
-        track_read: 0,
       },
-    }
-
-    const response = await fetch(
-      'https://go2.unisender.ru/ru/transactional/api/v1/email/send.json',
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-          'X-API-KEY': process.env.UNISENDER_API_KEY || '',
-        },
-        body: JSON.stringify(inputBody),
-      },
-    )
-
-    const responseBody = await response.json()
-
-    if (responseBody?.status === 'error')
-      Sentry.captureException(new AppError(responseBody.message, 500))
+    })
   }
 
   public async sendPaymentFinalFailedEmail(user: IUser) {
-    const templatePath = path.resolve('email-templates/payment-failed-final.html')
-
-    const htmlContent = await fs.promises.readFile(templatePath, 'utf8')
-
-    const inputBody = {
-      message: {
-        recipients: [
-          {
-            email: user.email,
-          },
-        ],
-        body: {
-          html: htmlContent,
-          plaintext: `К сожалению, ваш платеж не прошёл.`,
-        },
-        subject: 'Проблема с оплатой подписки — Kanway.',
-        from_email: 'noreply@kanway.ru',
-        from_name: 'Kanway',
-        track_links: 0,
-        track_read: 0,
+    await resend.emails.send({
+      to: user.email,
+      template: {
+        id: 'payment-issue-1',
       },
-    }
-
-    const response = await fetch(
-      'https://go2.unisender.ru/ru/transactional/api/v1/email/send.json',
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-          'X-API-KEY': process.env.UNISENDER_API_KEY || '',
-        },
-        body: JSON.stringify(inputBody),
-      },
-    )
-
-    const responseBody = await response.json()
-
-    if (responseBody?.status === 'error')
-      Sentry.captureException(new AppError(responseBody.message, 500))
+    })
   }
 
   public async sendPaymentSubSuccessEmail(
@@ -429,55 +224,18 @@ export class EmailService {
       next_billing_date: string
     },
   ) {
-    const templatePath = path.resolve('email-templates/payment-success-sub.html')
-
-    const htmlContent = await fs.promises.readFile(templatePath, 'utf8')
-
-    const date = dayjs(data.date).format('DD.MM.YYYY HH:mm')
-    const nextBillingDate = dayjs(data.next_billing_date).format('DD.MM.YYYY 00:00')
-
-    const inputBody = {
-      message: {
-        recipients: [
-          {
-            email: user.email,
-            substitutions: {
-              purpose: data.purpose,
-              amount: data.amount,
-              date,
-              next_billing_date: nextBillingDate,
-            },
-          },
-        ],
-        body: {
-          html: htmlContent,
-          plaintext: `Поздравляем! Ваш платеж прошёл успешно.`,
+    await resend.emails.send({
+      to: user.email,
+      template: {
+        id: 'subscription-payment-success',
+        variables: {
+          purpose: data.purpose,
+          amount: data.amount,
+          date: data.date,
+          nextBillingDate: data.next_billing_date,
         },
-        subject: 'Успешная оплата подписки — Kanway.',
-        from_email: 'noreply@kanway.ru',
-        from_name: 'Kanway',
-        track_links: 0,
-        track_read: 0,
       },
-    }
-
-    const response = await fetch(
-      'https://go2.unisender.ru/ru/transactional/api/v1/email/send.json',
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-          'X-API-KEY': process.env.UNISENDER_API_KEY || '',
-        },
-        body: JSON.stringify(inputBody),
-      },
-    )
-
-    const responseBody = await response.json()
-
-    if (responseBody?.status === 'error')
-      Sentry.captureException(new AppError(responseBody.message, 500))
+    })
   }
 
   public async sendPaymentCreditsSuccessEmail(
@@ -488,52 +246,16 @@ export class EmailService {
       date: string
     },
   ) {
-    const templatePath = path.resolve('email-templates/payment-success-credits.html')
-
-    const htmlContent = await fs.promises.readFile(templatePath, 'utf8')
-
-    const date = dayjs(data.date).format('DD.MM.YYYY HH:mm')
-
-    const inputBody = {
-      message: {
-        recipients: [
-          {
-            email: user.email,
-            substitutions: {
-              purpose: data.purpose,
-              amount: data.amount,
-              date,
-            },
-          },
-        ],
-        body: {
-          html: htmlContent,
-          plaintext: `Поздравляем! Ваш платеж прошёл успешно.`,
+    await resend.emails.send({
+      to: user.email,
+      template: {
+        id: 'purchase-confirmation',
+        variables: {
+          purpose: data.purpose,
+          amount: data.amount,
+          date: data.date,
         },
-        subject: 'Успешная оплата кредитов — Kanway.',
-        from_email: 'noreply@kanway.ru',
-        from_name: 'Kanway',
-        track_links: 0,
-        track_read: 0,
       },
-    }
-
-    const response = await fetch(
-      'https://go2.unisender.ru/ru/transactional/api/v1/email/send.json',
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-          'X-API-KEY': process.env.UNISENDER_API_KEY || '',
-        },
-        body: JSON.stringify(inputBody),
-      },
-    )
-
-    const responseBody = await response.json()
-
-    if (responseBody?.status === 'error')
-      Sentry.captureException(new AppError(responseBody.message, 500))
+    })
   }
 }
