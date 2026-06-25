@@ -1,4 +1,3 @@
-import dotenv from 'dotenv'
 import connectToDatabase from '@db/connectToDatabase.js'
 import express from 'express'
 import { createApiRouter } from '@/createApiRouter.js'
@@ -50,8 +49,6 @@ Sentry.init({
 redis.on('error', (err) => {
   Sentry.captureException(err)
 })
-
-dotenv.config()
 
 await connectToDatabase()
 
