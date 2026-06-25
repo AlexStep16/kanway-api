@@ -10,7 +10,10 @@ import { TokenKeysEnum } from '@/domain/enums/TokenKeysEnum.js'
 import crypto from 'crypto'
 import { AllowedAuthStepsEnum } from '@/enums/AllowedAuthStepsEnum.js'
 
-const redis = new Redis()
+const redis = new Redis({
+  host: process.env.REDIS_HOST || '127.0.0.1',
+  port: Number(process.env.REDIS_PORT) || 6379,
+})
 
 const SEND_INTERVAL = 60
 const SLACK_TIME = 2

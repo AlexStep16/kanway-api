@@ -42,7 +42,10 @@ export default class ChatController {
 
     const userjobId = req.params.jobId
 
-    const subscriber = new Redis()
+    const subscriber = new Redis({
+      host: process.env.REDIS_HOST || '127.0.0.1',
+      port: Number(process.env.REDIS_PORT) || 6379,
+    })
 
     const closeConnection = async () => {
       if (res.writableEnded) return

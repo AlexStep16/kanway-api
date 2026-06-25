@@ -6,7 +6,7 @@ import { CustomEvents } from '@/enums/CustomEvents.js'
 import { BaseCallbackHandler } from '@langchain/core/callbacks/base'
 import type { Job } from 'bullmq'
 import { Configurable } from '../interfaces/Configurable.js'
-import { Types } from 'mongoose'
+import { ClientSession, Types } from 'mongoose'
 import { IChatMessageCriteria } from '@/application/interfaces/criterias/IChatMessageCriteria.js'
 import { getFriendlyErrorMessage } from '@/utils/getFriendlyErrorMessage.js'
 import { OperationLogService } from '@/application/services/OperationLogService.js'
@@ -56,7 +56,10 @@ export class AgentEventsHandler extends BaseCallbackHandler {
 
     this.status = statusMessage.content
 
-    this.redisPublisher = new Redis()
+    this.redisPublisher = new Redis({
+      host: process.env.REDIS_HOST || '127.0.0.1',
+      port: Number(process.env.REDIS_PORT) || 6379,
+    })
   }
 
   async pushProgress(newEvent: any) {
@@ -221,7 +224,7 @@ export class AgentEventsHandler extends BaseCallbackHandler {
         const operationLogs = await this.operationLogService.getByCriteria(
           { id: data.logId },
           this.configurable.user.id,
-          data.session,
+          data.session as ClientSession | undefined,
         )
 
         await this.pushProgress({

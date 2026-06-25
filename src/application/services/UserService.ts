@@ -22,7 +22,10 @@ import { VkUserDTO } from '../dtos/VkUserDTO.js'
 import { TokenKeysEnum } from '@/domain/enums/TokenKeysEnum.js'
 import { SignupServiceCredentialsDTO } from '../dtos/SignupServiceCredentialsDTO.js'
 
-const redis = new Redis()
+const redis = new Redis({
+  host: process.env.REDIS_HOST || '127.0.0.1',
+  port: Number(process.env.REDIS_PORT) || 6379,
+})
 
 export class UserService {
   protected repository: UserRepository

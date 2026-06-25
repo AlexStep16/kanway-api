@@ -4,7 +4,10 @@ import { NextFunction, Request, Response } from 'express'
 import { rateLimit, ipKeyGenerator } from 'express-rate-limit'
 import { AppError } from './domain/errors/AppError.js'
 
-const redis = new Redis()
+const redis = new Redis({
+  host: process.env.REDIS_HOST || '127.0.0.1',
+  port: Number(process.env.REDIS_PORT) || 6379,
+})
 
 const baseHandler = (req: Request, _res: Response, next: NextFunction) => {
   if (req.rateLimit) {
