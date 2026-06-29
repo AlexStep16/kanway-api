@@ -491,7 +491,7 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
     user: IUser,
   ): Promise<PostCommitAction[]> {
     if (paymentModel.column === PaymentTypeEnum.CREDIT_PACK) return []
-    if (user.isSubscriptionActive === false) return []
+    if (!user.isSubscriptionActive) return []
 
     const newCount = (user.paymentRetriesCount || 0) + 1
 

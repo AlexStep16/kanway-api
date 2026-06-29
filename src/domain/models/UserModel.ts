@@ -60,7 +60,7 @@ export const UserSchema = new Schema<IUserRaw, IUserRawStatics, IUserRawMethods>
     },
     is_subscription_active: {
       type: Boolean,
-      required: false,
+      default: false,
     },
     credits: {
       type: Number,
