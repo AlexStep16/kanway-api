@@ -15,7 +15,6 @@ import { PaymentMethodService } from './PaymentMethodService.js'
 import { PaymentStatusesEnum } from '@/domain/enums/PaymentStatusesEnum.js'
 import { EmailService } from '@/infrastructure/services/EmailService.js'
 import { ErrorMessages } from '@/enums/ErrorMessages.js'
-import { IPaymentMethod } from '@/domain/entities/IPaymentMethod.js'
 import dayjs from 'dayjs'
 import { CREDIT_PACKS_DATA } from '@/constants/CREDIT_PACKS_DATA.js'
 import { PaymentTypeEnum } from '@/domain/enums/PaymentTypeEnum.js'
@@ -23,7 +22,9 @@ import { SUBSCRIPTION_PLAN_TO_ITEM_ID } from '@/constants/SUBSCRIPTION_PLAN_TO_I
 import { PaymentItemIdEnum } from '@/domain/enums/PaymentItemIdEnum.js'
 import { SUBSCRIPTION_ITEM_ID_TO_PLAN } from '@/constants/SUBSCRIPTION_ITEM_ID_TO_PLAN.js'
 import { SUBSCRIPTION_PLAN_TO_CREDITS } from '@/constants/SUBSCRIPTION_PLAN_TO_CREDITS.js'
+import { SUBSCRIPTION_PLAN_PRICES } from '@/constants/SUBSCRIPTION_PLAN_PRICES.js'
 import * as Sentry from '@sentry/node'
+import { PaymentEditDTO } from '../dtos/PaymentEditDTO.js'
 
 type CreditItemId =
   | PaymentItemIdEnum.CREDIT_PACK_SMALL
@@ -42,6 +43,7 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
   protected emailService: EmailService
 
   private checkout: YooCheckout
+  private readonly frontUrl: string
 
   constructor(
     paymentRepository: PaymentRepository,
@@ -60,6 +62,61 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
       shopId: process.env.YOO_SHOP_ID ?? '',
       secretKey: process.env.YOO_SECRET ?? '',
     })
+    this.frontUrl = process.env.FRONT_URL || 'https://kanway.ru'
+  }
+
+  private _getPlanLabel(plan: SubscriptionPlanEnum): string {
+    return plan === SubscriptionPlanEnum.Architector ? 'Архитектор' : 'Премиум'
+  }
+
+  private _getSubscriptionAmount(plan: SubscriptionPlanEnum): string {
+    return SUBSCRIPTION_PLAN_PRICES[plan].toFixed(2)
+  }
+
+  private _buildBasePayload(user: IUser, amount: string, description: string, paymentId: string) {
+    return {
+      amount: { value: amount, currency: 'RUB' },
+      confirmation: {
+        type: 'redirect' as const,
+        return_url: `${this.frontUrl}/payment/result?paymentId=${paymentId}`,
+      },
+      receipt: {
+        customer: { email: user.email },
+        items: [
+          {
+            description,
+            quantity: '1',
+            amount: { value: amount, currency: 'RUB' },
+            vat_code: 1,
+            payment_mode: 'full_payment' as const,
+            payment_subject: 'service' as const,
+          },
+        ],
+      },
+      capture: true,
+      description,
+    }
+  }
+
+  private async _initiateCheckoutPayment(
+    paymentData: PaymentDTO,
+    user: IUser,
+    buildPayload: (paymentModelId: string) => ICreatePayment,
+  ): Promise<{ payment: Payment; model: IPayment }> {
+    const paymentModel = await this.create(paymentData, user.id)
+    const createPayload = buildPayload(paymentModel.id.toString())
+    const idempotenceKey = crypto.randomUUID()
+    const payment = await this.checkout.createPayment(createPayload, idempotenceKey)
+    const updateResult = await this.edit(
+      { serviceId: payment.id },
+      { id: paymentModel.id.toString() },
+      user,
+    )
+    return { payment, model: updateResult[0] }
+  }
+
+  public async getPaymentStatus(serviceId: string) {
+    return await this.checkout.getPayment(serviceId)
   }
 
   public async create(
@@ -78,97 +135,39 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
       userId,
     }
 
-    return await this.repository.create(payment, session)
+    return this.repository.create(payment, session)
   }
 
-  public async createPayment(
-    createPayload: ICreatePayment,
-    userId: Types.ObjectId,
-    column: PaymentTypeEnum,
-    itemId: PaymentItemIdEnum,
-  ) {
-    const idempotenceKey = crypto.randomUUID()
-
-    const payment = await this.checkout.createPayment(createPayload, idempotenceKey)
-    const paymentData = {
-      serviceId: payment.id,
-      description: createPayload.description ?? 'Subscription Payment',
-      amount: createPayload.amount.value,
-      currency: createPayload.amount.currency,
-      column,
-      itemId,
-      status: payment.status as PaymentStatusesEnum,
-    }
-
-    const paymentModel = await this.create(paymentData, userId)
-
+  private _getCreditPackPayload(
+    user: IUser,
+    itemId: CreditItemId,
+    amount: string,
+    description: string,
+    paymentId: string,
+  ): ICreatePayment {
     return {
-      payment,
-      model: paymentModel,
-    }
-  }
-
-  private _getCreditPackPayload(user: IUser, itemId: CreditItemId): ICreatePayment {
-    const pack = CREDIT_PACKS_DATA[itemId]
-
-    return {
-      amount: { value: pack.amount, currency: 'RUB' },
-      confirmation: {
-        type: 'redirect',
-        return_url: `${process.env.FRONT_URL || 'https://kanway.ru'}/payment/success`,
-      },
-      receipt: {
-        customer: { email: user.email },
-        items: [
-          {
-            description: `Kanway | Пакет: ${pack.label}`,
-            quantity: '1',
-            amount: { value: pack.amount, currency: 'RUB' },
-            vat_code: 1,
-            payment_mode: 'full_payment',
-            payment_subject: 'service',
-          },
-        ],
-      },
-      capture: true,
-      description: `Покупка пакета кредитов: ${pack.label}`,
+      ...this._buildBasePayload(user, amount, description, paymentId),
       metadata: {
         paymentType: PaymentTypeEnum.CREDIT_PACK,
         itemId,
+        paymentId,
       },
     }
   }
 
-  private _getSubscriptionPayload(user: IUser, plan: SubscriptionPlanEnum): ICreatePayment {
-    const isArch = plan === SubscriptionPlanEnum.Architector
-    const amount = isArch ? '2499.00' : '999.00'
-    const description = `Kanway | Подписка - ${isArch ? 'Архитектор' : 'Премиум'}`
-    const returnUrlSuffix = isArch ? 'confirmation' : 'premium/confirmation'
-
+  private _getSubscriptionPayload(
+    user: IUser,
+    amount: string,
+    description: string,
+    paymentId: string,
+    itemId: PaymentItemIdEnum,
+  ): ICreatePayment {
     return {
-      amount: { value: amount, currency: 'RUB' },
-      confirmation: {
-        type: 'redirect',
-        return_url: `${process.env.FRONT_URL || 'https://kanway.ru'}/payment/${returnUrlSuffix}`,
-      },
-      receipt: {
-        customer: { email: user.email },
-        items: [
-          {
-            description,
-            quantity: '1',
-            amount: { value: amount, currency: 'RUB' },
-            vat_code: 1,
-            payment_mode: 'full_payment',
-            payment_subject: 'service',
-          },
-        ],
-      },
-      capture: true,
-      description,
+      ...this._buildBasePayload(user, amount, description, paymentId),
       metadata: {
+        paymentId,
         paymentType: PaymentTypeEnum.SUBSCRIPTION,
-        itemId: SUBSCRIPTION_PLAN_TO_ITEM_ID[plan],
+        itemId,
       },
       save_payment_method: true,
     }
@@ -182,7 +181,7 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
       throw new AppError('Пользователь уже имеет активную подписку.', 500)
     }
 
-    return await this.userService.edit(
+    return this.userService.edit(
       {
         pendingChangePlan: plan,
       },
@@ -190,8 +189,8 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
     )
   }
 
-  public async downgradeCancelSubscription(user: IUser) {
-    return await this.userService.edit(
+  public async cancelPendingDowngrade(user: IUser) {
+    return this.userService.edit(
       {
         pendingChangePlan: null,
       },
@@ -210,58 +209,85 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
       throw new AppError('Пользователь уже имеет активную подписку.', 500)
     }
 
-    const createPayload: ICreatePayment | null = this._getSubscriptionPayload(user, plan)
-
-    if (!createPayload) {
-      throw new AppError('Неверный план подписки.', 400)
-    }
-
     const now = dayjs()
     const end = dayjs(user.subscriptionUntil)
 
-    const newPlanPrice = parseFloat(createPayload.amount.value)
+    const newPlanPrice = SUBSCRIPTION_PLAN_PRICES[plan]
 
-    let finalAmount = newPlanPrice
+    let finalAmount: number = newPlanPrice
 
     if (user.isSubscriptionActive && user.subscriptionUntil && end.isAfter(now)) {
       const daysRemaining = end.diff(now, 'day', true)
       const daysInMonth = now.daysInMonth()
 
-      const oldPlanPrice = parseInt(createPayload.amount.value)
+      const currentPlanPrice = SUBSCRIPTION_PLAN_PRICES[user.subscriptionId]
 
-      const unusedValue = oldPlanPrice * (daysRemaining / daysInMonth)
+      const unusedValue = currentPlanPrice * (daysRemaining / daysInMonth)
       finalAmount = newPlanPrice - unusedValue
 
-      if (finalAmount < 1) finalAmount = 1
+      if (finalAmount < 2) finalAmount = 2
     }
 
-    createPayload.amount.value = Math.floor(finalAmount).toFixed(2)
+    const description = `Kanway | Подписка - ${this._getPlanLabel(plan)}`
+    const itemId = SUBSCRIPTION_PLAN_TO_ITEM_ID[plan]
+    const amountStr = finalAmount.toFixed(2)
 
-    return await this.createPayment(
-      createPayload,
-      user.id,
-      PaymentTypeEnum.SUBSCRIPTION,
-      SUBSCRIPTION_PLAN_TO_ITEM_ID[plan],
+    return this._initiateCheckoutPayment(
+      {
+        description,
+        amount: amountStr,
+        currency: 'RUB',
+        column: PaymentTypeEnum.SUBSCRIPTION,
+        itemId,
+        status: PaymentStatusesEnum.pending,
+      },
+      user,
+      (paymentModelId) =>
+        this._getSubscriptionPayload(user, amountStr, description, paymentModelId, itemId),
     )
   }
 
   public async buySubscription(user: IUser, plan: SubscriptionPlanEnum) {
-    const createPayload: ICreatePayment | null = this._getSubscriptionPayload(user, plan)
-
-    if (!createPayload) {
-      throw new AppError('Неверный план подписки.', 400)
-    }
-
     if (user.subscriptionId !== SubscriptionPlanEnum.Basic && user.isSubscriptionActive) {
       throw new AppError('Пользователь уже имеет активную подписку.', 500)
     }
 
-    return await this.createPayment(
-      createPayload,
-      user.id,
-      PaymentTypeEnum.SUBSCRIPTION,
-      SUBSCRIPTION_PLAN_TO_ITEM_ID[plan],
+    const description = `Kanway | Подписка - ${this._getPlanLabel(plan)}`
+    const amount = this._getSubscriptionAmount(plan)
+    const itemId = SUBSCRIPTION_PLAN_TO_ITEM_ID[plan]
+
+    return this._initiateCheckoutPayment(
+      {
+        description,
+        amount,
+        currency: 'RUB',
+        column: PaymentTypeEnum.SUBSCRIPTION,
+        itemId,
+        status: PaymentStatusesEnum.pending,
+      },
+      user,
+      (paymentModelId) =>
+        this._getSubscriptionPayload(user, amount, description, paymentModelId, itemId),
     )
+  }
+
+  public async edit(
+    data: Omit<PaymentEditDTO, 'id'>,
+    criteria: IPaymentCriteria,
+    user: IUser,
+  ): Promise<IPayment[]> {
+    const updatePaymentResult = await this.repository.updateManyByCriteria(
+      criteria,
+      data,
+      undefined,
+      user.id,
+    )
+
+    if (updatePaymentResult.modifiedCount === 0) {
+      throw new Error('Платежи не найдены')
+    }
+
+    return this.getByCriteria(criteria)
   }
 
   public async cancelSubscription(user: IUser) {
@@ -269,7 +295,7 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
       throw new AppError('У пользователя нет активной подписки.', 500)
     }
 
-    return await this.userService.edit(
+    return this.userService.edit(
       {
         isSubscriptionActive: false,
         pendingChangePlan: null,
@@ -292,8 +318,81 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
   }
 
   public async buyCredits(user: IUser, itemId: CreditItemId) {
-    const createPayload = this._getCreditPackPayload(user, itemId)
-    return await this.createPayment(createPayload, user.id, PaymentTypeEnum.CREDIT_PACK, itemId)
+    const pack = CREDIT_PACKS_DATA[itemId]
+    const description = `Kanway | Пакет: ${pack.label}`
+    const amount = pack.amount
+
+    return this._initiateCheckoutPayment(
+      {
+        description,
+        amount,
+        currency: 'RUB',
+        column: PaymentTypeEnum.CREDIT_PACK,
+        itemId,
+        status: PaymentStatusesEnum.pending,
+      },
+      user,
+      (paymentModelId) =>
+        this._getCreditPackPayload(user, itemId, amount, description, paymentModelId),
+    )
+  }
+
+  public async tryAgain(user: IUser, paymentId: string) {
+    const payments = await this.getByCriteria({ id: paymentId })
+
+    if (payments.length === 0) {
+      throw new AppError(ErrorMessages.PAYMENT_NOT_FOUND, 500)
+    }
+
+    const paymentModel = payments[0]
+
+    if (paymentModel.userId.toString() !== user.id.toString()) {
+      throw new AppError(ErrorMessages.PAYMENT_NOT_FOUND, 500)
+    }
+
+    const { description, amount, currency, column, itemId } = paymentModel
+
+    if (column === PaymentTypeEnum.CREDIT_PACK) {
+      return this._initiateCheckoutPayment(
+        {
+          description,
+          amount,
+          currency,
+          column: PaymentTypeEnum.CREDIT_PACK,
+          itemId,
+          status: PaymentStatusesEnum.pending,
+        },
+        user,
+        (paymentModelId) =>
+          this._getCreditPackPayload(
+            user,
+            itemId as CreditItemId,
+            amount,
+            description,
+            paymentModelId,
+          ),
+      )
+    } else {
+      return this._initiateCheckoutPayment(
+        {
+          description,
+          amount,
+          currency,
+          column: PaymentTypeEnum.SUBSCRIPTION,
+          itemId,
+          status: PaymentStatusesEnum.pending,
+        },
+        user,
+        (paymentModelId) =>
+          this._getSubscriptionPayload(
+            user,
+            amount,
+            description,
+            paymentModelId,
+            itemId as PaymentItemIdEnum,
+          ),
+      )
+    }
   }
 
   private async _revertToBasicPlan(userId: string) {
@@ -313,61 +412,60 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
     if (!user) return
 
     if (!user.isSubscriptionActive || !user.paymentMethodId) {
-      return await this._revertToBasicPlan(userId)
-    }
-
-    if (user.pendingChangePlan) {
-      const editResult = await this.userService.edit(
-        {
-          subscriptionId: user.pendingChangePlan,
-          pendingChangePlan: null,
-        },
-        { id: userId },
-      )
-
-      Object.assign(user, editResult)
+      return this._revertToBasicPlan(userId)
     }
 
     const paymentMethods = await this.paymentMethodService.getByCriteria(
+      { id: user.paymentMethodId },
+      user.id,
+    )
+
+    if (paymentMethods.length === 0) return this._revertToBasicPlan(userId)
+
+    const paymentMethod = paymentMethods[0]
+
+    const targetPlan = user.pendingChangePlan ?? user.subscriptionId
+
+    if (targetPlan === SubscriptionPlanEnum.Basic) {
+      return this._revertToBasicPlan(userId)
+    }
+
+    const description = `Kanway | Подписка - ${this._getPlanLabel(targetPlan)}`
+    const amount = this._getSubscriptionAmount(targetPlan)
+    const itemId = SUBSCRIPTION_PLAN_TO_ITEM_ID[targetPlan]
+
+    const dateKey = dayjs().format('YYYY-MM-DD')
+    const idempotenceKey = `auto_${userId}_${dateKey}_try_${user.paymentRetriesCount || 0}`
+
+    const paymentModel = await this.create(
       {
-        id: user.paymentMethodId,
+        description,
+        amount,
+        currency: 'RUB',
+        column: PaymentTypeEnum.SUBSCRIPTION,
+        itemId,
+        status: PaymentStatusesEnum.pending,
       },
       user.id,
     )
 
-    if (paymentMethods.length === 0) return await this._revertToBasicPlan(userId)
-
-    const paymentMethod = paymentMethods[0]
-
-    const payload = this._getSubscriptionPayload(user, user.subscriptionId)
-
-    const dateKey = new Date().toISOString().slice(0, 10) // YYYY-MM-DD
-    const idempotenceKey = `auto_${userId}_${dateKey}_try_${user.paymentRetriesCount || 0}`
-
     const payment = await this.checkout.createPayment(
       {
-        amount: {
-          value: payload!.amount.value,
-          currency: 'RUB',
-        },
+        amount: { value: amount, currency: 'RUB' },
         capture: true,
         payment_method_id: paymentMethod.serviceId,
-        description: payload!.description || 'Kanway | Продление подписки',
+        description,
       },
       idempotenceKey,
     )
 
-    const paymentData = {
-      serviceId: payment.id,
-      description: payload!.description || 'Kanway | Продление подписки',
-      amount: payment.amount.value,
-      currency: payment.amount.currency,
-      column: PaymentTypeEnum.SUBSCRIPTION,
-      itemId: SUBSCRIPTION_PLAN_TO_ITEM_ID[user.subscriptionId],
-      status: payment.status as PaymentStatusesEnum,
-    }
+    const updateResult = await this.edit(
+      { serviceId: payment.id },
+      { id: paymentModel.id.toString() },
+      user,
+    )
 
-    await this.create(paymentData, new Types.ObjectId(userId))
+    return { payment, model: updateResult[0] }
   }
 
   private async _updateSubscriptionAndNotifyUser(
@@ -395,20 +493,14 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
     )
 
     if (checkedPayment?.payment_method?.id) {
-      let paymentMethod: IPaymentMethod = {} as IPaymentMethod
-
-      const paymentMethods = await this.paymentMethodService.getByCriteria(
-        {
-          serviceId: checkedPayment.payment_method.id,
-        },
+      let [paymentMethod] = await this.paymentMethodService.getByCriteria(
+        { serviceId: checkedPayment.payment_method.id },
         user.id,
         session,
       )
 
-      paymentMethod = paymentMethods[0]
-
-      if (paymentMethods.length === 0) {
-        const paymentMethodResult = await this.paymentMethodService.create(
+      if (!paymentMethod) {
+        ;[paymentMethod] = await this.paymentMethodService.create(
           {
             paymentId: checkedPayment.id,
             serviceId: checkedPayment.payment_method.id,
@@ -424,28 +516,24 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
           user.id,
           session,
         )
-
-        paymentMethod = paymentMethodResult[0]
       }
 
       await this.userService.edit(
-        {
-          paymentMethodId: paymentMethod.id.toString(),
-        },
+        { paymentMethodId: paymentMethod.id.toString() },
         { id: user.id.toString() },
         undefined,
         session,
       )
     }
 
-    const subscriptionName = itemId === PaymentItemIdEnum.PREMIUM ? 'Премиум' : 'Архитектор'
+    const subscriptionName = this._getPlanLabel(SUBSCRIPTION_ITEM_ID_TO_PLAN[itemId])
 
     return [
-      async () =>
-        await this.emailService.sendPaymentSubSuccessEmail(user, {
+      () =>
+        this.emailService.sendPaymentSubSuccessEmail(user, {
           purpose: `Подписка - ${subscriptionName}`,
           amount: paymentModel.amount,
-          date: new Date().toISOString(),
+          date: dayjs().toISOString(),
           next_billing_date: nextBillingDate.toISOString(),
         }),
     ]
@@ -468,11 +556,11 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
       const creditPackLabel = CREDIT_PACKS_DATA[itemId].label
 
       return [
-        async () =>
-          await this.emailService.sendPaymentCreditsSuccessEmail(user, {
+        () =>
+          this.emailService.sendPaymentCreditsSuccessEmail(user, {
             purpose: creditPackLabel,
             amount: paymentModel.amount,
-            date: new Date().toISOString(),
+            date: dayjs().toISOString(),
           }),
       ]
     } else {
@@ -516,7 +604,7 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
         session,
       )
 
-      return [async () => await this.emailService.sendPaymentFinalFailedEmail(user)]
+      return [() => this.emailService.sendPaymentFinalFailedEmail(user)]
     } else {
       let daysLeft = ''
 
@@ -526,10 +614,7 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
         daysLeft = '2'
       }
 
-      return [
-        async () =>
-          await this.emailService.sendPaymentFailedEmail(user, paymentModel.amount, daysLeft),
-      ]
+      return [() => this.emailService.sendPaymentFailedEmail(user, paymentModel.amount, daysLeft)]
     }
   }
 
@@ -574,11 +659,19 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
         throw new AppError(ErrorMessages.USER_NOT_FOUND, 500)
       }
 
-      await this.repository.updateManyByCriteria(
-        { id: paymentModel.id.toString() },
+      const updateResult = await this.repository.updateManyByCriteria(
+        {
+          id: paymentModel.id.toString(),
+          statusesNot: [PaymentStatusesEnum.succeeded, PaymentStatusesEnum.canceled],
+        },
         { status: checkedPayment.status as PaymentStatusesEnum },
         session,
       )
+
+      if (updateResult.modifiedCount === 0) {
+        await session.abortTransaction()
+        return
+      }
 
       if (checkedPayment.status === 'succeeded') {
         postCommitActions = await this._handleSuccessNotification(

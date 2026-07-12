@@ -30,6 +30,18 @@ export default class PaymentRepository extends BaseRepository<
       filter.service_id = criteria.serviceId
     }
 
+    if (criteria.status) {
+      filter.status = criteria.status
+    }
+
+    if (criteria.statuses) {
+      filter.status = { $in: criteria.statuses }
+    }
+
+    if (criteria.statusesNot) {
+      filter.status = { $nin: criteria.statusesNot }
+    }
+
     if (userId) {
       filter.user_id = userId
     }

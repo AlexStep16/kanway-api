@@ -8,7 +8,6 @@ export const PaymentSchema = new Schema<IPaymentRaw>(
   {
     service_id: {
       type: String,
-      required: true,
     },
     description: {
       type: String,

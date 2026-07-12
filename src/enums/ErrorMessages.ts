@@ -100,6 +100,9 @@ export enum ErrorMessages {
   SETTING_AI_DEFAULT_BOARD_TOO_LONG = 'Доска по умолчанию для ИИ не должна превышать 100 символов.',
   SETTING_ID_INVALID = 'Неверный идентификатор настройки.',
 
+  PAYMENT_ID_INVALID = 'Неверный идентификатор платежа.',
+  PAYMENT_ID_REQUIRED = 'Требуется идентификатор платежа.',
+
   PAYMENT_DESCRIPTION_TOO_SHORT = 'Описание платежа должно содержать не менее 1 символа.',
   PAYMENT_DESCRIPTION_TOO_LONG = 'Описание платежа не должно превышать 255 символов.',
   PAYMENT_AMOUNT_REQUIRED = 'Сумма платежа должна быть указана.',

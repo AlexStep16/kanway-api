@@ -9,6 +9,30 @@ export class PaymentController {
     this.service = serviceInstance
   }
 
+  public getById = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { id } = req.params
+
+      const payments = await this.service.getByCriteria({ id }, req.user!.id)
+
+      res.status(200).json(new SuccessResponse(payments[0]))
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  public getPaymentStatus = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { id } = req.params
+
+      const payment = await this.service.getPaymentStatus(id)
+
+      res.status(200).json(new SuccessResponse(payment))
+    } catch (error) {
+      next(error)
+    }
+  }
+
   public getAll = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const payments = await this.service.getByCriteria({}, req.user!.id, undefined, undefined, {
@@ -81,7 +105,7 @@ export class PaymentController {
 
   public downgradeCancelSubscription = async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const result = await this.service.downgradeCancelSubscription(req.user!)
+      const result = await this.service.cancelPendingDowngrade(req.user!)
 
       res.status(200).json(new SuccessResponse(result))
     } catch (error) {
@@ -104,6 +128,18 @@ export class PaymentController {
       await this.service.resumeSubscription(req.user!)
 
       res.status(200).json(new SuccessResponse(null))
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  public tryAgain = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { paymentId } = req.body
+
+      const result = await this.service.tryAgain(req.user!, paymentId)
+
+      res.status(200).json(new SuccessResponse(result))
     } catch (error) {
       next(error)
     }

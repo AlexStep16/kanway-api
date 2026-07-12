@@ -11,6 +11,8 @@ export default (controller: PaymentController): Router => {
 
   router.use(jwtAuthMiddleware)
 
+  router.get('/:id', controller.getById)
+  router.get('/:id/status', controller.getPaymentStatus)
   router.get('/', controller.getAll)
   router.post(
     '/buy-subscription',
@@ -43,6 +45,7 @@ export default (controller: PaymentController): Router => {
   )
   router.patch('/cancel-subscription', patchEntitiesLimiter, controller.cancelSubscription)
   router.patch('/resume-subscription', patchEntitiesLimiter, controller.resumeSubscription)
+  router.post('/try-again', postEntitiesLimiter, controller.tryAgain)
 
   return router
 }

@@ -5,7 +5,7 @@ import { PaymentItemIdEnum } from '../enums/PaymentItemIdEnum.js'
 
 export interface IPayment {
   id: Types.ObjectId
-  serviceId: string
+  serviceId?: string
   description: string
   amount: string
   currency: string

@@ -5,7 +5,7 @@ import { PaymentItemIdEnum } from '../enums/PaymentItemIdEnum.js'
 
 export interface IPaymentRaw {
   _id: Types.ObjectId
-  service_id: string
+  service_id?: string
   description: string
   amount: string
   currency: string
