@@ -1445,7 +1445,7 @@ export class WorkspaceService extends BaseService<
 
       const newWorkspace = newWorkspaceResult.data[0]
 
-      session.commitTransaction()
+      await session.commitTransaction()
 
       return newWorkspace
     } catch (error) {
