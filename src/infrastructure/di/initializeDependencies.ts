@@ -59,7 +59,7 @@ import { BoardToolsExecutorService } from '@/application/ai/services/BoardToolsE
 import { WorkspaceToolsExecutorService } from '@/application/ai/services/WorkspaceToolsExecutorService.js'
 
 export function initializeDependencies() {
-  const mongoClient = new MongoClient(process.env.MONGO_URL || '')
+  const mongoClient = new MongoClient(process.env.MONGO_URL || 'mongodb://localhost:27017/kanway')
 
   const userRepository = new UserRepository()
   const workspaceRepository = new WorkspaceRepository()
