@@ -151,9 +151,13 @@ export class WorkspaceService extends BaseService<
     if (externalSession) {
       return this._executeCreateTransaction(data, user, externalSession)
     } else {
-      return await this._retryExecutor((session: ClientSession) =>
+      const result = await this._retryExecutor((session: ClientSession) =>
         this._executeCreateTransaction(data, user, session),
       )
+
+      this.scheduleEmbeddingsGeneration(result.data, user.id)
+
+      return result
     }
   }
 
@@ -166,12 +170,7 @@ export class WorkspaceService extends BaseService<
     /** LIMITS CHECK */
     await this.limitService.checkWorkspacesLimit(user, data.length, session)
 
-    const workspacesPayload = await this.prepareWorkspacesCreationPayload(
-      data,
-      user.id,
-      session,
-      isDryRun,
-    )
+    const workspacesPayload = await this.prepareWorkspacesCreationPayload(data, user.id, session)
 
     if (isDryRun) {
       const log = await this.operationLogService.create(
@@ -230,9 +229,15 @@ export class WorkspaceService extends BaseService<
     if (externalSession) {
       return this._executeCreateManyTransaction(data, user, externalSession, isDryRun)
     } else {
-      return await this._retryExecutor((session: ClientSession) =>
+      const result = await this._retryExecutor((session: ClientSession) =>
         this._executeCreateManyTransaction(data, user, session, isDryRun),
       )
+
+      if (!isDryRun) {
+        this.scheduleEmbeddingsGeneration(result.data, user.id)
+      }
+
+      return result
     }
   }
 
@@ -1299,7 +1304,7 @@ export class WorkspaceService extends BaseService<
   ): Promise<IWorkspaceCreatePayload> {
     const workspaceName = data.name.trim()
 
-    const embeddings = await this.embeddingService.getEmbeddings(workspaceName)
+    const embeddings: number[] = []
 
     const lastRank = await this._getLastRank(userId, session)
 
@@ -1324,20 +1329,8 @@ export class WorkspaceService extends BaseService<
     data: WorkspaceDTO[],
     userId: Types.ObjectId,
     session?: ClientSession,
-    isDryRun: boolean = false,
   ): Promise<IWorkspaceCreatePayload[]> {
     let lastRank = await this._getLastRank(userId, session)
-
-    const embeddingsMap: { [key: string]: number[] } = {}
-
-    if (!isDryRun) {
-      const workspaceNames = Array.from(new Set(data.map((workspace) => workspace.name.trim())))
-      const embeddingsArray =
-        await this.embeddingService.getEmbeddingsForMultipleTexts(workspaceNames)
-      workspaceNames.forEach((name, index) => {
-        embeddingsMap[name] = embeddingsArray[index]
-      })
-    }
 
     const workspacePayloads: IWorkspaceCreatePayload[] = data.map((dto) => {
       const newRank = lastRank.genNext()
@@ -1349,7 +1342,7 @@ export class WorkspaceService extends BaseService<
         color: dto.color,
         colorName: '',
         isFavorite: dto.isFavorite || false,
-        embeddings: embeddingsMap[dto.name.trim()],
+        embeddings: [],
         userId,
       }
 
@@ -1363,6 +1356,38 @@ export class WorkspaceService extends BaseService<
     })
 
     return workspacePayloads
+  }
+
+  private scheduleEmbeddingsGeneration(workspaces: IWorkspace[], userId: Types.ObjectId) {
+    const workspacesByName = new Map<string, Types.ObjectId[]>()
+
+    for (const workspace of workspaces) {
+      const workspaceName = workspace.name.trim()
+      const ids = workspacesByName.get(workspaceName) || []
+      ids.push(workspace.id)
+      workspacesByName.set(workspaceName, ids)
+    }
+
+    void this.generateEmbeddings(workspacesByName, userId).catch((error) => {
+      console.error('Failed to generate workspace embeddings:', error)
+    })
+  }
+
+  private async generateEmbeddings(
+    workspacesByName: Map<string, Types.ObjectId[]>,
+    userId: Types.ObjectId,
+  ) {
+    const workspaceNames = Array.from(workspacesByName.keys())
+    if (workspaceNames.length === 0) return
+
+    const embeddings = await this.embeddingService.getEmbeddingsForMultipleTexts(workspaceNames)
+    const updates = embeddings.flatMap((embedding, index) => {
+      const name = workspaceNames[index]!
+
+      return (workspacesByName.get(name) || []).map((id) => ({ id, name, embeddings: embedding }))
+    })
+
+    await this.repository.updateEmbeddings(updates, userId)
   }
 
   private async _prepareMainEditFields(

@@ -176,9 +176,13 @@ export class ColumnService extends BaseService<
     if (externalSession) {
       return this._executeCreateTransaction(data, user, externalSession)
     } else {
-      return await this._retryExecutor((session: ClientSession) =>
+      const result = await this._retryExecutor((session: ClientSession) =>
         this._executeCreateTransaction(data, user, session),
       )
+
+      this.scheduleEmbeddingsGeneration(result.data, user.id)
+
+      return result
     }
   }
 
@@ -198,7 +202,6 @@ export class ColumnService extends BaseService<
       columnsBoardMap,
       user.id,
       session,
-      isDryRun,
     )
 
     if (isDryRun) {
@@ -260,9 +263,15 @@ export class ColumnService extends BaseService<
     if (externalSession) {
       return this._executeCreateManyTransaction(data, user, externalSession, isDryRun)
     } else {
-      return await this._retryExecutor((session: ClientSession) =>
+      const result = await this._retryExecutor((session: ClientSession) =>
         this._executeCreateManyTransaction(data, user, session, isDryRun),
       )
+
+      if (!isDryRun) {
+        this.scheduleEmbeddingsGeneration(result.data, user.id)
+      }
+
+      return result
     }
   }
 
@@ -1845,8 +1854,6 @@ export class ColumnService extends BaseService<
   ): Promise<IColumnCreatePayload> {
     const columnName = data.name.trim()
 
-    const embeddings = await this.embeddingService.getEmbeddings(columnName)
-
     let columnRank = LexoRank.middle().toString()
 
     /* RANKING */
@@ -1868,7 +1875,7 @@ export class ColumnService extends BaseService<
       workspace: columnBoard.workspace.id,
       board: columnBoard.id,
       rank: columnRank,
-      embeddings,
+      embeddings: [],
       userId,
     }
 
@@ -1880,7 +1887,6 @@ export class ColumnService extends BaseService<
     columnsBoardMap: Map<string, IBoardPopulated>,
     userId: Types.ObjectId,
     session?: ClientSession,
-    isDryRun: boolean = false,
   ): Promise<IColumnCreatePayload[]> {
     const columnsPayloads: IColumnCreatePayload[] = []
     const columnsGroupedByBoard: { [key: string]: ColumnDTO[] } = {}
@@ -1896,16 +1902,6 @@ export class ColumnService extends BaseService<
 
       columnsGroupedByBoard[boardId].push(column)
     })
-
-    const embeddingsMap: { [key: string]: number[] } = {}
-
-    if (!isDryRun) {
-      const columnNames = Array.from(new Set(data.map((column) => column.name.trim())))
-      const embeddingsArray = await this.embeddingService.getEmbeddingsForMultipleTexts(columnNames)
-      columnNames.forEach((name, index) => {
-        embeddingsMap[name] = embeddingsArray[index]
-      })
-    }
 
     const lastRanksByBoards = await this.repository.getLastRanksByParents(
       uniqueBoardIds,
@@ -1932,7 +1928,7 @@ export class ColumnService extends BaseService<
           workspace: columnsBoardMap.get(column.boardId)!.workspace.id,
           board: columnsBoardMap.get(column.boardId)!.id,
           rank: newRank.toString(),
-          embeddings: embeddingsMap[columnName],
+          embeddings: [],
           userId,
         })
 
@@ -1941,6 +1937,42 @@ export class ColumnService extends BaseService<
     }
 
     return columnsPayloads
+  }
+
+  private scheduleEmbeddingsGeneration(columns: IColumnPopulated[], userId: Types.ObjectId) {
+    const columnsByName = new Map<string, Types.ObjectId[]>()
+
+    for (const column of columns) {
+      const columnName = column.name.trim()
+      const ids = columnsByName.get(columnName) || []
+      ids.push(column.id)
+      columnsByName.set(columnName, ids)
+    }
+
+    void this.generateEmbeddings(columnsByName, userId).catch((error) => {
+      console.error('Failed to generate column embeddings:', error)
+    })
+  }
+
+  private async generateEmbeddings(
+    columnsByName: Map<string, Types.ObjectId[]>,
+    userId: Types.ObjectId,
+  ) {
+    const columnNames = Array.from(columnsByName.keys())
+    if (columnNames.length === 0) return
+
+    const embeddings = await this.embeddingService.getEmbeddingsForMultipleTexts(columnNames)
+    const updates = embeddings.flatMap((embedding, index) => {
+      const name = columnNames[index]!
+
+      return (columnsByName.get(name) || []).map((id) => ({
+        id,
+        name,
+        embeddings: embedding,
+      }))
+    })
+
+    await this.repository.updateEmbeddings(updates, userId)
   }
 
   private async _prepareMainEditFields(

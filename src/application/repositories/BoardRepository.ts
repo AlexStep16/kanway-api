@@ -51,4 +51,20 @@ export default class BoardRepository extends BaseRepository<
 
     return filter
   }
+
+  public async updateEmbeddings(
+    boards: Array<{ id: Types.ObjectId; name: string; embeddings: number[] }>,
+    userId: Types.ObjectId,
+  ) {
+    if (boards.length === 0) return
+
+    await this.model.bulkWrite(
+      boards.map((board) => ({
+        updateOne: {
+          filter: { _id: board.id, user_id: userId, name: board.name },
+          update: { $set: { embeddings: board.embeddings } },
+        },
+      })),
+    )
+  }
 }

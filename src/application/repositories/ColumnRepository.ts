@@ -59,4 +59,24 @@ export default class ColumnRepository extends BaseRepository<
 
     return filter
   }
+
+  public async updateEmbeddings(
+    columns: Array<{ id: Types.ObjectId; name: string; embeddings: number[] }>,
+    userId: Types.ObjectId,
+  ) {
+    if (columns.length === 0) return
+
+    await this.model.bulkWrite(
+      columns.map((column) => ({
+        updateOne: {
+          filter: {
+            _id: column.id,
+            user_id: userId,
+            name: column.name,
+          },
+          update: { $set: { embeddings: column.embeddings } },
+        },
+      })),
+    )
+  }
 }

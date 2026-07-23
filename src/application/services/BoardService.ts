@@ -148,9 +148,13 @@ export class BoardService extends BaseService<
     if (externalSession) {
       return this._executeCreateTransaction(data, user, externalSession)
     } else {
-      return await this._retryExecutor((session: ClientSession) =>
+      const result = await this._retryExecutor((session: ClientSession) =>
         this._executeCreateTransaction(data, user, session),
       )
+
+      this.scheduleEmbeddingsGeneration(result.data, user.id)
+
+      return result
     }
   }
 
@@ -185,7 +189,7 @@ export class BoardService extends BaseService<
     /** LIMITS CHECK */
     await this._checkBoardsLimitByWorkspaces(data, user, session)
 
-    const boardsPayload = await this.prepareBoardsCreationPayload(data, user.id, session, isDryRun)
+    const boardsPayload = await this.prepareBoardsCreationPayload(data, user.id, session)
 
     if (isDryRun) {
       const log = await this.operationLogService.create(
@@ -242,9 +246,15 @@ export class BoardService extends BaseService<
     if (externalSession) {
       return this._executeCreateManyTransaction(data, user, externalSession, isDryRun)
     } else {
-      return await this._retryExecutor((session: ClientSession) =>
+      const result = await this._retryExecutor((session: ClientSession) =>
         this._executeCreateManyTransaction(data, user, session, isDryRun),
       )
+
+      if (!isDryRun) {
+        this.scheduleEmbeddingsGeneration(result.data, user.id)
+      }
+
+      return result
     }
   }
 
@@ -1798,7 +1808,7 @@ export class BoardService extends BaseService<
   ): Promise<IBoardCreatePayload> {
     const boardName = data.name.trim()
 
-    const embeddings = await this.embeddingService.getEmbeddings(boardName)
+    const embeddings: number[] = []
 
     let boardRank = LexoRank.middle().toString()
 
@@ -1832,7 +1842,6 @@ export class BoardService extends BaseService<
     data: BoardDTO[],
     userId: Types.ObjectId,
     session?: ClientSession,
-    isDryRun: boolean = false,
   ): Promise<IBoardCreatePayload[]> {
     const boardsPayloads: IBoardCreatePayload[] = []
     const boardsGroupedByWorkspace: { [key: string]: BoardDTO[] } = {}
@@ -1848,16 +1857,6 @@ export class BoardService extends BaseService<
 
       boardsGroupedByWorkspace[wsId].push(board)
     })
-
-    const embeddingsMap: { [key: string]: number[] } = {}
-
-    if (!isDryRun) {
-      const boardNames = Array.from(new Set(data.map((board) => board.name.trim())))
-      const embeddingsArray = await this.embeddingService.getEmbeddingsForMultipleTexts(boardNames)
-      boardNames.forEach((name, index) => {
-        embeddingsMap[name] = embeddingsArray[index]
-      })
-    }
 
     const lastRanksByWorkspaces = await this.repository.getLastRanksByParents(
       uniqueWorkspaceIds,
@@ -1884,7 +1883,7 @@ export class BoardService extends BaseService<
           isFavorite: board.isFavorite,
           workspace: new Types.ObjectId(board.workspaceId),
           rank: newRank.toString(),
-          embeddings: embeddingsMap[boardName],
+          embeddings: [],
           userId,
         })
 
@@ -1893,6 +1892,38 @@ export class BoardService extends BaseService<
     }
 
     return boardsPayloads
+  }
+
+  private scheduleEmbeddingsGeneration(boards: IBoardPopulated[], userId: Types.ObjectId) {
+    const boardsByName = new Map<string, Types.ObjectId[]>()
+
+    for (const board of boards) {
+      const boardName = board.name.trim()
+      const ids = boardsByName.get(boardName) || []
+      ids.push(board.id)
+      boardsByName.set(boardName, ids)
+    }
+
+    void this.generateEmbeddings(boardsByName, userId).catch((error) => {
+      console.error('Failed to generate board embeddings:', error)
+    })
+  }
+
+  private async generateEmbeddings(
+    boardsByName: Map<string, Types.ObjectId[]>,
+    userId: Types.ObjectId,
+  ) {
+    const boardNames = Array.from(boardsByName.keys())
+    if (boardNames.length === 0) return
+
+    const embeddings = await this.embeddingService.getEmbeddingsForMultipleTexts(boardNames)
+    const updates = embeddings.flatMap((embedding, index) => {
+      const name = boardNames[index]!
+
+      return (boardsByName.get(name) || []).map((id) => ({ id, name, embeddings: embedding }))
+    })
+
+    await this.repository.updateEmbeddings(updates, userId)
   }
 
   private async _prepareMainEditFields(

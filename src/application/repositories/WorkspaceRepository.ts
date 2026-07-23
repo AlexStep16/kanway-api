@@ -42,4 +42,20 @@ export default class WorkspaceRepository extends BaseRepository<
 
     return filter
   }
+
+  public async updateEmbeddings(
+    workspaces: Array<{ id: Types.ObjectId; name: string; embeddings: number[] }>,
+    userId: Types.ObjectId,
+  ) {
+    if (workspaces.length === 0) return
+
+    await this.model.bulkWrite(
+      workspaces.map((workspace) => ({
+        updateOne: {
+          filter: { _id: workspace.id, user_id: userId, name: workspace.name },
+          update: { $set: { embeddings: workspace.embeddings } },
+        },
+      })),
+    )
+  }
 }

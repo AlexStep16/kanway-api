@@ -67,4 +67,20 @@ export default class TaskRepository extends BaseRepository<
 
     return filter
   }
+
+  public async updateEmbeddings(
+    tasks: Array<{ id: Types.ObjectId; name: string; embeddings: number[] }>,
+    userId: Types.ObjectId,
+  ) {
+    if (tasks.length === 0) return
+
+    await this.model.bulkWrite(
+      tasks.map((task) => ({
+        updateOne: {
+          filter: { _id: task.id, user_id: userId, name: task.name },
+          update: { $set: { embeddings: task.embeddings } },
+        },
+      })),
+    )
+  }
 }

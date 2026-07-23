@@ -136,7 +136,14 @@ export class TaskService extends BaseService<
 
     delete data.id // Remove temp client ID before creation
 
-    const taskPayload = await this.prepareTaskCreationPayload(data, taskColumn, user.id, timezone)
+    const taskPayload = await this.prepareTaskCreationPayload(
+      data,
+      taskColumn,
+      user.id,
+      timezone,
+      session,
+      false,
+    )
 
     /* CREATE */
     const newTask = await this.repository.create(taskPayload, session)
@@ -175,9 +182,13 @@ export class TaskService extends BaseService<
     if (externalSession) {
       return this._executeCreateTransaction(data, user, externalSession, user.timezone)
     } else {
-      return await this._retryExecutor((session: ClientSession) =>
+      const result = await this._retryExecutor((session: ClientSession) =>
         this._executeCreateTransaction(data, user, session, user.timezone),
       )
+
+      this.scheduleEmbeddingsGeneration(result.data, user.id)
+
+      return result
     }
   }
 
@@ -242,7 +253,6 @@ export class TaskService extends BaseService<
       user.id,
       timezone,
       session,
-      isDryRun,
     )
 
     if (isDryRun) {
@@ -310,9 +320,15 @@ export class TaskService extends BaseService<
         isDryRun,
       )
     } else {
-      return await this._retryExecutor((session: ClientSession) =>
+      const result = await this._retryExecutor((session: ClientSession) =>
         this._executeCreateManyTransaction(data, user, session, user.timezone, isDryRun),
       )
+
+      if (!isDryRun) {
+        this.scheduleEmbeddingsGeneration(result.data, user.id)
+      }
+
+      return result
     }
   }
 
@@ -1857,7 +1873,6 @@ export class TaskService extends BaseService<
     userId: Types.ObjectId,
     timezone: string,
     session?: ClientSession,
-    isDryRun = false,
   ): Promise<ITaskCreatePayload[]> {
     const tasksPayloads: ITaskCreatePayload[] = []
     const tasksGroupedByColumn: { [key: string]: TaskDTO[] } = {}
@@ -1873,16 +1888,6 @@ export class TaskService extends BaseService<
 
       tasksGroupedByColumn[columnId].push(task)
     })
-
-    const taskNames = Array.from(new Set(data.map((task) => task.name.trim())))
-    const embeddingsMap: { [key: string]: number[] } = {}
-
-    if (!isDryRun) {
-      const embeddingsArray = await this.embeddingService.getEmbeddingsForMultipleTexts(taskNames)
-      taskNames.forEach((name, index) => {
-        embeddingsMap[name] = embeddingsArray[index]
-      })
-    }
 
     const lastRanksByColumns = await this.repository.getLastRanksByParents(
       uniqueColumnIds,
@@ -1925,7 +1930,7 @@ export class TaskService extends BaseService<
           tags: task.tags?.map((tag) => tag.toString()) ?? [],
 
           rank: newRank.toString(),
-          embeddings: embeddingsMap[taskName],
+          embeddings: [],
           userId,
         }
 
@@ -1938,6 +1943,38 @@ export class TaskService extends BaseService<
     }
 
     return tasksPayloads
+  }
+
+  private scheduleEmbeddingsGeneration(tasks: ITaskPopulated[], userId: Types.ObjectId) {
+    const tasksByName = new Map<string, Types.ObjectId[]>()
+
+    for (const task of tasks) {
+      const taskName = task.name.trim()
+      const ids = tasksByName.get(taskName) || []
+      ids.push(task.id)
+      tasksByName.set(taskName, ids)
+    }
+
+    void this.generateEmbeddings(tasksByName, userId).catch((error) => {
+      console.error('Failed to generate task embeddings:', error)
+    })
+  }
+
+  private async generateEmbeddings(
+    tasksByName: Map<string, Types.ObjectId[]>,
+    userId: Types.ObjectId,
+  ) {
+    const taskNames = Array.from(tasksByName.keys())
+    if (taskNames.length === 0) return
+
+    const embeddings = await this.embeddingService.getEmbeddingsForMultipleTexts(taskNames)
+    const updates = embeddings.flatMap((embedding, index) => {
+      const name = taskNames[index]!
+
+      return (tasksByName.get(name) || []).map((id) => ({ id, name, embeddings: embedding }))
+    })
+
+    await this.repository.updateEmbeddings(updates, userId)
   }
 
   public prepareTaskMainFields(
