@@ -5,14 +5,23 @@ import { Request, Response, NextFunction } from 'express'
 import { AppError } from '@errors/AppError.js'
 import { IUser } from '@entities/IUser.js'
 import { EmailService } from '@/infrastructure/services/EmailService.js'
+import { AuthService } from '@/application/services/AuthService.js'
+import { YandexAuthDTO } from '@/application/dtos/YandexAuthDTO.js'
+import { VkAuthDTO } from '@/application/dtos/VkAuthDTO.js'
 
 export class UserController {
   protected service: UserService
   protected emailService: EmailService
+  protected authService: AuthService
 
-  constructor(serviceInstance: UserService, emailServiceInstance: EmailService) {
+  constructor(
+    serviceInstance: UserService,
+    emailServiceInstance: EmailService,
+    authServiceInstance: AuthService,
+  ) {
     this.service = serviceInstance
     this.emailService = emailServiceInstance
+    this.authService = authServiceInstance
   }
 
   public update = async (req: Request, res: Response, next: NextFunction) => {
@@ -73,6 +82,48 @@ export class UserController {
       await this.service.resetAvatar(req.user!.id)
 
       return res.status(200).json(new SuccessResponse(null))
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  public linkYandexAccount = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const user = await this.authService.linkYandexAccount(
+        req.user!.id.toHexString(),
+        req.body as YandexAuthDTO,
+      )
+
+      return res.status(200).json(new SuccessResponse(user))
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  public linkVkAccount = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const user = await this.authService.linkVkAccount(
+        req.user!.id.toHexString(),
+        req.body as VkAuthDTO,
+      )
+
+      return res.status(200).json(new SuccessResponse(user))
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  public unlinkAccount = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const provider = req.params.provider
+
+      if (provider !== 'yandex' && provider !== 'vk') {
+        throw new AppError('Неизвестный провайдер авторизации.', 400)
+      }
+
+      const user = await this.service.unlinkProvider(req.user as IUser, provider)
+
+      return res.status(200).json(new SuccessResponse(user))
     } catch (error) {
       next(error)
     }

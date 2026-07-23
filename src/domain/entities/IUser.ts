@@ -6,6 +6,7 @@ export interface IUser {
   username?: string
   email: string
   passwordHash?: string
+  hasPassword: boolean
   avatarUrl?: string
   timezone: string
   role?: string

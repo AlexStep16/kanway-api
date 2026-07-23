@@ -92,6 +92,8 @@ export enum ErrorMessages {
   INVALID_VK_CLIENT_ID_FORMAT = 'Неверный формат идентификатора клиента VK.',
   VK_AUTH_FAILED = 'Аутентификация через VK не удалась.',
   VK_EMAIL_REQUIRED = 'Email должен быть указан в профиле VK.',
+  SOCIAL_ACCOUNT_ALREADY_LINKED = 'Этот аккаунт уже привязан к другому пользователю.',
+  LAST_SIGN_IN_METHOD = 'Нельзя отвязать последний способ входа в аккаунт.',
 
   SETTING_AI_NAME_TOO_SHORT = 'Название ИИ должно содержать не менее 1 символа.',
   SETTING_AI_NAME_TOO_LONG = 'Название ИИ не должно превышать 50 символов.',

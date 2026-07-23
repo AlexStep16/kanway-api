@@ -29,6 +29,10 @@ export const UserSchema = new Schema<IUserRaw, IUserRawStatics, IUserRawMethods>
       type: String,
       select: false,
     },
+    has_password: {
+      type: Boolean,
+      default: false,
+    },
     is_initialized: {
       type: Boolean,
       default: false,

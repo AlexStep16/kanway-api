@@ -6,6 +6,7 @@ export interface IUserRaw {
   username?: string
   email: string
   password_hash?: string
+  has_password: boolean
   is_initialized: boolean
   role?: string
   is_deleted?: boolean

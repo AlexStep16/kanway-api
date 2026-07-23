@@ -14,6 +14,9 @@ export default (controller: UserController): Router => {
   router.use(jwtAuthMiddleware)
 
   router.get('/', controller.me)
+  router.post('/accounts/yandex', patchUserLimiter, controller.linkYandexAccount)
+  router.post('/accounts/vk', patchUserLimiter, controller.linkVkAccount)
+  router.delete('/accounts/:provider', patchUserLimiter, controller.unlinkAccount)
   router.patch('/avatar', patchUserLimiter, upload.single('avatar'), controller.updateAvatar)
   router.delete('/avatar', patchUserLimiter, upload.single('avatar'), controller.resetAvatar)
   router.patch('/', patchUserLimiter, validationMiddleware(UserEditSchemaDTO), controller.update)

@@ -54,6 +54,7 @@ export class UserService {
     const user: Partial<IUser> = {
       email: credentials.email.toLowerCase(),
       passwordHash: credentials.password,
+      hasPassword: true,
       timezone: credentials.timezone,
       subscriptionId: SubscriptionPlanEnum.Basic,
       avatarColor: BASE_COLORS[Math.floor(Math.random() * 7)],
@@ -106,9 +107,9 @@ export class UserService {
   ): Promise<IUser> {
     const payload = toMongoCaseKeys<IUserRaw>(data)
 
-    if (data.password && data.currentPassword && user) {
+    if (data.password && user?.hasPassword) {
       const oldPasswordHash = await this._comparePasswords(
-        data.currentPassword,
+        data.currentPassword ?? '',
         new Types.ObjectId(user.id),
       )
 
@@ -119,7 +120,10 @@ export class UserService {
       }
     }
 
-    if (data.password) payload.password_hash = await bcrypt.hash(data.password, SALT_ROUNDS)
+    if (data.password) {
+      payload.password_hash = await bcrypt.hash(data.password, SALT_ROUNDS)
+      payload.has_password = true
+    }
 
     const updateUserResult = await this.repository.updateManyByCriteria(criteria, payload, session)
 
@@ -175,6 +179,28 @@ export class UserService {
     const users = await this.repository.findByCriteria({ vkClientId: id }, session)
 
     return toServerCaseKeys(users[0])
+  }
+
+  public async getByYandexClientId(id: string, session?: ClientSession): Promise<IUser | null> {
+    if (!id) return null
+
+    const users = await this.repository.findByCriteria({ yandexClientId: id }, session)
+
+    return toServerCaseKeys(users[0])
+  }
+
+  public async unlinkProvider(user: IUser, provider: 'yandex' | 'vk'): Promise<IUser> {
+    const hasAnotherSignInMethod =
+      user.hasPassword ||
+      (provider === 'yandex' ? Boolean(user.vkClientId) : Boolean(user.yandexClientId))
+
+    if (!hasAnotherSignInMethod) {
+      throw new AppError(ErrorMessages.LAST_SIGN_IN_METHOD, 422)
+    }
+
+    const data = provider === 'yandex' ? { yandexClientId: undefined } : { vkClientId: undefined }
+
+    return await this.edit(data, { id: user.id.toString() })
   }
 
   public async getById(id: string, session?: ClientSession): Promise<IUser | null> {

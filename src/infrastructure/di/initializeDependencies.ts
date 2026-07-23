@@ -320,7 +320,7 @@ export function initializeDependencies() {
     boardService,
     workspaceService,
   )
-  const userController = new UserController(userService, emailService)
+  const userController = new UserController(userService, emailService, authService)
   const settingController = new SettingController(settingService)
   const subscriptionController = new SubscriptionController(subscriptionService)
   const paymentController = new PaymentController(paymentService)

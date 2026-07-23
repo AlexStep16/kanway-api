@@ -189,6 +189,39 @@ export class AuthService {
     }
   }
 
+  public async linkYandexAccount(userId: string, payload: YandexAuthDTO): Promise<IUser> {
+    const params = new URLSearchParams()
+    params.append('grant_type', 'authorization_code')
+    params.append('code', payload.code)
+    params.append('client_id', process.env.YANDEX_CLIENT_ID || '')
+    params.append('client_secret', process.env.YANDEX_CLIENT_SECRET || '')
+    params.append('code_verifier', payload.codeVerifier)
+    params.append('redirect_uri', 'https://kanway.ru/yandex/suggest/token')
+
+    const accessTokenResponse = await fetch('https://oauth.yandex.ru/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: params.toString(),
+    })
+    const accessTokenData = await accessTokenResponse.json()
+
+    if (!accessTokenData.access_token) {
+      throw new AppError(ErrorMessages.YANDEX_AUTH_FAILED, 400)
+    }
+
+    const userInfoResponse = await fetch('https://login.yandex.ru/info?format=json', {
+      headers: { Authorization: `OAuth ${accessTokenData.access_token}` },
+    })
+    const userInfo = (await userInfoResponse.json()) as YandexUser
+    const linkedUser = await this.userService.getByYandexClientId(userInfo.client_id)
+
+    if (linkedUser && linkedUser.id.toString() !== userId) {
+      throw new AppError(ErrorMessages.SOCIAL_ACCOUNT_ALREADY_LINKED, 409)
+    }
+
+    return await this.userService.edit({ yandexClientId: userInfo.client_id }, { id: userId })
+  }
+
   public async vk(payload: VkAuthDTO) {
     const session = await mongoose.startSession()
     session.startTransaction()
@@ -315,6 +348,45 @@ export class AuthService {
     } finally {
       session.endSession()
     }
+  }
+
+  public async linkVkAccount(userId: string, payload: VkAuthDTO): Promise<IUser> {
+    const params = new URLSearchParams()
+    params.append('grant_type', 'authorization_code')
+    params.append('code', payload.code)
+    params.append('client_id', process.env.VK_CLIENT_ID || '')
+    params.append('client_secret', process.env.VK_CLIENT_SECRET || '')
+    params.append('code_verifier', payload.codeVerifier)
+    if (payload.deviceId) params.append('device_id', payload.deviceId)
+    params.append('redirect_uri', 'https://kanway.ru/vk/suggest/token')
+
+    const accessTokenResponse = await fetch('https://id.vk.ru/oauth2/auth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: params.toString(),
+    })
+    const accessTokenData = await accessTokenResponse.json()
+
+    if (!accessTokenData.id_token) {
+      throw new AppError(ErrorMessages.VK_AUTH_FAILED, 400)
+    }
+
+    const paramsUserInfo = new URLSearchParams()
+    paramsUserInfo.append('client_id', process.env.VK_CLIENT_ID || '')
+    paramsUserInfo.append('access_token', accessTokenData.access_token || '')
+    const userInfoResponse = await fetch('https://id.vk.ru/oauth2/user_info', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: paramsUserInfo.toString(),
+    })
+    const userInfo = (await userInfoResponse.json()) as VkUser
+    const linkedUser = await this.userService.getByVkClientId(userInfo.user.user_id)
+
+    if (linkedUser && linkedUser.id.toString() !== userId) {
+      throw new AppError(ErrorMessages.SOCIAL_ACCOUNT_ALREADY_LINKED, 409)
+    }
+
+    return await this.userService.edit({ vkClientId: userInfo.user.user_id }, { id: userId })
   }
 
   public async finishSignup(
