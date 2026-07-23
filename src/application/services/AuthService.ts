@@ -214,9 +214,14 @@ export class AuthService {
     })
     const userInfo = (await userInfoResponse.json()) as YandexUser
     const linkedUser = await this.userService.getByYandexClientId(userInfo.client_id)
+    const userWithSameEmail = await this.userService.getByEmail(userInfo.default_email)
 
     if (linkedUser && linkedUser.id.toString() !== userId) {
       throw new AppError(ErrorMessages.SOCIAL_ACCOUNT_ALREADY_LINKED, 409)
+    }
+
+    if (userWithSameEmail && userWithSameEmail.id.toString() !== userId) {
+      throw new AppError(ErrorMessages.SOCIAL_EMAIL_ALREADY_LINKED, 409)
     }
 
     return await this.userService.edit({ yandexClientId: userInfo.client_id }, { id: userId })
@@ -381,9 +386,16 @@ export class AuthService {
     })
     const userInfo = (await userInfoResponse.json()) as VkUser
     const linkedUser = await this.userService.getByVkClientId(userInfo.user.user_id)
+    const userWithSameEmail = userInfo.user.email
+      ? await this.userService.getByEmail(userInfo.user.email)
+      : null
 
     if (linkedUser && linkedUser.id.toString() !== userId) {
       throw new AppError(ErrorMessages.SOCIAL_ACCOUNT_ALREADY_LINKED, 409)
+    }
+
+    if (userWithSameEmail && userWithSameEmail.id.toString() !== userId) {
+      throw new AppError(ErrorMessages.SOCIAL_EMAIL_ALREADY_LINKED, 409)
     }
 
     return await this.userService.edit({ vkClientId: userInfo.user.user_id }, { id: userId })

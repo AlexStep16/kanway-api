@@ -93,6 +93,7 @@ export enum ErrorMessages {
   VK_AUTH_FAILED = 'Аутентификация через VK не удалась.',
   VK_EMAIL_REQUIRED = 'Email должен быть указан в профиле VK.',
   SOCIAL_ACCOUNT_ALREADY_LINKED = 'Этот аккаунт уже привязан к другому пользователю.',
+  SOCIAL_EMAIL_ALREADY_LINKED = 'Почта этого аккаунта уже используется другим пользователем.',
   LAST_SIGN_IN_METHOD = 'Нельзя отвязать последний способ входа в аккаунт.',
 
   SETTING_AI_NAME_TOO_SHORT = 'Название ИИ должно содержать не менее 1 символа.',
