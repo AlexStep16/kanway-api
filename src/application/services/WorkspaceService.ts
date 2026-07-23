@@ -1425,6 +1425,7 @@ export class WorkspaceService extends BaseService<
     const { workspaceName, workspaceColor, username } = payload
 
     try {
+      console.log('Creating workspace, time:', new Date().toISOString())
       const newWorkspaceResult = await this.create(
         {
           name: workspaceName,
@@ -1433,7 +1434,9 @@ export class WorkspaceService extends BaseService<
         user,
         session,
       )
+      console.log('Workspace created, time:', new Date().toISOString())
 
+      console.log('Editing user, time:', new Date().toISOString())
       await this.userService.edit(
         {
           username,
@@ -1442,6 +1445,7 @@ export class WorkspaceService extends BaseService<
         user,
         session,
       )
+      console.log('User edited, time:', new Date().toISOString())
 
       const newWorkspace = newWorkspaceResult.data[0]
 
