@@ -227,7 +227,7 @@ export class AuthService {
       headers: { Authorization: `OAuth ${accessTokenData.access_token}` },
     })
     const userInfo = (await userInfoResponse.json()) as YandexUser
-    console.log(userInfo)
+
     const linkedUser = await this.userService.getByYandexUserId(userInfo.id)
     const userWithSameEmail = await this.userService.getByEmail(userInfo.default_email)
 
