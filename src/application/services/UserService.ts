@@ -244,7 +244,7 @@ export class UserService {
 
     rm(file.path)
 
-    await this.repository.updateManyByCriteria({ id: id.toString() }, { avatarUrl: filePath })
+    await this.repository.updateManyByCriteria({ id: id.toString() }, { avatarUrl: '/' + filePath })
 
     return filePath
   }
