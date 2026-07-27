@@ -6,7 +6,12 @@ import { UserEditSchemaDTO } from '@dtos/UserEditDTO.js'
 import multer from 'multer'
 import { emailSendLimiter, patchUserLimiter } from '@/limiters.js'
 
-const upload = multer({ dest: 'uploads/' })
+const upload = multer({
+  dest: 'uploads/',
+  limits: {
+    fileSize: 20 * 1024 * 1024, // 20 МБ в байтах
+  },
+})
 
 export default (controller: UserController): Router => {
   const router = Router({ mergeParams: true })
