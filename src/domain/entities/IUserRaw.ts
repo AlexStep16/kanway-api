@@ -23,8 +23,8 @@ export interface IUserRaw {
   avatar_color: string
   is_tips_completed?: boolean
   phone?: string
-  yandex_client_id?: string
-  vk_client_id?: string
+  yandex_user_id?: string
+  vk_user_id?: string
   payment_method_id?: string | null
   payment_retries_count: number
   pending_change_plan?: SubscriptionPlanEnum | null

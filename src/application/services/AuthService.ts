@@ -137,9 +137,23 @@ export class AuthService {
       })
       const userInfo = (await userInfoResponse.json()) as YandexUser
 
-      const user = await this.userService.getByEmail(userInfo.default_email)
+      const linkedUser = await this.userService.getByYandexUserId(userInfo.id)
 
-      if (!user) {
+      if (linkedUser) {
+        const token = this._getUserIdToken(linkedUser.id.toString())
+        const serialized = this._getTokenSerialized(token)
+
+        await session.commitTransaction()
+
+        return {
+          user: linkedUser,
+          serialized,
+        }
+      }
+
+      const userByEmail = await this.userService.getByEmail(userInfo.default_email)
+
+      if (!userByEmail) {
         const avatarUrl = userInfo.is_avatar_empty
           ? undefined
           : `https://avatars.yandex.net/get-yapic/${userInfo.default_avatar_id}/islands-68`
@@ -148,7 +162,7 @@ export class AuthService {
           username: userInfo.display_name,
           email: userInfo.default_email,
           avatarUrl,
-          clientId: userInfo.client_id,
+          clientId: userInfo.id,
           timezone: payload.timezone,
         })
 
@@ -161,22 +175,22 @@ export class AuthService {
           serialized,
         }
       } else {
-        if (!user.yandexClientId) {
+        if (!userByEmail.yandexUserId) {
           await this.userService.edit(
-            { yandexClientId: userInfo.client_id },
-            { id: user.id.toString() },
+            { yandexUserId: userInfo.id },
+            { id: userByEmail.id.toString() },
             undefined,
             session,
           )
         }
 
-        const token = this._getUserIdToken(user.id.toString())
+        const token = this._getUserIdToken(userByEmail.id.toString())
         const serialized = this._getTokenSerialized(token)
 
         await session.commitTransaction()
 
         return {
-          user,
+          user: userByEmail,
           serialized,
         }
       }
@@ -213,7 +227,8 @@ export class AuthService {
       headers: { Authorization: `OAuth ${accessTokenData.access_token}` },
     })
     const userInfo = (await userInfoResponse.json()) as YandexUser
-    const linkedUser = await this.userService.getByYandexClientId(userInfo.client_id)
+    console.log(userInfo)
+    const linkedUser = await this.userService.getByYandexUserId(userInfo.id)
     const userWithSameEmail = await this.userService.getByEmail(userInfo.default_email)
 
     if (linkedUser && linkedUser.id.toString() !== userId) {
@@ -224,7 +239,7 @@ export class AuthService {
       throw new AppError(ErrorMessages.SOCIAL_EMAIL_ALREADY_LINKED, 409)
     }
 
-    return await this.userService.edit({ yandexClientId: userInfo.client_id }, { id: userId })
+    return await this.userService.edit({ yandexUserId: userInfo.id }, { id: userId })
   }
 
   public async vk(payload: VkAuthDTO) {
@@ -269,7 +284,7 @@ export class AuthService {
       const userInfo = (await userInfoResponse.json()) as VkUser
 
       const user = userInfo.user.user_id
-        ? await this.userService.getByVkClientId(userInfo.user.user_id)
+        ? await this.userService.getByVkUserId(userInfo.user.user_id)
         : null
 
       if (!user) {
@@ -280,9 +295,9 @@ export class AuthService {
         if (userByEmail) {
           const user = userByEmail
 
-          if (!user.vkClientId) {
+          if (!user.vkUserId) {
             await this.userService.edit(
-              { vkClientId: userInfo.user.user_id },
+              { vkUserId: userInfo.user.user_id },
               { id: user.id.toString() },
               undefined,
               session,
@@ -385,7 +400,7 @@ export class AuthService {
       body: paramsUserInfo.toString(),
     })
     const userInfo = (await userInfoResponse.json()) as VkUser
-    const linkedUser = await this.userService.getByVkClientId(userInfo.user.user_id)
+    const linkedUser = await this.userService.getByVkUserId(userInfo.user.user_id)
     const userWithSameEmail = userInfo.user.email
       ? await this.userService.getByEmail(userInfo.user.email)
       : null
@@ -398,7 +413,7 @@ export class AuthService {
       throw new AppError(ErrorMessages.SOCIAL_EMAIL_ALREADY_LINKED, 409)
     }
 
-    return await this.userService.edit({ vkClientId: userInfo.user.user_id }, { id: userId })
+    return await this.userService.edit({ vkUserId: userInfo.user.user_id }, { id: userId })
   }
 
   public async finishSignup(
@@ -413,7 +428,7 @@ export class AuthService {
       if (user) {
         if (data.provider === ProvidersEnum.VK) {
           const updatedUser = await this.userService.edit(
-            { vkClientId: data.clientId },
+            { vkUserId: data.clientId },
             { id: user.id.toString() },
             undefined,
             session,
@@ -441,7 +456,7 @@ export class AuthService {
       }
 
       if (data.provider === ProvidersEnum.VK) {
-        userData.vkClientId = data.clientId
+        userData.vkUserId = data.clientId
       }
 
       const newUser = await this.userService.createWithCredentials(userData, session)

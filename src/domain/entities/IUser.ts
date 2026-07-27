@@ -22,8 +22,8 @@ export interface IUser {
   avatarColor: string
   isTipsCompleted?: boolean
   phone?: string
-  yandexClientId?: string
-  vkClientId?: string
+  yandexUserId?: string
+  vkUserId?: string
   paymentMethodId?: string | null
   paymentRetriesCount: number
   pendingChangePlan?: SubscriptionPlanEnum | null

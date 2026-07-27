@@ -97,10 +97,10 @@ export const UserSchema = new Schema<IUserRaw, IUserRawStatics, IUserRawMethods>
     phone: {
       type: String,
     },
-    yandex_client_id: {
+    yandex_user_id: {
       type: String,
     },
-    vk_client_id: {
+    vk_user_id: {
       type: String,
     },
     payment_method_id: {

@@ -69,7 +69,7 @@ export class UserService {
     const user: Partial<IUser> = {
       email: data.email.toLowerCase(),
       timezone: data.timezone,
-      yandexClientId: data.clientId,
+      yandexUserId: data.clientId,
       isConfirmed: true,
       username: data.username,
       subscriptionId: SubscriptionPlanEnum.Basic,
@@ -86,7 +86,7 @@ export class UserService {
     const user: Partial<IUser> = {
       email: data.email.toLowerCase(),
       timezone: data.timezone,
-      vkClientId: data.clientId,
+      vkUserId: data.clientId,
       isConfirmed: true,
       username: data.username,
       subscriptionId: SubscriptionPlanEnum.Basic,
@@ -173,18 +173,18 @@ export class UserService {
     return toServerCaseKeys(user)
   }
 
-  public async getByVkClientId(id: string, session?: ClientSession): Promise<IUser | null> {
+  public async getByVkUserId(id: string, session?: ClientSession): Promise<IUser | null> {
     if (!id) return null
 
-    const users = await this.repository.findByCriteria({ vkClientId: id }, session)
+    const users = await this.repository.findByCriteria({ vkUserId: id }, session)
 
     return toServerCaseKeys(users[0])
   }
 
-  public async getByYandexClientId(id: string, session?: ClientSession): Promise<IUser | null> {
+  public async getByYandexUserId(id: string, session?: ClientSession): Promise<IUser | null> {
     if (!id) return null
 
-    const users = await this.repository.findByCriteria({ yandexClientId: id }, session)
+    const users = await this.repository.findByCriteria({ yandexUserId: id }, session)
 
     return toServerCaseKeys(users[0])
   }
@@ -192,13 +192,13 @@ export class UserService {
   public async unlinkProvider(user: IUser, provider: 'yandex' | 'vk'): Promise<IUser> {
     const hasAnotherSignInMethod =
       user.hasPassword ||
-      (provider === 'yandex' ? Boolean(user.vkClientId) : Boolean(user.yandexClientId))
+      (provider === 'yandex' ? Boolean(user.vkUserId) : Boolean(user.yandexUserId))
 
     if (!hasAnotherSignInMethod) {
       throw new AppError(ErrorMessages.LAST_SIGN_IN_METHOD, 422)
     }
 
-    const data = provider === 'yandex' ? { yandexClientId: undefined } : { vkClientId: undefined }
+    const data = provider === 'yandex' ? { yandexUserId: undefined } : { vkUserId: undefined }
 
     return await this.edit(data, { id: user.id.toString() })
   }

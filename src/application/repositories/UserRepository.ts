@@ -28,12 +28,12 @@ export default class UserRepository extends BaseRepository<
       filter.email = criteria.email.toLowerCase()
     }
 
-    if (criteria.vkClientId) {
-      filter.vk_client_id = criteria.vkClientId
+    if (criteria.vkUserId) {
+      filter.vk_user_id = criteria.vkUserId
     }
 
-    if (criteria.yandexClientId) {
-      filter.yandex_client_id = criteria.yandexClientId
+    if (criteria.yandexUserId) {
+      filter.yandex_user_id = criteria.yandexUserId
     }
 
     return filter
