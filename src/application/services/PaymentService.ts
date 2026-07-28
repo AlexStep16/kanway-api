@@ -78,7 +78,7 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
       amount: { value: amount, currency: 'RUB' },
       confirmation: {
         type: 'redirect' as const,
-        return_url: `${this.frontUrl}/payment/result?paymentId=${paymentId}`,
+        return_url: `${this.frontUrl}/workspace?paymentId=${paymentId}`,
       },
       receipt: {
         customer: { email: user.email },
