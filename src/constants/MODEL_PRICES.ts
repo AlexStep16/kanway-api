@@ -22,8 +22,8 @@ export const MODEL_PRICES: Record<ModelsEnum, IModelPrice> = {
     input_cached: 0.25,
     output: 15.0,
   },
-  [ModelsEnum.GPT_4O_TRANSCRIBE]: {
-    input: 2.5,
-    output: 10.0,
+  [ModelsEnum.GPT_TRANSCRIBE]: {
+    input: 0,
+    output: 0.0045,
   },
 }

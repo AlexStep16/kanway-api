@@ -57,6 +57,8 @@ import SelectionRepository from '@/application/repositories/SelectionRepository.
 import { ColumnToolsExecutorService } from '@/application/ai/services/ColumnToolsExecutorService.js'
 import { BoardToolsExecutorService } from '@/application/ai/services/BoardToolsExecutorService.js'
 import { WorkspaceToolsExecutorService } from '@/application/ai/services/WorkspaceToolsExecutorService.js'
+import { TranscriptionService } from '@/infrastructure/services/TranscriptionService.js'
+import { TranscriptionController } from '@controllers/TranscriptionController.js'
 
 export function initializeDependencies() {
   const mongoClient = new MongoClient(process.env.MONGO_URL || 'mongodb://localhost:27017/kanway')
@@ -251,6 +253,7 @@ export function initializeDependencies() {
 
   /** AI SERVICES START */
   const chatMessageService = new ChatMessageService(chatMessageRepository, operationLogService)
+  const transcriptionService = new TranscriptionService()
   const chatService = new ChatService(
     chatRespository,
     userService,
@@ -329,6 +332,7 @@ export function initializeDependencies() {
   const chatController = new ChatController(chatService)
   const chatMessageController = new ChatMessageController(chatMessageService)
   const supportController = new SupportController(supportRepository, emailService)
+  const transcriptionController = new TranscriptionController(transcriptionService, userService)
 
   return {
     services: {
@@ -353,6 +357,7 @@ export function initializeDependencies() {
       generalToolsExecutor,
       chatMessageService,
       chatService,
+      transcriptionService,
     },
     controllers: {
       authController,
@@ -370,6 +375,7 @@ export function initializeDependencies() {
       chatController,
       chatMessageController,
       supportController,
+      transcriptionController,
     },
   }
 }

@@ -28,11 +28,9 @@ export function getChatModel(model: ModelsEnum, isReasoning: boolean): BaseChatM
         useResponsesApi: true,
         reasoning: isReasoning ? { effort: 'medium' } : undefined,
       })
-    case ModelsEnum.GPT_4O_TRANSCRIBE:
+    case ModelsEnum.GPT_TRANSCRIBE:
       return new ChatOpenAI({
-        model: 'gpt-4o-transcribe',
-        useResponsesApi: true,
-        reasoning: isReasoning ? { effort: 'medium' } : undefined,
+        model: 'gpt-transcribe',
       })
   }
 }

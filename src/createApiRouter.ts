@@ -18,6 +18,7 @@ import chatMessageRoutes from '@routes/chatMessageRoutes.js'
 import { initializeDependencies } from '@infrastructure/di/initializeDependencies.js'
 import supportRoutes from './infrastructure/routes/supportRoutes.js'
 import paymentNotificationRoutes from './infrastructure/routes/paymentNotificationRoutes.js'
+import transcriptionRoutes from './infrastructure/routes/transcriptionRoutes.js'
 
 export const createApiRouter = (): Router => {
   const apiRouter = Router()
@@ -52,6 +53,7 @@ export const createApiRouter = (): Router => {
     operationLogRoutes(dependencies.controllers.operationLogController),
   )
   apiRouter.use('/me', userRoutes(dependencies.controllers.userController))
+  apiRouter.use('/ai', transcriptionRoutes(dependencies.controllers.transcriptionController))
 
   return apiRouter
 }
