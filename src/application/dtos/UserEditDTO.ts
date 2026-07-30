@@ -6,7 +6,7 @@ export const UserEditSchemaDTO = UserDTOSchema.partial()
   .omit({ email: true })
   .extend({
     currentPassword: z.string(ErrorMessages.INVALID_PASSWORD_FORMAT).optional(),
-    deletedTime: z.string().nullable().optional(),
+    deletedTime: z.date().optional().nullable(),
   })
 
 export type UserEditDTO = z.infer<typeof UserEditSchemaDTO>
