@@ -74,10 +74,6 @@ export const UserSchema = new Schema<IUserRaw, IUserRawStatics, IUserRawMethods>
       type: Number,
       default: 0,
     },
-    audio_credits_spent: {
-      type: Number,
-      default: 0,
-    },
     is_tips_completed: {
       type: Boolean,
       default: false,

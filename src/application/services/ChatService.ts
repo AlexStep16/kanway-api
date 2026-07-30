@@ -58,7 +58,6 @@ type SendThreadContext = {
   threadId: string
   board: ActiveEntity | null
   workspace: ActiveEntity
-  audioCreditsSpent: number
   chatMessages: IChatMessage[]
 }
 
@@ -142,7 +141,6 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       timezone: string
       userMessage: string
       iterationId: string
-      audioCreditsSpent?: number
       statusMessageId: string
       activeBoard: { id: string; name: string } | null
       activeWorkspace: { id: string; name: string }
@@ -221,7 +219,6 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
         tagsList: tagsList.length > 0 ? tagsList : 'No tags',
         timezone: data.timezone,
         userMessage: data.userMessage,
-        audioCreditsSpent: data.audioCreditsSpent,
 
         aiName: userSetting.aiName || 'Kanway',
         aiConfirmationType: userSetting.aiConfirmationType,
@@ -274,7 +271,6 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       iterationId: string
       timezone: string
       userMessage: string
-      audioCreditsSpent?: number
       activeBoard: { id: string; name: string } | null
       activeWorkspace: { id: string; name: string }
     },
@@ -311,7 +307,6 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
         iterationId: data.iterationId,
         statusMessageId: statusMessage.id.toHexString(),
         activeBoard: data.activeBoard,
-        audioCreditsSpent: data.audioCreditsSpent,
         activeWorkspace: data.activeWorkspace,
         userMessage: data.userMessage,
       },
@@ -350,7 +345,6 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
         modelType: data.modelType || ModelsEnum.GPT_5_4_MINI,
         timezone: data.timezone,
         userMessage: lastConversationMessage.content as string,
-        audioCreditsSpent: context.audioCreditsSpent,
         activeBoard: context.board,
         activeWorkspace: context.workspace,
         iterationId: lastConversationMessage.iterationId,
@@ -397,7 +391,6 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
         iterationId,
         timezone: data.timezone,
         userMessage: data.message!,
-        audioCreditsSpent: context.audioCreditsSpent,
         activeBoard: context.board,
         activeWorkspace: context.workspace,
       },
@@ -484,7 +477,6 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       threadId,
       board,
       workspace,
-      audioCreditsSpent: user.audioCreditsSpent,
       chatMessages,
     }
 

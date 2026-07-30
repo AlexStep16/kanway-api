@@ -21,7 +21,6 @@ export interface Configurable {
   columnsList: string
   boardsList: string
   workspacesList: string
-  audioCreditsSpent?: number
   tagsList: string
   timezone: string
   userMessage: string

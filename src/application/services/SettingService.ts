@@ -1,4 +1,5 @@
 import SettingRepository from '@repositories/SettingRepository.js'
+import type { DeleteResult } from 'mongodb'
 import { ISetting } from '@entities/ISetting.js'
 import { ISettingRaw } from '@entities/ISettingRaw.js'
 import { SettingDTO } from '@dtos/SettingDTO.js'
@@ -51,5 +52,13 @@ export class SettingService extends BaseService<ISettingRaw, ISetting, ISettingC
     }
 
     return await this.getByCriteria({ userId: user.id.toString() })
+  }
+
+  public async delete(
+    criteria: ISettingCriteria,
+    user: IUser,
+    session?: ClientSession,
+  ): Promise<DeleteResult> {
+    return await this.repository.deleteMany(criteria, user.id, session)
   }
 }

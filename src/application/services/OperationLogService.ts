@@ -1,7 +1,7 @@
 import OperationLogRepository from '@repositories/OperationLogRepository.js'
 import { IOperationLog } from '@entities/IOperationLog.js'
 import { OperationLogCreationDTO } from '@dtos/OperationLogCreationDTO.js'
-import mongoose, { ClientSession, Types } from 'mongoose'
+import mongoose, { ClientSession, DeleteResult, Types } from 'mongoose'
 import { IOperationLogRaw } from '@entities/IOperationLogRaw.js'
 import { ErrorMessages } from '@/enums/ErrorMessages.js'
 import { IUser } from '@/domain/entities/IUser.js'
@@ -90,6 +90,14 @@ export class OperationLogService extends BaseService<
     await this.repository.updateManyByCriteria(criteria, payload, session, userId)
 
     return await this.getByCriteria(criteria, userId, session)
+  }
+
+  public async delete(
+    criteria: IOperationLogCriteria,
+    user: IUser,
+    session?: ClientSession,
+  ): Promise<DeleteResult> {
+    return this.repository.deleteMany(criteria, user.id, session)
   }
 
   public async create(

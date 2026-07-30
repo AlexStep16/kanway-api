@@ -4,10 +4,11 @@ import PaymentMethodRepository from '@repositories/PaymentMethodRepository.js'
 import { IPaymentMethod } from '@/domain/entities/IPaymentMethod.js'
 import { IPaymentMethodRaw } from '@/domain/entities/IPaymentMethodRaw.js'
 import { PaymentMethodDTO } from '@dtos/PaymentMethodDTO.js'
-import { ClientSession, Types } from 'mongoose'
+import { ClientSession, DeleteResult, Types } from 'mongoose'
 import { UserService } from '@application/services/UserService.js'
 import { BaseService } from './BaseService.js'
 import { IPaymentMethodCriteria } from '../interfaces/criterias/IPaymentMethodCriteria.js'
+import { IUser } from '@/domain/entities/IUser.js'
 
 export class PaymentMethodService extends BaseService<
   IPaymentMethodRaw,
@@ -45,6 +46,14 @@ export class PaymentMethodService extends BaseService<
     const newPaymentMethod = await this.repository.create(paymentMethod, session)
 
     return [toServerCaseKeys<IPaymentMethod>(newPaymentMethod)]
+  }
+
+  public async delete(
+    criteria: IPaymentMethodCriteria,
+    user: IUser,
+    session?: ClientSession,
+  ): Promise<DeleteResult> {
+    return this.repository.deleteMany(criteria, user.id, session)
   }
 
   public async deleteById(

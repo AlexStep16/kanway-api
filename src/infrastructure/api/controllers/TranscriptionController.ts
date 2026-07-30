@@ -25,16 +25,8 @@ export class TranscriptionController {
 
       if (usage) {
         const creditsSpent = calculateAudioCredits(usage, ModelsEnum.GPT_TRANSCRIBE)
-        const userAudioCredits = req.user?.audioCreditsSpent || 0
 
-        await this.userService.edit(
-          {
-            audioCreditsSpent: userAudioCredits + creditsSpent,
-          },
-          {
-            id: req.user!.id.toString(),
-          },
-        )
+        await this.userService.chargeAudioUsage(creditsSpent, req.user as any)
       }
 
       res.status(200).json(new SuccessResponse({ transcript: text }))

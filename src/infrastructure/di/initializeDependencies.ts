@@ -377,5 +377,10 @@ export function initializeDependencies() {
       supportController,
       transcriptionController,
     },
+    repositories: {
+      checkpointRepository,
+      checkpointWriteRepository,
+      selectionRepository,
+    },
   }
 }

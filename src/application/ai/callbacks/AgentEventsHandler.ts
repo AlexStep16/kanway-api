@@ -33,7 +33,6 @@ export class AgentEventsHandler extends BaseCallbackHandler {
   public creditsSpent = 0
   public redisPublisher: Redis
   public modelType = ModelsEnum.GPT_5_4_MINI
-  public audioCreditsSpent = 0
   public isInterrupted = false
 
   constructor(
@@ -52,7 +51,6 @@ export class AgentEventsHandler extends BaseCallbackHandler {
     this.configurable = configurable
     this.statusMessage = statusMessage
     this.modelType = configurable.modelType
-    this.audioCreditsSpent = configurable.audioCreditsSpent || 0
 
     this.status = statusMessage.content
 
@@ -115,7 +113,6 @@ export class AgentEventsHandler extends BaseCallbackHandler {
     const dto: Partial<ChatMessageDTO> = {
       content: this.status,
       creditsUsed: this.creditsSpent + (this.statusMessage.creditsUsed || 0),
-      audioCreditsUsed: this.audioCreditsSpent + (this.statusMessage.audioCreditsUsed || 0),
     }
 
     await this.editChatMessage(
@@ -196,7 +193,6 @@ export class AgentEventsHandler extends BaseCallbackHandler {
 
   async spendCredits() {
     await this.userService.spendCredits(this.creditsSpent, this.configurable.user.id.toString())
-    await this.userService.chargeAudioUsage(this.audioCreditsSpent, this.configurable.user)
   }
 
   async handleCustomEvent(event: string, data: any) {

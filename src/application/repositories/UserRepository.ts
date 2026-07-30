@@ -69,4 +69,23 @@ export default class UserRepository extends BaseRepository<
       },
     )
   }
+
+  public async findDeletedUsers(
+    currentDate: Date,
+    session: ClientSession | null = null,
+  ): Promise<IUser[]> {
+    return await this.findByFilter<IUser>(
+      {
+        is_deleted: true,
+        deleted_time: {
+          $lte: currentDate,
+          $ne: null,
+        },
+      },
+      session,
+      {
+        sort: { deleted_time: 1 },
+      },
+    )
+  }
 }

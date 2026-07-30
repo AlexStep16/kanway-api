@@ -35,19 +35,13 @@ export class UserController {
     }
   }
 
-  public delete = async (req: Request, res: Response, next: NextFunction) => {
+  public deleteSoft = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const criteria = { id: req.user!.id.toHexString() } as IUserCriteria
-      await this.service.delete(criteria)
 
-      res.clearCookie('token', {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
-        path: '/',
-      })
+      const user = await this.service.deleteSoft(criteria, req.user!)
 
-      res.status(200).json(new SuccessResponse(null))
+      res.status(200).json(new SuccessResponse(user))
     } catch (error) {
       next(error)
     }

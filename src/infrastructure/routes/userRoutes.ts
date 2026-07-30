@@ -25,7 +25,7 @@ export default (controller: UserController): Router => {
   router.patch('/avatar', patchUserLimiter, upload.single('avatar'), controller.updateAvatar)
   router.delete('/avatar', patchUserLimiter, upload.single('avatar'), controller.resetAvatar)
   router.patch('/', patchUserLimiter, validationMiddleware(UserEditSchemaDTO), controller.update)
-  router.delete('/', controller.delete)
+  router.delete('/', controller.deleteSoft)
   router.post('/send/verify', emailSendLimiter, controller.sendVerificationEmail.bind(controller))
   router.post('/logout', controller.logout.bind(controller))
 

@@ -29,9 +29,6 @@ const ChatMessageSchema = new Schema<IChatMessageRaw>(
     credits_used: {
       type: Number,
     },
-    audio_credits_used: {
-      type: Number,
-    },
     rating: {
       type: Boolean,
     },

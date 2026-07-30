@@ -35,8 +35,9 @@ export const UserDTOSchema = z.object({
     error: (iss) =>
       iss.input === undefined ? ErrorMessages.TIMEZONE_REQUIRED : ErrorMessages.INVALID_TIMEZONE,
   }),
-  audioCreditsSpent: z.number().optional(),
   isConfirmed: z.boolean().optional(),
+  isDeleted: z.boolean().optional(),
+  deletedTime: z.date().optional(),
   paymentMethodId: z.string({
     error: (iss) =>
       iss.input === undefined

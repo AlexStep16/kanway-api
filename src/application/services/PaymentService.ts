@@ -3,7 +3,7 @@ import PaymentRepository from '@repositories/PaymentRepository.js'
 import { IPayment } from '@/domain/entities/IPayment.js'
 import { IPaymentRaw } from '@/domain/entities/IPaymentRaw.js'
 import { PaymentDTO } from '@dtos/PaymentDTO.js'
-import mongoose, { ClientSession, Types } from 'mongoose'
+import mongoose, { ClientSession, DeleteResult, Types } from 'mongoose'
 import { BaseService } from './BaseService.js'
 import { IPaymentCriteria } from '@interfaces/criterias/IPaymentCriteria.js'
 import { type ICreatePayment, Payment, WebHookEvents, YooCheckout } from '@a2seven/yoo-checkout'
@@ -290,6 +290,14 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
     return this.getByCriteria(criteria)
   }
 
+  public async delete(
+    criteria: IPaymentCriteria,
+    user: IUser,
+    session?: ClientSession,
+  ): Promise<DeleteResult> {
+    return this.repository.deleteMany(criteria, user.id, session)
+  }
+
   public async cancelSubscription(user: IUser) {
     if (!user.isSubscriptionActive) {
       throw new AppError('У пользователя нет активной подписки.', 500)
@@ -481,7 +489,6 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
     await this.userService.edit(
       {
         subscriptionId: SUBSCRIPTION_ITEM_ID_TO_PLAN[itemId],
-        credits: creditsAmount,
         paymentRetriesCount: 0,
         isSubscriptionActive: true,
         pendingChangePlan: null,
@@ -491,6 +498,8 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
       undefined,
       session,
     )
+
+    await this.userService.addCredits(user.id.toString(), creditsAmount, false, session)
 
     if (checkedPayment?.payment_method?.id) {
       let [paymentMethod] = await this.paymentMethodService.getByCriteria(
@@ -551,7 +560,7 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
       const itemId = paymentModel.itemId as CreditItemId
       const creditsToAdd = CREDIT_PACKS_DATA[itemId].credits
 
-      await this.userService.addPaidCredits(user.id.toString(), creditsToAdd, session)
+      await this.userService.addCredits(user.id.toString(), creditsToAdd, true, session)
 
       const creditPackLabel = CREDIT_PACKS_DATA[itemId].label
 

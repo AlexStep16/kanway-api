@@ -9,7 +9,6 @@ export interface ChatMessageDTO {
   pendingToolCallId?: string
   threadId: string
   creditsUsed?: number
-  audioCreditsUsed?: number
   rating?: boolean
   chatId: Types.ObjectId
   isResolved?: boolean

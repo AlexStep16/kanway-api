@@ -12,7 +12,7 @@ import UserRepository from '@repositories/UserRepository.js'
 import { SALT_ROUNDS } from '@constants/SALT_ROUNDS.js'
 import { SubscriptionPlanEnum } from '@domain/enums/SubscriptionPlanEnum.js'
 
-import { ClientSession, Types, UpdateWriteOpResult } from 'mongoose'
+import { ClientSession, DeleteResult, Types } from 'mongoose'
 import sharp from 'sharp'
 import { rm } from 'fs/promises'
 import { EmailService } from '@/infrastructure/services/EmailService.js'
@@ -21,6 +21,7 @@ import { YandexUserDTO } from '../dtos/YandexUserDTO.js'
 import { VkUserDTO } from '../dtos/VkUserDTO.js'
 import { TokenKeysEnum } from '@/domain/enums/TokenKeysEnum.js'
 import { SignupServiceCredentialsDTO } from '../dtos/SignupServiceCredentialsDTO.js'
+import dayjs from 'dayjs'
 
 type EmailChallenge = {
   userId: string
@@ -152,8 +153,30 @@ export class UserService {
     }
   }
 
-  public async delete(criteria: IUserCriteria, userId?: Types.ObjectId): Promise<void> {
-    await this.repository.deleteMany(criteria, userId)
+  public async deleteSoft(
+    criteria: IUserCriteria,
+    user: IUser,
+    session?: ClientSession,
+  ): Promise<IUser> {
+    const deletedTime = dayjs().add(1, 'month').toDate()
+
+    return await this.edit(
+      {
+        isDeleted: true,
+        deletedTime: deletedTime,
+      },
+      criteria,
+      user,
+      session,
+    )
+  }
+
+  public async delete(
+    criteria: IUserCriteria,
+    user: IUser,
+    session?: ClientSession,
+  ): Promise<DeleteResult> {
+    return this.repository.deleteMany(criteria, user.id, session)
   }
 
   public async validateCredentials(email: string, passwordPlain: string): Promise<IUser> {
@@ -227,6 +250,13 @@ export class UserService {
     return await this.repository.findDueActiveSubscriptions(currentDate, session || null)
   }
 
+  public async getDeletedUsers(
+    currentDate: Date = new Date(),
+    session?: ClientSession,
+  ): Promise<IUser[]> {
+    return await this.repository.findDeletedUsers(currentDate, session || null)
+  }
+
   public async me(id: Types.ObjectId, session?: ClientSession): Promise<IUser | null> {
     const user = await this.getById(id.toString(), session)
 
@@ -268,22 +298,29 @@ export class UserService {
     let newCredits = user.credits
     let newPaidCredits = user.paidCredits
 
-    if (newCredits >= leftover) {
-      newCredits -= leftover
-      leftover = 0
-    } else {
-      leftover -= newCredits
-      newCredits = 0
+    if (newCredits > 0) {
+      if (newCredits >= leftover) {
+        newCredits -= leftover
+        leftover = 0
+      } else {
+        leftover -= newCredits
+        newCredits = 0
+      }
     }
 
-    if (leftover > 0) {
+    if (leftover > 0 && newPaidCredits > 0) {
       if (newPaidCredits >= leftover) {
         newPaidCredits -= leftover
         leftover = 0
       } else {
+        leftover -= newPaidCredits
         newPaidCredits = 0
-        leftover = 0
       }
+    }
+
+    if (leftover > 0) {
+      newCredits -= leftover
+      leftover = 0
     }
 
     await this.edit(
@@ -304,31 +341,46 @@ export class UserService {
     user: IUser,
     externalSession?: ClientSession,
   ): Promise<number> {
-    const chargedAudioTokens = await this.spendCredits(amount, user.id.toString(), externalSession)
+    const chargedAudioCredits = await this.spendCredits(amount, user.id.toString(), externalSession)
+
+    return chargedAudioCredits
+  }
+
+  public async addCredits(
+    userId: string,
+    credits: number,
+    isPaid: boolean,
+    session?: ClientSession,
+  ) {
+    const user = await this.getById(userId, session)
+
+    if (!user) throw new AppError(ErrorMessages.USER_NOT_FOUND, 404)
+
+    let newCredits = user.credits
+    let newPaidCredits = user.paidCredits
+
+    if (isPaid) {
+      newPaidCredits += credits
+    } else {
+      newCredits += credits
+    }
+
+    if (isPaid && newCredits < 0) {
+      newPaidCredits += newCredits
+      newCredits = 0
+    }
 
     await this.edit(
       {
-        audioCreditsSpent: 0,
+        credits: newCredits,
+        paidCredits: newPaidCredits,
       },
-      { id: user.id.toString() },
-      user,
-      externalSession,
-    )
-
-    return chargedAudioTokens
-  }
-
-  public async addPaidCredits(
-    userId: string,
-    credits: number,
-    session?: ClientSession,
-  ): Promise<UpdateWriteOpResult> {
-    return await this.repository.decrementFieldByCriteria(
       { id: userId },
-      'paid_credits',
-      -credits,
+      undefined,
       session,
     )
+
+    return { credits: newCredits, paidCredits: newPaidCredits }
   }
 
   public async verifyOTPEmail(code: string, email: string): Promise<string> {

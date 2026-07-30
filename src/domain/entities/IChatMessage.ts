@@ -9,7 +9,6 @@ export interface IChatMessage {
   listType?: string
   pendingToolCallId?: string
   creditsUsed?: number
-  audioCreditsUsed?: number
   rating?: boolean
   userId: Types.ObjectId
   chatId: Types.ObjectId
