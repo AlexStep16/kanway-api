@@ -10,6 +10,7 @@ export interface ITaskRaw {
   is_deleted: boolean
   is_deleted_external: boolean
   rank: string
+  priority?: 'low' | 'medium' | 'high'
   is_completed: boolean
   tags: Array<string>
   user_id: Types.ObjectId

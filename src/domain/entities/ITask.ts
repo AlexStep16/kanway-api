@@ -14,6 +14,7 @@ export interface ITask<
   isDeleted: boolean
   isDeletedExternal: boolean
   rank: string
+  priority?: 'low' | 'medium' | 'high'
   isCompleted: boolean
   tags: Array<string>
   userId: Types.ObjectId

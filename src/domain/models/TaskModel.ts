@@ -45,6 +45,10 @@ export const TaskSchema = new Schema<ITaskRaw>(
       type: String,
       required: true,
     },
+    priority: {
+      type: String,
+      enum: ['low', 'medium', 'high'],
+    },
     is_completed: {
       type: Boolean,
       default: false,
