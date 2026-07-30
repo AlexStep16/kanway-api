@@ -3,7 +3,7 @@ import cron from 'node-cron'
 import { UserService } from '@/application/services/UserService.js'
 import { deleteAllUserData } from './deleteAllUserData.js'
 
-export function userDeletingCron(userService: UserService) {
+export function startDeletedUserCleanupCron(userService: UserService) {
   return cron.schedule('0 0 * * *', async () => {
     const currentDate = new Date()
 
