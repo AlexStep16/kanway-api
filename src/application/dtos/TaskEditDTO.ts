@@ -30,13 +30,13 @@ export const TaskEditDTOSchema = TaskDTOSchema.partial().extend({
         error: (iss) =>
           iss.input === undefined
             ? ErrorMessages.TASK_COLOR_REQUIRED
-            : 'Неверное значение для цвета.',
+            : 'Неверное значение для цвета',
       }),
       tone: z.enum(['light', 'medium', 'dark'], {
         error: (iss) =>
           iss.input === undefined
             ? ErrorMessages.TASK_COLOR_REQUIRED
-            : 'Неверное значение для цвета.',
+            : 'Неверное значение для цвета',
       }),
     })
     .nullable()

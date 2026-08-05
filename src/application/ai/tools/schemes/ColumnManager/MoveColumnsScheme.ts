@@ -12,7 +12,7 @@ export const MoveColumnsScheme = z.object({
   newBoardId: z
     .string(ErrorMessages.BOARD_ID_INVALID)
     .refine(checkBoardId, {
-      message: 'Board ID does not exist.',
+      message: 'Board ID does not exist',
     })
     .regex(objectIdRegex)
     .optional(),

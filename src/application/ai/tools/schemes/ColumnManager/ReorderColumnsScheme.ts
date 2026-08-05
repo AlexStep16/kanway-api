@@ -12,7 +12,7 @@ export const ReorderColumnsScheme = z.object({
   column_ids: z
     .array(z.string())
     .describe(
-      'The complete list of ALL column IDs on this board, ordered in the exact sequence they should appear.',
+      'The complete list of ALL column IDs on this board, ordered in the exact sequence they should appear',
     ),
 }).describe(`
   Reorder all columns on a specific board. 

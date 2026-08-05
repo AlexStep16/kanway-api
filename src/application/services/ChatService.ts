@@ -257,7 +257,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       }
     }
     throw new AppError(
-      'Произошла ошибка при выполнении операции после максимального количества попыток.',
+      'Произошла ошибка при выполнении операции после максимального количества попыток',
       500,
     )
   }
@@ -334,7 +334,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       .find((message) => message.role !== 'status')
 
     if (!lastConversationMessage || lastConversationMessage.role !== 'user') {
-      throw new AppError('Нельзя продолжить без последнего сообщения пользователя.', 400)
+      throw new AppError('Нельзя продолжить без последнего сообщения пользователя', 400)
     }
 
     const { jobPayload, statusMessage } = await this._createThreadJobPayload(
@@ -423,7 +423,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       data.modelType !== ModelsEnum.GPT_5_4_MINI &&
       user.subscriptionId === SubscriptionPlanEnum.Basic
     ) {
-      throw new AppError('Модель доступна только для пользователей с платной подпиской.', 403)
+      throw new AppError('Модель доступна только для пользователей с платной подпиской', 403)
     }
 
     const { board, workspace } = await this._getActiveEntities(
@@ -469,7 +469,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     }
 
     if (toolsWithNoDecision > 0) {
-      throw new AppError('Не все действия подтверждены или отменены.', 400)
+      throw new AppError('Не все действия подтверждены или отменены', 400)
     }
 
     const context: SendThreadContext = {
@@ -485,7 +485,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     }
 
     if (!data.threadId) {
-      throw new AppError('Для нового чата требуется сообщение пользователя.', 400)
+      throw new AppError('Для нового чата требуется сообщение пользователя', 400)
     }
 
     return await this._continueThread(data, user, externalSession, context)
@@ -537,7 +537,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     const lastStatusMessage = lastStatusMessages[0]
 
     if (!lastStatusMessage) {
-      throw new AppError('Не найдено сообщение для повторной попытки.', 400)
+      throw new AppError('Не найдено сообщение для повторной попытки', 400)
     }
 
     await this.chatMessageService.delete(
@@ -577,13 +577,13 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     const lastUserMessage = chatMessages.find((msg) => msg.role === 'user')
 
     if (!lastUserMessage) {
-      throw new AppError('Не найдено сообщение пользователя для повторной попытки.', 400)
+      throw new AppError('Не найдено сообщение пользователя для повторной попытки', 400)
     }
 
     const lastStatusMessage = chatMessages.find((msg) => msg.role === 'status')
 
     if (!lastStatusMessage) {
-      throw new AppError('Не найдено сообщение статуса для повторной попытки.', 400)
+      throw new AppError('Не найдено сообщение статуса для повторной попытки', 400)
     }
 
     const lastStatusMessageId = lastStatusMessage ? lastStatusMessage.id.toHexString() : null
@@ -773,13 +773,13 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     const lastUserMessage = chatMessages.find((msg) => msg.role === 'user')
 
     if (!lastUserMessage) {
-      throw new AppError('Не найдено сообщение пользователя для повторной попытки.', 400)
+      throw new AppError('Не найдено сообщение пользователя для повторной попытки', 400)
     }
 
     const lastStatusMessage = chatMessages.find((msg) => msg.role === 'status')
 
     if (!lastStatusMessage) {
-      throw new AppError('Не найдено сообщение статуса для повторной попытки.', 400)
+      throw new AppError('Не найдено сообщение статуса для повторной попытки', 400)
     }
 
     const statusLog = (lastStatusMessage.content as IStatus).logs.find(

@@ -88,7 +88,7 @@ export class GeneralToolsExecutor {
 
     if (!logIds || !Array.isArray(logIds) || logIds.some((id) => typeof id !== 'string')) {
       return new FailedToolResult(
-        'Invalid or missing argument: log_ids must be an array of strings.',
+        'Invalid or missing argument: log_ids must be an array of strings',
       )
     }
     const filters = await this._getHumanReadableUndoDetails(logIds, configurable.user.id, session)

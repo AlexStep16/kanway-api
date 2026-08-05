@@ -19,7 +19,7 @@ export const SearchColumnsScheme = z
               'updated_at',
             ])
             .describe(
-              'The column field to search (e.g. "name", "is_deleted", "board_id"). created_at and updated_at are ISO 8601 datetime strings.',
+              'The column field to search (e.g. "name", "is_deleted", "board_id"). created_at and updated_at are ISO 8601 datetime strings',
             ),
 
           eq: z.any().optional().describe('Equals: Exact match.'),
@@ -61,7 +61,7 @@ export const SearchColumnsScheme = z
         }),
       )
       .describe(
-        'One filter criterion. Combine multiple criteria with AND logic in the filters array.',
+        'One filter criterion. Combine multiple criteria with AND logic in the filters array',
       ),
     offset: z
       .number()
@@ -69,14 +69,14 @@ export const SearchColumnsScheme = z
       .describe(
         'The number of tasks to skip before returning the sample. ' +
           "Use this for pagination ONLY when you need to read the 'next' batch of tasks (e.g., if you already reviewed the first 30 tasks and the user asks for more). " +
-          'Do NOT use offset in a continuous loop to scan the entire database.',
+          'Do NOT use offset in a continuous loop to scan the entire database',
       ),
     sample_limit: z
       .number()
       .default(3)
       .describe(
         'The maximum number of columns to return in the output sample. ' +
-          'Use a value greater than 3 (up to 30) ONLY when the orchestrator explicitly asks you to read, analyze, summarize, or list these columns.',
+          'Use a value greater than 3 (up to 30) ONLY when the orchestrator explicitly asks you to read, analyze, summarize, or list these columns',
       ),
     fields_to_include: z
       .array(
@@ -86,14 +86,14 @@ export const SearchColumnsScheme = z
       .describe(
         'Additional detailed fields to include in the output sample. ' +
           'Use ONLY for data retrieval, reading, or analysis requests. ' +
-          'By default, only lightweight fields (id, name) are returned to save context budget.',
+          'By default, only lightweight fields (id, name) are returned to save context budget',
       ),
   })
   .describe(
     'Use this tool to search and filter columns. ' +
       "This tool always generates a 'selection_id' for subsequent bulk mutations. " +
       'If the goal is to bulk update or delete columns, KEEP the default sample_limit and fields_to_include to save tokens. ' +
-      'If the goal is to read, list, summarize, or analyze columns, explicitly set fields_to_include and increase sample_limit (up to 30).',
+      'If the goal is to read, list, summarize, or analyze columns, explicitly set fields_to_include and increase sample_limit (up to 30)',
   )
 
 export type SearchColumnsDTO = z.infer<typeof SearchColumnsScheme>

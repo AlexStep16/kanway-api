@@ -7,7 +7,7 @@ const ColorFilterValueSchema = z
     tone: z.enum(['light', 'medium', 'dark']).optional().describe('The task color tone.'),
   })
   .refine((color) => color.value || color.tone, {
-    message: 'At least one of color value or tone must be provided.',
+    message: 'At least one of color value or tone must be provided',
   })
 
 const FilterValueSchema = z.union([ColorFilterValueSchema, z.any()])
@@ -38,14 +38,14 @@ export const SearchTasksScheme = z
               'updated_at',
             ])
             .describe(
-              'The task field to search (e.g. "is_completed", "due_date", "column_id", "color"). due_date is YYYY-MM-DD, due_time is HH:mm, created_at and updated_at are ISO 8601 datetime strings.',
+              'The task field to search (e.g. "is_completed", "due_date", "column_id", "color"). due_date is YYYY-MM-DD, due_time is HH:mm, created_at and updated_at are ISO 8601 datetime strings',
             ),
 
           eq: FilterValueSchema.optional().describe(
-            'Equals: Exact match. For color use { value?: colorName, tone?: light|medium|dark }.',
+            'Equals: Exact match. For color use { value?: colorName, tone?: light|medium|dark }',
           ),
           neq: FilterValueSchema.optional().describe(
-            'Not Equals: Exclude this value. For color use { value?: colorName, tone?: light|medium|dark }.',
+            'Not Equals: Exclude this value. For color use { value?: colorName, tone?: light|medium|dark }',
           ),
 
           in: z
@@ -84,14 +84,14 @@ export const SearchTasksScheme = z
         }),
       )
       .describe(
-        'One filter criterion. Combine multiple criteria with AND logic in the filters array.',
+        'One filter criterion. Combine multiple criteria with AND logic in the filters array',
       ),
     sample_limit: z
       .number()
       .default(3)
       .describe(
         'The maximum number of tasks to return in the output sample. ' +
-          'Use a value greater than 3 (up to 30) ONLY when the orchestrator explicitly asks you to read, analyze, summarize, or list these tasks.',
+          'Use a value greater than 3 (up to 30) ONLY when the orchestrator explicitly asks you to read, analyze, summarize, or list these tasks',
       ),
     offset: z
       .number()
@@ -99,7 +99,7 @@ export const SearchTasksScheme = z
       .describe(
         'The number of tasks to skip before returning the sample. ' +
           "Use this for pagination ONLY when you need to read the 'next' batch of tasks (e.g., if you already reviewed the first 30 tasks and the user asks for more). " +
-          'Do NOT use offset in a continuous loop to scan the entire database.',
+          'Do NOT use offset in a continuous loop to scan the entire database',
       ),
     fields_to_include: z
       .array(
@@ -119,14 +119,14 @@ export const SearchTasksScheme = z
       .describe(
         'Additional detailed fields to include in the output sample. ' +
           'Use ONLY for data retrieval, reading, or analysis requests. ' +
-          'By default, only lightweight fields (id, name, is_completed, due_date) are returned to save context budget.',
+          'By default, only lightweight fields (id, name, is_completed, due_date) are returned to save context budget',
       ),
   })
   .describe(
     'Use this tool to search and filter tasks. ' +
       "This tool always generates a 'selection_id' for subsequent bulk mutations. " +
       'If the goal is to bulk update or delete tasks, KEEP the default sample_limit and fields_to_include to save tokens. ' +
-      'If the goal is to read, list, summarize, or analyze tasks, explicitly set fields_to_include and increase sample_limit (up to 30).',
+      'If the goal is to read, list, summarize, or analyze tasks, explicitly set fields_to_include and increase sample_limit (up to 30)',
   )
 
 export type SearchTasksDTO = z.infer<typeof SearchTasksScheme>

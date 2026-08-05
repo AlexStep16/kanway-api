@@ -9,7 +9,7 @@ export const CreateBoardsScheme = z.object({
       workspace_id: z
         .string(ErrorMessages.WORKSPACE_ID_INVALID)
         .refine(checkWorkspaceId, {
-          message: 'Workspace ID does not exist.',
+          message: 'Workspace ID does not exist',
         })
         .describe('ID of the workspace to move the board into.'),
       is_favorite: z.boolean().optional().describe('Whether the board is a favorite.'),

@@ -49,7 +49,7 @@ export const globalErrorHandler = (err: any, _r: Request, res: Response, _n: Nex
     success: false,
     error: {
       code: 500,
-      description: 'Непредвиденная ошибка сервера.',
+      description: 'Непредвиденная ошибка сервера',
     },
   })
 }

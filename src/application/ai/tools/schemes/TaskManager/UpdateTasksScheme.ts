@@ -9,7 +9,7 @@ import {
 import { ColorScheme } from '../commonSchemes.js'
 
 const ColorUpdateSchema = ColorScheme.nullable().describe(
-  'Object to update the task color. Pass null to remove the color completely.',
+  'Object to update the task color. Pass null to remove the color completely',
 )
 
 export const UpdateTasksScheme = z.object({
@@ -25,7 +25,7 @@ export const UpdateTasksScheme = z.object({
     is_completed: z.boolean().optional().describe('Directly overwrite status.'),
     color: ColorUpdateSchema.optional(),
     tags: ArrayUpdateSchema.optional().describe(
-      'Update the array of tags associated with the task.',
+      'Update the array of tags associated with the task',
     ),
     priority: z.enum(['low', 'medium', 'high']).optional().describe('Directly overwrite priority.'),
   }),

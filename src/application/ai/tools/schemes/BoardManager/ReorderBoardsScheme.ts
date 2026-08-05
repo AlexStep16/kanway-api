@@ -12,7 +12,7 @@ export const ReorderBoardsScheme = z.object({
   board_ids: z
     .array(z.string())
     .describe(
-      'The complete list of ALL board IDs in this workspace, ordered in the exact sequence they should appear.',
+      'The complete list of ALL board IDs in this workspace, ordered in the exact sequence they should appear',
     ),
 }).describe(`
   Reorder all boards in a specific workspace. 

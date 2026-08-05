@@ -12,7 +12,7 @@ export const MoveBoardsScheme = z.object({
   newWorkspaceId: z
     .string(ErrorMessages.WORKSPACE_ID_INVALID)
     .refine(checkWorkspaceId, {
-      message: 'Workspace ID does not exist.',
+      message: 'Workspace ID does not exist',
     })
     .regex(objectIdRegex)
     .optional(),

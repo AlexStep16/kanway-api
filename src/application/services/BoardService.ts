@@ -98,7 +98,7 @@ export class BoardService extends BaseService<
       }
     }
     throw new AppError(
-      'Произошла ошибка при выполнении операции после максимального количества попыток.',
+      'Произошла ошибка при выполнении операции после максимального количества попыток',
       500,
     )
   }
@@ -284,7 +284,7 @@ export class BoardService extends BaseService<
       user.id,
     )
 
-    if (updateManyResult.modifiedCount === 0) throw new AppError('Не удалось обновить доски.', 500)
+    if (updateManyResult.modifiedCount === 0) throw new AppError('Не удалось обновить доски', 500)
 
     const sideEffects: Promise<any>[] = []
 
@@ -460,7 +460,7 @@ export class BoardService extends BaseService<
     const updatedBoardsResult = await this.repository.bulkUpdate(boardPayloads, user.id, session)
 
     if (!updatedBoardsResult || updatedBoardsResult.modifiedCount === 0) {
-      throw new AppError('Не удалось обновить доски.', 500)
+      throw new AppError('Не удалось обновить доски', 500)
     }
 
     const sideEffects: Promise<any>[] = []
@@ -795,22 +795,22 @@ export class BoardService extends BaseService<
     }
 
     if (toStart && toEnd) {
-      throw new AppError('Нельзя переместить доски одновременно в начало и в конец.', 400)
+      throw new AppError('Нельзя переместить доски одновременно в начало и в конец', 400)
     }
 
     if ((toStart || toEnd) && (beforeBoardId || afterBoardId)) {
       throw new AppError(
-        'Нельзя одновременно использовать beforeBoardId/afterBoardId и toStart/toEnd.',
+        'Нельзя одновременно использовать beforeBoardId/afterBoardId и toStart/toEnd',
         400,
       )
     }
 
     if (beforeBoardId && uniqueBoardIds.includes(beforeBoardId)) {
-      throw new AppError('beforeBoardId не может быть среди перемещаемых досок.', 400)
+      throw new AppError('beforeBoardId не может быть среди перемещаемых досок', 400)
     }
 
     if (afterBoardId && uniqueBoardIds.includes(afterBoardId)) {
-      throw new AppError('afterBoardId не может быть среди перемещаемых досок.', 400)
+      throw new AppError('afterBoardId не может быть среди перемещаемых досок', 400)
     }
 
     const relatedBoardIds = [
@@ -865,7 +865,7 @@ export class BoardService extends BaseService<
 
       if (!anchorBoard) {
         throw new AppError(
-          'Не удалось определить целевое рабочее пространство для перемещения.',
+          'Не удалось определить целевое рабочее пространство для перемещения',
           400,
         )
       }
@@ -889,7 +889,7 @@ export class BoardService extends BaseService<
 
       if (hasDifferentWorkspace) {
         throw new AppError(
-          'Для массового перемещения без newWorkspaceId все доски должны быть из одного рабочего пространства.',
+          'Для массового перемещения без newWorkspaceId все доски должны быть из одного рабочего пространства',
           400,
         )
       }
@@ -898,11 +898,11 @@ export class BoardService extends BaseService<
     }
 
     if (beforeBoard && beforeBoard.workspace.toString() !== targetWorkspaceId) {
-      throw new AppError('beforeBoardId должен принадлежать целевому рабочему пространству.', 400)
+      throw new AppError('beforeBoardId должен принадлежать целевому рабочему пространству', 400)
     }
 
     if (afterBoard && afterBoard.workspace.toString() !== targetWorkspaceId) {
-      throw new AppError('afterBoardId должен принадлежать целевому рабочему пространству.', 400)
+      throw new AppError('afterBoardId должен принадлежать целевому рабочему пространству', 400)
     }
 
     let newRanks: string[] = []
@@ -1015,7 +1015,7 @@ export class BoardService extends BaseService<
       )
 
       if (!updateResult || updateResult.modifiedCount === 0) {
-        throw new AppError('Не удалось переместить доски.', 500)
+        throw new AppError('Не удалось переместить доски', 500)
       }
 
       const log = await this.operationLogService.create(
@@ -1044,7 +1044,7 @@ export class BoardService extends BaseService<
     }
 
     if (targetWorkspaceId === null) {
-      throw new AppError('Не удалось определить целевую рабочую область для перемещения.', 400)
+      throw new AppError('Не удалось определить целевую рабочую область для перемещения', 400)
     }
 
     if (toStart) {
@@ -1174,7 +1174,7 @@ export class BoardService extends BaseService<
     )
 
     if (!updateResult || updateResult.modifiedCount === 0) {
-      throw new AppError('Не удалось переместить доски.', 500)
+      throw new AppError('Не удалось переместить доски', 500)
     }
 
     const log = await this.operationLogService.create(
@@ -1217,7 +1217,7 @@ export class BoardService extends BaseService<
     )
 
     if (!isAllFromSameWorkspace) {
-      throw new AppError('Все доски должны принадлежать одному рабочему пространству.', 400)
+      throw new AppError('Все доски должны принадлежать одному рабочему пространству', 400)
     }
 
     const bulkUpdates: SingleUpdateDTO<SafeUpdateData<IBoard>>[] = []
@@ -1272,7 +1272,7 @@ export class BoardService extends BaseService<
     const updateResult = await this.repository.bulkUpdate(bulkUpdates, user.id, session)
 
     if (!updateResult || updateResult.modifiedCount === 0) {
-      throw new AppError('Не удалось переупорядочить доски.', 500)
+      throw new AppError('Не удалось переупорядочить доски', 500)
     }
 
     const log = await this.operationLogService.create(
@@ -1746,7 +1746,7 @@ export class BoardService extends BaseService<
 
       if (!workpsaceData) {
         throw new AppError(
-          'Не удалось найти данные рабочего пространства для клонирования доски.',
+          'Не удалось найти данные рабочего пространства для клонирования доски',
           400,
         )
       }

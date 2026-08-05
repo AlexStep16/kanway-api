@@ -9,7 +9,7 @@ export const CreateColumnsScheme = z.object({
       board_id: z
         .string(ErrorMessages.BOARD_ID_INVALID)
         .refine(checkBoardId, {
-          message: 'Board ID does not exist.',
+          message: 'Board ID does not exist',
         })
         .describe('ID of the board to move the column into.'),
     }),

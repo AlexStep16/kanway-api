@@ -103,7 +103,7 @@ export class ColumnService extends BaseService<
       }
     }
     throw new AppError(
-      'Произошла ошибка при выполнении операции после максимального количества попыток.',
+      'Произошла ошибка при выполнении операции после максимального количества попыток',
       500,
     )
   }
@@ -354,8 +354,7 @@ export class ColumnService extends BaseService<
       user.id,
     )
 
-    if (updateManyResult.modifiedCount === 0)
-      throw new AppError('Не удалось обновить колонки.', 500)
+    if (updateManyResult.modifiedCount === 0) throw new AppError('Не удалось обновить колонки', 500)
 
     const sideEffects: Promise<any>[] = []
 
@@ -527,7 +526,7 @@ export class ColumnService extends BaseService<
     const updatedColumnsResult = await this.repository.bulkUpdate(columnPayloads, user.id, session)
 
     if (!updatedColumnsResult || updatedColumnsResult.modifiedCount === 0) {
-      throw new AppError('Не удалось обновить колонки.', 500)
+      throw new AppError('Не удалось обновить колонки', 500)
     }
 
     const sideEffects: Promise<any>[] = []
@@ -1195,22 +1194,22 @@ export class ColumnService extends BaseService<
     }
 
     if (toStart && toEnd) {
-      throw new AppError('Нельзя переместить колонки одновременно в начало и в конец.', 400)
+      throw new AppError('Нельзя переместить колонки одновременно в начало и в конец', 400)
     }
 
     if ((toStart || toEnd) && (beforeColumnId || afterColumnId)) {
       throw new AppError(
-        'Нельзя одновременно использовать beforeColumnId/afterColumnId и toStart/toEnd.',
+        'Нельзя одновременно использовать beforeColumnId/afterColumnId и toStart/toEnd',
         400,
       )
     }
 
     if (beforeColumnId && uniqueColumnIds.includes(beforeColumnId)) {
-      throw new AppError('beforeColumnId не может быть среди перемещаемых колонок.', 400)
+      throw new AppError('beforeColumnId не может быть среди перемещаемых колонок', 400)
     }
 
     if (afterColumnId && uniqueColumnIds.includes(afterColumnId)) {
-      throw new AppError('afterColumnId не может быть среди перемещаемых колонок.', 400)
+      throw new AppError('afterColumnId не может быть среди перемещаемых колонок', 400)
     }
 
     const relatedColumnIds = [
@@ -1262,7 +1261,7 @@ export class ColumnService extends BaseService<
       const anchorColumn = beforeColumn ?? afterColumn
 
       if (!anchorColumn) {
-        throw new AppError('Не удалось определить целевую доску для перемещения.', 400)
+        throw new AppError('Не удалось определить целевую доску для перемещения', 400)
       }
 
       const [board] = await this.boardService.getByCriteria(
@@ -1284,7 +1283,7 @@ export class ColumnService extends BaseService<
 
       if (hasDifferentBoard) {
         throw new AppError(
-          'Для массового перемещения без newBoardId все колонки должны быть из одной доски.',
+          'Для массового перемещения без newBoardId все колонки должны быть из одной доски',
           400,
         )
       }
@@ -1293,11 +1292,11 @@ export class ColumnService extends BaseService<
     }
 
     if (beforeColumn && beforeColumn.board.toString() !== targetBoardId) {
-      throw new AppError('beforeColumnId должен принадлежать целевой доске.', 400)
+      throw new AppError('beforeColumnId должен принадлежать целевой доске', 400)
     }
 
     if (afterColumn && afterColumn.board.toString() !== targetBoardId) {
-      throw new AppError('afterColumnId должен принадлежать целевой доске.', 400)
+      throw new AppError('afterColumnId должен принадлежать целевой доске', 400)
     }
 
     let newRanks: string[] = []
@@ -1410,7 +1409,7 @@ export class ColumnService extends BaseService<
       )
 
       if (!updateResult || updateResult.modifiedCount === 0) {
-        throw new AppError('Не удалось переместить колонки.', 500)
+        throw new AppError('Не удалось переместить колонки', 500)
       }
 
       const log = await this.operationLogService.create(
@@ -1439,7 +1438,7 @@ export class ColumnService extends BaseService<
     }
 
     if (targetBoardId === null) {
-      throw new AppError('Не удалось определить целевую доску для перемещения.', 400)
+      throw new AppError('Не удалось определить целевую доску для перемещения', 400)
     }
 
     if (toStart) {
@@ -1571,7 +1570,7 @@ export class ColumnService extends BaseService<
     )
 
     if (!updateResult || updateResult.modifiedCount === 0) {
-      throw new AppError('Не удалось переместить колонки.', 500)
+      throw new AppError('Не удалось переместить колонки', 500)
     }
 
     const log = await this.operationLogService.create(
@@ -1612,7 +1611,7 @@ export class ColumnService extends BaseService<
     const isAllFromSameBoard = columns.every((column) => column.board.toString() === boardId)
 
     if (!isAllFromSameBoard) {
-      throw new AppError('Все колонки должны принадлежать одной доске.', 400)
+      throw new AppError('Все колонки должны принадлежать одной доске', 400)
     }
 
     const bulkUpdates: SingleUpdateDTO<SafeUpdateData<IColumn>>[] = []
@@ -1667,7 +1666,7 @@ export class ColumnService extends BaseService<
     const updateResult = await this.repository.bulkUpdate(bulkUpdates, user.id, session)
 
     if (!updateResult || updateResult.modifiedCount === 0) {
-      throw new AppError('Не удалось переупорядочить колонки.', 500)
+      throw new AppError('Не удалось переупорядочить колонки', 500)
     }
 
     const log = await this.operationLogService.create(
@@ -1790,7 +1789,7 @@ export class ColumnService extends BaseService<
       const boardData = boardIdsMap.get(column.board.toString())
 
       if (!boardData) {
-        throw new AppError('Ошибка при клонировании колонок: не найдена целевая доска.', 400)
+        throw new AppError('Ошибка при клонировании колонок: не найдена целевая доска', 400)
       }
 
       return {

@@ -99,7 +99,7 @@ export class WorkspaceService extends BaseService<
       }
     }
     throw new AppError(
-      'Произошла ошибка при выполнении операции после максимального количества попыток.',
+      'Произошла ошибка при выполнении операции после максимального количества попыток',
       500,
     )
   }
@@ -269,7 +269,7 @@ export class WorkspaceService extends BaseService<
     )
 
     if (updateManyResult.modifiedCount === 0)
-      throw new AppError('Не удалось обновить рабочие пространства.', 500)
+      throw new AppError('Не удалось обновить рабочие пространства', 500)
 
     const updatedWorkspaces = await this.repository.findByCriteria<IWorkspace>(
       criteria,
@@ -400,7 +400,7 @@ export class WorkspaceService extends BaseService<
     )
 
     if (!updatedWorkspacesResult || updatedWorkspacesResult.modifiedCount === 0) {
-      throw new AppError('Не удалось обновить рабочие пространства.', 500)
+      throw new AppError('Не удалось обновить рабочие пространства', 500)
     }
 
     const updatedWorkspaces = await this.repository.findByCriteria(
@@ -482,7 +482,7 @@ export class WorkspaceService extends BaseService<
       workspaces.length === 1 &&
       workspacesToDelete.some((ws) => ws.id.toString() === workspaces[0].id.toString())
     ) {
-      throw new AppError('Вы не можете удалить единственное рабочее пространство.', 400)
+      throw new AppError('Вы не можете удалить единственное рабочее пространство', 400)
     }
 
     const status = isDryRun ? OperationLogStatusesEnum.PENDING : OperationLogStatusesEnum.SUCCESS
@@ -579,7 +579,7 @@ export class WorkspaceService extends BaseService<
       workspaces.length === 1 &&
       workspacesToProcess.some((ws) => ws.id.toString() === workspaces[0].id.toString())
     ) {
-      throw new AppError('Вы не можете архивировать единственное рабочее пространство.', 400)
+      throw new AppError('Вы не можете архивировать единственное рабочее пространство', 400)
     }
 
     const status = isDryRun ? OperationLogStatusesEnum.PENDING : OperationLogStatusesEnum.SUCCESS
@@ -950,28 +950,28 @@ export class WorkspaceService extends BaseService<
 
     if (toStart && toEnd) {
       throw new AppError(
-        'Нельзя переместить рабочие пространства одновременно в начало и в конец.',
+        'Нельзя переместить рабочие пространства одновременно в начало и в конец',
         400,
       )
     }
 
     if ((toStart || toEnd) && (beforeWorkspaceId || afterWorkspaceId)) {
       throw new AppError(
-        'Нельзя одновременно использовать beforeWorkspaceId/afterWorkspaceId и toStart/toEnd.',
+        'Нельзя одновременно использовать beforeWorkspaceId/afterWorkspaceId и toStart/toEnd',
         400,
       )
     }
 
     if (beforeWorkspaceId && uniqueWorkspaceIds.includes(beforeWorkspaceId)) {
       throw new AppError(
-        'beforeWorkspaceId не может быть среди перемещаемых рабочих пространств.',
+        'beforeWorkspaceId не может быть среди перемещаемых рабочих пространств',
         400,
       )
     }
 
     if (afterWorkspaceId && uniqueWorkspaceIds.includes(afterWorkspaceId)) {
       throw new AppError(
-        'afterWorkspaceId не может быть среди перемещаемых рабочих пространств.',
+        'afterWorkspaceId не может быть среди перемещаемых рабочих пространств',
         400,
       )
     }
@@ -1122,7 +1122,7 @@ export class WorkspaceService extends BaseService<
     )
 
     if (!updateResult || updateResult.modifiedCount === 0) {
-      throw new AppError('Не удалось переместить рабочие пространства.', 500)
+      throw new AppError('Не удалось переместить рабочие пространства', 500)
     }
 
     const log = await this.operationLogService.create(
@@ -1231,7 +1231,7 @@ export class WorkspaceService extends BaseService<
     const updateResult = await this.repository.bulkUpdate(bulkUpdates, user.id, session)
 
     if (!updateResult || updateResult.modifiedCount === 0) {
-      throw new AppError('Не удалось переупорядочить рабочие пространства.', 500)
+      throw new AppError('Не удалось переупорядочить рабочие пространства', 500)
     }
 
     const log = await this.operationLogService.create(

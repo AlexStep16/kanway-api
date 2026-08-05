@@ -5,7 +5,7 @@ export const ReorderWorkspacesScheme = z.object({
   workspace_ids: z
     .array(z.string())
     .describe(
-      'The complete list of ALL workspace IDs, ordered in the exact sequence they should appear.',
+      'The complete list of ALL workspace IDs, ordered in the exact sequence they should appear',
     ),
 }).describe(`
   Reorder all workspaces.

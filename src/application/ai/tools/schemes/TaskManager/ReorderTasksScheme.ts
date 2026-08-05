@@ -12,7 +12,7 @@ export const ReorderTasksScheme = z.object({
   task_ids: z
     .array(z.string())
     .describe(
-      'The complete list of ALL task IDs in this column, ordered in the exact sequence they should appear.',
+      'The complete list of ALL task IDs in this column, ordered in the exact sequence they should appear',
     ),
 }).describe(`
   Reorder all tasks in a specific column. 

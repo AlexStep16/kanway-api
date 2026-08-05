@@ -112,7 +112,7 @@ export class UserController {
       const provider = req.params.provider
 
       if (provider !== 'yandex' && provider !== 'vk') {
-        throw new AppError('Неизвестный провайдер авторизации.', 400)
+        throw new AppError('Неизвестный провайдер авторизации', 400)
       }
 
       const user = await this.service.unlinkProvider(req.user as IUser, provider)

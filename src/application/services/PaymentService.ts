@@ -175,10 +175,10 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
 
   public async downgradeSubscription(user: IUser, plan: SubscriptionPlanEnum) {
     if (user.subscriptionId < plan && user.isSubscriptionActive) {
-      throw new AppError('Функция доступна только для понижения.', 500)
+      throw new AppError('Функция доступна только для понижения', 500)
     }
     if (user.subscriptionId === plan && user.isSubscriptionActive) {
-      throw new AppError('Пользователь уже имеет активную подписку.', 500)
+      throw new AppError('Пользователь уже имеет активную подписку', 500)
     }
 
     return this.userService.edit(
@@ -200,13 +200,13 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
 
   public async upgradeSubscription(user: IUser, plan: SubscriptionPlanEnum) {
     if (user.subscriptionId === SubscriptionPlanEnum.Basic) {
-      throw new AppError('У пользователя нет активной подписки для апгрейда.', 500)
+      throw new AppError('У пользователя нет активной подписки для апгрейда', 500)
     }
     if (user.subscriptionId > plan && user.isSubscriptionActive) {
-      throw new AppError('Функция доступна только для повышения.', 500)
+      throw new AppError('Функция доступна только для повышения', 500)
     }
     if (user.subscriptionId === plan && user.isSubscriptionActive) {
-      throw new AppError('Пользователь уже имеет активную подписку.', 500)
+      throw new AppError('Пользователь уже имеет активную подписку', 500)
     }
 
     const now = dayjs()
@@ -249,7 +249,7 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
 
   public async buySubscription(user: IUser, plan: SubscriptionPlanEnum) {
     if (user.subscriptionId !== SubscriptionPlanEnum.Basic && user.isSubscriptionActive) {
-      throw new AppError('Пользователь уже имеет активную подписку.', 500)
+      throw new AppError('Пользователь уже имеет активную подписку', 500)
     }
 
     const description = `Kanway | Подписка - ${this._getPlanLabel(plan)}`
@@ -300,7 +300,7 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
 
   public async cancelSubscription(user: IUser) {
     if (!user.isSubscriptionActive) {
-      throw new AppError('У пользователя нет активной подписки.', 500)
+      throw new AppError('У пользователя нет активной подписки', 500)
     }
 
     return this.userService.edit(
@@ -314,7 +314,7 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
 
   public async resumeSubscription(user: IUser) {
     if (user.isSubscriptionActive) {
-      throw new AppError('У пользователя уже есть активная подписка.', 500)
+      throw new AppError('У пользователя уже есть активная подписка', 500)
     }
 
     await this.userService.edit(

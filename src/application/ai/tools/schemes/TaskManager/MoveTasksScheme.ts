@@ -12,7 +12,7 @@ export const MoveTasksScheme = z.object({
   newColumnId: z
     .string(ErrorMessages.COLUMN_ID_INVALID)
     .refine(checkColumnId, {
-      message: 'Column ID does not exist.',
+      message: 'Column ID does not exist',
     })
     .regex(objectIdRegex)
     .optional(),

@@ -9,7 +9,7 @@ export const CreateTasksScheme = z.object({
       column_id: z
         .string(ErrorMessages.COLUMN_ID_INVALID)
         .refine(checkColumnId, {
-          message: 'Column ID does not exist.',
+          message: 'Column ID does not exist',
         })
         .describe('ID of the column to move the task into.'),
       description: z.string().optional().describe('The new description of the task.'),

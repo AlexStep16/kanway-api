@@ -91,7 +91,7 @@ const baseHandler = (req: Request, _res: Response, next: NextFunction) => {
       ),
     )
   } else {
-    next(new AppError('Слишком много запросов. Пожалуйста, попробуйте позже.', 429))
+    next(new AppError('Слишком много запросов. Пожалуйста, попробуйте позже', 429))
   }
 }
 
