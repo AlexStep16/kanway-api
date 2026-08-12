@@ -314,7 +314,7 @@ export class AuthService {
             serialized,
           }
         } else {
-          /*if (userInfo.user.email) {
+          if (userInfo.user.email) {
             const newUser = await this.userService.createVkUser({
               username: userInfo.user.first_name + ' ' + userInfo.user.last_name,
               avatarUrl: userInfo.user.avatar,
@@ -331,24 +331,24 @@ export class AuthService {
               user: newUser[0],
               serialized,
             }
-          } else {*/
-          const registrationData: ProviderDTO = {
-            provider: ProvidersEnum.VK,
-            clientId: userInfo.user.user_id,
-            avatarUrl: userInfo.user.avatar,
-            username: `${userInfo.user.first_name} ${userInfo.user.last_name}`,
-          }
+          } else {
+            const registrationData: ProviderDTO = {
+              provider: ProvidersEnum.VK,
+              clientId: userInfo.user.user_id,
+              avatarUrl: userInfo.user.avatar,
+              username: `${userInfo.user.first_name} ${userInfo.user.last_name}`,
+            }
 
-          const token = this.tokenService.generateToken(
-            registrationData as Record<string, any>,
-            60 * 15,
-          )
-          const serialized = this._getTokenSerialized(token, 'finish_sign_up_token', 60 * 15)
+            const token = this.tokenService.generateToken(
+              registrationData as Record<string, any>,
+              60 * 15,
+            )
+            const serialized = this._getTokenSerialized(token, 'finish_sign_up_token', 60 * 15)
 
-          return {
-            serialized,
+            return {
+              serialized,
+            }
           }
-          //}
         }
       } else {
         const token = this._getUserIdToken(user.id.toString())
@@ -460,7 +460,7 @@ export class AuthService {
       }
 
       const newUser = await this.userService.createWithCredentials(userData, session)
-      const serialized = await this.initNewUser(newUser[0], session, false)
+      const serialized = await this.initNewUser(newUser[0], session, true)
 
       await session.commitTransaction()
 
