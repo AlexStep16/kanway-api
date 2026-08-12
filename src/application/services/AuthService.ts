@@ -426,25 +426,6 @@ export class AuthService {
       const user = await this.userService.getByEmail(data.email)
 
       if (user) {
-        if (data.provider === ProvidersEnum.VK) {
-          const updatedUser = await this.userService.edit(
-            { vkUserId: data.clientId },
-            { id: user.id.toString() },
-            undefined,
-            session,
-          )
-
-          const token = this._getUserIdToken(updatedUser.id.toString())
-          const serialized = this._getTokenSerialized(token)
-
-          await session.commitTransaction()
-
-          return {
-            user: updatedUser,
-            serialized,
-          }
-        }
-
         throw new AppError(ErrorMessages.EMAIL_ALREADY_EXISTS, 400)
       }
 
