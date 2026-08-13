@@ -282,7 +282,6 @@ export class AuthService {
         body: paramsUserInfo.toString(),
       })
       const userInfo = (await userInfoResponse.json()) as VkUser
-      console.log(userInfo)
       const user = userInfo.user.user_id
         ? await this.userService.getByVkUserId(userInfo.user.user_id)
         : null
