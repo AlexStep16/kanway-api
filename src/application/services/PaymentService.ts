@@ -185,7 +185,7 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
       {
         pendingChangePlan: plan,
       },
-      { id: user.id.toString() },
+      user,
     )
   }
 
@@ -194,7 +194,7 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
       {
         pendingChangePlan: null,
       },
-      { id: user.id.toString() },
+      user,
     )
   }
 
@@ -308,7 +308,7 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
         isSubscriptionActive: false,
         pendingChangePlan: null,
       },
-      { id: user.id.toString() },
+      user,
     )
   }
 
@@ -321,7 +321,7 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
       {
         isSubscriptionActive: true,
       },
-      { id: user.id.toString() },
+      user,
     )
   }
 
@@ -403,14 +403,14 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
     }
   }
 
-  private async _revertToBasicPlan(userId: string) {
+  private async _revertToBasicPlan(user: IUser) {
     await this.userService.edit(
       {
         subscriptionId: SubscriptionPlanEnum.Basic,
         isSubscriptionActive: false,
         subscriptionUntil: null,
       },
-      { id: userId },
+      user,
     )
   }
 
@@ -420,7 +420,7 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
     if (!user) return
 
     if (!user.isSubscriptionActive || !user.paymentMethodId) {
-      return this._revertToBasicPlan(userId)
+      return this._revertToBasicPlan(user)
     }
 
     const paymentMethods = await this.paymentMethodService.getByCriteria(
@@ -428,14 +428,14 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
       user.id,
     )
 
-    if (paymentMethods.length === 0) return this._revertToBasicPlan(userId)
+    if (paymentMethods.length === 0) return this._revertToBasicPlan(user)
 
     const paymentMethod = paymentMethods[0]
 
     const targetPlan = user.pendingChangePlan ?? user.subscriptionId
 
     if (targetPlan === SubscriptionPlanEnum.Basic) {
-      return this._revertToBasicPlan(userId)
+      return this._revertToBasicPlan(user)
     }
 
     const description = `Kanway | Подписка - ${this._getPlanLabel(targetPlan)}`
@@ -494,8 +494,7 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
         pendingChangePlan: null,
         subscriptionUntil: nextBillingDate,
       },
-      { id: paymentModel.userId.toString() },
-      undefined,
+      user,
       session,
     )
 
@@ -527,12 +526,7 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
         )
       }
 
-      await this.userService.edit(
-        { paymentMethodId: paymentMethod.id.toString() },
-        { id: user.id.toString() },
-        undefined,
-        session,
-      )
+      await this.userService.edit({ paymentMethodId: paymentMethod.id.toString() }, user, session)
     }
 
     const subscriptionName = this._getPlanLabel(SUBSCRIPTION_ITEM_ID_TO_PLAN[itemId])
@@ -596,8 +590,7 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
       {
         paymentRetriesCount: newCount,
       },
-      { id: user.id.toString() },
-      undefined,
+      user,
       session,
     )
 
@@ -608,8 +601,7 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
           subscriptionId: SubscriptionPlanEnum.Basic,
           subscriptionUntil: null,
         },
-        { id: user.id.toString() },
-        undefined,
+        user,
         session,
       )
 
