@@ -146,6 +146,7 @@ export const emailCheckLimiter = createLimiter({
   prefix: 'auth:email-check',
   keyGenerator: emailAndIpKeyGenerator,
 })
+export const passwordStrengthLimiter = createLimiter({ max: 120, prefix: 'auth:password-strength' })
 export const postEntitiesLimiter = createLimiter({ max: 20, prefix: 'postentities' })
 export const postTasksLimiter = createLimiter({ max: 40, prefix: 'posttasks' })
 export const patchEntitiesLimiter = createLimiter({ max: 50, prefix: 'patchentities' })

@@ -18,23 +18,27 @@ import { FinishSignupCredentialsDTO } from '../dtos/FinishSignupCredentialsDTO.j
 import { ProviderDTO } from '../dtos/ProviderDTO.js'
 import { SignupServiceCredentialsDTO } from '../dtos/SignupServiceCredentialsDTO.js'
 import { SigninCredentialsDTO } from '../dtos/SigninCredentialsDTO.js'
+import { ZxcvbnFactory } from '@zxcvbn-ts/core'
 
 export class AuthService {
   private userService: UserService
   private emailService: EmailService
   private tokenService: TokenService
   private settingService: SettingService
+  private zxcvbn: ZxcvbnFactory
 
   constructor(
     userService: UserService,
     emailService: EmailService,
     tokenService: TokenService,
     settingService: SettingService,
+    zxcvbn: ZxcvbnFactory,
   ) {
     this.userService = userService
     this.emailService = emailService
     this.tokenService = tokenService
     this.settingService = settingService
+    this.zxcvbn = zxcvbn
   }
 
   private _getTokenSerialized(
@@ -456,6 +460,20 @@ export class AuthService {
       throw error
     } finally {
       session.endSession()
+    }
+  }
+
+  public checkPasswordStrength(password: string): {
+    score: number
+    feedback: { warning: string; suggestions: string[] }
+  } {
+    const result = this.zxcvbn.check(password)
+    return {
+      score: result.score,
+      feedback: {
+        warning: result.feedback.warning ?? '',
+        suggestions: result.feedback.suggestions ?? [],
+      },
     }
   }
 

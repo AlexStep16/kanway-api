@@ -222,4 +222,16 @@ export default class AuthController {
   public checkSignup(req: Request, res: Response) {
     return res.status(200).json(new SuccessResponse(req.providerData))
   }
+
+  public checkPasswordStrength(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { password } = req.body
+      const result = this.service.checkPasswordStrength(
+        typeof password === 'string' ? password : '',
+      )
+      return res.status(200).json(new SuccessResponse(result))
+    } catch (error) {
+      next(error)
+    }
+  }
 }

@@ -6,6 +6,7 @@ import {
   emailCheckLimiter,
   emailSendLimiter,
   otpVerifyLimiter,
+  passwordStrengthLimiter,
   signinLimiter,
   signupLimiter,
   socialAuthLimiter,
@@ -86,6 +87,11 @@ export default (controller: AuthController): Router => {
     emailCheckLimiter,
     validationMiddleware(CheckEmailExistsSchemaDTO),
     controller.checkEmailExists.bind(controller),
+  )
+  router.post(
+    '/check-password-strength',
+    passwordStrengthLimiter,
+    controller.checkPasswordStrength.bind(controller),
   )
   router.post(
     '/password/recovery',

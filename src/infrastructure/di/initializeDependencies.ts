@@ -138,7 +138,13 @@ export function initializeDependencies() {
   const tokenService = new TokenService()
   const emailService = new EmailService(tokenService)
   const userService = new UserService(userRepository, emailService)
-  const authService = new AuthService(userService, emailService, tokenService, settingService)
+  const authService = new AuthService(
+    userService,
+    emailService,
+    tokenService,
+    settingService,
+    zxcvbn,
+  )
   /* AUTH SERVICES END */
 
   /* PAYMENT SERVICES START */
