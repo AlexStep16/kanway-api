@@ -1,7 +1,10 @@
 import { SubscriptionPlanEnum } from '@/domain/enums/SubscriptionPlanEnum.js'
 import { ErrorMessages } from '@/enums/ErrorMessages.js'
+import { initializeDependencies } from '@/infrastructure/di/initializeDependencies.js'
 import { BASE_COLORS } from '@constants/BASE_COLORS.js'
 import { z } from 'zod'
+
+const { plugins } = initializeDependencies()
 
 export const UserDTOSchema = z.object({
   username: z
@@ -23,7 +26,22 @@ export const UserDTOSchema = z.object({
           : ErrorMessages.INVALID_PASSWORD_FORMAT,
     })
     .min(10, ErrorMessages.PASSWORD_TOO_SHORT_10)
-    .max(100, ErrorMessages.PASSWORD_TOO_LONG),
+    .max(128, ErrorMessages.PASSWORD_TOO_LONG)
+    .superRefine((val, ctx) => {
+      const strengthCheck = plugins.zxcvbn.check(val)
+
+      if (strengthCheck.score < 2) {
+        const warning = strengthCheck.feedback.warning || 'Пароль слишком простой.'
+        const suggestions = strengthCheck.feedback.suggestions.join('. ')
+        const errorMessage = `${warning} ${suggestions}`.trim()
+
+        ctx.addIssue({
+          code: 'custom',
+          input: val,
+          message: errorMessage,
+        })
+      }
+    }),
   avatarColor: z.enum(BASE_COLORS, {
     error: (iss) =>
       iss.input === undefined

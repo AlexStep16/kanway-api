@@ -70,7 +70,6 @@ export class PaymentMethodService extends BaseService<
 
       await this.userService.edit(
         { paymentMethodId: paymentMethods[0]?.id.toString() ?? null },
-        {},
         user,
       )
     }

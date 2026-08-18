@@ -59,9 +59,25 @@ import { BoardToolsExecutorService } from '@/application/ai/services/BoardToolsE
 import { WorkspaceToolsExecutorService } from '@/application/ai/services/WorkspaceToolsExecutorService.js'
 import { TranscriptionService } from '@/infrastructure/services/TranscriptionService.js'
 import { TranscriptionController } from '@controllers/TranscriptionController.js'
+import { ZxcvbnFactory } from '@zxcvbn-ts/core'
+import * as zxcvbnCommonPackage from '@zxcvbn-ts/language-common'
+import * as zxcvbnEnPackage from '@zxcvbn-ts/language-en'
+import * as zxcvbnRuPackage from '@zxcvbn-ts/language-ru'
+
+const options = {
+  dictionary: {
+    ...zxcvbnCommonPackage.dictionary,
+    ...zxcvbnRuPackage.dictionary,
+    ...zxcvbnEnPackage.dictionary,
+  },
+  graphs: zxcvbnCommonPackage.adjacencyGraphs,
+  translations: zxcvbnRuPackage.translations,
+}
 
 export function initializeDependencies() {
   const mongoClient = new MongoClient(process.env.MONGO_URL || 'mongodb://localhost:27017/kanway')
+
+  const zxcvbn = new ZxcvbnFactory(options)
 
   const userRepository = new UserRepository()
   const workspaceRepository = new WorkspaceRepository()
@@ -381,6 +397,9 @@ export function initializeDependencies() {
       checkpointRepository,
       checkpointWriteRepository,
       selectionRepository,
+    },
+    plugins: {
+      zxcvbn,
     },
   }
 }

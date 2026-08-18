@@ -1463,7 +1463,6 @@ export class WorkspaceService extends BaseService<
         {
           username,
         },
-        { id: user.id.toString() },
         user,
         session,
       )

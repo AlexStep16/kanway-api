@@ -4,7 +4,6 @@ import { UserService } from '@application/services/UserService.js'
 import { EmailService } from '@infrastructure/services/EmailService.js'
 import { serialize } from 'cookie'
 import { TokenService } from '@application/services/TokenService.js'
-import { SigninCredentialsDTO } from '@/application/dtos/SigninCredentialsDTO.js'
 import mongoose from 'mongoose'
 import { SettingService } from '@application/services/SettingService.js'
 import { AiConfirmationTypeEnum } from '@/domain/enums/AiConfirmationTypeEnum.js'
@@ -18,6 +17,7 @@ import { ProvidersEnum } from '@/domain/enums/ProvidersEnum.js'
 import { FinishSignupCredentialsDTO } from '../dtos/FinishSignupCredentialsDTO.js'
 import { ProviderDTO } from '../dtos/ProviderDTO.js'
 import { SignupServiceCredentialsDTO } from '../dtos/SignupServiceCredentialsDTO.js'
+import { SigninCredentialsDTO } from '../dtos/SigninCredentialsDTO.js'
 
 export class AuthService {
   private userService: UserService
@@ -176,12 +176,7 @@ export class AuthService {
         }
       } else {
         if (!userByEmail.yandexUserId) {
-          await this.userService.edit(
-            { yandexUserId: userInfo.id },
-            { id: userByEmail.id.toString() },
-            undefined,
-            session,
-          )
+          await this.userService.edit({ yandexUserId: userInfo.id }, userByEmail, session)
         }
 
         const token = this._getUserIdToken(userByEmail.id.toString())
@@ -212,6 +207,12 @@ export class AuthService {
     params.append('code_verifier', payload.codeVerifier)
     params.append('redirect_uri', 'https://kanway.ru/yandex/suggest/token')
 
+    const user = await this.userService.getById(userId)
+
+    if (!user) {
+      throw new AppError(ErrorMessages.USER_NOT_FOUND, 404)
+    }
+
     const accessTokenResponse = await fetch('https://oauth.yandex.ru/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -232,14 +233,14 @@ export class AuthService {
     const userWithSameEmail = await this.userService.getByEmail(userInfo.default_email)
 
     if (linkedUser && linkedUser.id.toString() !== userId) {
-      throw new AppError(ErrorMessages.SOCIAL_ACCOUNT_ALREADY_LINKED, 409)
+      throw new AppError(ErrorMessages.YANDEX_ACCOUNT_ALREADY_LINKED, 409)
     }
 
     if (userWithSameEmail && userWithSameEmail.id.toString() !== userId) {
-      throw new AppError(ErrorMessages.SOCIAL_EMAIL_ALREADY_LINKED, 409)
+      throw new AppError(ErrorMessages.YANDEX_EMAIL_ALREADY_LINKED, 409)
     }
 
-    return await this.userService.edit({ yandexUserId: userInfo.id }, { id: userId })
+    return await this.userService.edit({ yandexUserId: userInfo.id }, user)
   }
 
   public async vk(payload: VkAuthDTO) {
@@ -295,12 +296,7 @@ export class AuthService {
           const user = userByEmail
 
           if (!user.vkUserId) {
-            await this.userService.edit(
-              { vkUserId: userInfo.user.user_id },
-              { id: user.id.toString() },
-              undefined,
-              session,
-            )
+            await this.userService.edit({ vkUserId: userInfo.user.user_id }, user, session)
           }
 
           const token = this._getUserIdToken(user.id.toString())
@@ -379,6 +375,12 @@ export class AuthService {
     if (payload.deviceId) params.append('device_id', payload.deviceId)
     params.append('redirect_uri', 'https://kanway.ru/vk/suggest/token')
 
+    const user = await this.userService.getById(userId)
+
+    if (!user) {
+      throw new AppError(ErrorMessages.USER_NOT_FOUND, 404)
+    }
+
     const accessTokenResponse = await fetch('https://id.vk.ru/oauth2/auth', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -405,14 +407,14 @@ export class AuthService {
       : null
 
     if (linkedUser && linkedUser.id.toString() !== userId) {
-      throw new AppError(ErrorMessages.SOCIAL_ACCOUNT_ALREADY_LINKED, 409)
+      throw new AppError(ErrorMessages.VK_ACCOUNT_ALREADY_LINKED, 409)
     }
 
     if (userWithSameEmail && userWithSameEmail.id.toString() !== userId) {
-      throw new AppError(ErrorMessages.SOCIAL_EMAIL_ALREADY_LINKED, 409)
+      throw new AppError(ErrorMessages.VK_EMAIL_ALREADY_LINKED, 409)
     }
 
-    return await this.userService.edit({ vkUserId: userInfo.user.user_id }, { id: userId })
+    return await this.userService.edit({ vkUserId: userInfo.user.user_id }, user)
   }
 
   public async finishSignup(
@@ -521,7 +523,13 @@ export class AuthService {
     userId: string,
     password: string,
   ): Promise<{ user: IUser; serialized: string }> {
-    const updatedUser = await this.userService.edit({ password }, { id: userId })
+    const user = await this.userService.getById(userId)
+
+    if (!user) {
+      throw new AppError(ErrorMessages.USER_NOT_FOUND, 404)
+    }
+
+    const updatedUser = await this.userService.edit({ password }, user)
 
     const jwtToken = this._getUserIdToken(userId)
     const serialized = this._getTokenSerialized(jwtToken)

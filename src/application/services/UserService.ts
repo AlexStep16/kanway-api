@@ -100,12 +100,7 @@ export class UserService {
     return [toServerCaseKeys(result)]
   }
 
-  public async edit(
-    data: UserEditDTO,
-    criteria: IUserCriteria,
-    user?: IUser,
-    session?: ClientSession,
-  ): Promise<IUser> {
+  public async edit(data: UserEditDTO, user: IUser, session?: ClientSession): Promise<IUser> {
     const payload = toMongoCaseKeys<IUserRaw>(data)
 
     if (data.password && user?.hasPassword) {
@@ -126,13 +121,21 @@ export class UserService {
       payload.has_password = true
     }
 
-    const updateUserResult = await this.repository.updateManyByCriteria(criteria, payload, session)
+    const updateUserResult = await this.repository.updateManyByCriteria(
+      {
+        id: user.id.toString(),
+      },
+      payload,
+      session,
+    )
 
     if (updateUserResult.modifiedCount === 0) {
       throw new AppError(ErrorMessages.USER_NOT_FOUND, 404)
     }
 
-    const updatedUsers = await this.repository.findByCriteria(criteria)
+    const updatedUsers = await this.repository.findByCriteria({
+      id: user.id.toString(),
+    })
 
     return toServerCaseKeys<IUser>(updatedUsers[0])
   }
@@ -153,11 +156,7 @@ export class UserService {
     }
   }
 
-  public async deleteSoft(
-    criteria: IUserCriteria,
-    user: IUser,
-    session?: ClientSession,
-  ): Promise<IUser> {
+  public async deleteSoft(user: IUser, session?: ClientSession): Promise<IUser> {
     const deletedTime = dayjs().add(1, 'month').toDate()
 
     return await this.edit(
@@ -165,7 +164,6 @@ export class UserService {
         isDeleted: true,
         deletedTime: deletedTime,
       },
-      criteria,
       user,
       session,
     )
@@ -223,7 +221,7 @@ export class UserService {
 
     const data = provider === 'yandex' ? { yandexUserId: undefined } : { vkUserId: undefined }
 
-    return await this.edit(data, { id: user.id.toString() })
+    return await this.edit(data, user)
   }
 
   public async getById(id: string, session?: ClientSession): Promise<IUser | null> {
@@ -289,9 +287,7 @@ export class UserService {
     await this.emailService.sendVerifyEmailToUser(user)
   }
 
-  public async spendCredits(amount: number, userId: string, session?: ClientSession) {
-    const user = await this.getById(userId, session)
-
+  public async spendCredits(amount: number, user: IUser, session?: ClientSession) {
     if (!user) throw new AppError(ErrorMessages.USER_NOT_FOUND, 404)
 
     let leftover = amount
@@ -328,8 +324,7 @@ export class UserService {
         credits: newCredits,
         paidCredits: newPaidCredits,
       },
-      { id: userId },
-      undefined,
+      user,
       session,
     )
 
@@ -341,7 +336,7 @@ export class UserService {
     user: IUser,
     externalSession?: ClientSession,
   ): Promise<number> {
-    const chargedAudioCredits = await this.spendCredits(amount, user.id.toString(), externalSession)
+    const chargedAudioCredits = await this.spendCredits(amount, user, externalSession)
 
     return chargedAudioCredits
   }
@@ -375,8 +370,7 @@ export class UserService {
         credits: newCredits,
         paidCredits: newPaidCredits,
       },
-      { id: userId },
-      undefined,
+      user,
       session,
     )
 
@@ -422,7 +416,13 @@ export class UserService {
       throw new AppError(ErrorMessages.OTP_INVALID_OR_EXPIRED, 400)
     }
 
-    await this.edit({ isConfirmed: true }, { id: data.userId })
+    const user = await this.getByEmail(normalizedEmail)
+
+    if (!user) {
+      throw new AppError(ErrorMessages.USER_NOT_FOUND, 404)
+    }
+
+    await this.edit({ isConfirmed: true }, user)
 
     await Promise.all([
       this.redis.del(otpKey),
@@ -455,7 +455,11 @@ export class UserService {
       throw new AppError(ErrorMessages.TOKEN_INVALID_OR_EXPIRED, 410)
     }
 
-    await this.edit({ isConfirmed: true }, { id: data.userId })
+    const user = await this.getById(data.userId)
+    if (!user) {
+      throw new AppError(ErrorMessages.USER_NOT_FOUND, 404)
+    }
+    await this.edit({ isConfirmed: true }, user)
 
     await Promise.all([
       this.redis.del(linkKey),

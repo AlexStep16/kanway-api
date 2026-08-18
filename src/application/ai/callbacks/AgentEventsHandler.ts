@@ -192,7 +192,7 @@ export class AgentEventsHandler extends BaseCallbackHandler {
   }
 
   async spendCredits() {
-    await this.userService.spendCredits(this.creditsSpent, this.configurable.user.id.toString())
+    await this.userService.spendCredits(this.creditsSpent, this.configurable.user)
   }
 
   async handleCustomEvent(event: string, data: any) {
