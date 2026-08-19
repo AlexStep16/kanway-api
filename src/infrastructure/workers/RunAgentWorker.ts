@@ -1,6 +1,4 @@
 import { Worker } from 'bullmq'
-import { HumanMessage, RemoveMessage } from '@langchain/core/messages'
-import { RunnableConfig } from '@langchain/core/runnables'
 
 import type { Job } from 'bullmq'
 import connectToDatabase from '@db/connectToDatabase.js'
@@ -17,15 +15,16 @@ import { Configurable } from '@/application/ai/interfaces/Configurable.js'
 import { Types } from 'mongoose'
 
 import * as Sentry from '@sentry/node'
-import { Command, CompiledStateGraph } from '@langchain/langgraph'
-import getLastHumanMessage from '@/application/ai/helpers/getLastHumanMessage.js'
-import { langgraphQueue } from '../queues/index.js'
+import { Command } from '@langchain/langgraph'
 import { AgentEventsHandler } from '@/application/ai/callbacks/AgentEventsHandler.js'
 import { setGlobalDispatcher, EnvHttpProxyAgent } from 'undici'
 import { AgentWorkerDTO } from '@/application/dtos/AgentWorkerDTO.js'
 import { StatusStatesEnum } from '@/enums/StatusStatesEnum.js'
 import { IStatus } from '@/application/interfaces/statuses/IStatus.js'
 import { calculateCredits } from '@/application/ai/helpers/calculateCredits.js'
+import { cleanupLastIteration } from '@/utils/cleanupLastIteration.js'
+import { createAbortWatcher } from '@/utils/createAbortWatcher.js'
+import { cleanupLastToolMessages } from '@/utils/cleanupLastToolMessages.js'
 
 const proxyAgent = new EnvHttpProxyAgent()
 if (process.env.NODE_ENV === 'production') setGlobalDispatcher(proxyAgent)
@@ -46,81 +45,10 @@ dayjs.extend(timezone)
 dayjs.extend(duration)
 dayjs.extend(customParseFormat)
 
-async function cleanupLastIteration(agent: CompiledStateGraph<any, any>, config: RunnableConfig) {
-  const currentState = await agent.getState(config)
-  const messages = currentState.values.messages || []
-
-  const configurable = config.configurable as Configurable
-
-  if (messages.length === 0) {
-    messages.push(new HumanMessage(configurable.userMessage))
-
-    return await agent.updateState(config, {
-      messages,
-    })
-  }
-
-  const lastHumanMessage = getLastHumanMessage(messages)
-
-  if (!lastHumanMessage) {
-    throw new Error('No user message found to retry from.')
-  }
-
-  const lastHumanIndex = messages.findIndex((msg: any) => msg.id === lastHumanMessage.id)
-
-  const messagesToDelete = messages.slice(lastHumanIndex + 1)
-
-  if (messagesToDelete.length > 0) {
-    const removeRequests = messagesToDelete.map((msg: any) => new RemoveMessage({ id: msg.id }))
-
-    await agent.updateState(config, {
-      messages: removeRequests,
-    })
-  }
-}
-
 class JobAbortedError extends Error {
   constructor() {
     super('Job execution aborted')
     this.name = 'JobAbortedError'
-  }
-}
-
-function createAbortWatcher(jobId: string | undefined, controller: AbortController) {
-  let isCancelled = false
-
-  const abort = () => {
-    isCancelled = true
-
-    if (!controller.signal.aborted) {
-      controller.abort()
-    }
-  }
-
-  const interval = setInterval(async () => {
-    try {
-      if (!jobId) {
-        return
-      }
-
-      const freshJob = await langgraphQueue.getJob(jobId)
-
-      if (freshJob?.data?.__abortSignal) {
-        abort()
-      }
-    } catch (err) {
-      Sentry.captureException(err, { extra: { jobId } })
-    }
-  }, 100)
-
-  return {
-    abort,
-    stop() {
-      clearInterval(interval)
-    },
-    isCancelled() {
-      return isCancelled || controller.signal.aborted
-    },
   }
 }
 
@@ -168,15 +96,17 @@ export const RunAgentWorker = new Worker(
         error: '',
       }
 
-      if (isRetry) {
-        initialStatus.logs = agentEventsHandler.status.logs.filter(() => false)
-      }
-
       await agentEventsHandler.updateStatus(initialStatus)
 
       const agent = await getAgent(dependencies)
 
       const currentState = await agent.getState(config)
+
+      if (!isResume) await cleanupLastToolMessages(agent, config, currentState)
+
+      if (isRetry) {
+        initialStatus.logs = agentEventsHandler.status.logs.filter(() => false)
+      }
 
       if (
         currentState.values.user_message === configurable.userMessage &&
@@ -200,7 +130,7 @@ export const RunAgentWorker = new Worker(
       }
 
       if (isRetry) {
-        await cleanupLastIteration(agent, config)
+        await cleanupLastIteration(agent, config, currentState)
       }
 
       const stream = await agent.streamEvents(

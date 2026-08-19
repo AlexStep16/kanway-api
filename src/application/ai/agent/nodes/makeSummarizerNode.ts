@@ -19,7 +19,7 @@ export const makeSummarizerNode = (): any => {
       currentAgent: AgentsEnum.SUMMARIZER,
     })
 
-    let summaryBoundary = 20
+    let summaryBoundary = 15
 
     while (
       summaryBoundary < state.messages.length &&

@@ -1,13 +1,14 @@
 import { MODEL_PRICES } from '@/constants/MODEL_PRICES.js'
 import { ITokenUsage } from '../interfaces/ITokenUsage.js'
 import { ModelsEnum } from '@/domain/enums/ModelsEnum.js'
+import { getEffectiveUsdToRubRate } from '@/infrastructure/helpers/exchangeRateStore.js'
 
 export function calculateCredits(
   tokenUsage: ITokenUsage,
   model: ModelsEnum,
   markup: number = 2.5,
-  usdToRubRate: number = 78.0,
 ): number {
+  const usdToRubRate = getEffectiveUsdToRubRate()
   const prices = MODEL_PRICES[model] || MODEL_PRICES[ModelsEnum.GPT_5_4_MINI]
 
   const inputTokens = tokenUsage.input_tokens ?? 0

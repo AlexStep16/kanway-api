@@ -93,7 +93,7 @@ export const SearchBoardsScheme = z
       .describe(
         'Additional detailed fields to include in the output sample. ' +
           'Use ONLY for data retrieval, reading, or analysis requests. ' +
-          'By default, only lightweight fields (id, name, workspace_id) are returned to save context budget',
+          'By default, only lightweight fields (id, name, is_deleted) are returned to save context budget',
       ),
   })
   .describe(

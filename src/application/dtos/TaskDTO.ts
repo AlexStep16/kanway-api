@@ -18,7 +18,7 @@ export const TaskDTOSchema = z
       .max(100, ErrorMessages.TASK_NAME_MORE_THAN_100),
     description: z
       .string(ErrorMessages.TASK_DESCRIPTION_INVALID)
-      .max(1000, ErrorMessages.TASK_DESCRIPTION_MORE_THAN_1000)
+      .max(16384, ErrorMessages.TASK_DESCRIPTION_TOO_LONG)
       .optional(),
     dueDate: z.iso.date(ErrorMessages.TASK_DUE_DATE_INVALID).optional(),
     dueHours: z.number(ErrorMessages.TASK_DUE_TIME_INVALID).min(0).max(23).optional(),

@@ -24,7 +24,7 @@ export interface IEntitySample {
   dueDate?: string
   dueHours?: number
   dueMinutes?: number
-  is_deleted: boolean
+  isDeleted: boolean
   isCompleted?: boolean
   color?: unknown
   createdAt?: string
@@ -135,7 +135,7 @@ const buildEntitySampleItem = (
   timezone?: string,
   additionalFields: string[] = [],
 ): IEntitySample => {
-  const sample: IEntitySample = { is_deleted: false }
+  const sample: IEntitySample = { isDeleted: false }
 
   if ('id' in entity && entity.id !== undefined) {
     sample.id = String(entity.id)
@@ -150,22 +150,27 @@ const buildEntitySampleItem = (
   }
 
   if ('isDeleted' in entity && typeof entity.isDeleted === 'boolean') {
-    sample.is_deleted = entity.isDeleted
+    sample.isDeleted = entity.isDeleted
   }
 
-  if ('workspace' in entity) {
+  if (additionalFields.includes('workspace_id') && 'workspace' in entity) {
     sample.workspace = entity.workspace as IParentEntity
   }
 
-  if ('board' in entity) {
+  if (additionalFields.includes('board_id') && 'board' in entity) {
     sample.board = entity.board as IParentEntity
   }
 
-  if ('column' in entity) {
+  if (additionalFields.includes('column_id') && 'column' in entity) {
     sample.column = entity.column as IParentEntity
   }
 
-  if (entityType === EntityTypesEnum.TASK) {
+  if (
+    (additionalFields.includes('due_date') ||
+      additionalFields.includes('due_hours') ||
+      additionalFields.includes('due_minutes')) &&
+    entityType === EntityTypesEnum.TASK
+  ) {
     const due = getTaskDueSample(entity, timezone)
 
     if (due) {

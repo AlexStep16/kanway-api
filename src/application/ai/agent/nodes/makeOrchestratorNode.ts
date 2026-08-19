@@ -10,6 +10,7 @@ import { OrchestratorPrompt } from '../../prompts/OrchestratorPrompt.js'
 import { IStatus } from '@/application/interfaces/statuses/IStatus.js'
 import { AgentsEnum } from '@/enums/AgentsEnum.js'
 import { getChatModel } from '@/infrastructure/helpers/getChatModel.js'
+import { getBeautifiedSelections } from '../../helpers/getBeautifiedSelections.js'
 
 export const makeOrchestratorNode = (deps: AgentDependencies) => {
   return async (state: typeof AgentStateAnnotation.State, config: RunnableConfig) => {
@@ -41,7 +42,7 @@ export const makeOrchestratorNode = (deps: AgentDependencies) => {
 
     const modelToUse = getChatModel(configurable.modelType, true)
 
-    const history = state.messages.slice(-50)
+    const history = state.messages.slice(-13)
 
     const orchestratorTools = initOrchestratorTools(deps, config as RunnableConfig<Configurable>)
 
@@ -51,11 +52,14 @@ export const makeOrchestratorNode = (deps: AgentDependencies) => {
       throw new Error('Orchestrator model does not support tool binding.')
     }
 
+    const beautifiedSelections = getBeautifiedSelections(state.active_selections || [])
+
     const chain = prompt.pipe(modelToUse.bindTools(orchestratorTools))
 
     const response = await chain.invoke({
       board: configurable.activeBoard || 'NO ACTIVE BOARD',
       workspace: configurable.activeWorkspace,
+      active_selections: beautifiedSelections,
       columns_list: configurable.columnsList,
       boards_list: configurable.boardsList,
       workspaces_list: configurable.workspacesList,

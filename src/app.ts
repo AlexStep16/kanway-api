@@ -16,6 +16,7 @@ import { setGlobalDispatcher, EnvHttpProxyAgent } from 'undici'
 import { initializeDependencies } from './infrastructure/di/initializeDependencies.js'
 import { startSubscriptionRenewalCron } from '@/infrastructure/helpers/startSubscriptionRenewalCron.js'
 import { startDeletedUserCleanupCron } from './infrastructure/helpers/startDeletedUserCleanupCron.js'
+import { startExchangeRateCron } from './infrastructure/helpers/startExchangeRateCron.js'
 
 const dependencies = initializeDependencies()
 
@@ -76,3 +77,4 @@ app.listen(3333, '0.0.0.0')
 dependencies.services.subscriptionService.initSubscriptions()
 startSubscriptionRenewalCron(dependencies.services.userService)
 startDeletedUserCleanupCron(dependencies.services.userService)
+startExchangeRateCron()

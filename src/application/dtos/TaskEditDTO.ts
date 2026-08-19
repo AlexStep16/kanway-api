@@ -9,7 +9,7 @@ export const TaskEditDTOSchema = TaskDTOSchema.partial().extend({
   id: z.string(ErrorMessages.TASK_ID_INVALID).regex(objectIdRegex, ErrorMessages.TASK_ID_INVALID),
   description: z
     .string(ErrorMessages.TASK_DESCRIPTION_INVALID)
-    .max(1000, ErrorMessages.TASK_DESCRIPTION_MORE_THAN_1000)
+    .max(16384, ErrorMessages.TASK_DESCRIPTION_TOO_LONG)
     .nullable()
     .optional(),
   dueDate: z.iso.date(ErrorMessages.TASK_DUE_DATE_INVALID).nullable().optional(),
