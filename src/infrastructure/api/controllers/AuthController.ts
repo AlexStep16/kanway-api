@@ -22,9 +22,9 @@ export default class AuthController {
     const credentials = req.body as SignupCredentialsDTO
 
     try {
-      const { user, serialized } = await this.service.register(credentials)
+      const { user, serialized, serialized2 } = await this.service.register(credentials)
 
-      res.setHeader('Set-Cookie', serialized)
+      res.setHeader('Set-Cookie', [serialized, serialized2])
 
       return res.status(200).json(new SuccessResponse(user))
     } catch (error) {
@@ -36,9 +36,9 @@ export default class AuthController {
     const credentials = req.body as SigninCredentialsDTO
 
     try {
-      const { user, serialized } = await this.service.login(credentials)
+      const { user, serialized, serialized2 } = await this.service.login(credentials)
 
-      res.setHeader('Set-Cookie', serialized)
+      res.setHeader('Set-Cookie', [serialized, serialized2])
 
       return res.status(200).json(new SuccessResponse(user))
     } catch (error) {
@@ -48,9 +48,9 @@ export default class AuthController {
 
   public async yandex(req: Request, res: Response, next: NextFunction) {
     try {
-      const { user, serialized } = await this.service.yandex(req.body as YandexAuthDTO)
+      const { user, serialized, serialized2 } = await this.service.yandex(req.body as YandexAuthDTO)
 
-      res.setHeader('Set-Cookie', serialized)
+      res.setHeader('Set-Cookie', [serialized, serialized2])
 
       return res.status(200).json(new SuccessResponse(user))
     } catch (error) {
@@ -60,9 +60,9 @@ export default class AuthController {
 
   public async vk(req: Request, res: Response, next: NextFunction) {
     try {
-      const { user, serialized } = await this.service.vk(req.body as VkAuthDTO)
+      const { user, serialized, serialized2 } = await this.service.vk(req.body as VkAuthDTO)
 
-      res.setHeader('Set-Cookie', serialized)
+      res.setHeader('Set-Cookie', [serialized, serialized2])
 
       return res.status(200).json(new SuccessResponse(user))
     } catch (error) {
@@ -86,9 +86,12 @@ export default class AuthController {
     try {
       const { password } = req.body
 
-      const { user, serialized } = await this.service.changeUserPassword(req.userId!, password)
+      const { user, serialized, serialized2 } = await this.service.changeUserPassword(
+        req.userId!,
+        password,
+      )
 
-      res.setHeader('Set-Cookie', serialized)
+      res.setHeader('Set-Cookie', [serialized, serialized2])
 
       return res.status(200).json(new SuccessResponse(user))
     } catch (error) {
@@ -112,9 +115,9 @@ export default class AuthController {
     try {
       const { token } = req.body
 
-      const { serialized } = await this.service.verifyLinkEmail(token)
+      const { serialized, serialized2 } = await this.service.verifyLinkEmail(token)
 
-      res.setHeader('Set-Cookie', serialized)
+      res.setHeader('Set-Cookie', [serialized, serialized2])
 
       return res.status(200).json(new SuccessResponse(null))
     } catch (error) {
@@ -126,9 +129,9 @@ export default class AuthController {
     try {
       const { token } = req.body
 
-      const { serialized } = await this.service.verifyLinkLogin(token)
+      const { serialized, serialized2 } = await this.service.verifyLinkLogin(token)
 
-      res.setHeader('Set-Cookie', serialized)
+      res.setHeader('Set-Cookie', [serialized, serialized2])
 
       return res.status(200).json(new SuccessResponse(null))
     } catch (error) {
@@ -154,9 +157,9 @@ export default class AuthController {
     try {
       const { code, email } = req.body
 
-      const { serialized } = await this.service.verifyOTPLogin(code, email)
+      const { serialized, serialized2 } = await this.service.verifyOTPLogin(code, email)
 
-      res.setHeader('Set-Cookie', serialized)
+      res.setHeader('Set-Cookie', [serialized, serialized2])
 
       return res.status(200).json(new SuccessResponse(null))
     } catch (error) {
@@ -168,9 +171,9 @@ export default class AuthController {
     try {
       const { code, email } = req.body
 
-      const { serialized } = await this.service.verifyOTPEmail(code, email)
+      const { serialized, serialized2 } = await this.service.verifyOTPEmail(code, email)
 
-      res.setHeader('Set-Cookie', serialized)
+      res.setHeader('Set-Cookie', [serialized, serialized2])
 
       return res.status(200).json(new SuccessResponse(null))
     } catch (error) {
@@ -209,9 +212,18 @@ export default class AuthController {
       const data = req.body as FinishSignupCredentialsDTO
       const providerData = req.providerData as ProviderDTO
 
-      const { user, serialized } = await this.service.finishSignup({ ...data, ...providerData })
+      const { user, serialized, serialized2 } = await this.service.finishSignup({
+        ...data,
+        ...providerData,
+      })
 
-      res.setHeader('Set-Cookie', serialized)
+      res.clearCookie('finish_sign_up_token', {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        path: '/',
+      })
+      res.setHeader('Set-Cookie', [serialized, serialized2])
 
       return res.status(200).json(new SuccessResponse(user))
     } catch (error) {

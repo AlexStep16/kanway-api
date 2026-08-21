@@ -134,7 +134,14 @@ export class UserController {
       res.clearCookie('token', {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
+        sameSite: 'lax',
+        path: '/',
+      })
+
+      res.clearCookie('is_logged_in', {
+        httpOnly: false,
+        secure: false,
+        sameSite: 'lax',
         path: '/',
       })
 

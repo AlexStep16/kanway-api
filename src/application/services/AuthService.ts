@@ -19,6 +19,7 @@ import { ProviderDTO } from '../dtos/ProviderDTO.js'
 import { SignupServiceCredentialsDTO } from '../dtos/SignupServiceCredentialsDTO.js'
 import { SigninCredentialsDTO } from '../dtos/SigninCredentialsDTO.js'
 import { ZxcvbnFactory } from '@zxcvbn-ts/core'
+import { MAX_AUTH_TOKEN_AGE } from '@/constants/MAX_AUTH_TOKEN_AGE.js'
 
 export class AuthService {
   private userService: UserService
@@ -44,7 +45,7 @@ export class AuthService {
   private _getTokenSerialized(
     token: string,
     name: string = 'token',
-    maxAge: number = 60 * 60 * 24 * 30,
+    maxAge: number = MAX_AUTH_TOKEN_AGE,
   ): string {
     return serialize(name, token, {
       httpOnly: true,
@@ -80,9 +81,29 @@ export class AuthService {
     return serialized
   }
 
+  private getIsLoggedInSerialized(): string {
+    return serialize('is_logged_in', 'true', {
+      httpOnly: false,
+      secure: false,
+      sameSite: 'lax',
+      maxAge: MAX_AUTH_TOKEN_AGE,
+      path: '/',
+    })
+  }
+
+  private getHasFinishSignUpSerialized(): string {
+    return serialize('has_finish_signup', 'true', {
+      httpOnly: false,
+      secure: false,
+      sameSite: 'lax',
+      maxAge: MAX_AUTH_TOKEN_AGE,
+      path: '/',
+    })
+  }
+
   public async register(
     credentials: SignupCredentialsDTO,
-  ): Promise<{ user: IUser; serialized: string }> {
+  ): Promise<{ user: IUser; serialized: string; serialized2: string }> {
     const session = await mongoose.startSession()
     session.startTransaction()
 
@@ -90,12 +111,14 @@ export class AuthService {
       const newUser = await this.userService.createWithCredentials(credentials, session)
 
       const serialized = await this.initNewUser(newUser[0], session)
+      const serialized2 = this.getIsLoggedInSerialized()
 
       await session.commitTransaction()
 
       return {
         user: newUser[0],
         serialized,
+        serialized2,
       }
     } catch (error) {
       await session.abortTransaction()
@@ -103,6 +126,23 @@ export class AuthService {
       throw error
     } finally {
       session.endSession()
+    }
+  }
+
+  public async login(
+    credentials: SigninCredentialsDTO,
+  ): Promise<{ user: IUser; serialized: string; serialized2: string }> {
+    const user = await this.userService.validateCredentials(credentials.email, credentials.password)
+
+    const token = this._getUserIdToken(user.id.toString())
+
+    const serialized = this._getTokenSerialized(token)
+    const serialized2 = this.getIsLoggedInSerialized()
+
+    return {
+      user,
+      serialized,
+      serialized2,
     }
   }
 
@@ -146,12 +186,14 @@ export class AuthService {
       if (linkedUser) {
         const token = this._getUserIdToken(linkedUser.id.toString())
         const serialized = this._getTokenSerialized(token)
+        const serialized2 = this.getIsLoggedInSerialized()
 
         await session.commitTransaction()
 
         return {
           user: linkedUser,
           serialized,
+          serialized2,
         }
       }
 
@@ -171,12 +213,14 @@ export class AuthService {
         })
 
         const serialized = await this.initNewUser(newUser[0], session, false)
+        const serialized2 = this.getIsLoggedInSerialized()
 
         await session.commitTransaction()
 
         return {
           user: newUser[0],
           serialized,
+          serialized2,
         }
       } else {
         if (!userByEmail.yandexUserId) {
@@ -185,12 +229,14 @@ export class AuthService {
 
         const token = this._getUserIdToken(userByEmail.id.toString())
         const serialized = this._getTokenSerialized(token)
+        const serialized2 = this.getIsLoggedInSerialized()
 
         await session.commitTransaction()
 
         return {
           user: userByEmail,
           serialized,
+          serialized2,
         }
       }
     } catch (error) {
@@ -305,12 +351,14 @@ export class AuthService {
 
           const token = this._getUserIdToken(user.id.toString())
           const serialized = this._getTokenSerialized(token)
+          const serialized2 = this.getIsLoggedInSerialized()
 
           await session.commitTransaction()
 
           return {
             user,
             serialized,
+            serialized2,
           }
         } else {
           if (userInfo.user.email) {
@@ -323,12 +371,14 @@ export class AuthService {
             })
 
             const serialized = await this.initNewUser(newUser[0], session, false)
+            const serialized2 = this.getIsLoggedInSerialized()
 
             await session.commitTransaction()
 
             return {
               user: newUser[0],
               serialized,
+              serialized2,
             }
           } else {
             const registrationData: ProviderDTO = {
@@ -343,21 +393,25 @@ export class AuthService {
               60 * 15,
             )
             const serialized = this._getTokenSerialized(token, 'finish_sign_up_token', 60 * 15)
+            const serialized2 = this.getHasFinishSignUpSerialized()
 
             return {
               serialized,
+              serialized2,
             }
           }
         }
       } else {
         const token = this._getUserIdToken(user.id.toString())
         const serialized = this._getTokenSerialized(token)
+        const serialized2 = this.getIsLoggedInSerialized()
 
         await session.commitTransaction()
 
         return {
           user,
           serialized,
+          serialized2,
         }
       }
     } catch (error) {
@@ -423,7 +477,7 @@ export class AuthService {
 
   public async finishSignup(
     data: FinishSignupCredentialsDTO & ProviderDTO,
-  ): Promise<{ user: IUser; serialized: string }> {
+  ): Promise<{ user: IUser; serialized: string; serialized2: string }> {
     const session = await mongoose.startSession()
     session.startTransaction()
 
@@ -447,12 +501,14 @@ export class AuthService {
 
       const newUser = await this.userService.createWithCredentials(userData, session)
       const serialized = await this.initNewUser(newUser[0], session, true)
+      const serialized2 = this.getIsLoggedInSerialized()
 
       await session.commitTransaction()
 
       return {
         user: newUser[0],
         serialized,
+        serialized2,
       }
     } catch (error) {
       await session.abortTransaction()
@@ -486,47 +542,36 @@ export class AuthService {
   }
 
   private _getUserIdToken(userId: string): string {
-    return this.tokenService.generateToken({ user_id: userId }, 60 * 60 * 24 * 30)
+    return this.tokenService.generateToken({ user_id: userId }, MAX_AUTH_TOKEN_AGE)
   }
 
-  public async login(
-    credentials: SigninCredentialsDTO,
-  ): Promise<{ user: IUser; serialized: string }> {
-    const user = await this.userService.validateCredentials(credentials.email, credentials.password)
-
-    const token = this._getUserIdToken(user.id.toString())
-
-    const serialized = this._getTokenSerialized(token)
-
-    return {
-      user,
-      serialized,
-    }
-  }
-
-  public async verifyOTPEmail(code: string, email: string): Promise<{ serialized: string }> {
+  public async verifyOTPEmail(code: string, email: string) {
     const userId = await this.userService.verifyOTPEmail(code, email)
 
     const token = this._getUserIdToken(userId)
     const serialized = this._getTokenSerialized(token)
+    const serialized2 = this.getIsLoggedInSerialized()
 
     return {
       serialized,
+      serialized2,
     }
   }
 
-  public async verifyOTPLogin(code: string, email: string): Promise<{ serialized: string }> {
+  public async verifyOTPLogin(code: string, email: string) {
     const userId = await this.userService.verifyOTPLogin(code, email)
 
     const token = this._getUserIdToken(userId)
     const serialized = this._getTokenSerialized(token)
+    const serialized2 = this.getIsLoggedInSerialized()
 
     return {
       serialized,
+      serialized2,
     }
   }
 
-  public async verifyOTPPassword(code: string, email: string): Promise<{ serialized: string }> {
+  public async verifyOTPPassword(code: string, email: string) {
     const userId = await this.userService.verifyOTPPassword(code, email)
 
     const token = this._getUserIdToken(userId)
@@ -537,10 +582,7 @@ export class AuthService {
     }
   }
 
-  public async changeUserPassword(
-    userId: string,
-    password: string,
-  ): Promise<{ user: IUser; serialized: string }> {
+  public async changeUserPassword(userId: string, password: string) {
     const user = await this.userService.getById(userId)
 
     if (!user) {
@@ -551,10 +593,12 @@ export class AuthService {
 
     const jwtToken = this._getUserIdToken(userId)
     const serialized = this._getTokenSerialized(jwtToken)
+    const serialized2 = this.getIsLoggedInSerialized()
 
     return {
       user: updatedUser,
       serialized,
+      serialized2,
     }
   }
 
@@ -588,29 +632,29 @@ export class AuthService {
     await this.emailService.sendMagicLink(user)
   }
 
-  public async verifyLinkEmail(token: string): Promise<{
-    serialized: string
-  }> {
+  public async verifyLinkEmail(token: string) {
     const userId = await this.userService.verifyLinkEmail(token)
 
     const jwtToken = this._getUserIdToken(userId)
     const serialized = this._getTokenSerialized(jwtToken)
+    const serialized2 = this.getIsLoggedInSerialized()
 
     return {
       serialized,
+      serialized2,
     }
   }
 
-  public async verifyLinkLogin(token: string): Promise<{
-    serialized: string
-  }> {
+  public async verifyLinkLogin(token: string) {
     const userId = await this.userService.verifyLinkLogin(token)
 
     const jwtToken = this._getUserIdToken(userId)
     const serialized = this._getTokenSerialized(jwtToken)
+    const serialized2 = this.getIsLoggedInSerialized()
 
     return {
       serialized,
+      serialized2,
     }
   }
 
