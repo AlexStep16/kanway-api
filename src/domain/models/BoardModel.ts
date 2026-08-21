@@ -42,8 +42,16 @@ export const BoardSchema = new Schema<IBoardRaw>(
       type: Date,
     },
   },
-  { timestamps: true },
+  {
+    timestamps: true,
+    collation: {
+      locale: 'en',
+      strength: 2,
+    },
+  },
 )
+
+BoardSchema.index({ name: 1 })
 
 const Board = model<IBoardRaw>('Board', BoardSchema)
 

@@ -12,7 +12,7 @@ import { ChatSendDTO } from '@dtos/ChatSendDTO.js'
 import { ChatMessageService } from '@application/services/ChatMessageService.js'
 import { RunnableConfig } from '@langchain/core/runnables'
 import dayjs from 'dayjs'
-import { langgraphQueue } from '@/infrastructure/queues/index.js'
+import { langgraphQueue } from '@/infrastructure/queues/langgraphTasksQueue.js'
 import { ApproveToolDTO } from '@dtos/ApproveToolDTO.js'
 import { SettingService } from '@application/services/SettingService.js'
 import { Configurable } from '@/application/ai/interfaces/Configurable.js'
@@ -203,7 +203,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       user.subscriptionId === SubscriptionPlanEnum.Basic ? ModelsEnum.GPT_5_4_MINI : data.modelType
 
     const config: RunnableConfig<Configurable> = {
-      recursionLimit: 50,
+      recursionLimit: 120,
       configurable: {
         thread_id: data.threadId,
         user,

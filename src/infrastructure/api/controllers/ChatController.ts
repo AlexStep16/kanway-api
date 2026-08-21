@@ -2,7 +2,7 @@ import SuccessResponse from '@/application/services/SuccessResponse.js'
 import { NextFunction, Request, Response } from 'express'
 import { ChatService } from '@/application/services/ChatService.js'
 import { IChatCriteria } from '@/application/interfaces/criterias/IChatCriteria.js'
-import { langgraphQueue } from '@/infrastructure/queues/index.js'
+import { langgraphQueue } from '@/infrastructure/queues/langgraphTasksQueue.js'
 import mongoose from 'mongoose'
 import { Redis } from 'ioredis'
 

@@ -32,6 +32,8 @@ import { ColumnMoveManyDTO } from '../dtos/ColumnMoveManyDTO.js'
 import { ErrorMessages } from '@/enums/ErrorMessages.js'
 import { IBoardPopulated } from '../interfaces/IBoardPopulated.js'
 import { ColumnReorderDTO } from '../dtos/ColumnReorderDTO.js'
+import { OutboxEventService } from './OutboxEventService.js'
+import { OutboxEventTypeEnum } from '@/domain/enums/OutboxEventTypeEnum.js'
 
 const MAX_RETRIES = 3
 
@@ -49,6 +51,7 @@ export class ColumnService extends BaseService<
   protected boardService: BoardService
   protected taskService: TaskService
   protected limitService: LimitService
+  protected outboxEventService: OutboxEventService
 
   constructor(
     columnRepository: ColumnRepository,
@@ -58,6 +61,7 @@ export class ColumnService extends BaseService<
     boardService: BoardService,
     taskService: TaskService,
     limitService: LimitService,
+    outboxEventService: OutboxEventService,
   ) {
     super(columnRepository)
 
@@ -68,6 +72,7 @@ export class ColumnService extends BaseService<
     this.boardService = boardService
     this.taskService = taskService
     this.limitService = limitService
+    this.outboxEventService = outboxEventService
   }
 
   protected getPopulateOptions() {
@@ -162,6 +167,18 @@ export class ColumnService extends BaseService<
 
     newColumnsPopulated[0].tempClientId = tempClientId // Attach temp client ID back to the response to connect with client-side entity
 
+    /* EMBEDDINGS */
+    await this.outboxEventService.create(
+      {
+        type: OutboxEventTypeEnum.GENERATE_COLUMN_EMBEDDINGS,
+        payload: {
+          columnIds: [newColumn.id.toString()],
+          userId: user.id,
+        },
+      },
+      session,
+    )
+
     return {
       data: newColumnsPopulated,
       logId: log.id,
@@ -176,13 +193,9 @@ export class ColumnService extends BaseService<
     if (externalSession) {
       return this._executeCreateTransaction(data, user, externalSession)
     } else {
-      const result = await this._retryExecutor((session: ClientSession) =>
+      return await this._retryExecutor((session: ClientSession) =>
         this._executeCreateTransaction(data, user, session),
       )
-
-      this.scheduleEmbeddingsGeneration(result.data, user.id)
-
-      return result
     }
   }
 
@@ -248,6 +261,18 @@ export class ColumnService extends BaseService<
       session,
     )
 
+    /* EMBEDDINGS */
+    await this.outboxEventService.create(
+      {
+        type: OutboxEventTypeEnum.GENERATE_COLUMN_EMBEDDINGS,
+        payload: {
+          columnIds: newColumns.map((t) => t.id.toString()),
+          userId: user.id,
+        },
+      },
+      session,
+    )
+
     return {
       data: newColumnsPopulated,
       logId: log.id,
@@ -263,15 +288,9 @@ export class ColumnService extends BaseService<
     if (externalSession) {
       return this._executeCreateManyTransaction(data, user, externalSession, isDryRun)
     } else {
-      const result = await this._retryExecutor((session: ClientSession) =>
+      return await this._retryExecutor((session: ClientSession) =>
         this._executeCreateManyTransaction(data, user, session, isDryRun),
       )
-
-      if (!isDryRun) {
-        this.scheduleEmbeddingsGeneration(result.data, user.id)
-      }
-
-      return result
     }
   }
 
@@ -339,11 +358,7 @@ export class ColumnService extends BaseService<
 
     const columnsBoardMap = await this._getColumnsBoardMap([data], user, session)
 
-    const columnPayload = await this.prepareColumnEditPayload(
-      data,
-      columnsToUpdate,
-      columnsBoardMap,
-    )
+    const columnPayload = this.prepareColumnEditPayload(data, columnsBoardMap)
     const columnsBefore = projectProperties<IColumn>(columnsToUpdate, columnPayload)
 
     /* UPDATE */
@@ -417,6 +432,20 @@ export class ColumnService extends BaseService<
 
     const updatedColumnsPopulated = await this.getByCriteria(criteria, user.id, session)
 
+    /* GENERATE EMBEDDINGS */
+    const columnsIdToEditEmbeddings = this.getColumnsIdToEditEmbeddings(data, columnsToUpdate)
+
+    await this.outboxEventService.create(
+      {
+        type: OutboxEventTypeEnum.GENERATE_COLUMN_EMBEDDINGS,
+        payload: {
+          columnIds: columnsIdToEditEmbeddings,
+          userId: user.id,
+        },
+      },
+      session,
+    )
+
     return {
       data: updatedColumnsPopulated,
       logId: log.id,
@@ -474,12 +503,7 @@ export class ColumnService extends BaseService<
       const column = existingMap.get(dto.id)
       if (!column) continue
 
-      const columnPayload = await this.prepareColumnEditManyPayload(
-        dto,
-        [column],
-        columnsBoardMap,
-        isDryRun,
-      )
+      const columnPayload = this.prepareColumnEditManyPayload(dto, [column], columnsBoardMap)
 
       const columnBefore = projectProperties<IColumn>([column], columnPayload)[0]
 
@@ -587,6 +611,20 @@ export class ColumnService extends BaseService<
     const log = await logPromise
 
     const updatedColumnsPopulated = await this.getByCriteria({ ids: columnIds }, user.id, session)
+
+    /* GENERATE EMBEDDINGS */
+    const columnsIdToEditEmbeddings = this.getColumnsIdToEditManyEmbeddings(data, existingColumns)
+
+    await this.outboxEventService.create(
+      {
+        type: OutboxEventTypeEnum.GENERATE_COLUMN_EMBEDDINGS,
+        payload: {
+          columnIds: columnsIdToEditEmbeddings,
+          userId: user.id,
+        },
+      },
+      session,
+    )
 
     return {
       data: updatedColumnsPopulated,
@@ -1974,32 +2012,50 @@ export class ColumnService extends BaseService<
     await this.repository.updateEmbeddings(updates, userId)
   }
 
-  private async _prepareMainEditFields(
-    data: Omit<ColumnEditDTO, 'id'>,
-    columnPayload: SafeUpdateData<IColumn>,
-    columnsToUpdate: IColumn[],
-    isDryRun: boolean = false,
-  ) {
-    if (!isDryRun && data.name && columnsToUpdate.length > 0) {
-      const needEmbeddingsUpdate = columnsToUpdate.some(
-        (ws) => data.name && ws.name.trim() !== data.name.trim(),
-      )
+  public async generateEmbeddingsForColumns(
+    columnIds: string[],
+    userId: Types.ObjectId,
+  ): Promise<void> {
+    const columns = await this.getByCriteria({ ids: columnIds }, userId)
 
-      const columnName = data.name.trim()
-
-      if (needEmbeddingsUpdate) {
-        const embeddings = await this.embeddingService.getEmbeddings(columnName)
-
-        columnPayload.embeddings = embeddings
-      }
-    }
+    return this.scheduleEmbeddingsGeneration(columns, userId)
   }
 
-  private async prepareColumnEditPayload(
+  private getColumnsIdToEditEmbeddings(
     data: Omit<ColumnEditDTO, 'id'>,
-    columnsToUpdate: IColumn[],
+    columnsBeforeUpdate: IColumn[],
+  ): string[] {
+    if (!data.name) return []
+
+    return columnsBeforeUpdate
+      .filter((column) => column.name !== data.name)
+      .map((column) => column.id.toString())
+  }
+
+  private getColumnsIdToEditManyEmbeddings(
+    data: ColumnEditDTO[],
+    columnsBeforeUpdate: IColumn[],
+  ): string[] {
+    const originalColumnsMap = new Map(
+      columnsBeforeUpdate.map((column) => [column.id.toString(), column]),
+    )
+
+    return data
+      .filter((dto) => {
+        if (dto.name === undefined) return false
+
+        const originalColumn = originalColumnsMap.get(dto.id)
+        if (!originalColumn) return false
+
+        return originalColumn.name !== dto.name
+      })
+      .map((dto) => dto.id.toString())
+  }
+
+  private prepareColumnEditPayload(
+    data: Omit<ColumnEditDTO, 'id'>,
     columnsBoardMap: Map<string, IBoardPopulated>,
-  ): Promise<SafeUpdateData<IColumn>> {
+  ): SafeUpdateData<IColumn> {
     const columnPayload: SafeUpdateData<IColumn> = {
       ...data,
     }
@@ -2013,17 +2069,14 @@ export class ColumnService extends BaseService<
       }
     }
 
-    await this._prepareMainEditFields(data, columnPayload, columnsToUpdate)
-
     return columnPayload
   }
 
-  private async prepareColumnEditManyPayload(
+  private prepareColumnEditManyPayload(
     data: ColumnEditDTO,
     columnsToUpdate: IColumn[],
     columnsBoardMap: Map<string, IBoardPopulated>,
-    isDryRun: boolean = false,
-  ): Promise<SingleUpdateDTO<SafeUpdateData<IColumn>>> {
+  ): SingleUpdateDTO<SafeUpdateData<IColumn>> {
     const { id, ...rest } = data
 
     const column = columnsToUpdate[0]
@@ -2044,8 +2097,6 @@ export class ColumnService extends BaseService<
       columnPayload.board = boardData.id
       columnPayload.workspace = boardData.workspace.id
     }
-
-    await this._prepareMainEditFields(rest, columnPayload, columnsToUpdate, isDryRun)
 
     return columnPayload
   }

@@ -85,8 +85,16 @@ export const TaskSchema = new Schema<ITaskRaw>(
       type: Date,
     },
   },
-  { timestamps: true },
+  {
+    timestamps: true,
+    collation: {
+      locale: 'en',
+      strength: 2,
+    },
+  },
 )
+
+TaskSchema.index({ name: 1 })
 
 const Task = model<ITaskRaw>('Task', TaskSchema)
 

@@ -1,7 +1,7 @@
 import { ITaskRaw } from '@entities/ITaskRaw.js'
 import TaskModel from '@models/TaskModel.js'
 import { ITaskCriteria } from '@criterias/ITaskCriteria.js'
-import { FilterQuery, Types } from 'mongoose'
+import { ClientSession, FilterQuery, Types } from 'mongoose'
 import { BaseRepository } from '@repositories/BaseRepository.js'
 import { ITask } from '@entities/ITask.js'
 import { ITaskCreatePayload } from '@interfaces/ITaskCreatePayload.js'
@@ -71,6 +71,7 @@ export default class TaskRepository extends BaseRepository<
   public async updateEmbeddings(
     tasks: Array<{ id: Types.ObjectId; name: string; embeddings: number[] }>,
     userId: Types.ObjectId,
+    session?: ClientSession,
   ) {
     if (tasks.length === 0) return
 
@@ -81,6 +82,7 @@ export default class TaskRepository extends BaseRepository<
           update: { $set: { embeddings: task.embeddings } },
         },
       })),
+      { session },
     )
   }
 }

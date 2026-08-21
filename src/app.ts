@@ -17,6 +17,7 @@ import { initializeDependencies } from './infrastructure/di/initializeDependenci
 import { startSubscriptionRenewalCron } from '@/infrastructure/helpers/startSubscriptionRenewalCron.js'
 import { startDeletedUserCleanupCron } from './infrastructure/helpers/startDeletedUserCleanupCron.js'
 import { startExchangeRateCron } from './infrastructure/helpers/startExchangeRateCron.js'
+import { startOutboxChangeStream } from './infrastructure/helpers/startOutboxChangeStream.js'
 
 const dependencies = initializeDependencies()
 
@@ -78,3 +79,4 @@ dependencies.services.subscriptionService.initSubscriptions()
 startSubscriptionRenewalCron(dependencies.services.userService)
 startDeletedUserCleanupCron(dependencies.services.userService)
 startExchangeRateCron()
+startOutboxChangeStream(dependencies.repositories.outboxEventRepository)

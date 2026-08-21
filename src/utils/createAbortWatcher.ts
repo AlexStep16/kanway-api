@@ -1,4 +1,4 @@
-import { langgraphQueue } from '@/infrastructure/queues/index.js'
+import { langgraphQueue } from '@/infrastructure/queues/langgraphTasksQueue.js'
 import * as Sentry from '@sentry/node'
 
 export function createAbortWatcher(jobId: string | undefined, controller: AbortController) {

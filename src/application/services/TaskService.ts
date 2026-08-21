@@ -34,6 +34,8 @@ import { LimitService } from './LimitService.js'
 import { ErrorMessages } from '@/enums/ErrorMessages.js'
 import { IColumnPopulated } from '../interfaces/IColumnPopulated.js'
 import { TaskReorderDTO } from '../dtos/TaskReorderDTO.js'
+import { OutboxEventService } from './OutboxEventService.js'
+import { OutboxEventTypeEnum } from '@/domain/enums/OutboxEventTypeEnum.js'
 
 const MAX_RETRIES = 3
 
@@ -51,6 +53,7 @@ export class TaskService extends BaseService<
   protected boardService: BoardService
   protected workspaceService: WorkspaceService
   protected limitService: LimitService
+  protected outboxEventService: OutboxEventService
 
   constructor(
     taskRepository: TaskRepository,
@@ -60,6 +63,7 @@ export class TaskService extends BaseService<
     boardService: BoardService,
     workspaceService: WorkspaceService,
     limitService: LimitService,
+    outboxEventService: OutboxEventService,
   ) {
     super(taskRepository)
 
@@ -70,6 +74,7 @@ export class TaskService extends BaseService<
     this.boardService = boardService
     this.workspaceService = workspaceService
     this.limitService = limitService
+    this.outboxEventService = outboxEventService
   }
 
   protected getPopulateOptions() {
@@ -160,16 +165,28 @@ export class TaskService extends BaseService<
       session,
     )
 
-    const newTaskPopulated = await this.getByCriteria(
+    const newTasksPopulated = await this.getByCriteria(
       { id: newTask.id.toString() },
       user.id,
       session,
     )
 
-    newTaskPopulated[0].tempClientId = tempClientId // Attach temp client ID back to the response to connect with client-side entity
+    newTasksPopulated[0].tempClientId = tempClientId // Attach temp client ID back to the response to connect with client-side entity
+
+    /* EMBEDDINGS */
+    await this.outboxEventService.create(
+      {
+        type: OutboxEventTypeEnum.GENERATE_TASK_EMBEDDINGS,
+        payload: {
+          taskIds: [newTask.id.toString()],
+          userId: user.id,
+        },
+      },
+      session,
+    )
 
     return {
-      data: newTaskPopulated,
+      data: newTasksPopulated,
       logId: log.id,
     }
   }
@@ -180,15 +197,11 @@ export class TaskService extends BaseService<
     externalSession?: ClientSession,
   ): Promise<IResponseWithLog<ITaskPopulated[]> | ITaskCreatePayload> {
     if (externalSession) {
-      return this._executeCreateTransaction(data, user, externalSession, user.timezone)
+      return await this._executeCreateTransaction(data, user, externalSession, user.timezone)
     } else {
-      const result = await this._retryExecutor((session: ClientSession) =>
+      return await this._retryExecutor((session: ClientSession) =>
         this._executeCreateTransaction(data, user, session, user.timezone),
       )
-
-      this.scheduleEmbeddingsGeneration(result.data, user.id)
-
-      return result
     }
   }
 
@@ -299,6 +312,20 @@ export class TaskService extends BaseService<
       session,
     )
 
+    /* EMBEDDINGS */
+    if (!isDryRun) {
+      await this.outboxEventService.create(
+        {
+          type: OutboxEventTypeEnum.GENERATE_TASK_EMBEDDINGS,
+          payload: {
+            taskIds: newTasksPopulated.map((t) => t.id.toString()),
+            userId: user.id,
+          },
+        },
+        session,
+      )
+    }
+
     return {
       data: newTasksPopulated,
       logId: log.id,
@@ -320,15 +347,9 @@ export class TaskService extends BaseService<
         isDryRun,
       )
     } else {
-      const result = await this._retryExecutor((session: ClientSession) =>
+      return this._retryExecutor((session: ClientSession) =>
         this._executeCreateManyTransaction(data, user, session, user.timezone, isDryRun),
       )
-
-      if (!isDryRun) {
-        this.scheduleEmbeddingsGeneration(result.data, user.id)
-      }
-
-      return result
     }
   }
 
@@ -350,12 +371,7 @@ export class TaskService extends BaseService<
 
     const tasksColumnMap = await this._getTasksColumnMap([data], user, session)
 
-    const taskPayload = await this.prepareTaskEditPayload(
-      data,
-      tasksToUpdate,
-      tasksColumnMap,
-      timezone,
-    )
+    const taskPayload = this.prepareTaskEditPayload(data, tasksColumnMap, timezone)
     const tasksBefore = projectProperties<ITask>(tasksToUpdate, taskPayload)
 
     /* UPDATE */
@@ -367,8 +383,6 @@ export class TaskService extends BaseService<
     )
 
     if (updateManyResult.modifiedCount === 0) throw new AppError('Не удалось обновить задачи', 500)
-
-    const sideEffects: Promise<any>[] = []
 
     /* MOVED */
     const tasksToMove = tasksToUpdate.filter(
@@ -392,7 +406,7 @@ export class TaskService extends BaseService<
     )
 
     /* LOG */
-    const logPromise = this.operationLogService.create(
+    const log = await this.operationLogService.create(
       {
         operationType: OperationTypesEnum.UPDATE,
         collectionName: CollectionsEnum.TASKS,
@@ -404,18 +418,55 @@ export class TaskService extends BaseService<
       session,
     )
 
-    sideEffects.push(logPromise)
-
-    await Promise.all(sideEffects)
-
-    const log = await logPromise
-
     const updatedTasksPopulated = await this.getByCriteria(criteria, user.id, session)
+
+    /* GENERATE EMBEDDINGS */
+    const tasksIdToEditEmbeddings = this.getTasksIdToEditEmbeddings(data, tasksToUpdate)
+
+    await this.outboxEventService.create(
+      {
+        type: OutboxEventTypeEnum.GENERATE_TASK_EMBEDDINGS,
+        payload: {
+          taskIds: tasksIdToEditEmbeddings,
+          userId: user.id,
+        },
+      },
+      session,
+    )
 
     return {
       data: updatedTasksPopulated,
       logId: log.id,
     }
+  }
+
+  private getTasksIdToEditEmbeddings(
+    data: Omit<TaskEditDTO, 'id'>,
+    tasksBeforeUpdate: ITask[],
+  ): string[] {
+    if (!data.name) return []
+
+    return tasksBeforeUpdate
+      .filter((task) => task.name !== data.name)
+      .map((task) => task.id.toString())
+  }
+
+  private getTasksIdToEditManyEmbeddings(
+    data: TaskEditDTO[],
+    tasksBeforeUpdate: ITask[],
+  ): string[] {
+    const originalTasksMap = new Map(tasksBeforeUpdate.map((task) => [task.id.toString(), task]))
+
+    return data
+      .filter((dto) => {
+        if (dto.name === undefined) return false
+
+        const originalTask = originalTasksMap.get(dto.id)
+        if (!originalTask) return false
+
+        return originalTask.name !== dto.name
+      })
+      .map((dto) => dto.id.toString())
   }
 
   public async edit(
@@ -470,13 +521,7 @@ export class TaskService extends BaseService<
       const task = existingMap.get(dto.id)
       if (!task) continue
 
-      const taskPayload = await this.prepareTaskEditManyPayload(
-        dto,
-        [task],
-        tasksColumnMap,
-        timezone,
-        isDryRun,
-      )
+      const taskPayload = this.prepareTaskEditManyPayload(dto, [task], tasksColumnMap, timezone)
       const taskBefore = projectProperties<ITask>([task], taskPayload)[0]
 
       tasksBefore.push(taskBefore)
@@ -570,6 +615,22 @@ export class TaskService extends BaseService<
       user.id,
       session,
     )
+
+    /* GENERATE EMBEDDINGS */
+    if (!isDryRun) {
+      const tasksIdToEditEmbeddings = this.getTasksIdToEditManyEmbeddings(data, existingTasks)
+
+      await this.outboxEventService.create(
+        {
+          type: OutboxEventTypeEnum.GENERATE_TASK_EMBEDDINGS,
+          payload: {
+            taskIds: tasksIdToEditEmbeddings,
+            userId: user.id,
+          },
+        },
+        session,
+      )
+    }
 
     return {
       data: updatedTasksPopulated,
@@ -1579,6 +1640,15 @@ export class TaskService extends BaseService<
     }
   }
 
+  public async generateEmbeddingsForTasks(
+    taskIds: string[],
+    userId: Types.ObjectId,
+  ): Promise<void> {
+    const tasks = await this.getByCriteria({ ids: taskIds }, userId)
+
+    return this.scheduleEmbeddingsGeneration(tasks, userId)
+  }
+
   private async _executeReorderTransaction(
     dto: TaskReorderDTO,
     user: IUser,
@@ -1945,7 +2015,7 @@ export class TaskService extends BaseService<
     return tasksPayloads
   }
 
-  private scheduleEmbeddingsGeneration(tasks: ITaskPopulated[], userId: Types.ObjectId) {
+  private async scheduleEmbeddingsGeneration(tasks: ITaskPopulated[], userId: Types.ObjectId) {
     const tasksByName = new Map<string, Types.ObjectId[]>()
 
     for (const task of tasks) {
@@ -1955,7 +2025,7 @@ export class TaskService extends BaseService<
       tasksByName.set(taskName, ids)
     }
 
-    void this.generateEmbeddings(tasksByName, userId).catch((error) => {
+    await this.generateEmbeddings(tasksByName, userId).catch((error) => {
       console.error('Failed to generate task embeddings:', error)
     })
   }
@@ -1985,6 +2055,7 @@ export class TaskService extends BaseService<
     const isDueDateProvided = data.dueDate != null || taskPayload.dueDate != null
     const dueDate = data.dueDate || taskPayload.dueDate || dayjs().tz(timezone).format('YYYY-MM-DD')
 
+    if (data.tags) taskPayload.tags = data.tags.map((tag) => tag.toString())
     if (dueDate && data.dueHours != null && data.dueMinutes != null) {
       const collectedDateTime = `${dueDate}T${data.dueHours}:${data.dueMinutes}`
       const utcDueDate = dayjs.tz(collectedDateTime, timezone).utc()
@@ -1995,38 +2066,11 @@ export class TaskService extends BaseService<
     }
   }
 
-  private async _prepareMainEditFields(
+  public prepareTaskEditPayload(
     data: Omit<TaskEditDTO, 'id'>,
-    taskPayload: SafeUpdateData<ITask>,
-    tasksToUpdate: ITask[],
-    timezone: string,
-    isDryRun: boolean = false,
-  ) {
-    if (data.tags) taskPayload.tags = data.tags.map((tag) => tag.toString())
-
-    this.prepareTaskMainFields(data, taskPayload, timezone)
-
-    if (!isDryRun && data.name && tasksToUpdate.length > 0) {
-      const needEmbeddingsUpdate = tasksToUpdate.some(
-        (ws) => data.name && ws.name.trim() !== data.name.trim(),
-      )
-
-      const taskName = data.name.trim()
-
-      if (needEmbeddingsUpdate) {
-        const embeddings = await this.embeddingService.getEmbeddings(taskName)
-
-        taskPayload.embeddings = embeddings
-      }
-    }
-  }
-
-  public async prepareTaskEditPayload(
-    data: Omit<TaskEditDTO, 'id'>,
-    tasksToUpdate: ITask[],
     tasksColumnMap: Map<string, IColumnPopulated>,
     timezone: string,
-  ): Promise<SafeUpdateData<ITask>> {
+  ): SafeUpdateData<ITask> {
     const taskPayload: SafeUpdateData<ITask> = {
       ...data,
     }
@@ -2041,18 +2085,17 @@ export class TaskService extends BaseService<
       }
     }
 
-    await this._prepareMainEditFields(data, taskPayload, tasksToUpdate, timezone)
+    this.prepareTaskMainFields(data, taskPayload, timezone)
 
     return taskPayload
   }
 
-  public async prepareTaskEditManyPayload(
+  public prepareTaskEditManyPayload(
     data: TaskEditDTO,
     tasksToUpdate: ITask[],
     tasksColumnMap: Map<string, IColumnPopulated>,
     timezone: string,
-    isDryRun: boolean = false,
-  ): Promise<SingleUpdateDTO<SafeUpdateData<ITask>>> {
+  ): SingleUpdateDTO<SafeUpdateData<ITask>> {
     const { id, ...rest } = data
 
     const task = tasksToUpdate[0]
@@ -2075,7 +2118,7 @@ export class TaskService extends BaseService<
       taskPayload.workspace = columnData.workspace.id
     }
 
-    await this._prepareMainEditFields(rest, taskPayload, tasksToUpdate, timezone, isDryRun)
+    this.prepareTaskMainFields(rest, taskPayload, timezone)
 
     return taskPayload
   }

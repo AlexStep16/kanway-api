@@ -208,9 +208,7 @@ export const RunAgentWorker = new Worker(
 
       throw error
     } finally {
-      if (!hasExecutionError) {
-        await agentEventsHandler.spendCredits()
-      }
+      await agentEventsHandler.spendCredits()
 
       abortWatcher.stop()
 

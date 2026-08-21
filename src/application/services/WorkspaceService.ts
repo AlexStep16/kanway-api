@@ -32,6 +32,8 @@ import { WorkspaceMoveManyDTO } from '../dtos/WorkspaceMoveManyDTO.js'
 import { WorkspaceReorderDTO } from '../dtos/WorkspaceReorderDTO.js'
 import { WelcomeDTO } from '../dtos/WelcomeDTO.js'
 import { UserService } from './UserService.js'
+import { OutboxEventService } from './OutboxEventService.js'
+import { OutboxEventTypeEnum } from '@/domain/enums/OutboxEventTypeEnum.js'
 
 const MAX_RETRIES = 3
 
@@ -50,6 +52,7 @@ export class WorkspaceService extends BaseService<
   protected taskService: TaskService
   protected limitService: LimitService
   protected userService: UserService
+  protected outboxEventService: OutboxEventService
 
   constructor(
     workspaceRepository: WorkspaceRepository,
@@ -60,6 +63,7 @@ export class WorkspaceService extends BaseService<
     taskService: TaskService,
     limitService: LimitService,
     userService: UserService,
+    outboxEventService: OutboxEventService,
   ) {
     super(workspaceRepository)
 
@@ -71,6 +75,7 @@ export class WorkspaceService extends BaseService<
     this.taskService = taskService
     this.limitService = limitService
     this.userService = userService
+    this.outboxEventService = outboxEventService
   }
 
   private async _retryExecutor<T>(executor: (session: ClientSession) => Promise<T>): Promise<T> {
@@ -137,6 +142,18 @@ export class WorkspaceService extends BaseService<
 
     const log = await logPromise
 
+    /* EMBEDDINGS */
+    await this.outboxEventService.create(
+      {
+        type: OutboxEventTypeEnum.GENERATE_WORKSPACE_EMBEDDINGS,
+        payload: {
+          workspaceIds: [newWorkspace.id.toString()],
+          userId: user.id,
+        },
+      },
+      session,
+    )
+
     return {
       data: [newWorkspace],
       logId: log.id,
@@ -151,13 +168,9 @@ export class WorkspaceService extends BaseService<
     if (externalSession) {
       return this._executeCreateTransaction(data, user, externalSession)
     } else {
-      const result = await this._retryExecutor((session: ClientSession) =>
+      return await this._retryExecutor((session: ClientSession) =>
         this._executeCreateTransaction(data, user, session),
       )
-
-      this.scheduleEmbeddingsGeneration(result.data, user.id)
-
-      return result
     }
   }
 
@@ -214,6 +227,18 @@ export class WorkspaceService extends BaseService<
 
     const log = await logPromise
 
+    /* EMBEDDINGS */
+    await this.outboxEventService.create(
+      {
+        type: OutboxEventTypeEnum.GENERATE_WORKSPACE_EMBEDDINGS,
+        payload: {
+          workspaceIds: newWorkspaces.map((ws) => ws.id.toString()),
+          userId: user.id,
+        },
+      },
+      session,
+    )
+
     return {
       data: newWorkspaces,
       logId: log.id,
@@ -229,15 +254,9 @@ export class WorkspaceService extends BaseService<
     if (externalSession) {
       return this._executeCreateManyTransaction(data, user, externalSession, isDryRun)
     } else {
-      const result = await this._retryExecutor((session: ClientSession) =>
+      return await this._retryExecutor((session: ClientSession) =>
         this._executeCreateManyTransaction(data, user, session, isDryRun),
       )
-
-      if (!isDryRun) {
-        this.scheduleEmbeddingsGeneration(result.data, user.id)
-      }
-
-      return result
     }
   }
 
@@ -257,7 +276,7 @@ export class WorkspaceService extends BaseService<
     if (workspacesToUpdate.length === 0)
       throw new NotFoundError('Рабочие пространства для редактирования не найдены.')
 
-    const workspacePayload = await this.prepareWorkspaceEditPayload(data, workspacesToUpdate)
+    const workspacePayload = this.prepareWorkspaceEditPayload(data)
     const workspacesBefore = projectProperties<IWorkspace>(workspacesToUpdate, workspacePayload)
 
     /* UPDATE */
@@ -298,6 +317,23 @@ export class WorkspaceService extends BaseService<
     await Promise.all(sideEffects)
 
     const log = await logPromise
+
+    /* GENERATE EMBEDDINGS */
+    const workspacesIdToEditEmbeddings = this.getWorkspacesIdToEditEmbeddings(
+      data,
+      workspacesToUpdate,
+    )
+
+    await this.outboxEventService.create(
+      {
+        type: OutboxEventTypeEnum.GENERATE_WORKSPACE_EMBEDDINGS,
+        payload: {
+          workspaceIds: workspacesIdToEditEmbeddings,
+          userId: userId,
+        },
+      },
+      session,
+    )
 
     return {
       data: updatedWorkspaces,
@@ -350,11 +386,7 @@ export class WorkspaceService extends BaseService<
       const workspace = existingMap.get(dto.id)
       if (!workspace) continue
 
-      const workspacePayload = await this.prepareWorkspaceEditManyPayload(
-        dto,
-        [workspace],
-        isDryRun,
-      )
+      const workspacePayload = this.prepareWorkspaceEditManyPayload(dto)
 
       const workspaceBefore = projectProperties<IWorkspace>([workspace], workspacePayload)[0]
 
@@ -437,6 +469,23 @@ export class WorkspaceService extends BaseService<
     /** FINALIZATION */
     await Promise.all(sideEffects)
     const log = await logPromise
+
+    /* GENERATE EMBEDDINGS */
+    const workspacesIdToEditEmbeddings = this.getWorkspacesIdToEditManyEmbeddings(
+      data,
+      existingWorkspaces,
+    )
+
+    await this.outboxEventService.create(
+      {
+        type: OutboxEventTypeEnum.GENERATE_WORKSPACE_EMBEDDINGS,
+        payload: {
+          workspaceIds: workspacesIdToEditEmbeddings,
+          userId: userId,
+        },
+      },
+      session,
+    )
 
     return {
       data: updatedWorkspaces,
@@ -1358,6 +1407,46 @@ export class WorkspaceService extends BaseService<
     return workspacePayloads
   }
 
+  public async generateEmbeddingsForWorkspaces(
+    workspaceIds: string[],
+    userId: Types.ObjectId,
+  ): Promise<void> {
+    const workspaces = await this.getByCriteria({ ids: workspaceIds }, userId)
+
+    return this.scheduleEmbeddingsGeneration(workspaces, userId)
+  }
+
+  private getWorkspacesIdToEditEmbeddings(
+    data: Omit<WorkspaceEditDTO, 'id'>,
+    workspacesBeforeUpdate: IWorkspace[],
+  ): string[] {
+    if (!data.name) return []
+
+    return workspacesBeforeUpdate
+      .filter((workspace) => workspace.name !== data.name)
+      .map((workspace) => workspace.id.toString())
+  }
+
+  private getWorkspacesIdToEditManyEmbeddings(
+    data: WorkspaceEditDTO[],
+    workspacesBeforeUpdate: IWorkspace[],
+  ): string[] {
+    const originalWorkspacesMap = new Map(
+      workspacesBeforeUpdate.map((ws) => [ws.id.toString(), ws]),
+    )
+
+    return data
+      .filter((dto) => {
+        if (dto.name === undefined) return false
+
+        const originalWs = originalWorkspacesMap.get(dto.id)
+        if (!originalWs) return false
+
+        return originalWs.name !== dto.name
+      })
+      .map((dto) => dto.id.toString())
+  }
+
   private scheduleEmbeddingsGeneration(workspaces: IWorkspace[], userId: Types.ObjectId) {
     const workspacesByName = new Map<string, Types.ObjectId[]>()
 
@@ -1390,56 +1479,21 @@ export class WorkspaceService extends BaseService<
     await this.repository.updateEmbeddings(updates, userId)
   }
 
-  private async _prepareMainEditFields(
+  private prepareWorkspaceEditPayload(
     data: Omit<WorkspaceEditDTO, 'id'>,
-    workspacePayload: SafeUpdateData<IWorkspace>,
-    workspacesToUpdate: IWorkspace[],
-    isDryRun: boolean = false,
-  ) {
-    if (!isDryRun && data.name && workspacesToUpdate.length > 0) {
-      const needEmbeddingsUpdate = workspacesToUpdate.some(
-        (ws) => data.name && ws.name.trim() !== data.name.trim(),
-      )
-
-      const workspaceName = data.name.trim()
-
-      if (needEmbeddingsUpdate) {
-        const embeddings = await this.embeddingService.getEmbeddings(workspaceName)
-
-        workspacePayload.embeddings = embeddings
-      }
-    }
+  ): SafeUpdateData<IWorkspace> {
+    return { ...data }
   }
 
-  private async prepareWorkspaceEditPayload(
-    data: Omit<WorkspaceEditDTO, 'id'>,
-    workspacesToUpdate: IWorkspace[],
-  ): Promise<SafeUpdateData<IWorkspace>> {
-    const workspacePayload: SafeUpdateData<IWorkspace> = {
-      ...data,
-    }
-
-    await this._prepareMainEditFields(data, workspacePayload, workspacesToUpdate)
-
-    return workspacePayload
-  }
-
-  private async prepareWorkspaceEditManyPayload(
+  private prepareWorkspaceEditManyPayload(
     data: WorkspaceEditDTO,
-    workspacesToUpdate: IWorkspace[],
-    isDryRun: boolean = false,
-  ): Promise<SingleUpdateDTO<SafeUpdateData<IWorkspace>>> {
+  ): SingleUpdateDTO<SafeUpdateData<IWorkspace>> {
     const { id, ...rest } = data
 
-    const workspacePayload: SingleUpdateDTO<SafeUpdateData<IWorkspace>> = {
+    return {
       ...rest,
-
       id: new Types.ObjectId(id),
     }
-
-    await this._prepareMainEditFields(rest, workspacePayload, workspacesToUpdate, isDryRun)
-
-    return workspacePayload
   }
 
   public async welcome(payload: WelcomeDTO, user: IUser): Promise<IWorkspace> {

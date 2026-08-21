@@ -43,8 +43,16 @@ export const WorkspaceSchema = new Schema<IWorkspaceRaw>(
       default: 'Blue',
     },
   },
-  { timestamps: true },
+  {
+    timestamps: true,
+    collation: {
+      locale: 'en',
+      strength: 2,
+    },
+  },
 )
+
+WorkspaceSchema.index({ name: 1 })
 
 const Workspace = model<IWorkspaceRaw>('Workspace', WorkspaceSchema)
 

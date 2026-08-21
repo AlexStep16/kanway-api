@@ -34,5 +34,14 @@ module.exports = {
         HTTP_PROXY: 'http://127.0.0.1:1080',
       },
     },
+    {
+      name: 'kanway-worker-embeddings',
+      script: './dist/infrastructure/workers/EmbeddingsGeneration.js',
+      env_file: '.env',
+      env: {
+        ...envConfig,
+        HTTP_PROXY: 'http://127.0.0.1:1080',
+      },
+    },
   ],
 }

@@ -1,17 +1,22 @@
 import { Queue } from 'bullmq'
 
-export const subscriptionQueue = new Queue('subscription-renewal', {
+export const langgraphQueue = new Queue('langgraph-tasks', {
   connection: {
     host: process.env.REDIS_HOST || 'localhost',
     port: parseInt(process.env.REDIS_PORT || '6379'),
   },
   defaultJobOptions: {
-    removeOnComplete: true,
-    removeOnFail: false,
+    removeOnComplete: {
+      count: 100,
+      age: 60 * 60 * 24,
+    },
+    removeOnFail: {
+      count: 1000,
+    },
     attempts: 3,
     backoff: {
       type: 'exponential',
-      delay: 1000 * 60 * 5,
+      delay: 3000,
     },
   },
 })

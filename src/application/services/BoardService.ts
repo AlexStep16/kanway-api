@@ -30,6 +30,8 @@ import { LexoRank } from 'lexorank'
 import { BoardMoveDTO } from '../dtos/BoardMoveDTO.js'
 import { BoardMoveManyDTO } from '../dtos/BoardMoveManyDTO.js'
 import { BoardReorderDTO } from '../dtos/BoardReorderDTO.js'
+import { OutboxEventService } from './OutboxEventService.js'
+import { OutboxEventTypeEnum } from '@/domain/enums/OutboxEventTypeEnum.js'
 
 const MAX_RETRIES = 3
 
@@ -47,6 +49,7 @@ export class BoardService extends BaseService<
   protected columnService: ColumnService
   protected taskService: TaskService
   protected limitService: LimitService
+  protected outboxEventService: OutboxEventService
 
   constructor(
     boardRepository: BoardRepository,
@@ -56,6 +59,7 @@ export class BoardService extends BaseService<
     columnService: ColumnService,
     taskService: TaskService,
     limitService: LimitService,
+    outboxEventService: OutboxEventService,
   ) {
     super(boardRepository)
 
@@ -66,6 +70,7 @@ export class BoardService extends BaseService<
     this.columnService = columnService
     this.taskService = taskService
     this.limitService = limitService
+    this.outboxEventService = outboxEventService
   }
 
   protected getPopulateOptions() {
@@ -134,6 +139,18 @@ export class BoardService extends BaseService<
       session,
     )
 
+    /* EMBEDDINGS */
+    await this.outboxEventService.create(
+      {
+        type: OutboxEventTypeEnum.GENERATE_BOARD_EMBEDDINGS,
+        payload: {
+          boardIds: [newBoard.id.toString()],
+          userId: user.id,
+        },
+      },
+      session,
+    )
+
     return {
       data: newBoardsPopulated,
       logId: log.id,
@@ -148,13 +165,9 @@ export class BoardService extends BaseService<
     if (externalSession) {
       return this._executeCreateTransaction(data, user, externalSession)
     } else {
-      const result = await this._retryExecutor((session: ClientSession) =>
+      return await this._retryExecutor((session: ClientSession) =>
         this._executeCreateTransaction(data, user, session),
       )
-
-      this.scheduleEmbeddingsGeneration(result.data, user.id)
-
-      return result
     }
   }
 
@@ -231,6 +244,18 @@ export class BoardService extends BaseService<
       session,
     )
 
+    /* EMBEDDINGS */
+    await this.outboxEventService.create(
+      {
+        type: OutboxEventTypeEnum.GENERATE_BOARD_EMBEDDINGS,
+        payload: {
+          boardIds: newBoards.map((b) => b.id.toString()),
+          userId: user.id,
+        },
+      },
+      session,
+    )
+
     return {
       data: newBoardsPopulated,
       logId: log.id,
@@ -246,15 +271,9 @@ export class BoardService extends BaseService<
     if (externalSession) {
       return this._executeCreateManyTransaction(data, user, externalSession, isDryRun)
     } else {
-      const result = await this._retryExecutor((session: ClientSession) =>
+      return await this._retryExecutor((session: ClientSession) =>
         this._executeCreateManyTransaction(data, user, session, isDryRun),
       )
-
-      if (!isDryRun) {
-        this.scheduleEmbeddingsGeneration(result.data, user.id)
-      }
-
-      return result
     }
   }
 
@@ -273,7 +292,7 @@ export class BoardService extends BaseService<
 
     if (boardsToUpdate.length === 0) throw new NotFoundError('Доски для редактирования не найдены.')
 
-    const boardPayload = await this.prepareBoardEditPayload(data, boardsToUpdate)
+    const boardPayload = this.prepareBoardEditPayload(data)
     const boardsBefore = projectProperties<IBoard>(boardsToUpdate, boardPayload)
 
     /* UPDATE */
@@ -362,6 +381,20 @@ export class BoardService extends BaseService<
 
     const updatedBoardsPopulated = await this.getByCriteria(criteria, user.id, session)
 
+    /* GENERATE EMBEDDINGS */
+    const boardsIdToEditEmbeddings = this.getBoardsIdToEditEmbeddings(data, boardsToUpdate)
+
+    await this.outboxEventService.create(
+      {
+        type: OutboxEventTypeEnum.GENERATE_BOARD_EMBEDDINGS,
+        payload: {
+          boardIds: boardsIdToEditEmbeddings,
+          userId: user.id,
+        },
+      },
+      session,
+    )
+
     return {
       data: updatedBoardsPopulated,
       logId: log.id,
@@ -412,7 +445,7 @@ export class BoardService extends BaseService<
       const board = existingMap.get(dto.id)
       if (!board) continue
 
-      const boardPayload = await this.prepareBoardEditManyPayload(dto, [board], isDryRun)
+      const boardPayload = this.prepareBoardEditManyPayload(dto)
 
       const boardBefore = projectProperties<IBoard>([board], boardPayload)[0]
 
@@ -542,6 +575,20 @@ export class BoardService extends BaseService<
     const log = await logPromise
 
     const updatedBoardsPopulated = await this.getByCriteria({ ids: boardIds }, user.id, session)
+
+    /* GENERATE EMBEDDINGS */
+    const boardsIdToEditEmbeddings = this.getBoardsIdToEditManyEmbeddings(data, existingBoards)
+
+    await this.outboxEventService.create(
+      {
+        type: OutboxEventTypeEnum.GENERATE_BOARD_EMBEDDINGS,
+        payload: {
+          boardIds: boardsIdToEditEmbeddings,
+          userId: user.id,
+        },
+      },
+      session,
+    )
 
     return {
       data: updatedBoardsPopulated,
@@ -1894,6 +1941,46 @@ export class BoardService extends BaseService<
     return boardsPayloads
   }
 
+  public async generateEmbeddingsForBoards(
+    boardIds: string[],
+    userId: Types.ObjectId,
+  ): Promise<void> {
+    const boards = await this.getByCriteria({ ids: boardIds }, userId)
+
+    return this.scheduleEmbeddingsGeneration(boards, userId)
+  }
+
+  private getBoardsIdToEditEmbeddings(
+    data: Omit<BoardEditDTO, 'id'>,
+    boardsBeforeUpdate: IBoard[],
+  ): string[] {
+    if (!data.name) return []
+
+    return boardsBeforeUpdate
+      .filter((board) => board.name !== data.name)
+      .map((board) => board.id.toString())
+  }
+
+  private getBoardsIdToEditManyEmbeddings(
+    data: BoardEditDTO[],
+    boardsBeforeUpdate: IBoard[],
+  ): string[] {
+    const originalBoardsMap = new Map(
+      boardsBeforeUpdate.map((board) => [board.id.toString(), board]),
+    )
+
+    return data
+      .filter((dto) => {
+        if (dto.name === undefined) return false
+
+        const originalBoard = originalBoardsMap.get(dto.id)
+        if (!originalBoard) return false
+
+        return originalBoard.name !== dto.name
+      })
+      .map((dto) => dto.id.toString())
+  }
+
   private scheduleEmbeddingsGeneration(boards: IBoardPopulated[], userId: Types.ObjectId) {
     const boardsByName = new Map<string, Types.ObjectId[]>()
 
@@ -1926,49 +2013,26 @@ export class BoardService extends BaseService<
     await this.repository.updateEmbeddings(updates, userId)
   }
 
-  private async _prepareMainEditFields(
+  private _prepareMainEditFields(
     data: Omit<BoardEditDTO, 'id'>,
     boardPayload: SafeUpdateData<IBoard>,
-    boardsToUpdate: IBoard[],
-    isDryRun: boolean = false,
   ) {
     if (data.workspaceId) {
       boardPayload.workspace = Types.ObjectId.createFromHexString(data.workspaceId)
     }
-
-    if (!isDryRun && data.name && boardsToUpdate.length > 0) {
-      const needEmbeddingsUpdate = boardsToUpdate.some(
-        (ws) => data.name && ws.name.trim() !== data.name.trim(),
-      )
-
-      const boardName = data.name.trim()
-
-      if (needEmbeddingsUpdate) {
-        const embeddings = await this.embeddingService.getEmbeddings(boardName)
-
-        boardPayload.embeddings = embeddings
-      }
-    }
   }
 
-  private async prepareBoardEditPayload(
-    data: Omit<BoardEditDTO, 'id'>,
-    boardsToUpdate: IBoard[],
-  ): Promise<SafeUpdateData<IBoard>> {
+  private prepareBoardEditPayload(data: Omit<BoardEditDTO, 'id'>): SafeUpdateData<IBoard> {
     const boardPayload: SafeUpdateData<IBoard> = {
       ...data,
     }
 
-    await this._prepareMainEditFields(data, boardPayload, boardsToUpdate)
+    this._prepareMainEditFields(data, boardPayload)
 
     return boardPayload
   }
 
-  private async prepareBoardEditManyPayload(
-    data: BoardEditDTO,
-    boardsToUpdate: IBoard[],
-    isDryRun: boolean = false,
-  ): Promise<SingleUpdateDTO<SafeUpdateData<IBoard>>> {
+  private prepareBoardEditManyPayload(data: BoardEditDTO): SingleUpdateDTO<SafeUpdateData<IBoard>> {
     const { id, ...rest } = data
 
     const boardPayload: SingleUpdateDTO<SafeUpdateData<IBoard>> = {
@@ -1977,7 +2041,7 @@ export class BoardService extends BaseService<
       id: new Types.ObjectId(id),
     }
 
-    await this._prepareMainEditFields(rest, boardPayload, boardsToUpdate, isDryRun)
+    this._prepareMainEditFields(rest, boardPayload)
 
     return boardPayload
   }

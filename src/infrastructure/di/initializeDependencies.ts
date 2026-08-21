@@ -63,6 +63,8 @@ import { ZxcvbnFactory } from '@zxcvbn-ts/core'
 import * as zxcvbnCommonPackage from '@zxcvbn-ts/language-common'
 import * as zxcvbnEnPackage from '@zxcvbn-ts/language-en'
 import * as zxcvbnRuPackage from '@zxcvbn-ts/language-ru'
+import OutboxEventRepository from '@/application/repositories/OutboxEventRepository.js'
+import { OutboxEventService } from '@/application/services/OutboxEventService.js'
 
 const options = {
   dictionary: {
@@ -95,6 +97,7 @@ export function initializeDependencies() {
   const checkpointRepository = new CheckpointRepository()
   const checkpointWriteRepository = new CheckpointWriteRepository()
   const selectionRepository = new SelectionRepository()
+  const outboxEventRepository = new OutboxEventRepository()
 
   /* MOCK SERVICES START */
   const mockColumnService = {} as ColumnService
@@ -125,6 +128,7 @@ export function initializeDependencies() {
     mockTaskService,
     mockWorkspaceService,
   )
+  const outboxEventService = new OutboxEventService(outboxEventRepository)
 
   /* SETTING SERVICES START */
   const settingService = new SettingService(settingRepository)
@@ -166,6 +170,7 @@ export function initializeDependencies() {
     mockBoardService,
     mockWorkspaceService,
     limitService,
+    outboxEventService,
   )
   /* TASK SERVICES END */
 
@@ -178,6 +183,7 @@ export function initializeDependencies() {
     mockBoardService,
     taskService,
     limitService,
+    outboxEventService,
   )
   /* COLUMN SERVICES END */
 
@@ -190,6 +196,7 @@ export function initializeDependencies() {
     columnService,
     taskService,
     limitService,
+    outboxEventService,
   )
   /* BOARD SERVICES END */
 
@@ -203,6 +210,7 @@ export function initializeDependencies() {
     taskService,
     limitService,
     userService,
+    outboxEventService,
   )
   /* WORKSPACE SERVICES END */
 
@@ -380,6 +388,7 @@ export function initializeDependencies() {
       chatMessageService,
       chatService,
       transcriptionService,
+      outboxEventService,
     },
     controllers: {
       authController,
@@ -403,6 +412,7 @@ export function initializeDependencies() {
       checkpointRepository,
       checkpointWriteRepository,
       selectionRepository,
+      outboxEventRepository,
     },
     plugins: {
       zxcvbn,

@@ -43,8 +43,16 @@ export const ColumnSchema = new Schema<IColumnRaw>(
       type: Date,
     },
   },
-  { timestamps: true },
+  {
+    timestamps: true,
+    collation: {
+      locale: 'en',
+      strength: 2,
+    },
+  },
 )
+
+ColumnSchema.index({ name: 1 })
 
 const Column = model<IColumnRaw>('Column', ColumnSchema)
 
