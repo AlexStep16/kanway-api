@@ -197,30 +197,55 @@ export class AuthService {
         }
       }
 
-      const userByEmail = await this.userService.getByEmail(userInfo.default_email)
+      const userByEmail = userInfo.default_email
+        ? await this.userService.getByEmail(userInfo.default_email)
+        : null
 
       if (!userByEmail) {
-        const avatarUrl = userInfo.is_avatar_empty
-          ? undefined
-          : `https://avatars.yandex.net/get-yapic/${userInfo.default_avatar_id}/islands-68`
+        if (userInfo.default_email) {
+          const avatarUrl = userInfo.is_avatar_empty
+            ? undefined
+            : `https://avatars.yandex.net/get-yapic/${userInfo.default_avatar_id}/islands-68`
 
-        const newUser = await this.userService.createYandexUser({
-          username: userInfo.display_name,
-          email: userInfo.default_email,
-          avatarUrl,
-          clientId: userInfo.id,
-          timezone: payload.timezone,
-        })
+          const newUser = await this.userService.createYandexUser({
+            username: userInfo.display_name,
+            email: userInfo.default_email,
+            avatarUrl,
+            clientId: userInfo.id,
+            timezone: payload.timezone,
+          })
 
-        const serialized = await this.initNewUser(newUser[0], session, false)
-        const serialized2 = this.getIsLoggedInSerialized()
+          const serialized = await this.initNewUser(newUser[0], session, false)
+          const serialized2 = this.getIsLoggedInSerialized()
 
-        await session.commitTransaction()
+          await session.commitTransaction()
 
-        return {
-          user: newUser[0],
-          serialized,
-          serialized2,
+          return {
+            user: newUser[0],
+            serialized,
+            serialized2,
+          }
+        } else {
+          const registrationData: ProviderDTO = {
+            provider: ProvidersEnum.YANDEX,
+            clientId: userInfo.id,
+            avatarUrl: userInfo.is_avatar_empty
+              ? undefined
+              : `https://avatars.yandex.net/get-yapic/${userInfo.default_avatar_id}/islands-68`,
+            username: userInfo.display_name,
+          }
+
+          const token = this.tokenService.generateToken(
+            registrationData as Record<string, any>,
+            60 * 15,
+          )
+          const serialized = this._getTokenSerialized(token, 'finish_sign_up_token', 60 * 15)
+          const serialized2 = this.getHasFinishSignUpSerialized()
+
+          return {
+            serialized,
+            serialized2,
+          }
         }
       } else {
         if (!userByEmail.yandexUserId) {
@@ -280,7 +305,9 @@ export class AuthService {
     const userInfo = (await userInfoResponse.json()) as YandexUser
 
     const linkedUser = await this.userService.getByYandexUserId(userInfo.id)
-    const userWithSameEmail = await this.userService.getByEmail(userInfo.default_email)
+    const userWithSameEmail = userInfo.default_email
+      ? await this.userService.getByEmail(userInfo.default_email)
+      : null
 
     if (linkedUser && linkedUser.id.toString() !== userId) {
       throw new AppError(ErrorMessages.YANDEX_ACCOUNT_ALREADY_LINKED, 409)
@@ -497,6 +524,8 @@ export class AuthService {
 
       if (data.provider === ProvidersEnum.VK) {
         userData.vkUserId = data.clientId
+      } else if (data.provider === ProvidersEnum.YANDEX) {
+        userData.yandexUserId = data.clientId
       }
 
       const newUser = await this.userService.createWithCredentials(userData, session)

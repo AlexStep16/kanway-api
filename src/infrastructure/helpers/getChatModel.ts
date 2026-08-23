@@ -9,28 +9,33 @@ export function getChatModel(model: ModelsEnum, isReasoning: boolean): BaseChatM
         model: 'gpt-5.4-mini',
         useResponsesApi: true,
         reasoning: isReasoning ? { effort: 'medium' } : undefined,
+        maxRetries: 3,
       })
     case ModelsEnum.GPT_5_4:
       return new ChatOpenAI({
         model: 'gpt-5.4',
         useResponsesApi: true,
         reasoning: isReasoning ? { effort: 'medium' } : undefined,
+        maxRetries: 3,
       })
     case ModelsEnum.GPT_5_5:
       return new ChatOpenAI({
         model: 'gpt-5.5',
         useResponsesApi: true,
         reasoning: isReasoning ? { effort: 'medium' } : undefined,
+        maxRetries: 3,
       })
     case ModelsEnum.GPT_5_4_NANO:
       return new ChatOpenAI({
         model: 'gpt-5.4-nano',
         useResponsesApi: true,
         reasoning: isReasoning ? { effort: 'medium' } : undefined,
+        maxRetries: 3,
       })
     case ModelsEnum.GPT_TRANSCRIBE:
       return new ChatOpenAI({
         model: 'gpt-transcribe',
+        maxRetries: 3,
       })
   }
 }

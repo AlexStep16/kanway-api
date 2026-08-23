@@ -9,7 +9,7 @@ export interface YandexUser {
   first_name: string
   last_name: string
   sex: string
-  default_email: string
+  default_email?: string
   emails: string[]
   psuid: string
 }

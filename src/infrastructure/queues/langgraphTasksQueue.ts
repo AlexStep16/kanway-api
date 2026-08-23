@@ -13,10 +13,6 @@ export const langgraphQueue = new Queue('langgraph-tasks', {
     removeOnFail: {
       count: 1000,
     },
-    attempts: 3,
-    backoff: {
-      type: 'exponential',
-      delay: 3000,
-    },
+    attempts: 1,
   },
 })
