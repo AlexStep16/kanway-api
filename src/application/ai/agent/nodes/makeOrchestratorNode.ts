@@ -11,6 +11,7 @@ import { IStatus } from '@/application/interfaces/statuses/IStatus.js'
 import { AgentsEnum } from '@/enums/AgentsEnum.js'
 import { getChatModel } from '@/infrastructure/helpers/getChatModel.js'
 import { getBeautifiedSelections } from '../../helpers/getBeautifiedSelections.js'
+import getOrchestratorHistory from '../../helpers/getOrchestratorHistory.js'
 
 export const makeOrchestratorNode = (deps: AgentDependencies) => {
   return async (state: typeof AgentStateAnnotation.State, config: RunnableConfig) => {
@@ -42,7 +43,7 @@ export const makeOrchestratorNode = (deps: AgentDependencies) => {
 
     const modelToUse = getChatModel(configurable.modelType, true)
 
-    const history = state.messages.slice(-13)
+    const history = getOrchestratorHistory(state.messages || [])
 
     const orchestratorTools = initOrchestratorTools(deps, config as RunnableConfig<Configurable>)
 
