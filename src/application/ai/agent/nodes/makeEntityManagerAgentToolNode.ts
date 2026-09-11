@@ -77,7 +77,11 @@ export const makeEntityManagerAgentToolNode = (dependencies: AgentDependencies) 
         outputs.requested_tools!.push(...toolNames)
 
         managerMessages.push(
-          new ToolMessage(`Tools: ${toolNames.join(', ')} are available to call now`, toolCall.id!),
+          new ToolMessage(
+            `Tools: ${toolNames.join(', ')} are available to call now`,
+            toolCall.id!,
+            toolCall.name,
+          ),
         )
 
         continue
@@ -107,7 +111,7 @@ export const makeEntityManagerAgentToolNode = (dependencies: AgentDependencies) 
           break
         }
 
-        const toolMessage = new ToolMessage(result.observation.content, toolCall.id!)
+        const toolMessage = new ToolMessage(result.observation.content, toolCall.id!, toolCall.name)
 
         managerToolResults.push(toolMessage)
         managerMessages.push(toolMessage)
@@ -129,10 +133,18 @@ export const makeEntityManagerAgentToolNode = (dependencies: AgentDependencies) 
           outputs.manager_tools_has_error = true
 
           managerToolResults.push(
-            new ToolMessage(`Unexpected error: ${(error as Error).message}`, toolCall.id!),
+            new ToolMessage(
+              `Unexpected error: ${(error as Error).message}`,
+              toolCall.id!,
+              toolCall.name,
+            ),
           )
           managerMessages.push(
-            new ToolMessage(`Unexpected error: ${(error as Error).message}`, toolCall.id!),
+            new ToolMessage(
+              `Unexpected error: ${(error as Error).message}`,
+              toolCall.id!,
+              toolCall.name,
+            ),
           )
         }
       }
@@ -154,6 +166,7 @@ async function validateToolCall(
         validationResult.error,
       )}. \nPlease fix the arguments and try again.`,
       toolCall.id!,
+      toolCall.name,
     )
   }
 
@@ -172,7 +185,7 @@ async function executeToolCall(
     )
 
     if (!toolByToolCalls) {
-      throw new ToolMessage(`Tool ${toolCall.name} not found.`, toolCall.id!)
+      throw new ToolMessage(`Tool ${toolCall.name} not found.`, toolCall.id!, toolCall.name)
     }
 
     await validateToolCall(toolCall, toolByToolCalls)
@@ -192,6 +205,7 @@ async function executeToolCall(
       throw new ToolMessage(
         `Tool ${toolCall.name} execution failed. Observation: ${observation.content}`,
         toolCall.id!,
+        toolCall.name,
       )
     }
 
@@ -207,6 +221,7 @@ async function executeToolCall(
     throw new ToolMessage(
       `Tool ${toolCall.name} execution error: ${(error as Error).message}`,
       toolCall.id!,
+      toolCall.name,
     )
   }
 }

@@ -96,9 +96,11 @@ export const RunAgentWorker = new Worker(
 
       const agent = await getAgent(dependencies)
 
-      const currentState = await agent.getState(config)
+      let currentState = await agent.getState(config)
 
       if (!isResume) await cleanupLastToolMessages(agent, config, currentState)
+
+      currentState = await agent.getState(config)
 
       if (isRetry) {
         initialStatus.logs = agentEventsHandler.status.logs.filter(() => false)

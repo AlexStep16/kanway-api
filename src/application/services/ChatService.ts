@@ -45,6 +45,8 @@ import { UpdateChatNameDTO } from '../dtos/UpdateChatNameDTO.js'
 import { getDefaultState } from '../ai/helpers/getDefaultState.js'
 import { HumanMessage } from '@langchain/core/messages'
 import { getChatModel } from '@/infrastructure/helpers/getChatModel.js'
+import { CustomEvents } from '@/enums/CustomEvents.js'
+import { Redis } from 'ioredis'
 
 const MAX_RETRIES = 3
 
@@ -73,6 +75,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
   protected workspaceService: WorkspaceService
   protected checkpointWriteRepository: CheckpointWriteRepository
   protected checkpointRepository: CheckpointRepository
+  protected redisPublisher: Redis
 
   constructor(
     chatRepository: ChatRepository,
@@ -100,6 +103,22 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     this.workspaceService = workspaceService
     this.checkpointWriteRepository = checkpointWriteRepository
     this.checkpointRepository = checkpointRepository
+
+    this.redisPublisher = new Redis({
+      host: process.env.REDIS_HOST || '127.0.0.1',
+      port: Number(process.env.REDIS_PORT) || 6379,
+    })
+  }
+
+  private async _publishNewMessage(jobId: string, message: unknown) {
+    await this.redisPublisher.publish(
+      `job-events:${jobId}`,
+      JSON.stringify({
+        id: crypto.randomUUID(),
+        role: CustomEvents.NEW_MESSAGE,
+        data: message,
+      }),
+    )
   }
 
   private async _getActiveEntities(
@@ -273,6 +292,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       userMessage: string
       activeBoard: { id: string; name: string } | null
       activeWorkspace: { id: string; name: string }
+      jobId: string
     },
     externalSession: ClientSession,
   ) {
@@ -296,6 +316,8 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     )
 
     const statusMessage = statusMessages.data[0]
+
+    await this._publishNewMessage(data.jobId, statusMessage)
 
     const config = await this._getConfigurableFromUserSetting(
       user,
@@ -348,6 +370,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
         activeBoard: context.board,
         activeWorkspace: context.workspace,
         iterationId: lastConversationMessage.iterationId,
+        jobId: data.jobId,
       },
       externalSession,
     )
@@ -382,6 +405,8 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
 
     const userMessage = createUserMessageResult.data[0]
 
+    await this._publishNewMessage(data.jobId, userMessage)
+
     const { jobPayload, statusMessage } = await this._createThreadJobPayload(
       user,
       {
@@ -393,6 +418,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
         userMessage: data.message!,
         activeBoard: context.board,
         activeWorkspace: context.workspace,
+        jobId: data.jobId,
       },
       externalSession,
     )
@@ -420,7 +446,8 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     }
 
     if (
-      data.modelType !== ModelsEnum.GPT_5_6_LUNA &&
+      data.modelType &&
+      ![ModelsEnum.GPT_5_6_LUNA, ModelsEnum.GPT_5_4_MINI].includes(data.modelType) &&
       user.subscriptionId === SubscriptionPlanEnum.Basic
     ) {
       throw new AppError('Модель доступна только для пользователей с платной подпиской', 403)
@@ -557,6 +584,14 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     user: IUser,
     externalSession: ClientSession,
   ) {
+    if (
+      data.modelType &&
+      ![ModelsEnum.GPT_5_6_LUNA, ModelsEnum.GPT_5_4_MINI].includes(data.modelType) &&
+      user.subscriptionId === SubscriptionPlanEnum.Basic
+    ) {
+      throw new AppError('Модель доступна только для пользователей с платной подпиской', 403)
+    }
+
     const chatMessages = await this.chatMessageService.getByCriteria(
       { chatId: data.chatId },
       user.id,
@@ -753,6 +788,14 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     user: IUser,
     externalSession: ClientSession,
   ) {
+    if (
+      data.modelType &&
+      ![ModelsEnum.GPT_5_6_LUNA, ModelsEnum.GPT_5_4_MINI].includes(data.modelType) &&
+      user.subscriptionId === SubscriptionPlanEnum.Basic
+    ) {
+      throw new AppError('Модель доступна только для пользователей с платной подпиской', 403)
+    }
+
     const { board, workspace } = await this._getActiveEntities(
       data.boardId,
       data.workspaceId,

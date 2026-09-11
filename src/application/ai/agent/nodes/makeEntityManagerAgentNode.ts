@@ -79,6 +79,7 @@ export const makeEntityManagerAgentNode = (deps: AgentDependencies) => {
 
     const prompt = ChatPromptTemplate.fromMessages([
       ['system', getAgentManagerSystemPrompt(activeManager)],
+      ['user', 'Execute the instruction above.'],
       ...history,
     ])
 
@@ -107,7 +108,9 @@ export const makeEntityManagerAgentNode = (deps: AgentDependencies) => {
     fillOutputsBasedOnAgent(activeManager, response, outputs)
 
     if (response.tool_calls?.length === 0) {
-      outputs.messages!.push(new ToolMessage(response.content, lastCallManagerTool!.id!))
+      outputs.messages!.push(
+        new ToolMessage(response.content, lastCallManagerTool!.id!, lastCallManagerTool?.name),
+      )
     }
 
     return outputs

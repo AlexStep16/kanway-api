@@ -50,7 +50,7 @@ export const makeOrchestratorToolNode = (deps: AgentDependencies) => {
         )
 
         if (!toolByToolCalls) {
-          throw new ToolMessage(`Tool ${toolCall.name} not found.`, toolCall.id!)
+          throw new ToolMessage(`Tool ${toolCall.name} not found.`, toolCall.id!, toolCall.name)
         }
 
         const validationResult = await (toolByToolCalls.schema as ZodAny).safeParseAsync(
@@ -63,12 +63,17 @@ export const makeOrchestratorToolNode = (deps: AgentDependencies) => {
               validationResult.error,
             )}. \nPlease fix the arguments and try again.`,
             toolCall.id!,
+            toolCall.name,
           )
         }
 
         if (toolCall.name === 'call_manager_agent') {
           if (managerCallsCount >= 1) {
-            throw new ToolMessage(`Manager agent has already been called once.`, toolCall.id!)
+            throw new ToolMessage(
+              `Manager agent has already been called once.`,
+              toolCall.id!,
+              toolCall.name,
+            )
           }
           outputs.active_manager = toolCall.args.manager
           outputs.is_manager_called = true
@@ -91,7 +96,7 @@ export const makeOrchestratorToolNode = (deps: AgentDependencies) => {
           break
         }
 
-        const toolMessage = new ToolMessage(result.observation.content, toolCall.id!)
+        const toolMessage = new ToolMessage(result.observation.content, toolCall.id!, toolCall.name)
 
         outputs.orchestrator_tool_results!.push(toolMessage)
         outputs.messages!.push(toolMessage)
@@ -108,10 +113,18 @@ export const makeOrchestratorToolNode = (deps: AgentDependencies) => {
         } else {
           outputs.orchestrator_has_error = true
           outputs.orchestrator_tool_results!.push(
-            new ToolMessage(`Unexpected error: ${(error as Error).message}`, toolCall.id!),
+            new ToolMessage(
+              `Unexpected error: ${(error as Error).message}`,
+              toolCall.id!,
+              toolCall.name,
+            ),
           )
           outputs.messages!.push(
-            new ToolMessage(`Unexpected error: ${(error as Error).message}`, toolCall.id!),
+            new ToolMessage(
+              `Unexpected error: ${(error as Error).message}`,
+              toolCall.id!,
+              toolCall.name,
+            ),
           )
         }
       }
@@ -143,6 +156,7 @@ async function executeToolCall(
       throw new ToolMessage(
         `Tool ${toolCall.name} execution failed. Observation: ${observation.content}`,
         toolCall.id!,
+        toolCall.name,
       )
     }
 
@@ -158,6 +172,7 @@ async function executeToolCall(
     throw new ToolMessage(
       `Tool ${toolCall.name} execution error: ${(error as Error).message}`,
       toolCall.id!,
+      toolCall.name,
     )
   }
 }

@@ -161,7 +161,7 @@ const buildEntitySampleItem = (
     sample.board = entity.board as IParentEntity
   }
 
-  if (additionalFields.includes('column_id') && 'column' in entity) {
+  if ('column' in entity) {
     sample.column = entity.column as IParentEntity
   }
 
