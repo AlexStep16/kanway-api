@@ -12,7 +12,6 @@ import cookieParser from 'cookie-parser'
 import cors from 'cors'
 import { Redis } from 'ioredis'
 import { generalLimiter } from './limiters.js'
-import { setGlobalDispatcher, EnvHttpProxyAgent } from 'undici'
 import { initializeDependencies } from './infrastructure/di/initializeDependencies.js'
 import { startSubscriptionRenewalCron } from '@/infrastructure/helpers/startSubscriptionRenewalCron.js'
 import { startDeletedUserCleanupCron } from './infrastructure/helpers/startDeletedUserCleanupCron.js'
@@ -20,9 +19,6 @@ import { startExchangeRateCron } from './infrastructure/helpers/startExchangeRat
 import { startOutboxChangeStream } from './infrastructure/helpers/startOutboxChangeStream.js'
 
 const dependencies = initializeDependencies()
-
-const proxyAgent = new EnvHttpProxyAgent()
-if (process.env.NODE_ENV === 'production') setGlobalDispatcher(proxyAgent)
 
 const redis = new Redis({
   host: process.env.REDIS_HOST || '127.0.0.1',

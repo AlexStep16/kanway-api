@@ -200,7 +200,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     })
     const tagsList = Array.from(tagsSet).join(', ')
     const modelType =
-      user.subscriptionId === SubscriptionPlanEnum.Basic ? ModelsEnum.GPT_5_4_MINI : data.modelType
+      user.subscriptionId === SubscriptionPlanEnum.Basic ? ModelsEnum.GPT_5_6_LUNA : data.modelType
 
     const config: RunnableConfig<Configurable> = {
       recursionLimit: 120,
@@ -342,7 +342,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       {
         threadId: context.threadId,
         chatId: context.chat.id.toString(),
-        modelType: data.modelType || ModelsEnum.GPT_5_4_MINI,
+        modelType: data.modelType || ModelsEnum.GPT_5_6_LUNA,
         timezone: data.timezone,
         userMessage: lastConversationMessage.content as string,
         activeBoard: context.board,
@@ -387,7 +387,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
       {
         threadId: context.threadId,
         chatId: context.chat.id.toString(),
-        modelType: data.modelType || ModelsEnum.GPT_5_4_MINI,
+        modelType: data.modelType || ModelsEnum.GPT_5_6_LUNA,
         iterationId,
         timezone: data.timezone,
         userMessage: data.message!,
@@ -420,7 +420,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     }
 
     if (
-      data.modelType !== ModelsEnum.GPT_5_4_MINI &&
+      data.modelType !== ModelsEnum.GPT_5_6_LUNA &&
       user.subscriptionId === SubscriptionPlanEnum.Basic
     ) {
       throw new AppError('Модель доступна только для пользователей с платной подпиской', 403)
@@ -603,7 +603,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
         activeWorkspace: workspace,
         statusMessageId: lastStatusMessageId || '',
         userMessage: lastUserMessage ? lastUserMessage.content : '',
-        modelType: data.modelType || ModelsEnum.GPT_5_4_MINI,
+        modelType: data.modelType || ModelsEnum.GPT_5_6_LUNA,
       },
       externalSession,
     )
@@ -797,7 +797,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
         timezone: data.timezone || 'UTC',
         statusMessageId: lastStatusMessage ? lastStatusMessage.id.toHexString() : '',
         userMessage: lastUserMessage ? lastUserMessage.content : '',
-        modelType: data.modelType || ModelsEnum.GPT_5_4_MINI,
+        modelType: data.modelType || ModelsEnum.GPT_5_6_LUNA,
       },
       externalSession,
     )

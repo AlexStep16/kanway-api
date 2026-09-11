@@ -17,7 +17,6 @@ import { Types } from 'mongoose'
 import * as Sentry from '@sentry/node'
 import { Command } from '@langchain/langgraph'
 import { AgentEventsHandler } from '@/application/ai/callbacks/AgentEventsHandler.js'
-import { setGlobalDispatcher, EnvHttpProxyAgent } from 'undici'
 import { AgentWorkerDTO } from '@/application/dtos/AgentWorkerDTO.js'
 import { StatusStatesEnum } from '@/enums/StatusStatesEnum.js'
 import { IStatus } from '@/application/interfaces/statuses/IStatus.js'
@@ -25,9 +24,6 @@ import { calculateCredits } from '@/application/ai/helpers/calculateCredits.js'
 import { cleanupLastIteration } from '@/utils/cleanupLastIteration.js'
 import { createAbortWatcher } from '@/utils/createAbortWatcher.js'
 import { cleanupLastToolMessages } from '@/utils/cleanupLastToolMessages.js'
-
-const proxyAgent = new EnvHttpProxyAgent()
-if (process.env.NODE_ENV === 'production') setGlobalDispatcher(proxyAgent)
 
 const dependencies = initializeDependencies()
 

@@ -3,10 +3,6 @@ import * as Sentry from '@sentry/node'
 import { initializeDependencies } from '../di/initializeDependencies.js'
 import connectToDatabase from '../db/connectToDatabase.js'
 import { AppError } from '@/domain/errors/AppError.js'
-import { setGlobalDispatcher, EnvHttpProxyAgent } from 'undici'
-
-const proxyAgent = new EnvHttpProxyAgent()
-if (process.env.NODE_ENV === 'production') setGlobalDispatcher(proxyAgent)
 
 const dependencies = initializeDependencies()
 

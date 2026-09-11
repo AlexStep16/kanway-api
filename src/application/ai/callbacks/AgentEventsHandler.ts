@@ -32,7 +32,7 @@ export class AgentEventsHandler extends BaseCallbackHandler {
   public jobHistory: any[] = []
   public creditsSpent = 0
   public redisPublisher: Redis
-  public modelType = ModelsEnum.GPT_5_4_MINI
+  public modelType = ModelsEnum.GPT_5_6_LUNA
   public isInterrupted = false
 
   constructor(

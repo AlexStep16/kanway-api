@@ -9,7 +9,7 @@ export function calculateCredits(
   markup: number = 2.5,
 ): number {
   const usdToRubRate = getEffectiveUsdToRubRate()
-  const prices = MODEL_PRICES[model] || MODEL_PRICES[ModelsEnum.GPT_5_4_MINI]
+  const prices = MODEL_PRICES[model] || MODEL_PRICES[ModelsEnum.GPT_5_6_LUNA]
 
   const inputTokens = tokenUsage.input_tokens ?? 0
   const outputTokens = tokenUsage.output_tokens ?? 0

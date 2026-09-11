@@ -10,6 +10,19 @@ export function getChatModel(model: ModelsEnum, isReasoning: boolean): BaseChatM
         useResponsesApi: true,
         reasoning: isReasoning ? { effort: 'medium' } : undefined,
         maxRetries: 3,
+        configuration: {
+          baseURL: 'https://api.kanway-proxy.org/v1',
+        },
+      })
+    case ModelsEnum.GPT_5_6_LUNA:
+      return new ChatOpenAI({
+        model: 'gpt-5.6-luna',
+        useResponsesApi: true,
+        reasoning: isReasoning ? { effort: 'medium' } : undefined,
+        maxRetries: 3,
+        configuration: {
+          baseURL: 'https://api.kanway-proxy.org/v1',
+        },
       })
     case ModelsEnum.GPT_5_4:
       return new ChatOpenAI({
@@ -17,6 +30,9 @@ export function getChatModel(model: ModelsEnum, isReasoning: boolean): BaseChatM
         useResponsesApi: true,
         reasoning: isReasoning ? { effort: 'medium' } : undefined,
         maxRetries: 3,
+        configuration: {
+          baseURL: 'https://api.kanway-proxy.org/v1',
+        },
       })
     case ModelsEnum.GPT_5_5:
       return new ChatOpenAI({
@@ -24,6 +40,9 @@ export function getChatModel(model: ModelsEnum, isReasoning: boolean): BaseChatM
         useResponsesApi: true,
         reasoning: isReasoning ? { effort: 'medium' } : undefined,
         maxRetries: 3,
+        configuration: {
+          baseURL: 'https://api.kanway-proxy.org/v1',
+        },
       })
     case ModelsEnum.GPT_5_4_NANO:
       return new ChatOpenAI({
@@ -31,11 +50,17 @@ export function getChatModel(model: ModelsEnum, isReasoning: boolean): BaseChatM
         useResponsesApi: true,
         reasoning: isReasoning ? { effort: 'medium' } : undefined,
         maxRetries: 3,
+        configuration: {
+          baseURL: 'https://api.kanway-proxy.org/v1',
+        },
       })
     case ModelsEnum.GPT_TRANSCRIBE:
       return new ChatOpenAI({
         model: 'gpt-transcribe',
         maxRetries: 3,
+        configuration: {
+          baseURL: 'https://api.kanway-proxy.org/v1',
+        },
       })
   }
 }

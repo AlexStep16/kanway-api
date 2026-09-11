@@ -10,7 +10,9 @@ export interface ITranscriptionResult {
 }
 
 export class TranscriptionService {
-  private readonly openai = new OpenAI()
+  private readonly openai = new OpenAI({
+    baseURL: 'https://api.kanway-proxy.org/v1',
+  })
 
   public async transcribe(file: Express.Multer.File): Promise<ITranscriptionResult> {
     try {

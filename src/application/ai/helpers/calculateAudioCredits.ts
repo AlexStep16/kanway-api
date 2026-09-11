@@ -9,7 +9,7 @@ export function calculateAudioCredits(
   markup: number = 2.5,
 ): number {
   const usdToRubRate = getEffectiveUsdToRubRate()
-  const prices = MODEL_PRICES[model] || MODEL_PRICES[ModelsEnum.GPT_5_4_MINI]
+  const prices = MODEL_PRICES[model] || MODEL_PRICES[ModelsEnum.GPT_5_6_LUNA]
 
   const duration = durationUsage.seconds ?? 0
 

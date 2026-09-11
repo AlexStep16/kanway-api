@@ -1,6 +1,11 @@
 import { OpenAIEmbeddings } from '@langchain/openai'
 
-const embeddingModel = new OpenAIEmbeddings({ model: 'text-embedding-3-small' })
+const embeddingModel = new OpenAIEmbeddings({
+  model: 'text-embedding-3-small',
+  configuration: {
+    baseURL: 'https://api.kanway-proxy.org/v1',
+  },
+})
 
 export class EmbeddingService {
   public async getEmbeddings(text: string): Promise<number[]> {

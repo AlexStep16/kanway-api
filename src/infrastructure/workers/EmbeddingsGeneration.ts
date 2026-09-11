@@ -1,15 +1,11 @@
 import { Worker, type Job } from 'bullmq'
 import * as Sentry from '@sentry/node'
 import { Types } from 'mongoose'
-import { setGlobalDispatcher, EnvHttpProxyAgent } from 'undici'
 import { initializeDependencies } from '../di/initializeDependencies.js'
 import connectToDatabase from '../db/connectToDatabase.js'
 import { OutboxEventStatusEnum } from '@/domain/enums/OutboxEventStatusEnum.js'
 
 const dependencies = initializeDependencies()
-
-const proxyAgent = new EnvHttpProxyAgent()
-if (process.env.NODE_ENV === 'production') setGlobalDispatcher(proxyAgent)
 
 await connectToDatabase()
 

@@ -12,6 +12,11 @@ export const MODEL_PRICES: Record<ModelsEnum, IModelPrice> = {
     input_cached: 0.075,
     output: 4.5,
   },
+  [ModelsEnum.GPT_5_6_LUNA]: {
+    input: 0.2,
+    input_cached: 0.02,
+    output: 1.2,
+  },
   [ModelsEnum.GPT_5_5]: {
     input: 5.0,
     input_cached: 0.5,
