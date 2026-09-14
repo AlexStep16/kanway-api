@@ -515,6 +515,7 @@ export class WorkspaceService extends BaseService<
     userId: Types.ObjectId,
     session: ClientSession,
     isDryRun: boolean = false,
+    isForceDelete: boolean = false,
   ): Promise<IResponseWithLog<null>> {
     const workspaces = await this.getByCriteria({}, userId, session)
     const workspacesToDelete = await this.repository.findByCriteria(
@@ -529,7 +530,8 @@ export class WorkspaceService extends BaseService<
     }
     if (
       workspaces.length === 1 &&
-      workspacesToDelete.some((ws) => ws.id.toString() === workspaces[0].id.toString())
+      workspacesToDelete.some((ws) => ws.id.toString() === workspaces[0].id.toString()) &&
+      !isForceDelete
     ) {
       throw new AppError('Вы не можете удалить единственное рабочее пространство', 400)
     }
