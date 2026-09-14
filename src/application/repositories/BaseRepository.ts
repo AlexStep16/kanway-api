@@ -183,12 +183,22 @@ export abstract class BaseRepository<
     return this.model.bulkWrite(validOps, { session })
   }
 
+  public async deleteById(id: Types.ObjectId, session?: ClientSession): Promise<DeleteResult> {
+    return this.model.deleteOne({ _id: id }).session(session || null)
+  }
+
   public async deleteMany(
     criteria: TCriteria,
     userId?: Types.ObjectId,
     session?: ClientSession,
   ): Promise<DeleteResult> {
     const filter = this.buildFilter(criteria, userId)
+
+    if (!filter || Object.keys(filter).length === 0) {
+      throw new Error(
+        `[SECURITY ERROR] Attempted to execute deleteMany on collection '${this.model.collection.name}' with an EMPTY filter! Execution aborted.`,
+      )
+    }
 
     return await this.model.deleteMany(filter).session(session || null)
   }

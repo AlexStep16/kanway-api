@@ -7,7 +7,6 @@ import { SignupCredentialsDTO } from '@/application/dtos/SignupCredentialsDTO.js
 import { BASE_COLORS } from '@constants/BASE_COLORS.js'
 import { toMongoCaseKeys, toServerCaseKeys } from '@/utils/objectTransformers.js'
 import { UserEditDTO } from '@dtos/UserEditDTO.js'
-import { IUserCriteria } from '@interfaces/criterias/IUserCriteria.js'
 import UserRepository from '@repositories/UserRepository.js'
 import { SALT_ROUNDS } from '@constants/SALT_ROUNDS.js'
 import { SubscriptionPlanEnum } from '@domain/enums/SubscriptionPlanEnum.js'
@@ -169,12 +168,8 @@ export class UserService {
     )
   }
 
-  public async delete(
-    criteria: IUserCriteria,
-    user: IUser,
-    session?: ClientSession,
-  ): Promise<DeleteResult> {
-    return this.repository.deleteMany(criteria, user.id, session)
+  public async deleteById(id: Types.ObjectId, session?: ClientSession): Promise<DeleteResult> {
+    return this.repository.deleteById(id, session)
   }
 
   public async validateCredentials(email: string, passwordPlain: string): Promise<IUser> {

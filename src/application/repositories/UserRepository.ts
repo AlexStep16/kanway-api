@@ -15,7 +15,7 @@ export default class UserRepository extends BaseRepository<
     super(UserModel)
   }
 
-  public buildFilter(criteria: IUserCriteria): FilterQuery<IUserRaw> {
+  public override buildFilter(criteria: IUserCriteria): FilterQuery<IUserRaw> {
     const filter: FilterQuery<IUserRaw> = {}
 
     if (criteria.id) {

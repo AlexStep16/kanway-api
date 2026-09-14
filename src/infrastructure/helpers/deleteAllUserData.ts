@@ -4,16 +4,11 @@ import { IUser } from '@/domain/entities/IUser.js'
 
 const dependencies = initializeDependencies()
 
-export async function deleteAllUserData(
-  user: IUser,
-  session?: ClientSession,
-): Promise<Promise<any>[]> {
-  const promises = []
-
+export async function deleteAllUserData(user: IUser, session?: ClientSession): Promise<void> {
   const chats = await dependencies.services.chatService.getByCriteria({}, user.id, session)
   const threadIds = chats.map((chat) => chat.threadId)
 
-  promises.push(
+  await Promise.all([
     dependencies.services.boardService.delete({}, user, session),
     dependencies.services.workspaceService.delete({}, user, session),
     dependencies.services.columnService.delete({}, user, session),
@@ -40,8 +35,6 @@ export async function deleteAllUserData(
     dependencies.services.paymentService.delete({}, user, session),
     dependencies.services.paymentMethodService.delete({}, user, session),
     dependencies.services.settingService.delete({}, user, session),
-    dependencies.services.userService.delete({}, user, session),
-  )
-
-  return promises
+    dependencies.services.userService.deleteById(user.id, session),
+  ])
 }

@@ -9,9 +9,10 @@ export function startDeletedUserCleanupCron(userService: UserService) {
 
     try {
       const deletedUsers = await userService.getDeletedUsers(currentDate)
-      deletedUsers.forEach((user) => {
-        deleteAllUserData(user)
-      })
+
+      for (const user of deletedUsers) {
+        await deleteAllUserData(user)
+      }
     } catch (error) {
       Sentry.captureException(error)
     }
