@@ -2,8 +2,11 @@ import * as Sentry from '@sentry/node'
 import { UserService } from '@/application/services/UserService.js'
 import { initializeDependencies } from '../di/initializeDependencies.js'
 import { deleteAllUserData } from './deleteAllUserData.js'
+import connectToDatabase from '../db/connectToDatabase.js'
 
 const dependencies = initializeDependencies()
+
+await connectToDatabase()
 
 async function deletedUserCleanup(userService: UserService) {
   const currentDate = new Date()
