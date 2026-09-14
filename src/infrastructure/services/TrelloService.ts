@@ -9,6 +9,7 @@ import { TaskDTO } from '@dtos/TaskDTO.js'
 import { IUser } from '@entities/IUser.js'
 import { IBoardPopulated } from '@interfaces/IBoardPopulated.js'
 import { TASK_COLORS_TITLES } from '@constants/TASK_COLORS.js'
+import removeMarkdown from 'remove-markdown'
 
 // Trello label colors mapped to the closest task color available in the app
 const TRELLO_LABEL_COLOR_MAP: Record<string, (typeof TASK_COLORS_TITLES)[number]> = {
@@ -124,7 +125,9 @@ export class TrelloService {
 
     return {
       name: (card.name || 'Без названия').slice(0, 100),
-      description: card.desc ? card.desc.slice(0, 16384) : undefined,
+      description: card.desc
+        ? removeMarkdown(card.desc, { stripListLeaders: false }).slice(0, 16384)
+        : undefined,
       dueDate: due ? due.format('YYYY-MM-DD') : undefined,
       dueHours: due ? due.hour() : undefined,
       dueMinutes: due ? due.minute() : undefined,
