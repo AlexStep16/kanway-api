@@ -10,7 +10,7 @@ export async function deleteAllUserData(user: IUser, session?: ClientSession): P
 
   await Promise.all([
     dependencies.services.boardService.delete({}, user, session),
-    dependencies.services.workspaceService.delete({}, user, session),
+    dependencies.services.workspaceService.delete({}, user, session, false, true),
     dependencies.services.columnService.delete({}, user, session),
     dependencies.services.taskService.delete({}, user, session),
     dependencies.services.operationLogService.delete({}, user, session),

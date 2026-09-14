@@ -578,14 +578,21 @@ export class WorkspaceService extends BaseService<
     user: IUser,
     externalSession?: ClientSession,
     isDryRun: boolean = false,
+    isForceDelete: boolean = false,
   ): Promise<IResponseWithLog<null>> {
     const userId = user.id
 
     if (externalSession) {
-      return this._executeDeleteTransaction(criteria, userId, externalSession, isDryRun)
+      return this._executeDeleteTransaction(
+        criteria,
+        userId,
+        externalSession,
+        isDryRun,
+        isForceDelete,
+      )
     } else {
       return await this._retryExecutor((session: ClientSession) =>
-        this._executeDeleteTransaction(criteria, userId, session, isDryRun),
+        this._executeDeleteTransaction(criteria, userId, session, isDryRun, isForceDelete),
       )
     }
   }
