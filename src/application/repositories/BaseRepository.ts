@@ -194,12 +194,6 @@ export abstract class BaseRepository<
   ): Promise<DeleteResult> {
     const filter = this.buildFilter(criteria, userId)
 
-    if (!filter || Object.keys(filter).length === 0) {
-      throw new Error(
-        `[SECURITY ERROR] Attempted to execute deleteMany on collection '${this.model.collection.name}' with an EMPTY filter! Execution aborted.`,
-      )
-    }
-
     return await this.model.deleteMany(filter).session(session || null)
   }
 

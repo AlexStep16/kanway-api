@@ -117,6 +117,11 @@ export enum ErrorMessages {
   PAYMENT_TYPE_INVALID = 'Неверный тип платежа',
   PAYMENT_NOT_FOUND = 'Платеж не найден',
 
+  TRELLO_BOARD_ID_REQUIRED = 'Требуется идентификатор доски Trello',
+  TRELLO_BOARD_ID_INVALID = 'Неверный идентификатор доски Trello',
+  TRELLO_TOKEN_REQUIRED = 'Требуется токен Trello',
+  TRELLO_TOKEN_INVALID = 'Неверный токен Trello',
+
   SUPPORT_THEME_REQUIRED = 'Требуется тема обращения в поддержку',
   SUPPORT_THEME_INVALID = 'Неверная тема обращения в поддержку',
   SUPPORT_DETAILS_REQUIRED = 'Требуется описание обращения в поддержку',

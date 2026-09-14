@@ -19,6 +19,7 @@ import { initializeDependencies } from '@infrastructure/di/initializeDependencie
 import supportRoutes from './infrastructure/routes/supportRoutes.js'
 import paymentNotificationRoutes from './infrastructure/routes/paymentNotificationRoutes.js'
 import transcriptionRoutes from './infrastructure/routes/transcriptionRoutes.js'
+import trelloRoutes from './infrastructure/routes/trelloRoutes.js'
 
 export const createApiRouter = (): Router => {
   const apiRouter = Router()
@@ -54,6 +55,7 @@ export const createApiRouter = (): Router => {
   )
   apiRouter.use('/me', userRoutes(dependencies.controllers.userController))
   apiRouter.use('/ai', transcriptionRoutes(dependencies.controllers.transcriptionController))
+  apiRouter.use('/trello', trelloRoutes(dependencies.controllers.trelloController))
 
   return apiRouter
 }

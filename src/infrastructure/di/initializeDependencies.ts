@@ -59,6 +59,8 @@ import { BoardToolsExecutorService } from '@/application/ai/services/BoardToolsE
 import { WorkspaceToolsExecutorService } from '@/application/ai/services/WorkspaceToolsExecutorService.js'
 import { TranscriptionService } from '@/infrastructure/services/TranscriptionService.js'
 import { TranscriptionController } from '@controllers/TranscriptionController.js'
+import { TrelloService } from '@/infrastructure/services/TrelloService.js'
+import { TrelloController } from '@controllers/TrelloController.js'
 import { ZxcvbnFactory } from '@zxcvbn-ts/core'
 import * as zxcvbnCommonPackage from '@zxcvbn-ts/language-common'
 import * as zxcvbnEnPackage from '@zxcvbn-ts/language-en'
@@ -363,6 +365,8 @@ export function initializeDependencies() {
   const chatMessageController = new ChatMessageController(chatMessageService)
   const supportController = new SupportController(supportRepository, emailService)
   const transcriptionController = new TranscriptionController(transcriptionService, userService)
+  const trelloService = new TrelloService(boardService, columnService, taskService)
+  const trelloController = new TrelloController(trelloService)
 
   return {
     services: {
@@ -388,6 +392,7 @@ export function initializeDependencies() {
       chatMessageService,
       chatService,
       transcriptionService,
+      trelloService,
       outboxEventService,
     },
     controllers: {
@@ -398,6 +403,7 @@ export function initializeDependencies() {
       taskController,
       archiveController,
       userController,
+      trelloController,
       settingController,
       subscriptionController,
       paymentController,
