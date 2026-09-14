@@ -2,6 +2,7 @@ import SuccessResponse from '@application/services/SuccessResponse.js'
 import { NextFunction, Request, Response } from 'express'
 import { TrelloService } from '@infrastructure/services/TrelloService.js'
 import { TrelloImportDTO } from '@dtos/TrelloImportDTO.js'
+import { TrelloImportJsonDTO } from '@dtos/TrelloImportJsonDTO.js'
 import { IUser } from '@entities/IUser.js'
 import { AppError } from '@errors/AppError.js'
 
@@ -51,6 +52,22 @@ export class TrelloController {
         : await this.service.importAllBoards(token, workspaceId, req.user as IUser)
 
       res.status(201).json(new SuccessResponse(board))
+    } catch (error) {
+      next(error)
+    }
+  }
+
+  public importBoardFromJson = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { board, workspaceId } = req.body as TrelloImportJsonDTO
+
+      const importedBoard = await this.service.importBoardFromJson(
+        board,
+        workspaceId,
+        req.user as IUser,
+      )
+
+      res.status(201).json(new SuccessResponse(importedBoard))
     } catch (error) {
       next(error)
     }

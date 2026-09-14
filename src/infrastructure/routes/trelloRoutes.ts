@@ -4,6 +4,7 @@ import { jwtAuthMiddleware } from '@infrastructure/auth/passportJWTStrategy.js'
 import { confirmationMiddleware } from '../auth/confirmationMiddleware.js'
 import { validationMiddleware } from '@/infrastructure/middlewares/validations/validationMiddleware.js'
 import { TrelloImportDTOSchema } from '@dtos/TrelloImportDTO.js'
+import { TrelloImportJsonDTOSchema } from '@dtos/TrelloImportJsonDTO.js'
 import { postEntitiesLimiter } from '@/limiters.js'
 
 export default (controller: TrelloController): Router => {
@@ -19,6 +20,12 @@ export default (controller: TrelloController): Router => {
     postEntitiesLimiter,
     validationMiddleware(TrelloImportDTOSchema),
     controller.importBoard,
+  )
+  router.post(
+    '/import-json',
+    postEntitiesLimiter,
+    validationMiddleware(TrelloImportJsonDTOSchema),
+    controller.importBoardFromJson,
   )
 
   return router

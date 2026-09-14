@@ -144,6 +144,65 @@ export class TrelloService {
   ): Promise<IBoardPopulated> {
     const trelloBoard = await this._getBoardFull(boardId, token)
 
+    return this._createBoardFromTrelloData(trelloBoard, workspaceId, user)
+  }
+
+  public async importBoardFromJson(
+    boardJson: unknown,
+    workspaceId: string,
+    user: IUser,
+  ): Promise<IBoardPopulated> {
+    const trelloBoard = this._parseTrelloExport(boardJson)
+
+    return this._createBoardFromTrelloData(trelloBoard, workspaceId, user)
+  }
+
+  private _parseTrelloExport(raw: unknown): ITrelloBoardFull {
+    if (!raw || typeof raw !== 'object') {
+      throw new AppError('Некорректный файл экспорта Trello', 400)
+    }
+
+    const data = raw as Record<string, any>
+
+    if (!Array.isArray(data.lists) || !Array.isArray(data.cards)) {
+      throw new AppError('Файл не похож на экспорт доски Trello', 400)
+    }
+
+    return {
+      id: String(data.id ?? ''),
+      name: typeof data.name === 'string' ? data.name : 'Импортированная доска',
+      closed: Boolean(data.closed),
+      lists: data.lists.map((list: any) => ({
+        id: String(list.id),
+        name: typeof list.name === 'string' ? list.name : 'Без названия',
+        closed: Boolean(list.closed),
+        pos: typeof list.pos === 'number' ? list.pos : 0,
+      })),
+      cards: data.cards.map((card: any) => ({
+        id: String(card.id),
+        name: typeof card.name === 'string' ? card.name : 'Без названия',
+        desc: typeof card.desc === 'string' ? card.desc : '',
+        idList: String(card.idList),
+        due: typeof card.due === 'string' ? card.due : null,
+        dueComplete: Boolean(card.dueComplete),
+        closed: Boolean(card.closed),
+        labels: Array.isArray(card.labels)
+          ? card.labels.map((label: any) => ({
+              id: String(label?.id ?? ''),
+              name: typeof label?.name === 'string' ? label.name : '',
+              color: typeof label?.color === 'string' ? label.color : null,
+            }))
+          : [],
+        pos: typeof card.pos === 'number' ? card.pos : 0,
+      })),
+    }
+  }
+
+  private async _createBoardFromTrelloData(
+    trelloBoard: ITrelloBoardFull,
+    workspaceId: string,
+    user: IUser,
+  ): Promise<IBoardPopulated> {
     const boardDTO: BoardDTO = {
       name: (trelloBoard.name || 'Импортированная доска').slice(0, 100),
       workspaceId,

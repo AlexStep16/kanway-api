@@ -121,6 +121,8 @@ export enum ErrorMessages {
   TRELLO_BOARD_ID_INVALID = 'Неверный идентификатор доски Trello',
   TRELLO_TOKEN_REQUIRED = 'Требуется токен Trello',
   TRELLO_TOKEN_INVALID = 'Неверный токен Trello',
+  TRELLO_BOARD_JSON_REQUIRED = 'Требуется файл экспорта доски Trello',
+  TRELLO_BOARD_JSON_INVALID = 'Файл не похож на экспорт доски Trello',
 
   SUPPORT_THEME_REQUIRED = 'Требуется тема обращения в поддержку',
   SUPPORT_THEME_INVALID = 'Неверная тема обращения в поддержку',
