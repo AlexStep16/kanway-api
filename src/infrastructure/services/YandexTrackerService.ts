@@ -40,11 +40,27 @@ export interface IYandexTrackerIssue {
   description: string | null
   status: { key: string } | null
   deadline: string | null
+  priority: { key: string } | null
 }
 
 export class YandexTrackerService {
   private readonly baseUrl = 'https://api.tracker.yandex.net'
   private readonly perPage = 100
+
+  // Статусы Yandex Tracker, которые считаются выполненными
+  private readonly completedStatusKeys = new Set(['done'])
+
+  // Маппинг приоритетов Yandex Tracker на приоритеты задач Kanway
+  private readonly yandexPriorityToTaskPriority: Record<string, NonNullable<TaskDTO['priority']>> =
+    {
+      minimal: 'low',
+      trivial: 'low',
+      minor: 'low',
+      normal: 'medium',
+      important: 'medium',
+      critical: 'high',
+      blocker: 'high',
+    }
 
   constructor(
     private readonly boardService: BoardService,
@@ -181,7 +197,7 @@ export class YandexTrackerService {
     // Board issues are paginated; keep requesting pages until a partial (last) page is returned
     for (;;) {
       const pageIssues = await this._post<IYandexTrackerIssue[]>(
-        `/v3/issues/_search?perPage=${this.perPage}&page=${page}&fields=summary,description,status,deadline`,
+        `/v3/issues/_search?perPage=${this.perPage}&page=${page}&fields=summary,description,status,deadline,priority`,
         {
           // Используем поисковый запрос Трекера по полю Boards
           query: `Boards: ${boardId}`,
@@ -200,12 +216,17 @@ export class YandexTrackerService {
   }
 
   private _mapIssueToTaskDTO(issue: IYandexTrackerIssue, columnId: string): TaskDTO {
+    const statusKey = issue.status?.key
+    const priorityKey = issue.priority?.key
+
     return {
       name: (issue.summary || 'Без названия').slice(0, 100),
       description: issue.description
         ? removeMarkdown(issue.description, { stripListLeaders: false }).slice(0, 16384)
         : undefined,
       dueDate: issue.deadline ? issue.deadline.slice(0, 10) : undefined,
+      isCompleted: statusKey ? this.completedStatusKeys.has(statusKey) : undefined,
+      priority: priorityKey ? this.yandexPriorityToTaskPriority[priorityKey] : undefined,
       columnId,
     }
   }
