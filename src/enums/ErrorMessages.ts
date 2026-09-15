@@ -124,6 +124,15 @@ export enum ErrorMessages {
   TRELLO_BOARD_JSON_REQUIRED = 'Требуется файл экспорта доски Trello',
   TRELLO_BOARD_JSON_INVALID = 'Файл не похож на экспорт доски Trello',
 
+  YANDEX_TRACKER_BOARD_ID_INVALID = 'Неверный идентификатор доски Yandex Tracker',
+  YANDEX_TRACKER_TOKEN_REQUIRED = 'Требуется токен Yandex Tracker',
+  YANDEX_TRACKER_TOKEN_INVALID = 'Неверный токен Yandex Tracker',
+  YANDEX_TRACKER_ORG_ID_REQUIRED = 'Требуется идентификатор организации Yandex Tracker',
+  YANDEX_TRACKER_ORG_ID_INVALID = 'Неверный идентификатор организации Yandex Tracker',
+  YANDEX_TRACKER_CODE_REQUIRED = 'Требуется код авторизации Yandex',
+  YANDEX_TRACKER_CODE_VERIFIER_REQUIRED = 'Требуется code_verifier авторизации Yandex',
+  YANDEX_TRACKER_AUTH_FAILED = 'Не удалось авторизоваться в Yandex Tracker',
+
   SUPPORT_THEME_REQUIRED = 'Требуется тема обращения в поддержку',
   SUPPORT_THEME_INVALID = 'Неверная тема обращения в поддержку',
   SUPPORT_DETAILS_REQUIRED = 'Требуется описание обращения в поддержку',

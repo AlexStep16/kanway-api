@@ -61,6 +61,8 @@ import { TranscriptionService } from '@/infrastructure/services/TranscriptionSer
 import { TranscriptionController } from '@controllers/TranscriptionController.js'
 import { TrelloService } from '@/infrastructure/services/TrelloService.js'
 import { TrelloController } from '@controllers/TrelloController.js'
+import { YandexTrackerService } from '@/infrastructure/services/YandexTrackerService.js'
+import { YandexTrackerController } from '@controllers/YandexTrackerController.js'
 import { ZxcvbnFactory } from '@zxcvbn-ts/core'
 import * as zxcvbnCommonPackage from '@zxcvbn-ts/language-common'
 import * as zxcvbnEnPackage from '@zxcvbn-ts/language-en'
@@ -367,6 +369,8 @@ export function initializeDependencies() {
   const transcriptionController = new TranscriptionController(transcriptionService, userService)
   const trelloService = new TrelloService(boardService, columnService, taskService)
   const trelloController = new TrelloController(trelloService)
+  const yandexTrackerService = new YandexTrackerService(boardService, columnService, taskService)
+  const yandexTrackerController = new YandexTrackerController(yandexTrackerService)
 
   return {
     services: {
@@ -393,6 +397,7 @@ export function initializeDependencies() {
       chatService,
       transcriptionService,
       trelloService,
+      yandexTrackerService,
       outboxEventService,
     },
     controllers: {
@@ -404,6 +409,7 @@ export function initializeDependencies() {
       archiveController,
       userController,
       trelloController,
+      yandexTrackerController,
       settingController,
       subscriptionController,
       paymentController,
