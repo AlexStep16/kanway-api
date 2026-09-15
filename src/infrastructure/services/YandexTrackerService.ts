@@ -182,7 +182,10 @@ export class YandexTrackerService {
     for (;;) {
       const pageIssues = await this._post<IYandexTrackerIssue[]>(
         `/v3/issues/_search?perPage=${this.perPage}&page=${page}&fields=summary,description,status,deadline`,
-        { filter: { board: boardId } },
+        {
+          // Используем поисковый запрос Трекера по полю Boards
+          query: `Boards: ${boardId}`,
+        },
         credentials,
       )
 
