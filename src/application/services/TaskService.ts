@@ -1923,6 +1923,7 @@ export class TaskService extends BaseService<
           }
         : undefined,
       isCompleted: data.isCompleted,
+      priority: data.priority,
       workspace: taskColumn.workspace.id,
       board: taskColumn.board.id,
       column: taskColumn.id,
@@ -1992,6 +1993,7 @@ export class TaskService extends BaseService<
               }
             : undefined,
           isCompleted: task.isCompleted,
+          priority: task.priority,
 
           workspace: tasksColumnMap.get(task.columnId)!.workspace.id,
           board: tasksColumnMap.get(task.columnId)!.board.id,

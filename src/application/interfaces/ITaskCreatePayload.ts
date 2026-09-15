@@ -12,6 +12,7 @@ export interface ITaskCreatePayload {
   tags: Array<string>
   embeddings: number[]
   isCompleted?: boolean
+  priority?: string
   isDeleted?: boolean
   isDeletedExternal?: boolean
   deletedTime?: Date | null
