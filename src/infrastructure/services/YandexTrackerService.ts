@@ -48,7 +48,7 @@ export class YandexTrackerService {
   private readonly perPage = 100
 
   // Статусы Yandex Tracker, которые считаются выполненными
-  private readonly completedStatusKeys = new Set(['done'])
+  private readonly completedStatusKeys = new Set(['done', 'closed', 'resolved'])
 
   // Маппинг приоритетов Yandex Tracker на приоритеты задач Kanway
   private readonly yandexPriorityToTaskPriority: Record<string, NonNullable<TaskDTO['priority']>> =
