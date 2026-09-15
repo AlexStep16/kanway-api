@@ -41,16 +41,17 @@ export interface IYandexTrackerIssue {
   status: { key: string } | null
   deadline: string | null
   priority: { key: string } | null
+  tags: string[] | null
 }
 
 export class YandexTrackerService {
   private readonly baseUrl = 'https://api.tracker.yandex.net'
   private readonly perPage = 100
 
-  // Статусы Yandex Tracker, которые считаются выполненными
+  // Статусы Яндекс Трекер, которые считаются выполненными
   private readonly completedStatusKeys = new Set(['done', 'closed', 'resolved'])
 
-  // Маппинг приоритетов Yandex Tracker на приоритеты задач Kanway
+  // Маппинг приоритетов Яндекс Трекер на приоритеты задач Kanway
   private readonly yandexPriorityToTaskPriority: Record<string, NonNullable<TaskDTO['priority']>> =
     {
       minimal: 'low',
@@ -84,14 +85,14 @@ export class YandexTrackerService {
   private async _handleResponse<T>(response: Response): Promise<T> {
     if (!response.ok) {
       if (response.status === 401) {
-        throw new AppError('Неверный или просроченный токен Yandex Tracker', 401)
+        throw new AppError('Неверный или просроченный токен Яндекс Трекер', 401)
       }
 
       if (response.status === 403) {
-        throw new AppError('Неверный идентификатор организации Yandex Tracker', 403)
+        throw new AppError('Неверный идентификатор организации Яндекс Трекер', 403)
       }
 
-      throw new AppError(`Ошибка запроса к Yandex Tracker: ${response.statusText}`, 502)
+      throw new AppError(`Ошибка запроса к Яндекс Трекер: ${response.statusText}`, 502)
     }
 
     return (await response.json()) as T
@@ -170,7 +171,7 @@ export class YandexTrackerService {
     const data = (await response.json()) as { access_token?: string }
 
     if (!data.access_token) {
-      throw new AppError('Не удалось авторизоваться в Yandex Tracker', 400)
+      throw new AppError('Не удалось авторизоваться в Яндекс Трекер', 400)
     }
 
     return data.access_token
@@ -197,7 +198,7 @@ export class YandexTrackerService {
     // Board issues are paginated; keep requesting pages until a partial (last) page is returned
     for (;;) {
       const pageIssues = await this._post<IYandexTrackerIssue[]>(
-        `/v3/issues/_search?perPage=${this.perPage}&page=${page}&fields=summary,description,status,deadline,priority`,
+        `/v3/issues/_search?perPage=${this.perPage}&page=${page}&fields=summary,description,status,deadline,priority,tags`,
         {
           // Используем поисковый запрос Трекера по полю Boards
           query: `Boards: ${boardId}`,
@@ -226,6 +227,7 @@ export class YandexTrackerService {
         : undefined,
       dueDate: issue.deadline ? issue.deadline.slice(0, 10) : undefined,
       isCompleted: statusKey ? this.completedStatusKeys.has(statusKey) : undefined,
+      tags: issue.tags ?? undefined,
       priority: priorityKey ? this.yandexPriorityToTaskPriority[priorityKey] : undefined,
       columnId,
     }
@@ -291,7 +293,7 @@ export class YandexTrackerService {
       const board = boardsById.get(boardId)
 
       if (!board) {
-        throw new AppError(`Доска Yandex Tracker с идентификатором ${boardId} не найдена`, 404)
+        throw new AppError(`Доска Яндекс Трекер с идентификатором ${boardId} не найдена`, 404)
       }
 
       const importedBoard = await this._createBoardFromTrackerData(
