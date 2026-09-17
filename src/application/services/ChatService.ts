@@ -447,7 +447,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
 
     if (
       data.modelType &&
-      ![ModelsEnum.GPT_5_6_LUNA, ModelsEnum.GPT_5_4_MINI].includes(data.modelType) &&
+      ![ModelsEnum.GPT_5_6_LUNA, ModelsEnum.GPT_5_4_NANO].includes(data.modelType) &&
       user.subscriptionId === SubscriptionPlanEnum.Basic
     ) {
       throw new AppError('Модель доступна только для пользователей с платной подпиской', 403)
@@ -586,7 +586,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
   ) {
     if (
       data.modelType &&
-      ![ModelsEnum.GPT_5_6_LUNA, ModelsEnum.GPT_5_4_MINI].includes(data.modelType) &&
+      ![ModelsEnum.GPT_5_6_LUNA, ModelsEnum.GPT_5_4_NANO].includes(data.modelType) &&
       user.subscriptionId === SubscriptionPlanEnum.Basic
     ) {
       throw new AppError('Модель доступна только для пользователей с платной подпиской', 403)
@@ -790,7 +790,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
   ) {
     if (
       data.modelType &&
-      ![ModelsEnum.GPT_5_6_LUNA, ModelsEnum.GPT_5_4_MINI].includes(data.modelType) &&
+      ![ModelsEnum.GPT_5_6_LUNA, ModelsEnum.GPT_5_4_NANO].includes(data.modelType) &&
       user.subscriptionId === SubscriptionPlanEnum.Basic
     ) {
       throw new AppError('Модель доступна только для пользователей с платной подпиской', 403)
