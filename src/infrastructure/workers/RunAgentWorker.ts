@@ -229,5 +229,6 @@ export const RunAgentWorker = new Worker(
       host: process.env.REDIS_HOST || 'localhost',
       port: Number(process.env.REDIS_PORT) || 6379,
     },
+    concurrency: 10,
   },
 )
