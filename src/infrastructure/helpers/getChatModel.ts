@@ -27,6 +27,17 @@ export function getChatModel(model: ModelsEnum, isReasoning: boolean): BaseChatM
           : undefined,
         baseUrl: 'https://api.kanway-proxy.org/google',
       })
+    case ModelsEnum.GEMINI_3_8_FLASH:
+      return new ChatGoogleGenerativeAI({
+        model: 'gemini-3.8-flash',
+        maxRetries: 3,
+        thinkingConfig: isReasoning
+          ? {
+              thinkingLevel: 'MEDIUM',
+            }
+          : undefined,
+        baseUrl: 'https://api.kanway-proxy.org/google',
+      })
     case ModelsEnum.GPT_5_4_MINI:
       return new ChatOpenAI({
         model: 'gpt-5.4-mini',
