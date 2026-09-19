@@ -150,7 +150,7 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
       metadata: {
         paymentType: PaymentTypeEnum.CREDIT_PACK,
         itemId,
-        paymentId,
+        internalPaymentId: paymentId,
       },
     }
   }
@@ -165,7 +165,7 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
     return {
       ...this._buildBasePayload(user, amount, description, paymentId),
       metadata: {
-        paymentId,
+        internalPaymentId: paymentId,
         paymentType: PaymentTypeEnum.SUBSCRIPTION,
         itemId,
       },
@@ -419,6 +419,10 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
 
     if (!user) return
 
+    if (user.subscriptionUntil && dayjs(user.subscriptionUntil).isAfter(dayjs().add(1, 'day'))) {
+      return
+    }
+
     if (!user.isSubscriptionActive || !user.paymentMethodId) {
       return this._revertToBasicPlan(user)
     }
@@ -428,10 +432,11 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
       user.id,
     )
 
-    if (paymentMethods.length === 0) return this._revertToBasicPlan(user)
+    if (paymentMethods.length === 0) {
+      return this._revertToBasicPlan(user)
+    }
 
     const paymentMethod = paymentMethods[0]
-
     const targetPlan = user.pendingChangePlan ?? user.subscriptionId
 
     if (targetPlan === SubscriptionPlanEnum.Basic) {
@@ -443,7 +448,8 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
     const itemId = SUBSCRIPTION_PLAN_TO_ITEM_ID[targetPlan]
 
     const dateKey = dayjs().format('YYYY-MM-DD')
-    const idempotenceKey = `auto_${userId}_${dateKey}_try_${user.paymentRetriesCount || 0}`
+    const retriesCount = user.paymentRetriesCount || 0
+    const idempotenceKey = `auto_${userId}_${dateKey}_try_${retriesCount}`
 
     const paymentModel = await this.create(
       {
@@ -457,23 +463,48 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
       user.id,
     )
 
-    const payment = await this.checkout.createPayment(
-      {
-        amount: { value: amount, currency: 'RUB' },
-        capture: true,
-        payment_method_id: paymentMethod.serviceId,
-        description,
-      },
-      idempotenceKey,
-    )
+    try {
+      const payment = await this.checkout.createPayment(
+        {
+          amount: {
+            value: amount,
+            currency: 'RUB',
+          },
+          capture: true,
+          payment_method_id: paymentMethod.serviceId,
+          description,
+          metadata: {
+            internalPaymentId: paymentModel.id.toString(),
+            userId: user.id.toString(),
+            isAutoCharge: 'true',
+          },
+        },
+        idempotenceKey,
+      )
 
-    const updateResult = await this.edit(
-      { serviceId: payment.id },
-      { id: paymentModel.id.toString() },
-      user,
-    )
+      const updateResult = await this.edit(
+        { serviceId: payment.id },
+        { id: paymentModel.id.toString() },
+        user,
+      )
 
-    return { payment, model: updateResult[0] }
+      return { payment, model: updateResult[0] }
+    } catch (error) {
+      await this.edit(
+        { status: PaymentStatusesEnum.canceled },
+        { id: paymentModel.id.toString() },
+        user,
+      )
+
+      const nextRetry = retriesCount + 1
+      await this.userService.edit({ paymentRetriesCount: nextRetry }, user)
+
+      if (nextRetry >= 3) {
+        await this._revertToBasicPlan(user)
+      }
+
+      throw error
+    }
   }
 
   private async _updateSubscriptionAndNotifyUser(
@@ -482,7 +513,11 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
     session: ClientSession,
     user: IUser,
   ): Promise<PostCommitAction[]> {
-    const nextBillingDate = dayjs().add(1, 'month').toDate()
+    const now = dayjs()
+    const currentUntil = user.subscriptionUntil ? dayjs(user.subscriptionUntil) : null
+    const isStillActive = currentUntil && currentUntil.isAfter(now)
+
+    const nextBillingDate = (isStillActive ? currentUntil : now).add(1, 'month')
     const itemId = paymentModel.itemId as SubscriptionItemId
     const creditsAmount = SUBSCRIPTION_PLAN_TO_CREDITS[SUBSCRIPTION_ITEM_ID_TO_PLAN[itemId]]
 
@@ -492,7 +527,7 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
         paymentRetriesCount: 0,
         isSubscriptionActive: true,
         pendingChangePlan: null,
-        subscriptionUntil: nextBillingDate,
+        subscriptionUntil: nextBillingDate.toDate(),
       },
       user,
       session,
@@ -529,15 +564,18 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
       await this.userService.edit({ paymentMethodId: paymentMethod.id.toString() }, user, session)
     }
 
+    const userTz = user.timezone || 'Europe/Moscow'
     const subscriptionName = this._getPlanLabel(SUBSCRIPTION_ITEM_ID_TO_PLAN[itemId])
+    const formattedPaymentDate = now.tz(userTz).format('DD.MM.YYYY')
+    const formattedNextBillingDate = nextBillingDate.tz(userTz).format('DD.MM.YYYY')
 
     return [
       () =>
         this.emailService.sendPaymentSubSuccessEmail(user, {
           purpose: `Подписка - ${subscriptionName}`,
           amount: paymentModel.amount,
-          date: dayjs().toISOString(),
-          next_billing_date: nextBillingDate.toISOString(),
+          date: formattedPaymentDate,
+          next_billing_date: formattedNextBillingDate,
         }),
     ]
   }
@@ -548,8 +586,8 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
     session: ClientSession,
     user: IUser,
   ): Promise<PostCommitAction[]> {
-    const metadata = checkedPayment.metadata
-    const isCreditPack = metadata?.paymentType === PaymentTypeEnum.CREDIT_PACK
+    const isCreditPack = paymentModel.column === PaymentTypeEnum.CREDIT_PACK
+
     if (isCreditPack) {
       const itemId = paymentModel.itemId as CreditItemId
       const creditsToAdd = CREDIT_PACKS_DATA[itemId].credits
@@ -558,12 +596,15 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
 
       const creditPackLabel = CREDIT_PACKS_DATA[itemId].label
 
+      const userTz = user.timezone || 'Europe/Moscow'
+      const formattedDate = dayjs().tz(userTz).format('DD.MM.YYYY')
+
       return [
         () =>
           this.emailService.sendPaymentCreditsSuccessEmail(user, {
             purpose: creditPackLabel,
             amount: paymentModel.amount,
-            date: dayjs().toISOString(),
+            date: formattedDate,
           }),
       ]
     } else {
@@ -577,22 +618,21 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
   }
 
   private async _handleCanceledNotification(
+    checkedPayment: Payment,
     paymentModel: IPayment,
     session: ClientSession,
     user: IUser,
   ): Promise<PostCommitAction[]> {
-    if (paymentModel.column === PaymentTypeEnum.CREDIT_PACK) return []
-    if (!user.isSubscriptionActive) return []
+    if (
+      checkedPayment.metadata?.isAutoCharge !== 'true' ||
+      paymentModel.column === PaymentTypeEnum.CREDIT_PACK ||
+      !user.isSubscriptionActive
+    )
+      return []
 
     const newCount = (user.paymentRetriesCount || 0) + 1
 
-    await this.userService.edit(
-      {
-        paymentRetriesCount: newCount,
-      },
-      user,
-      session,
-    )
+    await this.userService.edit({ paymentRetriesCount: newCount }, user, session)
 
     if (newCount >= 3) {
       await this.userService.edit(
@@ -600,6 +640,7 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
           isSubscriptionActive: false,
           subscriptionId: SubscriptionPlanEnum.Basic,
           subscriptionUntil: null,
+          paymentRetriesCount: 0,
         },
         user,
         session,
@@ -607,13 +648,7 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
 
       return [() => this.emailService.sendPaymentFinalFailedEmail(user)]
     } else {
-      let daysLeft = ''
-
-      if (newCount === 1) {
-        daysLeft = '3'
-      } else if (newCount === 2) {
-        daysLeft = '2'
-      }
+      const daysLeft = String(3 - newCount + 1)
 
       return [() => this.emailService.sendPaymentFailedEmail(user, paymentModel.amount, daysLeft)]
     }
@@ -629,12 +664,27 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
     const payments = await this.getByCriteria({
       serviceId: payment.id,
     })
+    let paymentModel = payments[0]
 
-    if (payments.length === 0) {
-      throw new AppError(ErrorMessages.PAYMENT_NOT_FOUND, 500)
+    const fallbackId = payment.metadata?.internalPaymentId
+
+    if (!paymentModel && fallbackId) {
+      const fallbackPayments = await this.getByCriteria({
+        id: fallbackId,
+      })
+      paymentModel = fallbackPayments[0]
+
+      if (paymentModel) {
+        await this.repository.updateManyByCriteria(
+          { id: paymentModel.id.toString() },
+          { serviceId: payment.id },
+        )
+      }
     }
 
-    const paymentModel = payments[0]
+    if (!paymentModel) {
+      throw new AppError(ErrorMessages.PAYMENT_NOT_FOUND, 500)
+    }
 
     if (
       paymentModel.status === PaymentStatusesEnum.succeeded ||
@@ -644,7 +694,6 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
     }
 
     const checkedPayment = await this.checkout.getPayment(payment.id)
-
     if (!checkedPayment) {
       throw new AppError(ErrorMessages.PAYMENT_NOT_FOUND, 500)
     }
@@ -682,18 +731,24 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
           user,
         )
       } else if (checkedPayment.status === 'canceled') {
-        postCommitActions = await this._handleCanceledNotification(paymentModel, session, user)
+        postCommitActions = await this._handleCanceledNotification(
+          checkedPayment,
+          paymentModel,
+          session,
+          user,
+        )
       }
 
       await session.commitTransaction()
     } catch (error) {
       await session.abortTransaction()
-
       throw error
     } finally {
+      // Гарантированно закрываем сессию при любых обстоятельствах
       session.endSession()
     }
 
+    // 5. Выполняем сайд-эффекты (отправку email) после успешного коммита
     const results = await Promise.allSettled(postCommitActions.map((action) => action()))
 
     results.forEach((result) => {

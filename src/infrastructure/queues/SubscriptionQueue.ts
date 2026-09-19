@@ -10,8 +10,8 @@ export const subscriptionQueue = new Queue('subscription-renewal', {
     removeOnFail: false,
     attempts: 3,
     backoff: {
-      type: 'exponential',
-      delay: 1000 * 60 * 5,
+      type: 'fixed',
+      delay: 1000 * 60 * 60 * 24,
     },
   },
 })
