@@ -23,7 +23,6 @@ import { IStatus } from '@/application/interfaces/statuses/IStatus.js'
 import { calculateCredits } from '@/application/ai/helpers/calculateCredits.js'
 import { cleanupLastIteration } from '@/utils/cleanupLastIteration.js'
 import { createAbortWatcher } from '@/utils/createAbortWatcher.js'
-import { cleanupLastToolMessages } from '@/utils/cleanupLastToolMessages.js'
 
 const dependencies = initializeDependencies()
 
@@ -97,8 +96,6 @@ export const RunAgentWorker = new Worker(
       const agent = await getAgent(dependencies)
 
       let currentState = await agent.getState(config)
-
-      if (!isResume) await cleanupLastToolMessages(agent, config, currentState)
 
       currentState = await agent.getState(config)
 
