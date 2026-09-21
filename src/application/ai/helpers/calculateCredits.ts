@@ -23,9 +23,7 @@ export function calculateCredits(
   const costNonCached = (nonCachedInput / 1_000_000) * prices.input
   const costCached = (cachedTokens / 1_000_000) * (prices.input_cached ?? prices.input)
   const costOutput = (outputTokens / 1_000_000) * prices.output
-  console.log('costNonCached:', costNonCached, 'costCached:', costCached, 'costOutput:', costOutput)
   const rawUsdCost = costNonCached + costCached + costOutput
-  console.log('rawUsdCost:', rawUsdCost)
   const rawRubCost = rawUsdCost * usdToRubRate
 
   const rubWithMarkup = rawRubCost * markup

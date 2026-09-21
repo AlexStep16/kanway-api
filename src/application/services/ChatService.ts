@@ -297,7 +297,7 @@ export class ChatService extends BaseService<IChatRaw, IChat, IChatCriteria> {
     externalSession: ClientSession,
   ) {
     const statusContent: IStatus = {
-      statusText: '',
+      statusText: 'Инициализация агентов',
       currentAgent: AgentsEnum.ORCHESTRATOR,
       state: StatusStatesEnum.IN_PROGRESS,
       logs: [],
