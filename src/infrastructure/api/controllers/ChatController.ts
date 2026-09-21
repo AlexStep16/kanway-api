@@ -5,6 +5,7 @@ import { IChatCriteria } from '@/application/interfaces/criterias/IChatCriteria.
 import { langgraphQueue } from '@/infrastructure/queues/langgraphTasksQueue.js'
 import mongoose from 'mongoose'
 import { Redis } from 'ioredis'
+import { getJobPriority } from '@/infrastructure/helpers/getJobPriority.js'
 
 export default class ChatController {
   protected service: ChatService
@@ -140,6 +141,7 @@ export default class ChatController {
 
       await langgraphQueue.add('process_query', result.jobPayload, {
         jobId: req.body.jobId,
+        priority: getJobPriority(req.user!.subscriptionId),
       })
 
       await session.commitTransaction()
