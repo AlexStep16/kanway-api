@@ -741,9 +741,7 @@ export class ColumnService extends BaseService<
       userId,
     )
 
-    if (columnsToDelete.length === 0) {
-      throw new NotFoundError('Колонки для удаления не найдены.')
-    }
+    if (columnsToDelete.length === 0) return { data: null, logId: null }
 
     const status = isDryRun ? OperationLogStatusesEnum.PENDING : OperationLogStatusesEnum.SUCCESS
 
@@ -1821,6 +1819,9 @@ export class ColumnService extends BaseService<
       undefined,
       userId,
     )
+
+    if (sourceColumns.length === 0) return { data: [], logId: null }
+
     const dependencies: Types.ObjectId[] = []
 
     const cleanColumns = sourceColumns.map((column) => {

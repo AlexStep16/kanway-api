@@ -525,9 +525,8 @@ export class WorkspaceService extends BaseService<
       userId,
     )
 
-    if (workspacesToDelete.length === 0) {
-      throw new NotFoundError('Рабочие пространства для удаления не найдены.')
-    }
+    if (workspacesToDelete.length === 0) return { data: null, logId: null }
+
     if (
       workspaces.length === 1 &&
       workspacesToDelete.some((ws) => ws.id.toString() === workspaces[0].id.toString()) &&

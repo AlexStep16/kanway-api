@@ -788,9 +788,7 @@ export class TaskService extends BaseService<
       user.id,
     )
 
-    if (tasksToDelete.length === 0) {
-      throw new NotFoundError('Задачи для удаления не найдены.')
-    }
+    if (tasksToDelete.length === 0) return { data: null, logId: null }
 
     const status = isDryRun ? OperationLogStatusesEnum.PENDING : OperationLogStatusesEnum.SUCCESS
 
@@ -1822,6 +1820,8 @@ export class TaskService extends BaseService<
       },
       userId,
     )
+
+    if (sourceTasks.length === 0) return { data: [], logId: null }
 
     const cleanTasks = sourceTasks.map((task) => {
       const columnData = columnIdsMap.get(task.column.toString())

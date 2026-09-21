@@ -624,9 +624,7 @@ export class BoardService extends BaseService<
       userId,
     )
 
-    if (boardsToDelete.length === 0) {
-      throw new NotFoundError('Доски для удаления не найдены.')
-    }
+    if (boardsToDelete.length === 0) return { data: null, logId: null }
 
     const status = isDryRun ? OperationLogStatusesEnum.PENDING : OperationLogStatusesEnum.SUCCESS
 
@@ -1787,6 +1785,8 @@ export class BoardService extends BaseService<
     const criteria = { workspaceIds, isDeleted: false, isDeletedExternal: false }
 
     const sourceBoards = await this.repository.findByCriteria(criteria, session, undefined, userId)
+
+    if (sourceBoards.length === 0) return { data: [], logId: null }
 
     const cleanBoards = sourceBoards.map((board) => {
       const workpsaceData = workspaceIdsMap.get(board.workspace.toString())
