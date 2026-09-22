@@ -70,6 +70,7 @@ export const UserDTOSchema = z.object({
     })
     .optional(),
   isSubscriptionActive: z.boolean().optional(),
+  isAutoRenewEnabled: z.boolean().optional(),
   subscriptionUntil: z.date().nullable().optional(),
   paymentRetriesCount: z.number().optional(),
   pendingChangePlan: z

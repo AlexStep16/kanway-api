@@ -299,13 +299,13 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
   }
 
   public async cancelSubscription(user: IUser) {
-    if (!user.isSubscriptionActive) {
-      throw new AppError('У пользователя нет активной подписки', 500)
+    if (!user.isAutoRenewEnabled) {
+      throw new AppError('Автопродление подписки уже отключено', 500)
     }
 
     return this.userService.edit(
       {
-        isSubscriptionActive: false,
+        isAutoRenewEnabled: false,
         pendingChangePlan: null,
       },
       user,
@@ -313,13 +313,13 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
   }
 
   public async resumeSubscription(user: IUser) {
-    if (user.isSubscriptionActive) {
-      throw new AppError('У пользователя уже есть активная подписка', 500)
+    if (user.isAutoRenewEnabled) {
+      throw new AppError('Автопродление подписки уже включено', 500)
     }
 
     await this.userService.edit(
       {
-        isSubscriptionActive: true,
+        isAutoRenewEnabled: true,
       },
       user,
     )
@@ -408,6 +408,7 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
       {
         subscriptionId: SubscriptionPlanEnum.Basic,
         isSubscriptionActive: false,
+        isAutoRenewEnabled: false,
         subscriptionUntil: null,
       },
       user,
@@ -423,7 +424,7 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
       return
     }
 
-    if (!user.isSubscriptionActive || !user.paymentMethodId) {
+    if (!user.isAutoRenewEnabled || !user.paymentMethodId) {
       return this._revertToBasicPlan(user)
     }
 
@@ -526,6 +527,7 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
         subscriptionId: SUBSCRIPTION_ITEM_ID_TO_PLAN[itemId],
         paymentRetriesCount: 0,
         isSubscriptionActive: true,
+        isAutoRenewEnabled: true,
         pendingChangePlan: null,
         subscriptionUntil: nextBillingDate.toDate(),
       },
@@ -626,7 +628,7 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
     if (
       checkedPayment.metadata?.isAutoCharge !== 'true' ||
       paymentModel.column === PaymentTypeEnum.CREDIT_PACK ||
-      !user.isSubscriptionActive
+      !user.isAutoRenewEnabled
     )
       return []
 
@@ -638,6 +640,7 @@ export class PaymentService extends BaseService<IPaymentRaw, IPayment, IPaymentC
       await this.userService.edit(
         {
           isSubscriptionActive: false,
+          isAutoRenewEnabled: false,
           subscriptionId: SubscriptionPlanEnum.Basic,
           subscriptionUntil: null,
           paymentRetriesCount: 0,

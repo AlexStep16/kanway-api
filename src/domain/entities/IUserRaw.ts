@@ -16,6 +16,7 @@ export interface IUserRaw {
   subscription_id: SubscriptionPlanEnum
   subscription_until?: Date | null
   is_subscription_active?: boolean
+  is_auto_renew_enabled?: boolean
   credits: number
   paid_credits: number
   avatar_color: string

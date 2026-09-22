@@ -61,16 +61,22 @@ export class PaymentMethodService extends BaseService<
     userId: Types.ObjectId,
     session?: ClientSession,
   ): Promise<void> {
-    await this.repository.deleteMany({ id }, userId, session)
     // If the deleted payment method was the user's selected payment method, unset it
     const user = await this.userService.getById(userId.toString(), session)
+    await this.repository.deleteMany({ id }, userId, session)
 
     if (user && user.paymentMethodId === id) {
       const paymentMethods = await this.repository.findByCriteria({}, session, undefined, userId)
+      const nextPaymentMethodId = paymentMethods[0]?.id.toString() ?? null
 
       await this.userService.edit(
-        { paymentMethodId: paymentMethods[0]?.id.toString() ?? null },
+        {
+          paymentMethodId: nextPaymentMethodId,
+          // No payment method left means auto-renew can no longer be charged
+          ...(nextPaymentMethodId ? {} : { isAutoRenewEnabled: false }),
+        },
         user,
+        session,
       )
     }
   }

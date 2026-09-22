@@ -62,6 +62,10 @@ export const UserSchema = new Schema<IUserRaw, IUserRawStatics, IUserRawMethods>
       type: Boolean,
       default: false,
     },
+    is_auto_renew_enabled: {
+      type: Boolean,
+      default: false,
+    },
     credits: {
       type: Number,
       default: 200,
