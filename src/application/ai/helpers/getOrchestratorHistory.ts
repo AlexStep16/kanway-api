@@ -1,18 +1,21 @@
-import { BaseMessage } from '@langchain/core/messages'
-import getLastHumanMessage from './getLastHumanMessage.js'
+import { BaseMessage, HumanMessage } from '@langchain/core/messages'
 
-const HISTORY_LIMIT = 10
+const PREVIOUS_TURNS_TO_KEEP = 2
 
-export default function getOrchestratorHistory(messages: BaseMessage[]) {
-  const history: BaseMessage[] = []
+export default function getOrchestratorHistory(messages: BaseMessage[]): BaseMessage[] {
+  if (!messages || messages.length === 0) return []
 
-  const lastHumanMessage = getLastHumanMessage(messages)
+  const humanIndices: number[] = []
+  messages.forEach((msg, index) => {
+    if (HumanMessage.isInstance(msg)) {
+      humanIndices.push(index)
+    }
+  })
 
-  if (lastHumanMessage) {
-    const lastHumanMessageIndex = messages.indexOf(lastHumanMessage)
+  if (humanIndices.length === 0) return messages
 
-    history.push(...messages.slice(Math.max(0, lastHumanMessageIndex - HISTORY_LIMIT)))
-  }
+  const targetHumanIndexPosition = Math.max(0, humanIndices.length - 1 - PREVIOUS_TURNS_TO_KEEP)
+  const startIndex = humanIndices[targetHumanIndexPosition]
 
-  return history
+  return messages.slice(startIndex)
 }
