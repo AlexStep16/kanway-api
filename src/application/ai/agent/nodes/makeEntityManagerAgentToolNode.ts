@@ -27,6 +27,7 @@ export const makeEntityManagerAgentToolNode = (dependencies: AgentDependencies) 
 
     const outputs: Partial<typeof AgentStateAnnotation.State> = {
       messages: [],
+      messages_summary: state.messages_summary,
 
       tool_waiting_for_review: null,
 

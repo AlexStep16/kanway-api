@@ -10,6 +10,10 @@ export const AgentStateAnnotation = Annotation.Root({
     reducer: messagesStateReducer,
     default: () => [],
   }),
+  messages_summary: Annotation<string>({
+    reducer: (_, next) => next,
+    default: () => 'No prior compressed state available',
+  }),
   user_message: Annotation<string>({
     reducer: (_, y) => y,
     default: () => '',

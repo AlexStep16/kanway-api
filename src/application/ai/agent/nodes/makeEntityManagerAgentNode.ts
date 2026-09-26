@@ -1,6 +1,6 @@
 import { RunnableConfig } from '@langchain/core/runnables'
 import { AgentDependencies } from '@/application/ai/agent/types/AgentDependencies.js'
-import { ChatPromptTemplate } from '@langchain/core/prompts'
+import { ChatPromptTemplate, MessagesPlaceholder } from '@langchain/core/prompts'
 import { Configurable } from '@/application/ai/interfaces/Configurable.js'
 import { dispatchCustomEvent } from '@langchain/core/callbacks/dispatch'
 import { CustomEvents } from '@/enums/CustomEvents.js'
@@ -40,6 +40,7 @@ export const makeEntityManagerAgentNode = (deps: AgentDependencies) => {
 
     const outputs: Partial<typeof AgentStateAnnotation.State> = {
       messages: [],
+      messages_summary: state.messages_summary,
 
       task_manager_messages: state.task_manager_messages,
       task_manager_tool_calls: state.task_manager_tool_calls,
@@ -80,7 +81,7 @@ export const makeEntityManagerAgentNode = (deps: AgentDependencies) => {
     const prompt = ChatPromptTemplate.fromMessages([
       ['system', getAgentManagerSystemPrompt(activeManager)],
       ['user', 'Execute the instruction above.'],
-      ...history,
+      new MessagesPlaceholder('history'),
     ])
 
     if (!modelToUse.bindTools) {
@@ -103,6 +104,7 @@ export const makeEntityManagerAgentNode = (deps: AgentDependencies) => {
       available_tools_list: managerTools
         .map((tool) => tool.name)
         .filter((name) => !requestedTools.includes(name)),
+      history,
     })
 
     fillOutputsBasedOnAgent(activeManager, response, outputs)

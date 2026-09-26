@@ -1,8 +1,12 @@
 import { BaseMessage, HumanMessage } from '@langchain/core/messages'
 
-const PREVIOUS_TURNS_TO_KEEP = 2
+const PREVIOUS_TURNS_TO_KEEP = Infinity
 
-export default function getOrchestratorHistory(messages: BaseMessage[]): BaseMessage[] {
+export default function getHistoryTurns(
+  messages: BaseMessage[],
+  isFirstTurns = false,
+  turnsToKeep = PREVIOUS_TURNS_TO_KEEP,
+): BaseMessage[] {
   if (!messages || messages.length === 0) return []
 
   const humanIndices: number[] = []
@@ -14,8 +18,8 @@ export default function getOrchestratorHistory(messages: BaseMessage[]): BaseMes
 
   if (humanIndices.length === 0) return messages
 
-  const targetHumanIndexPosition = Math.max(0, humanIndices.length - 1 - PREVIOUS_TURNS_TO_KEEP)
+  const targetHumanIndexPosition = Math.max(0, humanIndices.length - 1 - turnsToKeep)
   const startIndex = humanIndices[targetHumanIndexPosition]
 
-  return messages.slice(startIndex)
+  return isFirstTurns ? messages.slice(0, startIndex) : messages.slice(startIndex)
 }

@@ -1,6 +1,6 @@
 import { RunnableConfig } from '@langchain/core/runnables'
 import { AgentDependencies } from '@/application/ai/agent/types/AgentDependencies.js'
-import { ChatPromptTemplate } from '@langchain/core/prompts'
+import { ChatPromptTemplate, MessagesPlaceholder } from '@langchain/core/prompts'
 import { Configurable } from '@/application/ai/interfaces/Configurable.js'
 import { dispatchCustomEvent } from '@langchain/core/callbacks/dispatch'
 import { CustomEvents } from '@/enums/CustomEvents.js'
@@ -11,7 +11,9 @@ import { IStatus } from '@/application/interfaces/statuses/IStatus.js'
 import { AgentsEnum } from '@/enums/AgentsEnum.js'
 import { getChatModel } from '@/infrastructure/helpers/getChatModel.js'
 import { getBeautifiedSelections } from '../../helpers/getBeautifiedSelections.js'
-import getOrchestratorHistory from '../../helpers/getOrchestratorHistory.js'
+import getHistoryTurns from '../../helpers/getHistoryTurns.js'
+
+const TURNS_TO_KEEP = 4
 
 export const makeOrchestratorNode = (deps: AgentDependencies) => {
   return async (state: typeof AgentStateAnnotation.State, config: RunnableConfig) => {
@@ -29,6 +31,7 @@ export const makeOrchestratorNode = (deps: AgentDependencies) => {
 
     const outputs: Partial<typeof AgentStateAnnotation.State> = {
       messages: [],
+      messages_summary: state.messages_summary,
       task_manager_messages: [],
       column_manager_messages: [],
       board_manager_messages: [],
@@ -43,11 +46,14 @@ export const makeOrchestratorNode = (deps: AgentDependencies) => {
 
     const modelToUse = getChatModel(configurable.modelType, true)
 
-    const history = getOrchestratorHistory(state.messages || [])
-
     const orchestratorTools = initOrchestratorTools(deps, config as RunnableConfig<Configurable>)
 
-    const prompt = ChatPromptTemplate.fromMessages([['system', OrchestratorPrompt], ...history])
+    const history = getHistoryTurns(state.messages, false, TURNS_TO_KEEP)
+
+    const prompt = ChatPromptTemplate.fromMessages([
+      ['system', OrchestratorPrompt],
+      new MessagesPlaceholder('history'),
+    ])
 
     if (!modelToUse.bindTools) {
       throw new Error('Orchestrator model does not support tool binding.')
@@ -58,6 +64,7 @@ export const makeOrchestratorNode = (deps: AgentDependencies) => {
     const chain = prompt.pipe(modelToUse.bindTools(orchestratorTools))
 
     const response = await chain.invoke({
+      summary: state.messages_summary || '',
       board: configurable.activeBoard || 'NO ACTIVE BOARD',
       workspace: configurable.activeWorkspace,
       active_selections: beautifiedSelections,
@@ -67,6 +74,7 @@ export const makeOrchestratorNode = (deps: AgentDependencies) => {
       current_date: configurable.currentDate,
       tags_list: configurable.tagsList,
       aiName: configurable.aiName,
+      history,
     })
 
     outputs.messages!.push(response)

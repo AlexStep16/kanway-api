@@ -4,6 +4,7 @@ import { AgentStateAnnotation } from '../agent/AgentStateAnnotation.js'
 export function getDefaultState(): Partial<typeof AgentStateAnnotation.State> {
   return {
     messages: [],
+    messages_summary: '',
     task_manager_messages: [],
     column_manager_messages: [],
     board_manager_messages: [],
