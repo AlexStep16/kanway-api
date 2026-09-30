@@ -216,8 +216,3 @@ pm2 start ecosystem.config.cjs
 *Fullstack & AI Product Developer*
 
 ---
-
-<div align="center">
-  <sub>Разработано как серверная платформа Kanway AI 🪦</sub>
-</div>
-```
